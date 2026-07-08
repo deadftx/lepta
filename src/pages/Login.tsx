@@ -1,14 +1,28 @@
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Lock, Mail, ArrowRight } from 'lucide-react';
+import { Lock, Mail, ArrowRight, AlertCircle } from 'lucide-react';
+import { useAuth } from '../contexts/AuthContext';
 import './Login.css';
 
 const Login = () => {
   const navigate = useNavigate();
+  const { login } = useAuth();
+  
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
 
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();
-    // Simulate login
-    navigate('/dashboard');
+    setError('');
+    
+    const success = login(email, password);
+    
+    if (success) {
+      navigate('/dashboard');
+    } else {
+      setError('E-mail ou senha incorretos.');
+    }
   };
 
   return (
@@ -19,6 +33,13 @@ const Login = () => {
           <p>Acesse sua conta para continuar.</p>
         </div>
         
+        {error && (
+          <div className="login-error">
+            <AlertCircle size={18} />
+            <span>{error}</span>
+          </div>
+        )}
+        
         <form onSubmit={handleLogin} className="login-form">
           <div className="input-group">
             <Mail className="input-icon" size={18} />
@@ -26,6 +47,8 @@ const Login = () => {
               type="email" 
               placeholder="E-mail Corporativo" 
               className="input-field with-icon" 
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
               required 
             />
           </div>
@@ -36,6 +59,8 @@ const Login = () => {
               type="password" 
               placeholder="Senha" 
               className="input-field with-icon" 
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
               required 
             />
           </div>

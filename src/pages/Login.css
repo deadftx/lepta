@@ -28,6 +28,19 @@
   color: var(--text-secondary);
 }
 
+.login-error {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(230, 32, 32, 0.15);
+  border: 1px solid var(--accent-red);
+  color: #ffcccc;
+  padding: 12px;
+  border-radius: 8px;
+  margin-bottom: 1.5rem;
+  font-size: 0.9rem;
+}
+
 .input-group {
   position: relative;
   margin-bottom: 1rem;
