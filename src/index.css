@@ -11,6 +11,10 @@
   --font-main: 'Inter', system-ui, -apple-system, sans-serif;
 }
 
+html {
+  scroll-behavior: smooth;
+}
+
 * {
   margin: 0;
   padding: 0;
@@ -22,8 +26,11 @@ body {
   background-color: var(--bg-dark);
   color: var(--text-primary);
   line-height: 1.6;
-  overflow-x: hidden;
   -webkit-font-smoothing: antialiased;
+}
+
+#root {
+  overflow-x: hidden;
 }
 
 /* Glassmorphism Utilities */
