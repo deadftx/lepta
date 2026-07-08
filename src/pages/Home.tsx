@@ -7,6 +7,9 @@ const Home = () => {
       {/* Hero Section */}
       <section className="hero-section">
         <div className="hero-content">
+          <div className="hero-logo-container">
+            <img src="/logo1.png" alt="Lepta Capital" className="hero-main-logo" />
+          </div>
           <h1 className="hero-title">
             O Poder do <span className="text-gradient">Renascimento</span> Financeiro
           </h1>
@@ -52,6 +55,13 @@ const Home = () => {
         </div>
       </section>
 
+      {/* Parallax Separator */}
+      <section className="parallax-separator">
+        <div className="parallax-overlay">
+          <h2 className="parallax-title">Inteligência Financeira em Ação</h2>
+        </div>
+      </section>
+
       {/* Services Section */}
       <section id="servicos" className="section services-section">
         <div className="services-header">
@@ -64,35 +74,30 @@ const Home = () => {
             <Shield className="service-icon" />
             <h3>Aquisição de Crédito | NPL</h3>
             <p>A aquisição de crédito tem um objetivo principal: reestruturar passivos em situações de recuperação judicial (Chapter 11) e ativos estressados sem comunicação amigável.</p>
-            <a href="#" className="service-link">Saiba Mais <ArrowRight size={16}/></a>
           </div>
 
           <div className="service-card glass glass-hover">
             <BarChart3 className="service-icon" />
             <h3>Securitização</h3>
             <p>Oferecemos soluções financeiras customizadas para empresas que precisam de recursos para gerenciar seus negócios através de securitização e/ou antecipação de recebíveis.</p>
-            <a href="#" className="service-link">Saiba Mais <ArrowRight size={16}/></a>
           </div>
 
           <div className="service-card glass glass-hover">
             <Landmark className="service-icon" />
             <h3>Lepta Bank</h3>
             <p>Buscando expandir nossas opções e oferecer serviços financeiros mais abrangentes. Uma plataforma segura para processar pagamentos de forma confiável.</p>
-            <a href="#" className="service-link">Saiba Mais <ArrowRight size={16}/></a>
           </div>
 
           <div className="service-card glass glass-hover">
             <Globe2 className="service-icon" />
             <h3>Câmbio</h3>
             <p>Atuamos como correspondentes bancários das principais instituições de câmbio, oferecendo uma grande variedade de produtos e serviços internacionais e trade finance.</p>
-            <a href="#" className="service-link">Saiba Mais <ArrowRight size={16}/></a>
           </div>
 
-          <div className="service-card glass glass-hover" style={{gridColumn: '1 / -1', maxWidth: '600px', margin: '0 auto'}}>
+          <div className="service-card glass glass-hover">
             <Recycle className="service-icon" />
             <h3>Lepta Metals</h3>
             <p>Comprometidos com a reciclagem de metais e redução do impacto ambiental, compramos e vendemos sucata, fornecendo uma solução de gerenciamento de resíduos sustentável.</p>
-            <a href="#" className="service-link">Saiba Mais <ArrowRight size={16}/></a>
           </div>
         </div>
       </section>

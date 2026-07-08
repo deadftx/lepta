@@ -7,10 +7,7 @@ const Navbar = () => {
     <nav className="navbar glass">
       <div className="navbar-container">
         <Link to="/" className="navbar-logo">
-          {/* Logo placeholder - replace src with /Logo1.png when available */}
-          <span className="logo-text">
-            <span className="logo-lepta">LEPTA</span> <span className="logo-capital">CAPITAL</span>
-          </span>
+          <img src="/logo2.png" alt="Lepta Capital" style={{ height: '65px' }} />
         </Link>
         <ul className="navbar-menu">
           <li><a href="#proposito">Nosso Propósito</a></li>

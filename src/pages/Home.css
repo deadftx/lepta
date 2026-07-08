@@ -3,14 +3,31 @@
   min-height: 100vh;
   display: flex;
   align-items: center;
+  justify-content: center;
   padding: 0 5%;
-  background: radial-gradient(circle at 80% 20%, rgba(230, 32, 32, 0.15) 0%, transparent 50%),
-              radial-gradient(circle at 20% 80%, rgba(245, 124, 0, 0.1) 0%, transparent 40%);
+  background-image: linear-gradient(rgba(7, 9, 15, 0.7), rgba(7, 9, 15, 0.9)), url('/banner1.png');
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  text-align: center;
 }
 
 .hero-content {
-  max-width: 800px;
+  max-width: 900px;
   z-index: 10;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.hero-logo-container {
+  margin-bottom: 2rem;
+}
+
+.hero-main-logo {
+  max-width: 100%;
+  height: auto;
+  max-height: 150px;
 }
 
 .hero-title {
@@ -72,6 +89,43 @@
   background: radial-gradient(circle, var(--accent-red) 0%, transparent 70%);
   opacity: 0.2;
   filter: blur(20px);
+}
+
+/* Parallax Separator */
+.parallax-separator {
+  position: relative;
+  min-height: 400px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-image: url('/paralax1.png');
+  background-attachment: fixed;
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: cover;
+  margin: 4rem 0;
+}
+
+.parallax-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(7, 9, 15, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.parallax-title {
+  font-size: clamp(2rem, 4vw, 3.5rem);
+  color: white;
+  text-align: center;
+  z-index: 1;
+  text-transform: uppercase;
+  letter-spacing: 2px;
+  text-shadow: 0 4px 20px rgba(0, 0, 0, 0.8);
 }
 
 /* Services Section */

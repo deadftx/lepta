@@ -24,7 +24,7 @@ const Footer = () => {
       </div>
       
       <div className="footer-bottom">
-        <p>&copy; {new Date().getFullYear()} Lepta Capital. Todos os direitos reservados.</p>
+        <p>&copy; 2021 Lepta Capital. Todos os direitos reservados.</p>
       </div>
     </footer>
   );
