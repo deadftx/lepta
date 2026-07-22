@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Lock, Mail, ArrowRight, AlertCircle } from 'lucide-react';
+import { Lock, User, ArrowRight, AlertCircle } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import './Login.css';
 
@@ -8,20 +8,23 @@ const Login = () => {
   const navigate = useNavigate();
   const { login } = useAuth();
   
-  const [email, setEmail] = useState('');
+  const [loginId, setLoginId] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
 
-  const handleLogin = (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+    setLoading(true);
     
-    const success = login(email, password);
+    const success = await login(loginId, password);
     
+    setLoading(false);
     if (success) {
       navigate('/dashboard');
     } else {
-      setError('E-mail ou senha incorretos.');
+      setError('Credenciais incorretas.');
     }
   };
 
@@ -42,13 +45,13 @@ const Login = () => {
         
         <form onSubmit={handleLogin} className="login-form">
           <div className="input-group">
-            <Mail className="input-icon" size={18} />
+            <User className="input-icon" size={18} />
             <input 
-              type="email" 
-              placeholder="E-mail Corporativo" 
+              type="text" 
+              placeholder="E-mail ou Usuário" 
               className="input-field with-icon" 
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
+              value={loginId}
+              onChange={(e) => setLoginId(e.target.value)}
               required 
             />
           </div>
@@ -72,8 +75,8 @@ const Login = () => {
             <a href="#" className="forgot-password">Esqueci minha senha</a>
           </div>
           
-          <button type="submit" className="btn-primary login-submit">
-            Entrar <ArrowRight size={18} />
+          <button type="submit" className="btn-primary login-submit" disabled={loading}>
+            {loading ? 'Entrando...' : <>Entrar <ArrowRight size={18} /></>}
           </button>
         </form>
       </div>

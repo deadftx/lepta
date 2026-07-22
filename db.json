@@ -1,0 +1,290 @@
+{
+  "areas": [
+    {
+      "id": "1",
+      "name": "Créditos"
+    },
+    {
+      "id": "2",
+      "name": "Análise de Riscos"
+    },
+    {
+      "id": "3",
+      "name": "Comitê de Crédito"
+    },
+    {
+      "id": "4",
+      "name": "Business Intelligence"
+    }
+  ],
+  "groups": [],
+  "users": [
+    {
+      "id": "master",
+      "username": "leptamaster",
+      "password": "L3pt4m4st3r",
+      "role": "MASTER",
+      "permissions": [
+        "1",
+        "2",
+        "3",
+        "4"
+      ]
+    },
+    {
+      "id": "user1",
+      "username": "teste1",
+      "email": "teste1@lepta.com.br",
+      "password": "teste1",
+      "role": "USER",
+      "permissions": [
+        "1",
+        "2"
+      ]
+    },
+    {
+      "id": "user2",
+      "username": "teste2",
+      "email": "teste2@lepta.com.br",
+      "password": "teste2",
+      "role": "USER",
+      "permissions": []
+    },
+    {
+      "id": "user3",
+      "username": "teste3",
+      "email": "teste3@lepta.com.br",
+      "password": "teste3",
+      "role": "USER",
+      "permissions": []
+    },
+    {
+      "id": "user4",
+      "username": "teste4",
+      "email": "teste4@lepta.com.br",
+      "password": "teste4",
+      "role": "USER",
+      "permissions": []
+    },
+    {
+      "id": "user5",
+      "username": "teste5",
+      "email": "teste5@lepta.com.br",
+      "password": "teste5",
+      "role": "USER",
+      "permissions": []
+    },
+    {
+      "id": "user6",
+      "username": "teste6",
+      "email": "teste6@lepta.com.br",
+      "password": "teste6",
+      "role": "USER",
+      "permissions": []
+    },
+    {
+      "id": "user7",
+      "username": "teste7",
+      "email": "teste7@lepta.com.br",
+      "password": "teste7",
+      "role": "USER",
+      "permissions": []
+    },
+    {
+      "id": "user8",
+      "username": "teste8",
+      "email": "teste8@lepta.com.br",
+      "password": "teste8",
+      "role": "USER",
+      "permissions": []
+    },
+    {
+      "id": "user9",
+      "username": "teste9",
+      "email": "teste9@lepta.com.br",
+      "password": "teste9",
+      "role": "USER",
+      "permissions": []
+    },
+    {
+      "id": "user10",
+      "username": "teste10",
+      "email": "teste10@lepta.com.br",
+      "password": "teste10",
+      "role": "USER",
+      "permissions": []
+    }
+  ],
+  "credits": [
+    {
+      "id": "1",
+      "companyName": "TechCorp SA",
+      "cnpj": "12.345.678/0001-90",
+      "requestedValue": 1500000,
+      "approvedValue": 1200000,
+      "status": "Aprovado",
+      "requestDate": "2026-06-15",
+      "type": "Capital de Giro",
+      "interestRate": 1.2,
+      "termMonths": 36
+    },
+    {
+      "id": "2",
+      "companyName": "AgroSul Fazendas",
+      "cnpj": "98.765.432/0001-10",
+      "requestedValue": 3500000,
+      "approvedValue": 0,
+      "status": "Em Análise",
+      "requestDate": "2026-07-10",
+      "type": "Investimento",
+      "interestRate": 1.5,
+      "termMonths": 60
+    },
+    {
+      "id": "3",
+      "companyName": "Varejo Rápido LTDA",
+      "cnpj": "45.123.890/0001-55",
+      "requestedValue": 500000,
+      "approvedValue": 0,
+      "status": "Recusado",
+      "requestDate": "2026-07-02",
+      "type": "Antecipação de Recebíveis",
+      "interestRate": 2.1,
+      "termMonths": 12
+    },
+    {
+      "id": "4",
+      "companyName": "Indústria Alfa",
+      "cnpj": "33.444.555/0001-77",
+      "requestedValue": 8000000,
+      "approvedValue": 8000000,
+      "status": "Aprovado",
+      "requestDate": "2026-05-20",
+      "type": "Expansão Fabril",
+      "interestRate": 0.9,
+      "termMonths": 120
+    },
+    {
+      "id": "5",
+      "companyName": "Construtora Moderna",
+      "cnpj": "11.222.333/0001-44",
+      "requestedValue": 2500000,
+      "approvedValue": 0,
+      "status": "Em Análise",
+      "requestDate": "2026-07-18",
+      "type": "Financiamento Imobiliário",
+      "interestRate": 1.1,
+      "termMonths": 48
+    }
+  ],
+  "risks": [
+    {
+      "id": "1",
+      "creditId": "1",
+      "companyName": "TechCorp SA",
+      "score": 850,
+      "rating": "AA",
+      "defaultProbability": 1.2,
+      "mainRisks": [
+        "Dependência de fornecedor único",
+        "Alta rotatividade de TI"
+      ],
+      "observations": "Empresa sólida, caixa saudável. Risco aceitável."
+    },
+    {
+      "id": "2",
+      "creditId": "2",
+      "companyName": "AgroSul Fazendas",
+      "score": 620,
+      "rating": "BBB",
+      "defaultProbability": 4.5,
+      "mainRisks": [
+        "Risco climático",
+        "Volatilidade das commodities"
+      ],
+      "observations": "Histórico de renegociação no passado. Garantias são boas, mas exige monitoramento de perto."
+    },
+    {
+      "id": "3",
+      "creditId": "3",
+      "companyName": "Varejo Rápido LTDA",
+      "score": 350,
+      "rating": "C",
+      "defaultProbability": 15.8,
+      "mainRisks": [
+        "Endividamento alto",
+        "Margens espremidas"
+      ],
+      "observations": "Risco excessivo de inadimplência. Recomendação de declínio."
+    },
+    {
+      "id": "4",
+      "creditId": "4",
+      "companyName": "Indústria Alfa",
+      "score": 920,
+      "rating": "AAA",
+      "defaultProbability": 0.3,
+      "mainRisks": [
+        "Alterações tributárias"
+      ],
+      "observations": "Excelente histórico, garantias superiores a 150% do valor da dívida."
+    },
+    {
+      "id": "5",
+      "creditId": "5",
+      "companyName": "Construtora Moderna",
+      "score": 710,
+      "rating": "A",
+      "defaultProbability": 2.8,
+      "mainRisks": [
+        "Atraso em cronograma de obras",
+        "Aumento no preço dos materiais"
+      ],
+      "observations": "Carteira de recebíveis é robusta. Operação estruturada recomendada."
+    }
+  ],
+  "committees": [
+    {
+      "id": "1",
+      "companyName": "Comércio Silva",
+      "cnpj": "55.666.777/0001-88",
+      "requestedValue": 1000000,
+      "proponentSector": "Comercial - Região Sul",
+      "analysisDate": "2026-07-21",
+      "status": "Aprovado",
+      "votes": {
+        "approved": 4,
+        "rejected": 1
+      },
+      "notes": "Comitê aprovou com a condição de alienação fiduciária de 2 imóveis comerciais."
+    },
+    {
+      "id": "2",
+      "companyName": "Logística Beta",
+      "cnpj": "22.111.000/0001-22",
+      "requestedValue": 4500000,
+      "proponentSector": "Grandes Contas",
+      "analysisDate": "2026-07-15",
+      "status": "Reprovado",
+      "votes": {
+        "approved": 1,
+        "rejected": 4
+      },
+      "notes": "Nível de alavancagem acima do teto permitido pelas políticas de crédito do ano."
+    },
+    {
+      "id": "3",
+      "companyName": "Serviços Omega",
+      "cnpj": "77.888.999/0001-33",
+      "requestedValue": 750000,
+      "proponentSector": "Middle Market",
+      "analysisDate": "2026-07-25",
+      "status": "Agendado",
+      "votes": {
+        "approved": 0,
+        "rejected": 0
+      },
+      "notes": "Aguardando documentação complementar de balanço patrimonial para iniciar votação."
+    }
+  ]
+}

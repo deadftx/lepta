@@ -1,36 +1,71 @@
-import React, { createContext, useContext, useState, ReactNode } from 'react';
+import React, { createContext, useContext, useState, ReactNode, useEffect } from 'react';
+
+export interface User {
+  id: string;
+  username: string;
+  email?: string;
+  role: 'MASTER' | 'USER';
+  groupId?: string;
+  permissions: string[];
+}
 
 interface AuthContextType {
   isAuthenticated: boolean;
-  login: (email: string, pass: string) => boolean;
+  user: User | null;
+  login: (loginId: string, pass: string) => Promise<boolean>;
   logout: () => void;
-  userEmail: string | null;
+  isLoading: boolean;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
-  const [userEmail, setUserEmail] = useState<string | null>(null);
+  const [user, setUser] = useState<User | null>(null);
+  const [isLoading, setIsLoading] = useState<boolean>(true);
 
-  const login = (email: string, pass: string) => {
-    // Mock database check
-    if (email === 'diretoria@lepta.com.br' && pass === 'DiretoriaLepta1!') {
+  useEffect(() => {
+    const storedUser = localStorage.getItem('lepta_user');
+    if (storedUser) {
+      setUser(JSON.parse(storedUser));
       setIsAuthenticated(true);
-      setUserEmail(email);
-      return true;
     }
-    return false;
+    setIsLoading(false);
+  }, []);
+
+  const login = async (loginId: string, pass: string): Promise<boolean> => {
+    try {
+      const res = await fetch('http://localhost:3004/users');
+      const users: User[] = await res.json();
+
+      const foundUser = users.find(
+        (u: any) => 
+          (u.username === loginId || u.email === loginId) && 
+          u.password === pass
+      );
+
+      if (foundUser) {
+        setIsAuthenticated(true);
+        setUser(foundUser);
+        localStorage.setItem('lepta_user', JSON.stringify(foundUser));
+        return true;
+      }
+      return false;
+    } catch (error) {
+      console.error("Erro ao conectar no banco de dados:", error);
+      return false;
+    }
   };
 
   const logout = () => {
     setIsAuthenticated(false);
-    setUserEmail(null);
+    setUser(null);
+    localStorage.removeItem('lepta_user');
   };
 
   return (
-    <AuthContext.Provider value={{ isAuthenticated, login, logout, userEmail }}>
-      {children}
+    <AuthContext.Provider value={{ isAuthenticated, user, login, logout, isLoading }}>
+      {!isLoading && children}
     </AuthContext.Provider>
   );
 };
