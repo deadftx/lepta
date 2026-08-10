@@ -55,7 +55,10 @@ const parsePowerBiUrl = (rawUrl: string): string => {
     cleanUrl = iframeSrcMatch[1];
   }
 
-  if (cleanUrl.includes('reportEmbed') || cleanUrl.includes('embed')) {
+  if (cleanUrl.includes('reportEmbed')) {
+    if (!cleanUrl.includes('autoAuth')) {
+      cleanUrl += (cleanUrl.includes('?') ? '&' : '?') + 'autoAuth=true';
+    }
     return cleanUrl;
   }
 
@@ -64,7 +67,7 @@ const parsePowerBiUrl = (rawUrl: string): string => {
   if (groupsMatch) {
     const groupId = groupsMatch[1];
     const reportId = groupsMatch[2];
-    return `https://app.powerbi.com/reportEmbed?reportId=${reportId}&groupId=${groupId}`;
+    return `https://app.powerbi.com/reportEmbed?reportId=${reportId}&groupId=${groupId}&autoAuth=true`;
   }
 
   return cleanUrl;

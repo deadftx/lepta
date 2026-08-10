@@ -67,6 +67,33 @@ const DashboardsView = () => {
     }
   };
 
+  const getEffectiveEmbedUrl = (dash: Dashboard) => {
+    let url = dash.embedUrl || dash.url;
+    if (!url) return '';
+
+    // If iframe HTML snippet:
+    const iframeSrcMatch = url.match(/src=["']([^"']+)["']/i);
+    if (iframeSrcMatch && iframeSrcMatch[1]) {
+      url = iframeSrcMatch[1];
+    }
+
+    if (url.includes('reportEmbed')) {
+      if (!url.includes('autoAuth')) {
+        url += (url.includes('?') ? '&' : '?') + 'autoAuth=true';
+      }
+      return url;
+    }
+
+    const groupsMatch = url.match(/\/groups\/([^\/]+)\/reports\/([^\/]+)/i);
+    if (groupsMatch) {
+      const groupId = groupsMatch[1];
+      const reportId = groupsMatch[2];
+      return `https://app.powerbi.com/reportEmbed?reportId=${reportId}&groupId=${groupId}&autoAuth=true`;
+    }
+
+    return url;
+  };
+
   return (
     <div className="operations-page">
       <div className="page-header">
@@ -141,20 +168,29 @@ const DashboardsView = () => {
 
       {/* Main Content Area */}
       {selectedDashboardId && currentDashboard ? (
-        <div className="internal-card glass" style={{ padding: '8px', minHeight: '700px' }}>
-          <iframe
-            id="viewer-powerbi-frame"
-            title={currentDashboard.title}
-            src={currentDashboard.embedUrl}
-            style={{
-              width: '100%',
-              height: '730px',
-              border: 'none',
-              borderRadius: '8px',
-              background: '#fff'
-            }}
-            allowFullScreen
-          />
+        <div>
+          <div style={{ padding: '10px 16px', background: 'rgba(255, 153, 0, 0.1)', border: '1px solid rgba(255, 153, 0, 0.25)', borderRadius: '8px', marginBottom: '12px', fontSize: '0.85rem', color: '#ffaa33', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '1rem', flexWrap: 'wrap' }}>
+            <span>💡 <strong>Dica Power BI:</strong> Caso a tela continue no carregamento do logotipo do Power BI, sua organização exige sessão ativa na conta Microsoft.</span>
+            <a href={currentDashboard.url} target="_blank" rel="noreferrer" style={{ color: '#fff', background: 'rgba(255,255,255,0.15)', padding: '4px 12px', borderRadius: '4px', textDecoration: 'none', fontWeight: 600, fontSize: '0.8rem' }}>
+              Entrar na Conta Microsoft / Power BI ↗
+            </a>
+          </div>
+
+          <div className="internal-card glass" style={{ padding: '8px', minHeight: '700px' }}>
+            <iframe
+              id="viewer-powerbi-frame"
+              title={currentDashboard.title}
+              src={getEffectiveEmbedUrl(currentDashboard)}
+              style={{
+                width: '100%',
+                height: '730px',
+                border: 'none',
+                borderRadius: '8px',
+                background: '#fff'
+              }}
+              allowFullScreen
+            />
+          </div>
         </div>
       ) : (
         <div className="internal-card glass" style={{ padding: '4rem 2rem', textAlign: 'center' }}>

@@ -307,7 +307,7 @@
       "id": "dash_1",
       "title": "Relatório Geral de Vendas & Operações",
       "url": "https://app.powerbi.com/groups/63c5ba06-fe79-4643-828f-39699b99f4f7/reports/253b18e5-6a63-4433-a08c-f81a9c0926b0/3583217ea26cee6899fd?experience=power-bi",
-      "embedUrl": "https://app.powerbi.com/reportEmbed?reportId=253b18e5-6a63-4433-a08c-f81a9c0926b0&groupId=63c5ba06-fe79-4643-828f-39699b99f4f7",
+      "embedUrl": "https://app.powerbi.com/reportEmbed?reportId=253b18e5-6a63-4433-a08c-f81a9c0926b0&groupId=63c5ba06-fe79-4643-828f-39699b99f4f7&autoAuth=true",
       "description": "Dashboard demonstrativo integrado com o Power BI",
       "accessType": "USERS",
       "allowedGroups": [],
