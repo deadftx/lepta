@@ -318,6 +318,18 @@
       ],
       "createdBy": "leptamaster",
       "createdAt": "2026-08-10T16:20:00.000Z"
+    },
+    {
+      "id": "dash_1786391761891",
+      "title": "Dashboard de Cobrança",
+      "url": "https://app.powerbi.com/groups/63c5ba06-fe79-4643-828f-39699b99f4f7/reports/cedb1d65-043a-4ece-bd8f-e7b6fc313485/7de4b9a7aca8687478d9?experience=power-bi",
+      "embedUrl": "https://app.powerbi.com/reportEmbed?reportId=cedb1d65-043a-4ece-bd8f-e7b6fc313485&groupId=63c5ba06-fe79-4643-828f-39699b99f4f7&autoAuth=true",
+      "description": "",
+      "accessType": "ALL",
+      "allowedGroups": [],
+      "allowedUsers": [],
+      "createdBy": "luan.alvarez",
+      "createdAt": "2026-08-10T19:56:01.891Z"
     }
   ]
 }
