@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { LogOut, User, MessageSquare, Bell, ShieldAlert, DollarSign, Shield, Scale, PieChart, UserPlus, Users, ChevronDown, ChevronRight } from 'lucide-react';
+import { LogOut, User, MessageSquare, Bell, ShieldAlert, DollarSign, Shield, Scale, UserPlus, Users, ChevronDown, ChevronRight, LayoutDashboard, Sliders } from 'lucide-react';
 import { useNavigate, Outlet, Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import '../pages/internal/Dashboard.css';
@@ -64,9 +64,14 @@ const InternalLayout = () => {
               <Scale size={20} /> Comitê de Crédito
             </Link>
           )}
-          {hasAccess('4') && (
+          {(hasAccess('5') || user?.role === 'MASTER') && (
+            <Link to="/dashboards" className={navItemClass('/dashboards')}>
+              <LayoutDashboard size={20} /> Dashboards
+            </Link>
+          )}
+          {(hasAccess('4') || user?.role === 'MASTER') && (
             <Link to="/bi" className={navItemClass('/bi')}>
-              <PieChart size={20} /> Business Intelligence
+              <Sliders size={20} /> Business Intelligence
             </Link>
           )}
 

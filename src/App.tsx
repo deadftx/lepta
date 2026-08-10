@@ -10,6 +10,7 @@ import Credits from './pages/internal/Credits';
 import Risks from './pages/internal/Risks';
 import Committee from './pages/internal/Committee';
 import BI from './pages/internal/BI';
+import DashboardsView from './pages/internal/DashboardsView';
 import CreateUser from './pages/internal/CreateUser';
 import ProtectedRoute from './components/ProtectedRoute';
 import InternalLayout from './components/InternalLayout';
@@ -46,6 +47,7 @@ function App() {
               <Route path="/creditos" element={<Credits />} />
               <Route path="/riscos" element={<Risks />} />
               <Route path="/comite" element={<Committee />} />
+              <Route path="/dashboards" element={<DashboardsView />} />
               <Route path="/bi" element={<BI />} />
               <Route path="/permissions" element={<Permissions />} />
               <Route path="/permissions/create-user" element={<CreateUser />} />
