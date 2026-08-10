@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { LogOut, User, MessageSquare, Bell, ShieldAlert, DollarSign, Shield, Scale, UserPlus, Users, ChevronDown, ChevronRight, LayoutDashboard, Sliders } from 'lucide-react';
+import { LogOut, User, Bell, ShieldAlert, DollarSign, Shield, Scale, UserPlus, Users, ChevronDown, ChevronRight, LayoutDashboard, Sliders, Home, Megaphone } from 'lucide-react';
 import { useNavigate, Outlet, Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import '../pages/internal/Dashboard.css';
@@ -45,10 +45,10 @@ const InternalLayout = () => {
         <nav className="internal-nav">
           <p className="nav-group-title">INTRANET</p>
           <Link to="/dashboard" className={navItemClass('/dashboard')}>
-            <MessageSquare size={20} /> Dashboard
+            <Home size={20} /> Home
           </Link>
           
-          <p className="nav-group-title">OPERAÇÕES</p>
+          <p className="nav-group-title">GRUPOS</p>
           {hasAccess('1') && (
             <Link to="/creditos" className={navItemClass('/creditos')}>
               <DollarSign size={20} /> Créditos
@@ -62,6 +62,11 @@ const InternalLayout = () => {
           {hasAccess('3') && (
             <Link to="/comite" className={navItemClass('/comite')}>
               <Scale size={20} /> Comitê de Crédito
+            </Link>
+          )}
+          {hasAccess('6') && (
+            <Link to="/marketing" className={navItemClass('/marketing')}>
+              <Megaphone size={20} /> Marketing
             </Link>
           )}
           {(hasAccess('5') || user?.role === 'MASTER') && (
