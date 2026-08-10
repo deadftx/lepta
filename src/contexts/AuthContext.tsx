@@ -1,4 +1,5 @@
 import { createContext, useContext, useState, type ReactNode, useEffect } from 'react';
+import { API_BASE_URL } from '../config/api';
 
 export interface User {
   id: string;
@@ -35,7 +36,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
   const login = async (loginId: string, pass: string): Promise<boolean> => {
     try {
-      const res = await fetch('http://localhost:3004/users');
+      const res = await fetch(`${API_BASE_URL}/users`);
       const users: User[] = await res.json();
 
       const foundUser = users.find(

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import type { User } from '../../contexts/AuthContext';
 import { Edit, Save, X, Users, UserPlus } from 'lucide-react';
 import { Link } from 'react-router-dom';
+import { API_BASE_URL } from '../../config/api';
 import './Permissions.css';
 
 interface Area {
@@ -20,8 +21,8 @@ const Permissions = () => {
     try {
       setLoading(true);
       const [usersRes, areasRes] = await Promise.all([
-        fetch('http://localhost:3004/users'),
-        fetch('http://localhost:3004/areas')
+        fetch(`${API_BASE_URL}/users`),
+        fetch(`${API_BASE_URL}/areas`)
       ]);
       const usersData = await usersRes.json();
       const areasData = await areasRes.json();
@@ -56,7 +57,7 @@ const Permissions = () => {
     
     try {
       const updatedUser = { ...editingUser, permissions: selectedPermissions };
-      await fetch(`http://localhost:3004/users/${editingUser.id}`, {
+      await fetch(`${API_BASE_URL}/users/${editingUser.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(updatedUser)

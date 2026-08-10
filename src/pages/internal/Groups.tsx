@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Edit, Save, Plus, X, ArrowLeft } from 'lucide-react';
 import { Link } from 'react-router-dom';
+import { API_BASE_URL } from '../../config/api';
 import './Permissions.css';
 
 interface Area {
@@ -28,8 +29,8 @@ const Groups = () => {
     try {
       setLoading(true);
       const [groupsRes, areasRes] = await Promise.all([
-        fetch('http://localhost:3004/groups'),
-        fetch('http://localhost:3004/areas')
+        fetch(`${API_BASE_URL}/groups`),
+        fetch(`${API_BASE_URL}/areas`)
       ]);
       const groupsData = await groupsRes.json();
       const areasData = await areasRes.json();
@@ -73,7 +74,7 @@ const Groups = () => {
       if (editingGroup) {
         // Edit existing
         const updatedGroup = { ...editingGroup, name: groupName, permissions: selectedPermissions };
-        await fetch(`http://localhost:3004/groups/${editingGroup.id}`, {
+        await fetch(`${API_BASE_URL}/groups/${editingGroup.id}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(updatedGroup)
@@ -86,7 +87,7 @@ const Groups = () => {
           name: groupName,
           permissions: selectedPermissions
         };
-        await fetch(`http://localhost:3004/groups`, {
+        await fetch(`${API_BASE_URL}/groups`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(newGroup)

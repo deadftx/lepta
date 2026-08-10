@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Lock, User, ArrowRight, AlertCircle, CheckCircle2, KeyRound, Mail, ArrowLeft } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
+import { API_BASE_URL } from '../config/api';
 import './Login.css';
 
 const Login = () => {
@@ -53,7 +54,7 @@ const Login = () => {
 
     try {
       setFirstAccessLoading(true);
-      const res = await fetch('http://localhost:3004/users');
+      const res = await fetch(`${API_BASE_URL}/users`);
       const users = await res.json();
 
       let target = users.find(
@@ -72,7 +73,7 @@ const Login = () => {
           permissions: ['1']
         };
 
-        const createRes = await fetch('http://localhost:3004/users', {
+        const createRes = await fetch(`${API_BASE_URL}/users`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(newUser)
@@ -120,7 +121,7 @@ const Login = () => {
         password: newPassword
       };
 
-      const res = await fetch(`http://localhost:3004/users/${firstAccessUser.id}`, {
+      const res = await fetch(`${API_BASE_URL}/users/${firstAccessUser.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(updatedUser)

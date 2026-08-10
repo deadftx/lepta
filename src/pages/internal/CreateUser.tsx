@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { UserPlus, Save, ArrowLeft, CheckCircle2, AlertCircle, Mail, User } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
+import { API_BASE_URL } from '../../config/api';
 import './Permissions.css';
 
 interface Area {
@@ -25,7 +26,7 @@ const CreateUser = () => {
     const fetchAreas = async () => {
       try {
         setLoadingAreas(true);
-        const res = await fetch('http://localhost:3004/areas');
+        const res = await fetch(`${API_BASE_URL}/areas`);
         const data = await res.json();
         setAreas(data);
       } catch (err) {
@@ -82,7 +83,7 @@ const CreateUser = () => {
       setSubmitting(true);
 
       // Check existing users in database
-      const usersRes = await fetch('http://localhost:3004/users');
+      const usersRes = await fetch(`${API_BASE_URL}/users`);
       const existingUsers = await usersRes.json();
 
       const emailExists = existingUsers.some(
@@ -103,7 +104,7 @@ const CreateUser = () => {
         permissions: role === 'MASTER' ? areas.map(a => a.id) : selectedPermissions
       };
 
-      const saveRes = await fetch('http://localhost:3004/users', {
+      const saveRes = await fetch(`${API_BASE_URL}/users`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(newUser)
