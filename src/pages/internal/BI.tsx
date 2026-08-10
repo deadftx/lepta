@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from 'react';
-import { PieChart as RechartsPieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, LineChart, Line } from 'recharts';
+import { useEffect, useState } from 'react';
+import { PieChart as RechartsPieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { PieChart, TrendingUp, Activity } from 'lucide-react';
 import './Operations.css';
 
@@ -96,7 +96,7 @@ const BI = () => {
                     dataKey="value"
                     label
                   >
-                    {creditData.map((entry, index) => (
+                    {creditData.map((_, index) => (
                       <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                     ))}
                   </Pie>

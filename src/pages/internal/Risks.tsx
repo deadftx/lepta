@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from 'react';
-import { Shield, AlertTriangle, TrendingDown, CheckCircle, Search } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { Shield, AlertTriangle, CheckCircle, Search } from 'lucide-react';
 import './Operations.css';
 
 interface Risk {

@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from 'react';
-import { Scale, Users, ThumbsUp, ThumbsDown, MessageSquare } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { Scale, ThumbsUp, ThumbsDown, MessageSquare } from 'lucide-react';
 import './Operations.css';
 
 interface CommitteeDecision {

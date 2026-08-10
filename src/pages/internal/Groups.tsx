@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from 'react';
-import { ShieldAlert, Edit, Save, Plus, X, ArrowLeft } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { Edit, Save, Plus, X, ArrowLeft } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import './Permissions.css';
 

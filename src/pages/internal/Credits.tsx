@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { DollarSign, CheckCircle, XCircle, Clock, Plus } from 'lucide-react';
 import './Operations.css';
 

@@ -1,5 +1,5 @@
-import React from 'react';
-import { LogOut, User, MessageSquare, Bell, ShieldAlert, DollarSign, Shield, Scale, PieChart } from 'lucide-react';
+import { useState } from 'react';
+import { LogOut, User, MessageSquare, Bell, ShieldAlert, DollarSign, Shield, Scale, PieChart, UserPlus, Users, ChevronDown, ChevronRight } from 'lucide-react';
 import { useNavigate, Outlet, Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import '../pages/internal/Dashboard.css';
@@ -8,6 +8,9 @@ const InternalLayout = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const { logout, user } = useAuth();
+
+  const isPermissionsActive = location.pathname.startsWith('/permissions');
+  const [isPermissionsOpen, setIsPermissionsOpen] = useState(true);
 
   const handleLogout = () => {
     logout();
@@ -70,9 +73,32 @@ const InternalLayout = () => {
           {user?.role === 'MASTER' && (
             <>
               <p className="nav-group-title">ADMINISTRAÇÃO</p>
-              <Link to="/permissions" className={navItemClass('/permissions')}>
-                <ShieldAlert size={20} /> Permissões e Acessos
-              </Link>
+              <div className="nav-menu-group">
+                <div 
+                  className={`nav-item nav-item-parent ${isPermissionsActive ? 'active' : ''}`}
+                  onClick={() => setIsPermissionsOpen(!isPermissionsOpen)}
+                  style={{ cursor: 'pointer', justifyContent: 'space-between' }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                    <ShieldAlert size={20} /> Permissões e Acessos
+                  </div>
+                  {isPermissionsOpen ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+                </div>
+
+                {isPermissionsOpen && (
+                  <div className="nav-submenu" style={{ paddingLeft: '1rem' }}>
+                    <Link to="/permissions" className={navItemClass('/permissions')}>
+                      <Shield size={18} /> Gestão de Permissões
+                    </Link>
+                    <Link to="/permissions/create-user" className={navItemClass('/permissions/create-user')}>
+                      <UserPlus size={18} /> Criar Usuário
+                    </Link>
+                    <Link to="/permissions/groups" className={navItemClass('/permissions/groups')}>
+                      <Users size={18} /> Configurar Grupos
+                    </Link>
+                  </div>
+                )}
+              </div>
             </>
           )}
         </nav>

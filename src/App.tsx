@@ -10,6 +10,7 @@ import Credits from './pages/internal/Credits';
 import Risks from './pages/internal/Risks';
 import Committee from './pages/internal/Committee';
 import BI from './pages/internal/BI';
+import CreateUser from './pages/internal/CreateUser';
 import ProtectedRoute from './components/ProtectedRoute';
 import InternalLayout from './components/InternalLayout';
 import { AuthProvider } from './contexts/AuthContext';
@@ -47,6 +48,7 @@ function App() {
               <Route path="/comite" element={<Committee />} />
               <Route path="/bi" element={<BI />} />
               <Route path="/permissions" element={<Permissions />} />
+              <Route path="/permissions/create-user" element={<CreateUser />} />
               <Route path="/permissions/groups" element={<Groups />} />
             </Route>
           </Route>

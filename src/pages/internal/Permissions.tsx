@@ -1,6 +1,6 @@
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { User } from '../../contexts/AuthContext';
-import { ShieldAlert, Edit, Save, X, Users } from 'lucide-react';
+import { Edit, Save, X, Users, UserPlus } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import './Permissions.css';
 
@@ -72,11 +72,16 @@ const Permissions = () => {
   return (
     <div className="permissions-page">
       <div className="internal-card glass">
-        <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
           <h3>Gestão de Permissões</h3>
-          <Link to="/permissions/groups" className="btn-primary" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', textDecoration: 'none' }}>
-            <Users size={18} /> Configurar Grupos
-          </Link>
+          <div style={{ display: 'flex', gap: '0.75rem' }}>
+            <Link to="/permissions/create-user" className="btn-primary" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', textDecoration: 'none' }}>
+              <UserPlus size={18} /> Criar Usuário
+            </Link>
+            <Link to="/permissions/groups" className="btn-outline" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', textDecoration: 'none' }}>
+              <Users size={18} /> Configurar Grupos
+            </Link>
+          </div>
         </div>
 
         {loading ? (
