@@ -113,6 +113,16 @@
       "password": "teste10",
       "role": "USER",
       "permissions": []
+    },
+    {
+      "id": "user_1786388412403",
+      "username": "luan.alvarez",
+      "email": "luan.alvarez@lepta.com.br",
+      "password": "",
+      "role": "USER",
+      "permissions": [
+        "4"
+      ]
     }
   ],
   "credits": [
