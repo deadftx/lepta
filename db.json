@@ -126,7 +126,8 @@
       "password": "Teste123",
       "role": "USER",
       "permissions": [
-        "4"
+        "4",
+        "5"
       ]
     }
   ],

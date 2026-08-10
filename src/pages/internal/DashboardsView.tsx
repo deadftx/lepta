@@ -6,7 +6,8 @@ import {
   Maximize2,
   ExternalLink,
   ChevronDown,
-  LayoutDashboard
+  LayoutDashboard,
+  LogIn
 } from 'lucide-react';
 import './Operations.css';
 
@@ -65,6 +66,19 @@ const DashboardsView = () => {
     if (iframeElem && iframeElem.requestFullscreen) {
       iframeElem.requestFullscreen();
     }
+  };
+
+  const handlePowerBiLogin = () => {
+    const loginUrl = 'https://app.powerbi.com/singleSignOn?experience=power-bi';
+    const width = 640;
+    const height = 720;
+    const left = window.screen.width / 2 - width / 2;
+    const top = window.screen.height / 2 - height / 2;
+    window.open(
+      loginUrl,
+      'PowerBiLoginWindow',
+      `width=${width},height=${height},top=${top},left=${left},scrollbars=yes,status=yes`
+    );
   };
 
   const getEffectiveEmbedUrl = (dash: Dashboard) => {
@@ -134,29 +148,54 @@ const DashboardsView = () => {
             </div>
           </div>
 
-          {currentDashboard && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-              <button
-                className="btn-icon"
-                onClick={handleFullscreen}
-                title="Modo Tela Cheia"
-                style={{ padding: '0.6rem 1rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}
-              >
-                <Maximize2 size={16} /> Tela Cheia
-              </button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+            <button
+              type="button"
+              onClick={handlePowerBiLogin}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '0.5rem',
+                background: 'linear-gradient(135deg, #f2c811 0%, #e2a200 100%)',
+                color: '#000',
+                fontWeight: 600,
+                padding: '0.6rem 1.1rem',
+                borderRadius: '8px',
+                border: 'none',
+                cursor: 'pointer',
+                fontSize: '0.9rem',
+                boxShadow: '0 2px 8px rgba(242, 200, 17, 0.25)',
+                transition: 'transform 0.2s, opacity 0.2s'
+              }}
+              title="Fazer login na sua conta do Power BI / Microsoft 365 para manter todos os relatórios autorizados"
+            >
+              <LogIn size={18} /> Login Power BI
+            </button>
 
-              <a
-                href={currentDashboard.url}
-                target="_blank"
-                rel="noreferrer"
-                className="btn-icon"
-                title="Abrir no Power BI"
-                style={{ padding: '0.6rem 1rem', display: 'flex', alignItems: 'center', gap: '0.4rem', textDecoration: 'none' }}
-              >
-                <ExternalLink size={16} /> Power BI
-              </a>
-            </div>
-          )}
+            {currentDashboard && (
+              <>
+                <button
+                  className="btn-icon"
+                  onClick={handleFullscreen}
+                  title="Modo Tela Cheia"
+                  style={{ padding: '0.6rem 1rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}
+                >
+                  <Maximize2 size={16} /> Tela Cheia
+                </button>
+
+                <a
+                  href={currentDashboard.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="btn-icon"
+                  title="Abrir no Power BI"
+                  style={{ padding: '0.6rem 1rem', display: 'flex', alignItems: 'center', gap: '0.4rem', textDecoration: 'none' }}
+                >
+                  <ExternalLink size={16} /> Power BI
+                </a>
+              </>
+            )}
+          </div>
         </div>
 
         {currentDashboard?.description && (
