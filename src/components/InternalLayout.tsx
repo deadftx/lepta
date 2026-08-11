@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { LogOut, User, Bell, ShieldAlert, DollarSign, Shield, Scale, UserPlus, Users, ChevronDown, ChevronRight, LayoutDashboard, Sliders, Home, Calendar, Menu, X } from 'lucide-react';
+import { LogOut, User, Bell, ShieldAlert, DollarSign, Shield, Scale, UserPlus, Users, ChevronDown, ChevronRight, LayoutDashboard, Sliders, Home, Calendar, Menu, X, Wallet } from 'lucide-react';
 import { useNavigate, Outlet, Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import '../pages/internal/Dashboard.css';
@@ -98,6 +98,11 @@ const InternalLayout = () => {
           {hasAccess('6') && (
             <Link to="/marketing" className={navItemClass('/marketing')}>
               <Calendar size={20} /> Calendário
+            </Link>
+          )}
+          {hasAccess('7') && (
+            <Link to="/financeiro" className={navItemClass('/financeiro')}>
+              <Wallet size={20} /> Financeiro
             </Link>
           )}
           {(hasAccess('5') || user?.role === 'MASTER') && (

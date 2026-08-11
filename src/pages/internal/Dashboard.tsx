@@ -26,6 +26,9 @@ const Dashboard = () => {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [selectedDayEvents, setSelectedDayEvents] = useState<CalendarEvent[] | null>(null);
 
+  // Modal State
+  const [showTiFluxModal, setShowTiFluxModal] = useState(false);
+
   useEffect(() => {
     const fetchEvents = async () => {
       try {
@@ -90,10 +93,6 @@ const Dashboard = () => {
 
   return (
     <>
-      <div className="welcome-banner glass">
-        <h2>Bem-vindo à Intranet <span className="text-gradient">Lepta</span></h2>
-        <p>Seu portal central para comunicações internas, relatórios corporativos e ferramentas administrativas.</p>
-      </div>
 
       <div className="dashboard-grid">
         {/* Card do Calendário Interno (no lugar de comunicados) */}
@@ -155,8 +154,8 @@ const Dashboard = () => {
                       background: isToday
                         ? 'var(--accent-red)'
                         : hasEvents
-                        ? 'rgba(255, 153, 0, 0.2)'
-                        : 'rgba(255, 255, 255, 0.03)',
+                          ? 'rgba(255, 153, 0, 0.2)'
+                          : 'rgba(255, 255, 255, 0.03)',
                       color: isToday ? '#fff' : hasEvents ? '#ffaa33' : 'var(--text-light)',
                       border: hasEvents ? '1px solid rgba(255, 153, 0, 0.4)' : '1px solid transparent',
                       cursor: hasEvents ? 'pointer' : 'default',
@@ -201,20 +200,54 @@ const Dashboard = () => {
               <FileText size={24} />
               <span>Holerite</span>
             </a>
-            <a href="#" className="quick-link">
+            <a href="https://manager.flitapp.com.br/login" target="_blank" rel="noreferrer" className="quick-link">
               <Users size={24} />
-              <span>Portal RH</span>
+              <span>Ponto Eletrônico</span>
             </a>
             <a href="#" className="quick-link">
               <Settings size={24} />
               <span>Sistema ERP</span>
             </a>
-            <a href="#" className="quick-link">
+            <a href="#" className="quick-link" onClick={(e) => {
+              e.preventDefault();
+              setShowTiFluxModal(true);
+            }}>
               <HelpCircle size={24} />
               <span>Chamados TI</span>
             </a>
           </div>
         </div>
+
+        {/* TiFLUX Modal */}
+        {showTiFluxModal && (
+          <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <div className="internal-card glass" style={{ maxWidth: '400px', width: '90%', padding: '2rem', position: 'relative' }}>
+              <button 
+                onClick={() => setShowTiFluxModal(false)}
+                style={{ position: 'absolute', top: '15px', right: '15px', background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer' }}
+              >
+                ✕
+              </button>
+              <h3 style={{ marginTop: 0, display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'var(--accent-orange)' }}>
+                <HelpCircle size={24} /> Abertura de Chamados
+              </h3>
+              <p style={{ color: 'var(--text-secondary)', lineHeight: 1.6, marginTop: '1rem' }}>
+                Para abrir um chamado com a equipe de TI, você deve usar o agente do <strong>TiFLUX</strong> instalado no seu computador.
+              </p>
+              <div style={{ background: 'rgba(255,255,255,0.05)', padding: '1rem', borderRadius: '8px', margin: '1.5rem 0' }}>
+                <ol style={{ margin: 0, paddingLeft: '1.2rem', color: 'var(--text-primary)', fontSize: '0.9rem', lineHeight: 1.8 }}>
+                  <li>Vá até a barra de tarefas do Windows (perto do relógio)</li>
+                  <li>Clique na setinha para mostrar os ícones ocultos</li>
+                  <li>Clique no ícone azul do <strong>TiFLUX</strong></li>
+                  <li>Selecione a opção <strong>TiService</strong></li>
+                </ol>
+              </div>
+              <button className="btn-primary" style={{ width: '100%' }} onClick={() => setShowTiFluxModal(false)}>
+                Entendi
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* Card Completo: Próximos eventos, aniversário e feriado */}
         <div className="internal-card glass full-width">

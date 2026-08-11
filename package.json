@@ -12,6 +12,7 @@
     "tunnel": "cloudflared tunnel run"
   },
   "dependencies": {
+    "exceljs": "^4.4.0",
     "lucide-react": "^1.23.0",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",

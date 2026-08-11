@@ -67,13 +67,19 @@ const DashboardsView = () => {
     // Check if it's a mobile device/small screen
     if (window.innerWidth <= 768) {
       setIsMobileExpanded(true);
-      // Try to lock orientation to landscape if supported by the browser
-      try {
-        if (screen.orientation && screen.orientation.lock) {
-          screen.orientation.lock('landscape').catch(() => {});
-        }
-      } catch (e) {
-        // Ignore if not supported
+      
+      // Request native fullscreen on the document body to allow orientation lock
+      if (document.documentElement.requestFullscreen) {
+        document.documentElement.requestFullscreen().then(() => {
+          // Try to lock orientation to landscape if supported by the browser
+          try {
+            if (screen.orientation && screen.orientation.lock) {
+              screen.orientation.lock('landscape').catch(() => {});
+            }
+          } catch (e) {
+            // Ignore if not supported
+          }
+        }).catch(err => console.error("Error attempting to enable full-screen mode:", err));
       }
     } else {
       // Native fullscreen for desktop
@@ -89,6 +95,9 @@ const DashboardsView = () => {
   const closeMobileExpanded = () => {
     setIsMobileExpanded(false);
     try {
+      if (document.fullscreenElement) {
+        document.exitFullscreen().catch(() => {});
+      }
       if (screen.orientation && screen.orientation.unlock) {
         screen.orientation.unlock();
       }
@@ -97,17 +106,29 @@ const DashboardsView = () => {
     }
   };
 
+  const [iframeKey, setIframeKey] = useState(0);
+
   const handlePowerBiLogin = () => {
     const loginUrl = 'https://app.powerbi.com/singleSignOn?experience=power-bi';
     const width = 640;
     const height = 720;
     const left = window.screen.width / 2 - width / 2;
     const top = window.screen.height / 2 - height / 2;
-    window.open(
+    const popup = window.open(
       loginUrl,
       'PowerBiLoginWindow',
       `width=${width},height=${height},top=${top},left=${left},scrollbars=yes,status=yes`
     );
+
+    if (popup) {
+      const timer = setInterval(() => {
+        if (popup.closed) {
+          clearInterval(timer);
+          // Força o recarregamento do iframe após fechar o login
+          setIframeKey(prev => prev + 1);
+        }
+      }, 500);
+    }
   };
 
   const getEffectiveEmbedUrl = (dash: Dashboard) => {
@@ -246,6 +267,7 @@ const DashboardsView = () => {
 
           <div className="internal-card glass" style={{ padding: '8px', minHeight: '700px' }}>
             <iframe
+              key={iframeKey}
               id="viewer-powerbi-frame"
               title={currentDashboard.title}
               src={getEffectiveEmbedUrl(currentDashboard)}
@@ -281,7 +303,7 @@ const DashboardsView = () => {
       {isMobileExpanded && currentDashboard && (
         <div className="mobile-expanded-overlay">
           <button className="mobile-expanded-close" onClick={closeMobileExpanded}>
-            <X size={28} />
+            <X size={24} /> Sair
           </button>
           <iframe
             title={currentDashboard.title}

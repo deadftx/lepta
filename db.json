@@ -26,6 +26,10 @@
     {
       "id": "6",
       "name": "Calendário"
+    },
+    {
+      "id": "7",
+      "name": "Financeiro"
     }
   ],
   "groups": [],
@@ -41,7 +45,8 @@
         "3",
         "4",
         "5",
-        "6"
+        "6",
+        "7"
       ]
     },
     {
@@ -148,6 +153,26 @@
         "5",
         "6",
         "4"
+      ]
+    },
+    {
+      "id": "user_1786469830651",
+      "username": "camila.cerqueira",
+      "email": "camila.cerqueira@lepta.com.br",
+      "password": "Casac@1307",
+      "role": "USER",
+      "permissions": [
+        "6"
+      ]
+    },
+    {
+      "id": "user_1786472998445",
+      "username": "stephanie.mendes",
+      "email": "stephanie.mendes@lepta.com.br",
+      "password": "lepta123",
+      "role": "USER",
+      "permissions": [
+        "7"
       ]
     }
   ],
@@ -576,6 +601,1612 @@
       "date": "2026-12-31",
       "description": "Aniversário dia 31/12",
       "createdBy": "leptamaster"
+    },
+    {
+      "id": "f17b64b1-7a32-40c0-8490-fefd07290ad1",
+      "description": "Feriado Nacional (Febraban)",
+      "type": "Feriado",
+      "date": "2026-01-01",
+      "title": "Feriado Nacional - Confraternização Universal",
+      "createdBy": "FebrabanBot"
+    },
+    {
+      "id": "32f602b1-67b6-4f9b-9c69-92abae6ce74d",
+      "description": "Feriado Nacional (Febraban)",
+      "type": "Feriado",
+      "date": "2026-02-16",
+      "title": "Feriado Nacional - Carnaval",
+      "createdBy": "FebrabanBot"
+    },
+    {
+      "id": "4cebb971-8c36-40c0-b199-9c943119949e",
+      "description": "Feriado Nacional (Febraban)",
+      "type": "Feriado",
+      "date": "2026-02-17",
+      "title": "Feriado Nacional - Carnaval",
+      "createdBy": "FebrabanBot"
+    },
+    {
+      "id": "0ae80415-a181-46d7-aa41-ea254c76b843",
+      "description": "Feriado Nacional (Febraban)",
+      "type": "Feriado",
+      "date": "2026-04-03",
+      "title": "Feriado Nacional - Paixão de Cristo",
+      "createdBy": "FebrabanBot"
+    },
+    {
+      "id": "1f5532cb-b35a-4889-8909-e1e2907227fe",
+      "description": "Feriado Nacional (Febraban)",
+      "type": "Feriado",
+      "date": "2026-04-21",
+      "title": "Feriado Nacional - Tiradentes",
+      "createdBy": "FebrabanBot"
+    },
+    {
+      "id": "81def5dd-c9ec-45d9-8197-7954eedf99ac",
+      "description": "Feriado Nacional (Febraban)",
+      "type": "Feriado",
+      "date": "2026-05-01",
+      "title": "Feriado Nacional - Dia do Trabalho",
+      "createdBy": "FebrabanBot"
+    },
+    {
+      "id": "3b5560b7-109e-4445-b409-9eaf9e0c4613",
+      "description": "Feriado Nacional (Febraban)",
+      "type": "Feriado",
+      "date": "2026-06-04",
+      "title": "Feriado Nacional - Corpus Christi",
+      "createdBy": "FebrabanBot"
+    },
+    {
+      "id": "90cbefc1-c59b-4494-9c0e-da51d9e225c0",
+      "description": "Feriado Nacional (Febraban)",
+      "type": "Feriado",
+      "date": "2026-10-12",
+      "title": "Feriado Nacional - Nossa Senhora Aparecida",
+      "createdBy": "FebrabanBot"
+    },
+    {
+      "id": "a6c66d04-0987-4e29-8701-01923c0a0f0a",
+      "description": "Feriado Nacional (Febraban)",
+      "type": "Feriado",
+      "date": "2026-11-02",
+      "title": "Feriado Nacional - Finados",
+      "createdBy": "FebrabanBot"
+    },
+    {
+      "id": "7a934c07-3e6b-4ee2-bb48-ebf319da1335",
+      "description": "Feriado Nacional (Febraban)",
+      "type": "Feriado",
+      "date": "2026-11-15",
+      "title": "Feriado Nacional - Proclamação da República",
+      "createdBy": "FebrabanBot"
+    },
+    {
+      "id": "f70e1551-aa9f-4eea-ab37-64c7b8da2648",
+      "description": "Feriado Nacional (Febraban)",
+      "type": "Feriado",
+      "date": "2026-12-25",
+      "title": "Feriado Nacional - Natal",
+      "createdBy": "FebrabanBot"
+    }
+  ],
+  "financialTransactions": [
+    {
+      "fileName": "Extrato Grfeno - Benfica.xlsx",
+      "uploadDate": "2026-08-11T19:15:53.290Z",
+      "transactions": [
+        {
+          "Data": "11/08/2026",
+          "Histórico": "PIX Recebido",
+          "  Complemento": "TRANSPORTADORA TURISTICA BENFICA SA EM RECUPERACAO JUDICIAL",
+          "Créditos": 3499.5,
+          "Débitos": null,
+          "Saldo": 200313
+        },
+        {
+          "Data": "11/08/2026",
+          "Histórico": "Tarifas de conta",
+          "  Complemento": "",
+          "Créditos": null,
+          "Débitos": 30,
+          "Saldo": 196813.5
+        },
+        {
+          "Data": "10/08/2026",
+          "Histórico": "PIX Recebido",
+          "  Complemento": "TRANSPORTADORA TURISTICA BENFICA SA EM RECUPERACAO JUDICIAL",
+          "Créditos": 350,
+          "Débitos": null,
+          "Saldo": 196843.5
+        },
+        {
+          "Data": "10/08/2026",
+          "Histórico": "PIX Enviado",
+          "  Complemento": "LEPTA BANK LTDA",
+          "Créditos": null,
+          "Débitos": 38.5,
+          "Saldo": 196493.5
+        },
+        {
+          "Data": "10/08/2026",
+          "Histórico": "PIX Enviado",
+          "  Complemento": "TRANSPORTADORA TURISTICA BENFICA SA EM RECUPERACAO JUDICIAL",
+          "Créditos": null,
+          "Débitos": 12400,
+          "Saldo": 196532
+        },
+        {
+          "Data": "10/08/2026",
+          "Histórico": "PIX Enviado",
+          "  Complemento": "TRANSPORTADORA TURISTICA BENFICA SA EM RECUPERACAO JUDICIAL",
+          "Créditos": null,
+          "Débitos": 20,
+          "Saldo": 208932
+        },
+        {
+          "Data": "06/08/2026",
+          "Histórico": "PIX Recebido",
+          "  Complemento": "TRANSPORTADORA TURISTICA BENFICA S.A",
+          "Créditos": 5700,
+          "Débitos": null,
+          "Saldo": 208952
+        },
+        {
+          "Data": "06/08/2026",
+          "Histórico": "Tarifas de conta",
+          "  Complemento": "",
+          "Créditos": null,
+          "Débitos": 10,
+          "Saldo": 203252
+        },
+        {
+          "Data": "05/08/2026",
+          "Histórico": "PIX Enviado",
+          "  Complemento": "TRANSPORTADORA TURISTICA BENFICA SA EM RECUPERACAO JUDICIAL",
+          "Créditos": null,
+          "Débitos": 10150,
+          "Saldo": 203262
+        },
+        {
+          "Data": "04/08/2026",
+          "Histórico": "Tarifas de conta",
+          "  Complemento": "",
+          "Créditos": null,
+          "Débitos": 30,
+          "Saldo": 213412
+        },
+        {
+          "Data": "03/08/2026",
+          "Histórico": "PIX Enviado",
+          "  Complemento": "LEPTA BANK LTDA",
+          "Créditos": null,
+          "Débitos": 56.75,
+          "Saldo": 213442
+        },
+        {
+          "Data": "03/08/2026",
+          "Histórico": "PIX Enviado",
+          "  Complemento": "LEPTA BANK LTDA",
+          "Créditos": null,
+          "Débitos": 37,
+          "Saldo": 213498.75
+        },
+        {
+          "Data": "03/08/2026",
+          "Histórico": "TED Recebida",
+          "  Complemento": "TRANSPORTADORA TURISTICA BENFICA S.A",
+          "Créditos": 5400,
+          "Débitos": null,
+          "Saldo": 213535.75
+        },
+        {
+          "Data": "03/08/2026",
+          "Histórico": "PIX Recebido",
+          "  Complemento": "TRANSPORTADORA TURISTICA BENFICA SA EM RECUPERACAO JUDICIAL",
+          "Créditos": 9350,
+          "Débitos": null,
+          "Saldo": 208135.75
+        },
+        {
+          "Data": "03/08/2026",
+          "Histórico": "PIX Enviado",
+          "  Complemento": "TRANSPORTADORA TURISTICA BENFICA SA EM RECUPERACAO JUDICIAL",
+          "Créditos": null,
+          "Débitos": 10,
+          "Saldo": 198785.75
+        }
+      ],
+      "id": 1
+    },
+    {
+      "fileName": "Extrato Grfeno - Benfica.xlsx",
+      "uploadDate": "2026-08-11T19:22:13.431Z",
+      "transactions": [
+        {
+          "Data": "11/08/2026",
+          "Histórico": "PIX Recebido",
+          "  Complemento": "TRANSPORTADORA TURISTICA BENFICA SA EM RECUPERACAO JUDICIAL",
+          "Créditos": 3499.5,
+          "Débitos": null,
+          "Saldo": 200313
+        },
+        {
+          "Data": "11/08/2026",
+          "Histórico": "Tarifas de conta",
+          "  Complemento": "",
+          "Créditos": null,
+          "Débitos": 30,
+          "Saldo": 196813.5
+        },
+        {
+          "Data": "10/08/2026",
+          "Histórico": "PIX Recebido",
+          "  Complemento": "TRANSPORTADORA TURISTICA BENFICA SA EM RECUPERACAO JUDICIAL",
+          "Créditos": 350,
+          "Débitos": null,
+          "Saldo": 196843.5
+        },
+        {
+          "Data": "10/08/2026",
+          "Histórico": "PIX Enviado",
+          "  Complemento": "LEPTA BANK LTDA",
+          "Créditos": null,
+          "Débitos": 38.5,
+          "Saldo": 196493.5
+        },
+        {
+          "Data": "10/08/2026",
+          "Histórico": "PIX Enviado",
+          "  Complemento": "TRANSPORTADORA TURISTICA BENFICA SA EM RECUPERACAO JUDICIAL",
+          "Créditos": null,
+          "Débitos": 12400,
+          "Saldo": 196532
+        },
+        {
+          "Data": "10/08/2026",
+          "Histórico": "PIX Enviado",
+          "  Complemento": "TRANSPORTADORA TURISTICA BENFICA SA EM RECUPERACAO JUDICIAL",
+          "Créditos": null,
+          "Débitos": 20,
+          "Saldo": 208932
+        },
+        {
+          "Data": "06/08/2026",
+          "Histórico": "PIX Recebido",
+          "  Complemento": "TRANSPORTADORA TURISTICA BENFICA S.A",
+          "Créditos": 5700,
+          "Débitos": null,
+          "Saldo": 208952
+        },
+        {
+          "Data": "06/08/2026",
+          "Histórico": "Tarifas de conta",
+          "  Complemento": "",
+          "Créditos": null,
+          "Débitos": 10,
+          "Saldo": 203252
+        },
+        {
+          "Data": "05/08/2026",
+          "Histórico": "PIX Enviado",
+          "  Complemento": "TRANSPORTADORA TURISTICA BENFICA SA EM RECUPERACAO JUDICIAL",
+          "Créditos": null,
+          "Débitos": 10150,
+          "Saldo": 203262
+        },
+        {
+          "Data": "04/08/2026",
+          "Histórico": "Tarifas de conta",
+          "  Complemento": "",
+          "Créditos": null,
+          "Débitos": 30,
+          "Saldo": 213412
+        },
+        {
+          "Data": "03/08/2026",
+          "Histórico": "PIX Enviado",
+          "  Complemento": "LEPTA BANK LTDA",
+          "Créditos": null,
+          "Débitos": 56.75,
+          "Saldo": 213442
+        },
+        {
+          "Data": "03/08/2026",
+          "Histórico": "PIX Enviado",
+          "  Complemento": "LEPTA BANK LTDA",
+          "Créditos": null,
+          "Débitos": 37,
+          "Saldo": 213498.75
+        },
+        {
+          "Data": "03/08/2026",
+          "Histórico": "TED Recebida",
+          "  Complemento": "TRANSPORTADORA TURISTICA BENFICA S.A",
+          "Créditos": 5400,
+          "Débitos": null,
+          "Saldo": 213535.75
+        },
+        {
+          "Data": "03/08/2026",
+          "Histórico": "PIX Recebido",
+          "  Complemento": "TRANSPORTADORA TURISTICA BENFICA SA EM RECUPERACAO JUDICIAL",
+          "Créditos": 9350,
+          "Débitos": null,
+          "Saldo": 208135.75
+        },
+        {
+          "Data": "03/08/2026",
+          "Histórico": "PIX Enviado",
+          "  Complemento": "TRANSPORTADORA TURISTICA BENFICA SA EM RECUPERACAO JUDICIAL",
+          "Créditos": null,
+          "Débitos": 10,
+          "Saldo": 198785.75
+        }
+      ],
+      "id": 2
+    },
+    {
+      "fileName": "Extrato Grfeno - Benfica.xlsx",
+      "uploadDate": "2026-08-11T19:25:22.740Z",
+      "transactions": [
+        {
+          "Data": "11/08/2026",
+          "Histórico": "PIX Recebido",
+          "  Complemento": "TRANSPORTADORA TURISTICA BENFICA SA EM RECUPERACAO JUDICIAL",
+          "Créditos": 3499.5,
+          "Débitos": null,
+          "Saldo": 200313
+        },
+        {
+          "Data": "11/08/2026",
+          "Histórico": "Tarifas de conta",
+          "  Complemento": "",
+          "Créditos": null,
+          "Débitos": 30,
+          "Saldo": 196813.5
+        },
+        {
+          "Data": "10/08/2026",
+          "Histórico": "PIX Recebido",
+          "  Complemento": "TRANSPORTADORA TURISTICA BENFICA SA EM RECUPERACAO JUDICIAL",
+          "Créditos": 350,
+          "Débitos": null,
+          "Saldo": 196843.5
+        },
+        {
+          "Data": "10/08/2026",
+          "Histórico": "PIX Enviado",
+          "  Complemento": "LEPTA BANK LTDA",
+          "Créditos": null,
+          "Débitos": 38.5,
+          "Saldo": 196493.5
+        },
+        {
+          "Data": "10/08/2026",
+          "Histórico": "PIX Enviado",
+          "  Complemento": "TRANSPORTADORA TURISTICA BENFICA SA EM RECUPERACAO JUDICIAL",
+          "Créditos": null,
+          "Débitos": 12400,
+          "Saldo": 196532
+        },
+        {
+          "Data": "10/08/2026",
+          "Histórico": "PIX Enviado",
+          "  Complemento": "TRANSPORTADORA TURISTICA BENFICA SA EM RECUPERACAO JUDICIAL",
+          "Créditos": null,
+          "Débitos": 20,
+          "Saldo": 208932
+        },
+        {
+          "Data": "06/08/2026",
+          "Histórico": "PIX Recebido",
+          "  Complemento": "TRANSPORTADORA TURISTICA BENFICA S.A",
+          "Créditos": 5700,
+          "Débitos": null,
+          "Saldo": 208952
+        },
+        {
+          "Data": "06/08/2026",
+          "Histórico": "Tarifas de conta",
+          "  Complemento": "",
+          "Créditos": null,
+          "Débitos": 10,
+          "Saldo": 203252
+        },
+        {
+          "Data": "05/08/2026",
+          "Histórico": "PIX Enviado",
+          "  Complemento": "TRANSPORTADORA TURISTICA BENFICA SA EM RECUPERACAO JUDICIAL",
+          "Créditos": null,
+          "Débitos": 10150,
+          "Saldo": 203262
+        },
+        {
+          "Data": "04/08/2026",
+          "Histórico": "Tarifas de conta",
+          "  Complemento": "",
+          "Créditos": null,
+          "Débitos": 30,
+          "Saldo": 213412
+        },
+        {
+          "Data": "03/08/2026",
+          "Histórico": "PIX Enviado",
+          "  Complemento": "LEPTA BANK LTDA",
+          "Créditos": null,
+          "Débitos": 56.75,
+          "Saldo": 213442
+        },
+        {
+          "Data": "03/08/2026",
+          "Histórico": "PIX Enviado",
+          "  Complemento": "LEPTA BANK LTDA",
+          "Créditos": null,
+          "Débitos": 37,
+          "Saldo": 213498.75
+        },
+        {
+          "Data": "03/08/2026",
+          "Histórico": "TED Recebida",
+          "  Complemento": "TRANSPORTADORA TURISTICA BENFICA S.A",
+          "Créditos": 5400,
+          "Débitos": null,
+          "Saldo": 213535.75
+        },
+        {
+          "Data": "03/08/2026",
+          "Histórico": "PIX Recebido",
+          "  Complemento": "TRANSPORTADORA TURISTICA BENFICA SA EM RECUPERACAO JUDICIAL",
+          "Créditos": 9350,
+          "Débitos": null,
+          "Saldo": 208135.75
+        },
+        {
+          "Data": "03/08/2026",
+          "Histórico": "PIX Enviado",
+          "  Complemento": "TRANSPORTADORA TURISTICA BENFICA SA EM RECUPERACAO JUDICIAL",
+          "Créditos": null,
+          "Débitos": 10,
+          "Saldo": 198785.75
+        }
+      ],
+      "id": 3
+    },
+    {
+      "fileName": "Extrato Grfeno - Benfica.xlsx",
+      "uploadDate": "2026-08-11T19:32:29.829Z",
+      "transactions": [
+        {
+          "Data": "11/08/2026",
+          "Histórico": "PIX Recebido",
+          "  Complemento": "TRANSPORTADORA TURISTICA BENFICA SA EM RECUPERACAO JUDICIAL",
+          "Créditos": 3499.5,
+          "Débitos": null,
+          "Saldo": 200313
+        },
+        {
+          "Data": "11/08/2026",
+          "Histórico": "Tarifas de conta",
+          "  Complemento": "",
+          "Créditos": null,
+          "Débitos": 30,
+          "Saldo": 196813.5
+        },
+        {
+          "Data": "10/08/2026",
+          "Histórico": "PIX Recebido",
+          "  Complemento": "TRANSPORTADORA TURISTICA BENFICA SA EM RECUPERACAO JUDICIAL",
+          "Créditos": 350,
+          "Débitos": null,
+          "Saldo": 196843.5
+        },
+        {
+          "Data": "10/08/2026",
+          "Histórico": "PIX Enviado",
+          "  Complemento": "LEPTA BANK LTDA",
+          "Créditos": null,
+          "Débitos": 38.5,
+          "Saldo": 196493.5
+        },
+        {
+          "Data": "10/08/2026",
+          "Histórico": "PIX Enviado",
+          "  Complemento": "TRANSPORTADORA TURISTICA BENFICA SA EM RECUPERACAO JUDICIAL",
+          "Créditos": null,
+          "Débitos": 12400,
+          "Saldo": 196532
+        },
+        {
+          "Data": "10/08/2026",
+          "Histórico": "PIX Enviado",
+          "  Complemento": "TRANSPORTADORA TURISTICA BENFICA SA EM RECUPERACAO JUDICIAL",
+          "Créditos": null,
+          "Débitos": 20,
+          "Saldo": 208932
+        },
+        {
+          "Data": "06/08/2026",
+          "Histórico": "PIX Recebido",
+          "  Complemento": "TRANSPORTADORA TURISTICA BENFICA S.A",
+          "Créditos": 5700,
+          "Débitos": null,
+          "Saldo": 208952
+        },
+        {
+          "Data": "06/08/2026",
+          "Histórico": "Tarifas de conta",
+          "  Complemento": "",
+          "Créditos": null,
+          "Débitos": 10,
+          "Saldo": 203252
+        },
+        {
+          "Data": "05/08/2026",
+          "Histórico": "PIX Enviado",
+          "  Complemento": "TRANSPORTADORA TURISTICA BENFICA SA EM RECUPERACAO JUDICIAL",
+          "Créditos": null,
+          "Débitos": 10150,
+          "Saldo": 203262
+        },
+        {
+          "Data": "04/08/2026",
+          "Histórico": "Tarifas de conta",
+          "  Complemento": "",
+          "Créditos": null,
+          "Débitos": 30,
+          "Saldo": 213412
+        },
+        {
+          "Data": "03/08/2026",
+          "Histórico": "PIX Enviado",
+          "  Complemento": "LEPTA BANK LTDA",
+          "Créditos": null,
+          "Débitos": 56.75,
+          "Saldo": 213442
+        },
+        {
+          "Data": "03/08/2026",
+          "Histórico": "PIX Enviado",
+          "  Complemento": "LEPTA BANK LTDA",
+          "Créditos": null,
+          "Débitos": 37,
+          "Saldo": 213498.75
+        },
+        {
+          "Data": "03/08/2026",
+          "Histórico": "TED Recebida",
+          "  Complemento": "TRANSPORTADORA TURISTICA BENFICA S.A",
+          "Créditos": 5400,
+          "Débitos": null,
+          "Saldo": 213535.75
+        },
+        {
+          "Data": "03/08/2026",
+          "Histórico": "PIX Recebido",
+          "  Complemento": "TRANSPORTADORA TURISTICA BENFICA SA EM RECUPERACAO JUDICIAL",
+          "Créditos": 9350,
+          "Débitos": null,
+          "Saldo": 208135.75
+        },
+        {
+          "Data": "03/08/2026",
+          "Histórico": "PIX Enviado",
+          "  Complemento": "TRANSPORTADORA TURISTICA BENFICA SA EM RECUPERACAO JUDICIAL",
+          "Créditos": null,
+          "Débitos": 10,
+          "Saldo": 198785.75
+        }
+      ],
+      "id": 4
+    },
+    {
+      "fileName": "Extrato Grfeno - Benfica.xlsx",
+      "uploadDate": "2026-08-11T19:39:31.280Z",
+      "transactions": [
+        {
+          "Data": "11/08/2026",
+          "Histórico": "PIX Recebido",
+          "  Complemento": "TRANSPORTADORA TURISTICA BENFICA SA EM RECUPERACAO JUDICIAL",
+          "Créditos": 3499.5,
+          "Débitos": null,
+          "Saldo": 200313
+        },
+        {
+          "Data": "11/08/2026",
+          "Histórico": "Tarifas de conta",
+          "  Complemento": "",
+          "Créditos": null,
+          "Débitos": 30,
+          "Saldo": 196813.5
+        },
+        {
+          "Data": "10/08/2026",
+          "Histórico": "PIX Recebido",
+          "  Complemento": "TRANSPORTADORA TURISTICA BENFICA SA EM RECUPERACAO JUDICIAL",
+          "Créditos": 350,
+          "Débitos": null,
+          "Saldo": 196843.5
+        },
+        {
+          "Data": "10/08/2026",
+          "Histórico": "PIX Enviado",
+          "  Complemento": "LEPTA BANK LTDA",
+          "Créditos": null,
+          "Débitos": 38.5,
+          "Saldo": 196493.5
+        },
+        {
+          "Data": "10/08/2026",
+          "Histórico": "PIX Enviado",
+          "  Complemento": "TRANSPORTADORA TURISTICA BENFICA SA EM RECUPERACAO JUDICIAL",
+          "Créditos": null,
+          "Débitos": 12400,
+          "Saldo": 196532
+        },
+        {
+          "Data": "10/08/2026",
+          "Histórico": "PIX Enviado",
+          "  Complemento": "TRANSPORTADORA TURISTICA BENFICA SA EM RECUPERACAO JUDICIAL",
+          "Créditos": null,
+          "Débitos": 20,
+          "Saldo": 208932
+        },
+        {
+          "Data": "06/08/2026",
+          "Histórico": "PIX Recebido",
+          "  Complemento": "TRANSPORTADORA TURISTICA BENFICA S.A",
+          "Créditos": 5700,
+          "Débitos": null,
+          "Saldo": 208952
+        },
+        {
+          "Data": "06/08/2026",
+          "Histórico": "Tarifas de conta",
+          "  Complemento": "",
+          "Créditos": null,
+          "Débitos": 10,
+          "Saldo": 203252
+        },
+        {
+          "Data": "05/08/2026",
+          "Histórico": "PIX Enviado",
+          "  Complemento": "TRANSPORTADORA TURISTICA BENFICA SA EM RECUPERACAO JUDICIAL",
+          "Créditos": null,
+          "Débitos": 10150,
+          "Saldo": 203262
+        },
+        {
+          "Data": "04/08/2026",
+          "Histórico": "Tarifas de conta",
+          "  Complemento": "",
+          "Créditos": null,
+          "Débitos": 30,
+          "Saldo": 213412
+        },
+        {
+          "Data": "03/08/2026",
+          "Histórico": "PIX Enviado",
+          "  Complemento": "LEPTA BANK LTDA",
+          "Créditos": null,
+          "Débitos": 56.75,
+          "Saldo": 213442
+        },
+        {
+          "Data": "03/08/2026",
+          "Histórico": "PIX Enviado",
+          "  Complemento": "LEPTA BANK LTDA",
+          "Créditos": null,
+          "Débitos": 37,
+          "Saldo": 213498.75
+        },
+        {
+          "Data": "03/08/2026",
+          "Histórico": "TED Recebida",
+          "  Complemento": "TRANSPORTADORA TURISTICA BENFICA S.A",
+          "Créditos": 5400,
+          "Débitos": null,
+          "Saldo": 213535.75
+        },
+        {
+          "Data": "03/08/2026",
+          "Histórico": "PIX Recebido",
+          "  Complemento": "TRANSPORTADORA TURISTICA BENFICA SA EM RECUPERACAO JUDICIAL",
+          "Créditos": 9350,
+          "Débitos": null,
+          "Saldo": 208135.75
+        },
+        {
+          "Data": "03/08/2026",
+          "Histórico": "PIX Enviado",
+          "  Complemento": "TRANSPORTADORA TURISTICA BENFICA SA EM RECUPERACAO JUDICIAL",
+          "Créditos": null,
+          "Débitos": 10,
+          "Saldo": 198785.75
+        }
+      ],
+      "id": 5
+    },
+    {
+      "fileName": "Extrato Grfeno - Benfica.xlsx",
+      "uploadDate": "2026-08-11T19:40:50.530Z",
+      "transactions": [
+        {
+          "Data": "11/08/2026",
+          "Histórico": "PIX Recebido",
+          "  Complemento": "TRANSPORTADORA TURISTICA BENFICA SA EM RECUPERACAO JUDICIAL",
+          "Créditos": 3499.5,
+          "Débitos": null,
+          "Saldo": 200313
+        },
+        {
+          "Data": "11/08/2026",
+          "Histórico": "Tarifas de conta",
+          "  Complemento": "",
+          "Créditos": null,
+          "Débitos": 30,
+          "Saldo": 196813.5
+        },
+        {
+          "Data": "10/08/2026",
+          "Histórico": "PIX Recebido",
+          "  Complemento": "TRANSPORTADORA TURISTICA BENFICA SA EM RECUPERACAO JUDICIAL",
+          "Créditos": 350,
+          "Débitos": null,
+          "Saldo": 196843.5
+        },
+        {
+          "Data": "10/08/2026",
+          "Histórico": "PIX Enviado",
+          "  Complemento": "LEPTA BANK LTDA",
+          "Créditos": null,
+          "Débitos": 38.5,
+          "Saldo": 196493.5
+        },
+        {
+          "Data": "10/08/2026",
+          "Histórico": "PIX Enviado",
+          "  Complemento": "TRANSPORTADORA TURISTICA BENFICA SA EM RECUPERACAO JUDICIAL",
+          "Créditos": null,
+          "Débitos": 12400,
+          "Saldo": 196532
+        },
+        {
+          "Data": "10/08/2026",
+          "Histórico": "PIX Enviado",
+          "  Complemento": "TRANSPORTADORA TURISTICA BENFICA SA EM RECUPERACAO JUDICIAL",
+          "Créditos": null,
+          "Débitos": 20,
+          "Saldo": 208932
+        },
+        {
+          "Data": "06/08/2026",
+          "Histórico": "PIX Recebido",
+          "  Complemento": "TRANSPORTADORA TURISTICA BENFICA S.A",
+          "Créditos": 5700,
+          "Débitos": null,
+          "Saldo": 208952
+        },
+        {
+          "Data": "06/08/2026",
+          "Histórico": "Tarifas de conta",
+          "  Complemento": "",
+          "Créditos": null,
+          "Débitos": 10,
+          "Saldo": 203252
+        },
+        {
+          "Data": "05/08/2026",
+          "Histórico": "PIX Enviado",
+          "  Complemento": "TRANSPORTADORA TURISTICA BENFICA SA EM RECUPERACAO JUDICIAL",
+          "Créditos": null,
+          "Débitos": 10150,
+          "Saldo": 203262
+        },
+        {
+          "Data": "04/08/2026",
+          "Histórico": "Tarifas de conta",
+          "  Complemento": "",
+          "Créditos": null,
+          "Débitos": 30,
+          "Saldo": 213412
+        },
+        {
+          "Data": "03/08/2026",
+          "Histórico": "PIX Enviado",
+          "  Complemento": "LEPTA BANK LTDA",
+          "Créditos": null,
+          "Débitos": 56.75,
+          "Saldo": 213442
+        },
+        {
+          "Data": "03/08/2026",
+          "Histórico": "PIX Enviado",
+          "  Complemento": "LEPTA BANK LTDA",
+          "Créditos": null,
+          "Débitos": 37,
+          "Saldo": 213498.75
+        },
+        {
+          "Data": "03/08/2026",
+          "Histórico": "TED Recebida",
+          "  Complemento": "TRANSPORTADORA TURISTICA BENFICA S.A",
+          "Créditos": 5400,
+          "Débitos": null,
+          "Saldo": 213535.75
+        },
+        {
+          "Data": "03/08/2026",
+          "Histórico": "PIX Recebido",
+          "  Complemento": "TRANSPORTADORA TURISTICA BENFICA SA EM RECUPERACAO JUDICIAL",
+          "Créditos": 9350,
+          "Débitos": null,
+          "Saldo": 208135.75
+        },
+        {
+          "Data": "03/08/2026",
+          "Histórico": "PIX Enviado",
+          "  Complemento": "TRANSPORTADORA TURISTICA BENFICA SA EM RECUPERACAO JUDICIAL",
+          "Créditos": null,
+          "Débitos": 10,
+          "Saldo": 198785.75
+        }
+      ],
+      "id": 6
+    },
+    {
+      "fileName": "Extrato Grfeno - Benfica.xlsx",
+      "uploadDate": "2026-08-11T19:44:01.725Z",
+      "transactions": [
+        {
+          "Data": "11/08/2026",
+          "Histórico": "PIX Recebido",
+          "  Complemento": "TRANSPORTADORA TURISTICA BENFICA SA EM RECUPERACAO JUDICIAL",
+          "Créditos": 3499.5,
+          "Débitos": null,
+          "Saldo": 200313
+        },
+        {
+          "Data": "11/08/2026",
+          "Histórico": "Tarifas de conta",
+          "  Complemento": "",
+          "Créditos": null,
+          "Débitos": 30,
+          "Saldo": 196813.5
+        },
+        {
+          "Data": "10/08/2026",
+          "Histórico": "PIX Recebido",
+          "  Complemento": "TRANSPORTADORA TURISTICA BENFICA SA EM RECUPERACAO JUDICIAL",
+          "Créditos": 350,
+          "Débitos": null,
+          "Saldo": 196843.5
+        },
+        {
+          "Data": "10/08/2026",
+          "Histórico": "PIX Enviado",
+          "  Complemento": "LEPTA BANK LTDA",
+          "Créditos": null,
+          "Débitos": 38.5,
+          "Saldo": 196493.5
+        },
+        {
+          "Data": "10/08/2026",
+          "Histórico": "PIX Enviado",
+          "  Complemento": "TRANSPORTADORA TURISTICA BENFICA SA EM RECUPERACAO JUDICIAL",
+          "Créditos": null,
+          "Débitos": 12400,
+          "Saldo": 196532
+        },
+        {
+          "Data": "10/08/2026",
+          "Histórico": "PIX Enviado",
+          "  Complemento": "TRANSPORTADORA TURISTICA BENFICA SA EM RECUPERACAO JUDICIAL",
+          "Créditos": null,
+          "Débitos": 20,
+          "Saldo": 208932
+        },
+        {
+          "Data": "06/08/2026",
+          "Histórico": "PIX Recebido",
+          "  Complemento": "TRANSPORTADORA TURISTICA BENFICA S.A",
+          "Créditos": 5700,
+          "Débitos": null,
+          "Saldo": 208952
+        },
+        {
+          "Data": "06/08/2026",
+          "Histórico": "Tarifas de conta",
+          "  Complemento": "",
+          "Créditos": null,
+          "Débitos": 10,
+          "Saldo": 203252
+        },
+        {
+          "Data": "05/08/2026",
+          "Histórico": "PIX Enviado",
+          "  Complemento": "TRANSPORTADORA TURISTICA BENFICA SA EM RECUPERACAO JUDICIAL",
+          "Créditos": null,
+          "Débitos": 10150,
+          "Saldo": 203262
+        },
+        {
+          "Data": "04/08/2026",
+          "Histórico": "Tarifas de conta",
+          "  Complemento": "",
+          "Créditos": null,
+          "Débitos": 30,
+          "Saldo": 213412
+        },
+        {
+          "Data": "03/08/2026",
+          "Histórico": "PIX Enviado",
+          "  Complemento": "LEPTA BANK LTDA",
+          "Créditos": null,
+          "Débitos": 56.75,
+          "Saldo": 213442
+        },
+        {
+          "Data": "03/08/2026",
+          "Histórico": "PIX Enviado",
+          "  Complemento": "LEPTA BANK LTDA",
+          "Créditos": null,
+          "Débitos": 37,
+          "Saldo": 213498.75
+        },
+        {
+          "Data": "03/08/2026",
+          "Histórico": "TED Recebida",
+          "  Complemento": "TRANSPORTADORA TURISTICA BENFICA S.A",
+          "Créditos": 5400,
+          "Débitos": null,
+          "Saldo": 213535.75
+        },
+        {
+          "Data": "03/08/2026",
+          "Histórico": "PIX Recebido",
+          "  Complemento": "TRANSPORTADORA TURISTICA BENFICA SA EM RECUPERACAO JUDICIAL",
+          "Créditos": 9350,
+          "Débitos": null,
+          "Saldo": 208135.75
+        },
+        {
+          "Data": "03/08/2026",
+          "Histórico": "PIX Enviado",
+          "  Complemento": "TRANSPORTADORA TURISTICA BENFICA SA EM RECUPERACAO JUDICIAL",
+          "Créditos": null,
+          "Débitos": 10,
+          "Saldo": 198785.75
+        }
+      ],
+      "id": 7
+    },
+    {
+      "fileName": "Extrato Grfeno - Benfica.xlsx",
+      "uploadDate": "2026-08-11T19:48:19.999Z",
+      "transactions": [
+        {
+          "Data": "11/08/2026",
+          "Histórico": "PIX Recebido",
+          "  Complemento": "TRANSPORTADORA TURISTICA BENFICA SA EM RECUPERACAO JUDICIAL",
+          "Créditos": 3499.5,
+          "Débitos": null,
+          "Saldo": 200313
+        },
+        {
+          "Data": "11/08/2026",
+          "Histórico": "Tarifas de conta",
+          "  Complemento": "",
+          "Créditos": null,
+          "Débitos": 30,
+          "Saldo": 196813.5
+        },
+        {
+          "Data": "10/08/2026",
+          "Histórico": "PIX Recebido",
+          "  Complemento": "TRANSPORTADORA TURISTICA BENFICA SA EM RECUPERACAO JUDICIAL",
+          "Créditos": 350,
+          "Débitos": null,
+          "Saldo": 196843.5
+        },
+        {
+          "Data": "10/08/2026",
+          "Histórico": "PIX Enviado",
+          "  Complemento": "LEPTA BANK LTDA",
+          "Créditos": null,
+          "Débitos": 38.5,
+          "Saldo": 196493.5
+        },
+        {
+          "Data": "10/08/2026",
+          "Histórico": "PIX Enviado",
+          "  Complemento": "TRANSPORTADORA TURISTICA BENFICA SA EM RECUPERACAO JUDICIAL",
+          "Créditos": null,
+          "Débitos": 12400,
+          "Saldo": 196532
+        },
+        {
+          "Data": "10/08/2026",
+          "Histórico": "PIX Enviado",
+          "  Complemento": "TRANSPORTADORA TURISTICA BENFICA SA EM RECUPERACAO JUDICIAL",
+          "Créditos": null,
+          "Débitos": 20,
+          "Saldo": 208932
+        },
+        {
+          "Data": "06/08/2026",
+          "Histórico": "PIX Recebido",
+          "  Complemento": "TRANSPORTADORA TURISTICA BENFICA S.A",
+          "Créditos": 5700,
+          "Débitos": null,
+          "Saldo": 208952
+        },
+        {
+          "Data": "06/08/2026",
+          "Histórico": "Tarifas de conta",
+          "  Complemento": "",
+          "Créditos": null,
+          "Débitos": 10,
+          "Saldo": 203252
+        },
+        {
+          "Data": "05/08/2026",
+          "Histórico": "PIX Enviado",
+          "  Complemento": "TRANSPORTADORA TURISTICA BENFICA SA EM RECUPERACAO JUDICIAL",
+          "Créditos": null,
+          "Débitos": 10150,
+          "Saldo": 203262
+        },
+        {
+          "Data": "04/08/2026",
+          "Histórico": "Tarifas de conta",
+          "  Complemento": "",
+          "Créditos": null,
+          "Débitos": 30,
+          "Saldo": 213412
+        },
+        {
+          "Data": "03/08/2026",
+          "Histórico": "PIX Enviado",
+          "  Complemento": "LEPTA BANK LTDA",
+          "Créditos": null,
+          "Débitos": 56.75,
+          "Saldo": 213442
+        },
+        {
+          "Data": "03/08/2026",
+          "Histórico": "PIX Enviado",
+          "  Complemento": "LEPTA BANK LTDA",
+          "Créditos": null,
+          "Débitos": 37,
+          "Saldo": 213498.75
+        },
+        {
+          "Data": "03/08/2026",
+          "Histórico": "TED Recebida",
+          "  Complemento": "TRANSPORTADORA TURISTICA BENFICA S.A",
+          "Créditos": 5400,
+          "Débitos": null,
+          "Saldo": 213535.75
+        },
+        {
+          "Data": "03/08/2026",
+          "Histórico": "PIX Recebido",
+          "  Complemento": "TRANSPORTADORA TURISTICA BENFICA SA EM RECUPERACAO JUDICIAL",
+          "Créditos": 9350,
+          "Débitos": null,
+          "Saldo": 208135.75
+        },
+        {
+          "Data": "03/08/2026",
+          "Histórico": "PIX Enviado",
+          "  Complemento": "TRANSPORTADORA TURISTICA BENFICA SA EM RECUPERACAO JUDICIAL",
+          "Créditos": null,
+          "Débitos": 10,
+          "Saldo": 198785.75
+        }
+      ],
+      "id": 8
+    },
+    {
+      "fileName": "Extrato Grfeno - Benfica.xlsx",
+      "uploadDate": "2026-08-11T19:51:59.122Z",
+      "transactions": [
+        {
+          "Data": "11/08/2026",
+          "Histórico": "PIX Recebido",
+          "  Complemento": "TRANSPORTADORA TURISTICA BENFICA SA EM RECUPERACAO JUDICIAL",
+          "Créditos": 3499.5,
+          "Débitos": null,
+          "Saldo": 200313
+        },
+        {
+          "Data": "11/08/2026",
+          "Histórico": "Tarifas de conta",
+          "  Complemento": "",
+          "Créditos": null,
+          "Débitos": 30,
+          "Saldo": 196813.5
+        },
+        {
+          "Data": "10/08/2026",
+          "Histórico": "PIX Recebido",
+          "  Complemento": "TRANSPORTADORA TURISTICA BENFICA SA EM RECUPERACAO JUDICIAL",
+          "Créditos": 350,
+          "Débitos": null,
+          "Saldo": 196843.5
+        },
+        {
+          "Data": "10/08/2026",
+          "Histórico": "PIX Enviado",
+          "  Complemento": "LEPTA BANK LTDA",
+          "Créditos": null,
+          "Débitos": 38.5,
+          "Saldo": 196493.5
+        },
+        {
+          "Data": "10/08/2026",
+          "Histórico": "PIX Enviado",
+          "  Complemento": "TRANSPORTADORA TURISTICA BENFICA SA EM RECUPERACAO JUDICIAL",
+          "Créditos": null,
+          "Débitos": 12400,
+          "Saldo": 196532
+        },
+        {
+          "Data": "10/08/2026",
+          "Histórico": "PIX Enviado",
+          "  Complemento": "TRANSPORTADORA TURISTICA BENFICA SA EM RECUPERACAO JUDICIAL",
+          "Créditos": null,
+          "Débitos": 20,
+          "Saldo": 208932
+        },
+        {
+          "Data": "06/08/2026",
+          "Histórico": "PIX Recebido",
+          "  Complemento": "TRANSPORTADORA TURISTICA BENFICA S.A",
+          "Créditos": 5700,
+          "Débitos": null,
+          "Saldo": 208952
+        },
+        {
+          "Data": "06/08/2026",
+          "Histórico": "Tarifas de conta",
+          "  Complemento": "",
+          "Créditos": null,
+          "Débitos": 10,
+          "Saldo": 203252
+        },
+        {
+          "Data": "05/08/2026",
+          "Histórico": "PIX Enviado",
+          "  Complemento": "TRANSPORTADORA TURISTICA BENFICA SA EM RECUPERACAO JUDICIAL",
+          "Créditos": null,
+          "Débitos": 10150,
+          "Saldo": 203262
+        },
+        {
+          "Data": "04/08/2026",
+          "Histórico": "Tarifas de conta",
+          "  Complemento": "",
+          "Créditos": null,
+          "Débitos": 30,
+          "Saldo": 213412
+        },
+        {
+          "Data": "03/08/2026",
+          "Histórico": "PIX Enviado",
+          "  Complemento": "LEPTA BANK LTDA",
+          "Créditos": null,
+          "Débitos": 56.75,
+          "Saldo": 213442
+        },
+        {
+          "Data": "03/08/2026",
+          "Histórico": "PIX Enviado",
+          "  Complemento": "LEPTA BANK LTDA",
+          "Créditos": null,
+          "Débitos": 37,
+          "Saldo": 213498.75
+        },
+        {
+          "Data": "03/08/2026",
+          "Histórico": "TED Recebida",
+          "  Complemento": "TRANSPORTADORA TURISTICA BENFICA S.A",
+          "Créditos": 5400,
+          "Débitos": null,
+          "Saldo": 213535.75
+        },
+        {
+          "Data": "03/08/2026",
+          "Histórico": "PIX Recebido",
+          "  Complemento": "TRANSPORTADORA TURISTICA BENFICA SA EM RECUPERACAO JUDICIAL",
+          "Créditos": 9350,
+          "Débitos": null,
+          "Saldo": 208135.75
+        },
+        {
+          "Data": "03/08/2026",
+          "Histórico": "PIX Enviado",
+          "  Complemento": "TRANSPORTADORA TURISTICA BENFICA SA EM RECUPERACAO JUDICIAL",
+          "Créditos": null,
+          "Débitos": 10,
+          "Saldo": 198785.75
+        }
+      ],
+      "id": 9
+    },
+    {
+      "fileName": "Extrato Grfeno - Benfica.xlsx",
+      "uploadDate": "2026-08-11T19:53:53.681Z",
+      "transactions": [
+        {
+          "Data": "11/08/2026",
+          "Histórico": "PIX Recebido",
+          "  Complemento": "TRANSPORTADORA TURISTICA BENFICA SA EM RECUPERACAO JUDICIAL",
+          "Créditos": 3499.5,
+          "Débitos": null,
+          "Saldo": 200313
+        },
+        {
+          "Data": "11/08/2026",
+          "Histórico": "Tarifas de conta",
+          "  Complemento": "",
+          "Créditos": null,
+          "Débitos": 30,
+          "Saldo": 196813.5
+        },
+        {
+          "Data": "10/08/2026",
+          "Histórico": "PIX Recebido",
+          "  Complemento": "TRANSPORTADORA TURISTICA BENFICA SA EM RECUPERACAO JUDICIAL",
+          "Créditos": 350,
+          "Débitos": null,
+          "Saldo": 196843.5
+        },
+        {
+          "Data": "10/08/2026",
+          "Histórico": "PIX Enviado",
+          "  Complemento": "LEPTA BANK LTDA",
+          "Créditos": null,
+          "Débitos": 38.5,
+          "Saldo": 196493.5
+        },
+        {
+          "Data": "10/08/2026",
+          "Histórico": "PIX Enviado",
+          "  Complemento": "TRANSPORTADORA TURISTICA BENFICA SA EM RECUPERACAO JUDICIAL",
+          "Créditos": null,
+          "Débitos": 12400,
+          "Saldo": 196532
+        },
+        {
+          "Data": "10/08/2026",
+          "Histórico": "PIX Enviado",
+          "  Complemento": "TRANSPORTADORA TURISTICA BENFICA SA EM RECUPERACAO JUDICIAL",
+          "Créditos": null,
+          "Débitos": 20,
+          "Saldo": 208932
+        },
+        {
+          "Data": "06/08/2026",
+          "Histórico": "PIX Recebido",
+          "  Complemento": "TRANSPORTADORA TURISTICA BENFICA S.A",
+          "Créditos": 5700,
+          "Débitos": null,
+          "Saldo": 208952
+        },
+        {
+          "Data": "06/08/2026",
+          "Histórico": "Tarifas de conta",
+          "  Complemento": "",
+          "Créditos": null,
+          "Débitos": 10,
+          "Saldo": 203252
+        },
+        {
+          "Data": "05/08/2026",
+          "Histórico": "PIX Enviado",
+          "  Complemento": "TRANSPORTADORA TURISTICA BENFICA SA EM RECUPERACAO JUDICIAL",
+          "Créditos": null,
+          "Débitos": 10150,
+          "Saldo": 203262
+        },
+        {
+          "Data": "04/08/2026",
+          "Histórico": "Tarifas de conta",
+          "  Complemento": "",
+          "Créditos": null,
+          "Débitos": 30,
+          "Saldo": 213412
+        },
+        {
+          "Data": "03/08/2026",
+          "Histórico": "PIX Enviado",
+          "  Complemento": "LEPTA BANK LTDA",
+          "Créditos": null,
+          "Débitos": 56.75,
+          "Saldo": 213442
+        },
+        {
+          "Data": "03/08/2026",
+          "Histórico": "PIX Enviado",
+          "  Complemento": "LEPTA BANK LTDA",
+          "Créditos": null,
+          "Débitos": 37,
+          "Saldo": 213498.75
+        },
+        {
+          "Data": "03/08/2026",
+          "Histórico": "TED Recebida",
+          "  Complemento": "TRANSPORTADORA TURISTICA BENFICA S.A",
+          "Créditos": 5400,
+          "Débitos": null,
+          "Saldo": 213535.75
+        },
+        {
+          "Data": "03/08/2026",
+          "Histórico": "PIX Recebido",
+          "  Complemento": "TRANSPORTADORA TURISTICA BENFICA SA EM RECUPERACAO JUDICIAL",
+          "Créditos": 9350,
+          "Débitos": null,
+          "Saldo": 208135.75
+        },
+        {
+          "Data": "03/08/2026",
+          "Histórico": "PIX Enviado",
+          "  Complemento": "TRANSPORTADORA TURISTICA BENFICA SA EM RECUPERACAO JUDICIAL",
+          "Créditos": null,
+          "Débitos": 10,
+          "Saldo": 198785.75
+        }
+      ],
+      "id": 10
+    },
+    {
+      "fileName": "Extrato Grfeno - Benfica.xlsx",
+      "uploadDate": "2026-08-11T20:00:57.491Z",
+      "transactions": [
+        {
+          "Data": "11/08/2026",
+          "Histórico": "PIX Recebido",
+          "  Complemento": "TRANSPORTADORA TURISTICA BENFICA SA EM RECUPERACAO JUDICIAL",
+          "Créditos": 3499.5,
+          "Débitos": null,
+          "Saldo": 200313
+        },
+        {
+          "Data": "11/08/2026",
+          "Histórico": "Tarifas de conta",
+          "  Complemento": "",
+          "Créditos": null,
+          "Débitos": 30,
+          "Saldo": 196813.5
+        },
+        {
+          "Data": "10/08/2026",
+          "Histórico": "PIX Recebido",
+          "  Complemento": "TRANSPORTADORA TURISTICA BENFICA SA EM RECUPERACAO JUDICIAL",
+          "Créditos": 350,
+          "Débitos": null,
+          "Saldo": 196843.5
+        },
+        {
+          "Data": "10/08/2026",
+          "Histórico": "PIX Enviado",
+          "  Complemento": "LEPTA BANK LTDA",
+          "Créditos": null,
+          "Débitos": 38.5,
+          "Saldo": 196493.5
+        },
+        {
+          "Data": "10/08/2026",
+          "Histórico": "PIX Enviado",
+          "  Complemento": "TRANSPORTADORA TURISTICA BENFICA SA EM RECUPERACAO JUDICIAL",
+          "Créditos": null,
+          "Débitos": 12400,
+          "Saldo": 196532
+        },
+        {
+          "Data": "10/08/2026",
+          "Histórico": "PIX Enviado",
+          "  Complemento": "TRANSPORTADORA TURISTICA BENFICA SA EM RECUPERACAO JUDICIAL",
+          "Créditos": null,
+          "Débitos": 20,
+          "Saldo": 208932
+        },
+        {
+          "Data": "06/08/2026",
+          "Histórico": "PIX Recebido",
+          "  Complemento": "TRANSPORTADORA TURISTICA BENFICA S.A",
+          "Créditos": 5700,
+          "Débitos": null,
+          "Saldo": 208952
+        },
+        {
+          "Data": "06/08/2026",
+          "Histórico": "Tarifas de conta",
+          "  Complemento": "",
+          "Créditos": null,
+          "Débitos": 10,
+          "Saldo": 203252
+        },
+        {
+          "Data": "05/08/2026",
+          "Histórico": "PIX Enviado",
+          "  Complemento": "TRANSPORTADORA TURISTICA BENFICA SA EM RECUPERACAO JUDICIAL",
+          "Créditos": null,
+          "Débitos": 10150,
+          "Saldo": 203262
+        },
+        {
+          "Data": "04/08/2026",
+          "Histórico": "Tarifas de conta",
+          "  Complemento": "",
+          "Créditos": null,
+          "Débitos": 30,
+          "Saldo": 213412
+        },
+        {
+          "Data": "03/08/2026",
+          "Histórico": "PIX Enviado",
+          "  Complemento": "LEPTA BANK LTDA",
+          "Créditos": null,
+          "Débitos": 56.75,
+          "Saldo": 213442
+        },
+        {
+          "Data": "03/08/2026",
+          "Histórico": "PIX Enviado",
+          "  Complemento": "LEPTA BANK LTDA",
+          "Créditos": null,
+          "Débitos": 37,
+          "Saldo": 213498.75
+        },
+        {
+          "Data": "03/08/2026",
+          "Histórico": "TED Recebida",
+          "  Complemento": "TRANSPORTADORA TURISTICA BENFICA S.A",
+          "Créditos": 5400,
+          "Débitos": null,
+          "Saldo": 213535.75
+        },
+        {
+          "Data": "03/08/2026",
+          "Histórico": "PIX Recebido",
+          "  Complemento": "TRANSPORTADORA TURISTICA BENFICA SA EM RECUPERACAO JUDICIAL",
+          "Créditos": 9350,
+          "Débitos": null,
+          "Saldo": 208135.75
+        },
+        {
+          "Data": "03/08/2026",
+          "Histórico": "PIX Enviado",
+          "  Complemento": "TRANSPORTADORA TURISTICA BENFICA SA EM RECUPERACAO JUDICIAL",
+          "Créditos": null,
+          "Débitos": 10,
+          "Saldo": 198785.75
+        }
+      ],
+      "id": 11
+    },
+    {
+      "fileName": "Relatorio_-_Extrato (1).xlsx",
+      "uploadDate": "2026-08-11T19:42:51.716Z",
+      "transactions": [
+        {
+          "Data": "10/08/2026",
+          "Histórico": "PIX Enviado",
+          "  Complemento": "LEPTA BANK LTDA",
+          "Créditos": null,
+          "Débitos": 160,
+          "Saldo": 58161.56
+        },
+        {
+          "Data": "10/08/2026",
+          "Histórico": "PIX Recebido",
+          "  Complemento": "CARVOVALE INDUSTRIA E COMERCIO DE PRODUTOS AGROINDUSTRIAIS E",
+          "Créditos": 30000,
+          "Débitos": null,
+          "Saldo": 58321.56
+        },
+        {
+          "Data": "06/08/2026",
+          "Histórico": "PIX Enviado",
+          "  Complemento": "VILHENA SILVA SOCIEDADE DE ADVOGADOS",
+          "Créditos": null,
+          "Débitos": 1750,
+          "Saldo": 28321.56
+        },
+        {
+          "Data": "05/08/2026",
+          "Histórico": "PIX Enviado",
+          "  Complemento": "KASAFIX SERVICOS E INTERMEDIACAO DE SERVICOS LTDA",
+          "Créditos": null,
+          "Débitos": 1000,
+          "Saldo": 30071.56
+        },
+        {
+          "Data": "05/08/2026",
+          "Histórico": "PIX Enviado",
+          "  Complemento": "KASAFIX SERVICOS E INTERMEDIACAO DE SERVICOS LTDA",
+          "Créditos": null,
+          "Débitos": 1000,
+          "Saldo": 31071.56
+        },
+        {
+          "Data": "05/08/2026",
+          "Histórico": "PIX Enviado",
+          "  Complemento": "PHNX PARTICIPACOES E ADMINISTRACAO DE ATIVOS LTDA",
+          "Créditos": null,
+          "Débitos": 1000,
+          "Saldo": 32071.56
+        },
+        {
+          "Data": "05/08/2026",
+          "Histórico": "PIX Enviado",
+          "  Complemento": "KASAFIX SERVICOS E INTERMEDIACAO DE SERVICOS LTDA",
+          "Créditos": null,
+          "Débitos": 1000,
+          "Saldo": 33071.56
+        },
+        {
+          "Data": "05/08/2026",
+          "Histórico": "PIX Enviado",
+          "  Complemento": "PHNX PARTICIPAÇÕES E ADMINISTRAÇÃO DE ATIVOS LTDA",
+          "Créditos": null,
+          "Débitos": 1000,
+          "Saldo": 34071.56
+        },
+        {
+          "Data": "05/08/2026",
+          "Histórico": "PIX Enviado",
+          "  Complemento": "PHNX PARTICIPAÇÕES E ADMINISTRAÇÃO DE ATIVOS LTDA",
+          "Créditos": null,
+          "Débitos": 1000,
+          "Saldo": 35071.56
+        },
+        {
+          "Data": "03/08/2026",
+          "Histórico": "PIX Enviado",
+          "  Complemento": "Roberto Trincanato Benedetto",
+          "Créditos": null,
+          "Débitos": 2000,
+          "Saldo": 36071.56
+        },
+        {
+          "Data": "03/08/2026",
+          "Histórico": "PIX Enviado",
+          "  Complemento": "Roberto Trincanato Benedetto",
+          "Créditos": null,
+          "Débitos": 2000,
+          "Saldo": 38071.56
+        },
+        {
+          "Data": "03/08/2026",
+          "Histórico": "PIX Enviado",
+          "  Complemento": "Roberto Trincanato Benedetto",
+          "Créditos": null,
+          "Débitos": 17960.9,
+          "Saldo": 40071.56
+        },
+        {
+          "Data": "03/08/2026",
+          "Histórico": "Estorno do Envio PIX",
+          "  Complemento": "Roberto Trincanato Benedetto",
+          "Créditos": 2000,
+          "Débitos": null,
+          "Saldo": 58032.46
+        },
+        {
+          "Data": "03/08/2026",
+          "Histórico": "PIX Enviado",
+          "  Complemento": "PHNX PARTICIPACOES E ADMINISTRACAO DE ATIVOS LTDA",
+          "Créditos": null,
+          "Débitos": 9000,
+          "Saldo": 56032.46
+        }
+      ],
+      "id": 12
     }
   ]
 }
