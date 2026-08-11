@@ -225,7 +225,7 @@ const Dashboard = () => {
             <p style={{ color: 'var(--text-muted)', marginTop: '1rem' }}>Nenhum evento cadastrado no calendário.</p>
           ) : (
             <div className="events-list">
-              {events.map(evt => {
+              {events.slice(0, 3).map(evt => {
                 const dateObj = formatEventDateDayMonth(evt.date);
                 return (
                   <div key={evt.id} className="event-item" style={{ marginBottom: '0.75rem' }}>

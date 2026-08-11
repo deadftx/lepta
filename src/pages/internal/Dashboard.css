@@ -1,6 +1,7 @@
 .internal-dashboard-page {
   display: flex;
-  min-height: 100vh;
+  height: 100vh; /* Lock height */
+  overflow: hidden; /* Prevent body scroll */
   background-color: var(--bg-dark);
 }
 
@@ -10,10 +11,10 @@
   flex-direction: column;
   border-right: 1px solid var(--glass-border);
   border-radius: 0;
-  position: sticky;
-  top: 0;
+  /* Removed sticky since parent is fixed height */
   height: 100vh;
   background: rgba(15, 18, 25, 0.8);
+  flex-shrink: 0;
 }
 
 .sidebar-brand {
@@ -60,6 +61,24 @@
   padding: 24px 0;
   flex-grow: 1;
   overflow-y: auto;
+}
+
+/* Premium Sidebar Scrollbar */
+.internal-nav::-webkit-scrollbar {
+  width: 5px;
+}
+
+.internal-nav::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.internal-nav::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+}
+
+.internal-nav::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 153, 0, 0.6);
 }
 
 .nav-group-title {
@@ -109,6 +128,26 @@
   flex-grow: 1;
   display: flex;
   flex-direction: column;
+  overflow-y: auto; /* Allow independent scrolling */
+}
+
+/* Premium Main Content Scrollbar */
+.internal-content::-webkit-scrollbar {
+  width: 8px;
+}
+
+.internal-content::-webkit-scrollbar-track {
+  background: var(--bg-dark);
+}
+
+.internal-content::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+  border: 2px solid var(--bg-dark); /* Adds spacing around thumb */
+}
+
+.internal-content::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 153, 0, 0.5); /* Brand color hover */
 }
 
 .internal-header {
@@ -118,7 +157,7 @@
   align-items: center;
   justify-content: space-between;
   padding: 0 40px;
-  background: rgba(15, 18, 25, 0.5);
+  background: rgba(15, 18, 25, 0.85); /* Slightly darker for contrast */
   backdrop-filter: blur(10px);
   position: sticky;
   top: 0;
