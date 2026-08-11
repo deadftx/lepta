@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { LogOut, User, Bell, ShieldAlert, DollarSign, Shield, Scale, UserPlus, Users, ChevronDown, ChevronRight, LayoutDashboard, Sliders, Home, Calendar } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { LogOut, User, Bell, ShieldAlert, DollarSign, Shield, Scale, UserPlus, Users, ChevronDown, ChevronRight, LayoutDashboard, Sliders, Home, Calendar, Menu, X } from 'lucide-react';
 import { useNavigate, Outlet, Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import '../pages/internal/Dashboard.css';
@@ -11,6 +11,26 @@ const InternalLayout = () => {
 
   const isPermissionsActive = location.pathname.startsWith('/permissions');
   const [isPermissionsOpen, setIsPermissionsOpen] = useState(true);
+  
+  // Mobile sidebar state
+  const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
+
+  // Close sidebar on navigation on mobile
+  useEffect(() => {
+    setIsMobileSidebarOpen(false);
+  }, [location.pathname]);
+
+  // Lock body scroll when sidebar is open on mobile
+  useEffect(() => {
+    if (isMobileSidebarOpen) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = '';
+    }
+    return () => {
+      document.body.style.overflow = '';
+    };
+  }, [isMobileSidebarOpen]);
 
   const handleLogout = () => {
     logout();
@@ -27,9 +47,20 @@ const InternalLayout = () => {
 
   return (
     <div className="internal-dashboard-page">
-      <aside className="internal-sidebar glass">
+      {/* Mobile Overlay Background */}
+      {isMobileSidebarOpen && (
+        <div 
+          className="mobile-sidebar-overlay" 
+          onClick={() => setIsMobileSidebarOpen(false)}
+        />
+      )}
+
+      <aside className={`internal-sidebar glass ${isMobileSidebarOpen ? 'open' : ''}`}>
         <div className="sidebar-brand">
           <img src="/logo2.png" alt="Lepta Capital" className="sidebar-logo" />
+          <button className="mobile-close-btn" onClick={() => setIsMobileSidebarOpen(false)}>
+            <X size={24} />
+          </button>
         </div>
         
         <div className="user-profile">
@@ -122,8 +153,13 @@ const InternalLayout = () => {
 
       <main className="internal-content">
         <header className="internal-header">
-          <div className="header-search">
-            <input type="text" placeholder="Pesquisar..." className="input-field search-input" />
+          <div className="header-left">
+            <button className="mobile-menu-btn" onClick={() => setIsMobileSidebarOpen(true)}>
+              <Menu size={24} />
+            </button>
+            <div className="header-search">
+              <input type="text" placeholder="Pesquisar..." className="input-field search-input" />
+            </div>
           </div>
           <div className="header-actions">
             <button className="icon-btn">

@@ -33,6 +33,81 @@
   gap: 1.5rem;
 }
 
+.file-upload-label {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  background: rgba(255, 255, 255, 0.05);
+  padding: 0.5rem 1rem;
+  border-radius: 6px;
+  cursor: pointer;
+  border: 1px solid var(--glass-border);
+  transition: all 0.2s;
+  font-size: 0.9rem;
+}
+
+.file-upload-label:hover {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: var(--accent-orange);
+}
+
+.file-name-display {
+  font-size: 0.85rem;
+  color: var(--accent-orange);
+  margin-top: 0.5rem;
+  display: block;
+}
+
+/* Mobile Expanded Dashboard Styles */
+.mobile-expanded-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background: var(--bg-dark);
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.mobile-expanded-close {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  background: rgba(0, 0, 0, 0.7);
+  color: white;
+  border: none;
+  border-radius: 50%;
+  width: 44px;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10000;
+  cursor: pointer;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+}
+
+.mobile-expanded-iframe {
+  width: 100vh;
+  height: 100vw;
+  transform: rotate(90deg);
+  transform-origin: center;
+  border: none;
+  background: #fff;
+}
+
+/* For devices that natively lock to landscape via screen API, we don't need to rotate */
+@media screen and (orientation: landscape) {
+  .mobile-expanded-iframe {
+    width: 100vw;
+    height: 100vh;
+    transform: none;
+  }
+}
+
 .icon-wrapper {
   width: 48px;
   height: 48px;

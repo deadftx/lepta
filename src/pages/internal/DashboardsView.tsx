@@ -7,7 +7,8 @@ import {
   ExternalLink,
   ChevronDown,
   LayoutDashboard,
-  LogIn
+  LogIn,
+  X
 } from 'lucide-react';
 import './Operations.css';
 
@@ -60,11 +61,39 @@ const DashboardsView = () => {
   }, [user]);
 
   const currentDashboard = dashboards.find(d => d.id === selectedDashboardId);
+  const [isMobileExpanded, setIsMobileExpanded] = useState(false);
 
   const handleFullscreen = () => {
-    const iframeElem = document.getElementById('viewer-powerbi-frame');
-    if (iframeElem && iframeElem.requestFullscreen) {
-      iframeElem.requestFullscreen();
+    // Check if it's a mobile device/small screen
+    if (window.innerWidth <= 768) {
+      setIsMobileExpanded(true);
+      // Try to lock orientation to landscape if supported by the browser
+      try {
+        if (screen.orientation && screen.orientation.lock) {
+          screen.orientation.lock('landscape').catch(() => {});
+        }
+      } catch (e) {
+        // Ignore if not supported
+      }
+    } else {
+      // Native fullscreen for desktop
+      const iframeElem = document.getElementById('viewer-powerbi-frame');
+      if (iframeElem && iframeElem.requestFullscreen) {
+        iframeElem.requestFullscreen().catch(err => {
+          console.error("Error attempting to enable full-screen mode:", err.message);
+        });
+      }
+    }
+  };
+
+  const closeMobileExpanded = () => {
+    setIsMobileExpanded(false);
+    try {
+      if (screen.orientation && screen.orientation.unlock) {
+        screen.orientation.unlock();
+      }
+    } catch (e) {
+      // Ignore
     }
   };
 
@@ -245,6 +274,21 @@ const DashboardsView = () => {
               <ChevronDown size={18} style={{ color: 'var(--accent-orange)' }} /> Use a caixa de seleção acima para carregar o relatório
             </div>
           )}
+        </div>
+      )}
+
+      {/* Mobile Expanded Overlay */}
+      {isMobileExpanded && currentDashboard && (
+        <div className="mobile-expanded-overlay">
+          <button className="mobile-expanded-close" onClick={closeMobileExpanded}>
+            <X size={28} />
+          </button>
+          <iframe
+            title={currentDashboard.title}
+            src={getEffectiveEmbedUrl(currentDashboard)}
+            className="mobile-expanded-iframe"
+            allowFullScreen
+          />
         </div>
       )}
     </div>

@@ -1,10 +1,19 @@
+import { useState, useEffect } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { LogIn } from 'lucide-react';
+import { LogIn, Menu, X } from 'lucide-react';
 import './Navbar.css';
 
 const Navbar = () => {
   const location = useLocation();
   const navigate = useNavigate();
+  const [isOpen, setIsOpen] = useState(false);
+
+  // Fecha o menu quando a rota muda
+  useEffect(() => {
+    setIsOpen(false);
+  }, [location.pathname]);
+
+  const toggleMenu = () => setIsOpen(!isOpen);
 
   const scrollToSection = (id: string) => {
     const element = document.getElementById(id);
@@ -21,7 +30,6 @@ const Navbar = () => {
       const timeElapsed = currentTime - startTime;
       const progress = Math.min(timeElapsed / duration, 1);
       
-      // Easing function: easeInOutCubic
       const ease = progress < 0.5 
         ? 4 * progress * progress * progress 
         : 1 - Math.pow(-2 * progress + 2, 3) / 2;
@@ -38,6 +46,7 @@ const Navbar = () => {
 
   const handleNavClick = (e: React.MouseEvent<HTMLAnchorElement>, id: string) => {
     e.preventDefault();
+    setIsOpen(false); // Fecha o menu mobile ao clicar
     if (location.pathname !== '/') {
       navigate('/');
       setTimeout(() => {
@@ -45,7 +54,6 @@ const Navbar = () => {
       }, 300);
     } else {
       scrollToSection(id);
-      // Removido o pushState do hash para garantir que o navegador não pule sozinho.
     }
   };
 
@@ -55,22 +63,49 @@ const Navbar = () => {
         <Link 
           to="/" 
           className="navbar-logo" 
-          onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+          onClick={() => {
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+            setIsOpen(false);
+          }}
         >
-          <img src="/logo2.png" alt="Lepta Capital" style={{ height: '65px' }} />
+          <img src="/logo2.png" alt="Lepta Capital" className="navbar-logo-img" />
         </Link>
-        <ul className="navbar-menu">
+        
+        {/* Desktop Menu */}
+        <ul className="navbar-menu desktop-only">
           <li><a href="#" onClick={(e) => handleNavClick(e, 'proposito')}>Nosso Propósito</a></li>
           <li><a href="#" onClick={(e) => handleNavClick(e, 'servicos')}>O que Fazemos</a></li>
           <li><a href="#" onClick={(e) => handleNavClick(e, 'valores')}>Valores</a></li>
           <li><a href="#" onClick={(e) => handleNavClick(e, 'contato')}>Contato</a></li>
         </ul>
+
         <div className="navbar-actions">
-          <Link to="/login" className="btn-primary login-btn">
+          <Link to="/login" className="btn-primary login-btn desktop-only">
             <LogIn size={18} />
             ÁREA INTERNA
           </Link>
+          
+          {/* Hamburger Menu Toggle (Mobile) */}
+          <button className="mobile-toggle" onClick={toggleMenu} aria-label="Toggle menu">
+            {isOpen ? <X size={28} /> : <Menu size={28} />}
+          </button>
         </div>
+      </div>
+
+      {/* Mobile Premium Dropdown Menu */}
+      <div className={`mobile-menu glass ${isOpen ? 'open' : ''}`}>
+        <ul className="mobile-menu-list">
+          <li><a href="#" onClick={(e) => handleNavClick(e, 'proposito')}>Nosso Propósito</a></li>
+          <li><a href="#" onClick={(e) => handleNavClick(e, 'servicos')}>O que Fazemos</a></li>
+          <li><a href="#" onClick={(e) => handleNavClick(e, 'valores')}>Valores</a></li>
+          <li><a href="#" onClick={(e) => handleNavClick(e, 'contato')}>Contato</a></li>
+          <li className="mobile-menu-action">
+            <Link to="/login" className="btn-primary login-btn-mobile" onClick={() => setIsOpen(false)}>
+              <LogIn size={18} />
+              ÁREA INTERNA
+            </Link>
+          </li>
+        </ul>
       </div>
     </nav>
   );
