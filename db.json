@@ -689,6 +689,30 @@
       "date": "2026-12-25",
       "title": "Feriado Nacional - Natal",
       "createdBy": "FebrabanBot"
+    },
+    {
+      "id": "event_1786479467996",
+      "title": "Camila Maurício Cerqueira",
+      "type": "Aniversário",
+      "date": "2026-08-12",
+      "description": "Aniversário dia 12/08",
+      "createdBy": "leptamaster"
+    },
+    {
+      "id": "event_1786479484494",
+      "title": "Jessica Alves Lima",
+      "type": "Aniversário",
+      "date": "2026-09-24",
+      "description": "Aniversário dia 24/09",
+      "createdBy": "leptamaster"
+    },
+    {
+      "id": "event_1786479512844",
+      "title": "Kamila Tavares de Lima",
+      "type": "Aniversário",
+      "date": "2026-11-10",
+      "description": "Aniversário dia 10/11",
+      "createdBy": "leptamaster"
     }
   ],
   "financialTransactions": [

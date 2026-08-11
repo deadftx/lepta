@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { LogOut, User, Bell, ShieldAlert, DollarSign, Shield, Scale, UserPlus, Users, ChevronDown, ChevronRight, LayoutDashboard, Sliders, Home, Calendar, Menu, X, Wallet } from 'lucide-react';
+import { LogOut, User, Bell, ShieldAlert, DollarSign, Shield, Scale, UserPlus, Users, ChevronDown, ChevronRight, LayoutDashboard, Sliders, Home, Calendar, Menu, X, Wallet, FileSpreadsheet } from 'lucide-react';
 import { useNavigate, Outlet, Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import '../pages/internal/Dashboard.css';
@@ -11,6 +11,9 @@ const InternalLayout = () => {
 
   const isPermissionsActive = location.pathname.startsWith('/permissions');
   const [isPermissionsOpen, setIsPermissionsOpen] = useState(true);
+  
+  const isFinanceActive = location.pathname.startsWith('/financeiro');
+  const [isFinanceOpen, setIsFinanceOpen] = useState(true);
   
   // Mobile sidebar state
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
@@ -101,9 +104,26 @@ const InternalLayout = () => {
             </Link>
           )}
           {hasAccess('7') && (
-            <Link to="/financeiro" className={navItemClass('/financeiro')}>
-              <Wallet size={20} /> Financeiro
-            </Link>
+            <div className="nav-menu-group">
+              <div 
+                className={`nav-item nav-item-parent ${isFinanceActive ? 'active' : ''}`}
+                onClick={() => setIsFinanceOpen(!isFinanceOpen)}
+                style={{ cursor: 'pointer', justifyContent: 'space-between' }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                  <Wallet size={20} /> Financeiro
+                </div>
+                {isFinanceOpen ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+              </div>
+
+              {isFinanceOpen && (
+                <div className="nav-submenu" style={{ paddingLeft: '1rem' }}>
+                  <Link to="/financeiro/extratos" className={navItemClass('/financeiro/extratos')}>
+                    <FileSpreadsheet size={18} /> Processar Extrato
+                  </Link>
+                </div>
+              )}
+            </div>
           )}
           {(hasAccess('5') || user?.role === 'MASTER') && (
             <Link to="/dashboards" className={navItemClass('/dashboards')}>
