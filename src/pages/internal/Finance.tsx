@@ -97,6 +97,20 @@ const Finance = () => {
       // Read everything as json array of arrays
       const rawData = xlsx.utils.sheet_to_json<any[]>(worksheet, { header: 1 });
       
+      // Extract Razão Social from the first few rows for intelligence matching
+      let razaoSocial = '';
+      for (let i = 0; i < Math.min(10, rawData.length); i++) {
+        if (rawData[i] && rawData[i][0] === 'Razão Social') {
+          razaoSocial = String(rawData[i][1] || '');
+          break;
+        }
+      }
+      
+      const razaoWords = razaoSocial
+        .toLowerCase()
+        .split(/[\s\.\,\-\/]+/)
+        .filter(w => w.length > 3 && !['ltda', 's/a', 's.a', 'limitada', 'recuperacao', 'judicial', 'empresa', 'eireli', 'participacoes', 'sociedade', 'anonima'].includes(w));
+      
       // Find the row containing "Data_da_Ocorrencia"
       let headerRowIndex = -1;
       for (let i = 0; i < Math.min(20, rawData.length); i++) {
@@ -130,11 +144,30 @@ const Finance = () => {
 
         const isCredit = row.Valor && row.Valor > 0;
         const isDebit = row.Valor && row.Valor < 0;
+        
+        let historico = row.Lancamento || '';
+        let complemento = row.Nome || '';
+        const compLower = complemento.toLowerCase();
+        
+        // Apply Business Rules
+        if (isCredit) {
+          historico = 'Crédito';
+        } else if (isDebit) {
+          if (compLower.includes('lepta bank') || compLower.includes('lepta financeiro')) {
+            historico = 'Gestão de contas';
+          } else if (compLower.includes('lepta multisetorial') || compLower.includes('lepta special')) {
+            historico = 'Liquidação de Recebíveis';
+          } else if (historico.toLowerCase().includes('tarifas de conta')) {
+            historico = 'Tarifas';
+          } else if (razaoWords.length > 0 && razaoWords.some(w => compLower.includes(w))) {
+            historico = 'Transferência';
+          }
+        }
 
         formatted.push({
           Data: formatExcelDate(row.Data_da_Ocorrencia),
-          Histórico: row.Lancamento || '',
-          '  Complemento': row.Nome || '',
+          Histórico: historico,
+          '  Complemento': complemento,
           Créditos: isCredit ? row.Valor! : null,
           Débitos: isDebit ? Math.abs(row.Valor!) : null,
           Saldo: row.Saldo || null

@@ -8,11 +8,15 @@
     "build": "tsc -b && vite build",
     "lint": "oxlint",
     "preview": "vite preview",
-    "db": "json-server --watch db.json --port 3004",
-    "tunnel": "cloudflared tunnel run"
+    "db": "node server.js",
+    "tunnel": "cloudflared tunnel run",
+    "import-excel": "node scripts/importExcel.js"
   },
   "dependencies": {
+    "better-sqlite3": "^13.0.3",
+    "cors": "^2.8.6",
     "exceljs": "^4.4.0",
+    "express": "^5.2.1",
     "lucide-react": "^1.23.0",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",

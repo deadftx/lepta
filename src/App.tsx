@@ -15,6 +15,8 @@ import CreateUser from './pages/internal/CreateUser';
 import Marketing from './pages/internal/Marketing';
 import Finance from './pages/internal/Finance';
 import FinanceDashboard from './pages/internal/FinanceDashboard';
+import CustomerAnalysis from './pages/internal/CustomerAnalysis';
+import DatabaseManagement from './pages/internal/DatabaseManagement';
 import ProtectedRoute from './components/ProtectedRoute';
 import InternalLayout from './components/InternalLayout';
 import { AuthProvider } from './contexts/AuthContext';
@@ -55,6 +57,8 @@ function App() {
               <Route path="/bi" element={<BI />} />
               <Route path="/financeiro" element={<FinanceDashboard />} />
               <Route path="/financeiro/extratos" element={<Finance />} />
+              <Route path="/intelligence/analise-clientes" element={<CustomerAnalysis />} />
+              <Route path="/banco-de-dados" element={<DatabaseManagement />} />
               <Route path="/permissions" element={<Permissions />} />
               <Route path="/permissions/create-user" element={<CreateUser />} />
               <Route path="/permissions/groups" element={<Groups />} />

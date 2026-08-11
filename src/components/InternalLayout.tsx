@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { LogOut, User, Bell, ShieldAlert, DollarSign, Shield, Scale, UserPlus, Users, ChevronDown, ChevronRight, LayoutDashboard, Sliders, Home, Calendar, Menu, X, Wallet, FileSpreadsheet } from 'lucide-react';
+import { LogOut, User, Bell, ShieldAlert, DollarSign, Shield, Scale, UserPlus, Users, ChevronDown, ChevronRight, LayoutDashboard, Sliders, Home, Calendar, Menu, X, Wallet, FileSpreadsheet, BrainCircuit, Database } from 'lucide-react';
 import { useNavigate, Outlet, Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import '../pages/internal/Dashboard.css';
@@ -14,6 +14,9 @@ const InternalLayout = () => {
   
   const isFinanceActive = location.pathname.startsWith('/financeiro');
   const [isFinanceOpen, setIsFinanceOpen] = useState(true);
+
+  const isIntelligenceActive = location.pathname.startsWith('/intelligence');
+  const [isIntelligenceOpen, setIsIntelligenceOpen] = useState(true);
   
   // Mobile sidebar state
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
@@ -124,6 +127,33 @@ const InternalLayout = () => {
                 </div>
               )}
             </div>
+          )}
+          {(hasAccess('8') || user?.role === 'MASTER') && (
+            <div className="nav-menu-group">
+              <div 
+                className={`nav-item nav-item-parent ${isIntelligenceActive ? 'active' : ''}`}
+                onClick={() => setIsIntelligenceOpen(!isIntelligenceOpen)}
+                style={{ cursor: 'pointer', justifyContent: 'space-between' }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                  <BrainCircuit size={20} /> Lepta Intelligence
+                </div>
+                {isIntelligenceOpen ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+              </div>
+
+              {isIntelligenceOpen && (
+                <div className="nav-submenu" style={{ paddingLeft: '1rem' }}>
+                  <Link to="/intelligence/analise-clientes" className={navItemClass('/intelligence/analise-clientes')}>
+                    <Users size={18} /> Análise de Clientes
+                  </Link>
+                </div>
+              )}
+            </div>
+          )}
+          {(hasAccess('9') || user?.role === 'MASTER') && (
+            <Link to="/banco-de-dados" className={navItemClass('/banco-de-dados')}>
+              <Database size={20} /> Banco de Dados
+            </Link>
           )}
           {(hasAccess('5') || user?.role === 'MASTER') && (
             <Link to="/dashboards" className={navItemClass('/dashboards')}>
