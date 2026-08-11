@@ -27,17 +27,17 @@
 .hero-main-logo {
   max-width: 100%;
   height: auto;
-  max-height: clamp(80px, 18vh, 160px);
+  max-height: 190px;
 }
 
 .hero-title {
-  font-size: clamp(2.2rem, 5vw, 4.5rem);
+  font-size: clamp(3rem, 5vw, 4.5rem);
   margin-bottom: 1.5rem;
   letter-spacing: -1px;
 }
 
 .hero-subtitle {
-  font-size: clamp(1rem, 2vw, 1.25rem);
+  font-size: 1.25rem;
   color: var(--text-secondary);
   margin-bottom: 2.5rem;
   max-width: 650px;
