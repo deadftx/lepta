@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { LogOut, User, Bell, ShieldAlert, DollarSign, Shield, Scale, UserPlus, Users, ChevronDown, ChevronRight, LayoutDashboard, Sliders, Home, Megaphone } from 'lucide-react';
+import { LogOut, User, Bell, ShieldAlert, DollarSign, Shield, Scale, UserPlus, Users, ChevronDown, ChevronRight, LayoutDashboard, Sliders, Home, Calendar } from 'lucide-react';
 import { useNavigate, Outlet, Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import '../pages/internal/Dashboard.css';
@@ -66,7 +66,7 @@ const InternalLayout = () => {
           )}
           {hasAccess('6') && (
             <Link to="/marketing" className={navItemClass('/marketing')}>
-              <Megaphone size={20} /> Marketing
+              <Calendar size={20} /> Calendário
             </Link>
           )}
           {(hasAccess('5') || user?.role === 'MASTER') && (

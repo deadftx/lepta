@@ -238,7 +238,11 @@ const Dashboard = () => {
                         <h4>{evt.title}</h4>
                         {renderBadge(evt.type)}
                       </div>
-                      <p>{evt.description || 'Sem descrição adicional'}</p>
+                      <p>
+                        {evt.type === 'Aniversário' && (!evt.description || evt.description.includes('SharePoint'))
+                          ? `Aniversário dia ${dateObj.day}/${dateObj.month}`
+                          : evt.description || 'Sem descrição adicional'}
+                      </p>
                     </div>
                   </div>
                 );

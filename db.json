@@ -1,4 +1,7 @@
 {
+  "settings": {
+    "sharepointUrl": "https://leptacapital.sharepoint.com/:x:/r/sites/deptoadministrativo/_layouts/15/Doc.aspx?sourcedoc=%7B172C364F-C96F-40F7-AA56-B9B5E9C6988E%7D&file=Controle%20-%20Aniversarios%20-%202026.xlsx&action=default&mobileredirect=true&DefaultItemOpen=1"
+  },
   "areas": [
     {
       "id": "1",
@@ -22,7 +25,7 @@
     },
     {
       "id": "6",
-      "name": "Marketing"
+      "name": "Calendário"
     }
   ],
   "groups": [],
@@ -133,6 +136,18 @@
       "permissions": [
         "4",
         "5"
+      ]
+    },
+    {
+      "id": "user_1786395770161",
+      "username": "rafael.battistella",
+      "email": "rafael.battistella@lepta.com.br",
+      "password": "rafael1234",
+      "role": "USER",
+      "permissions": [
+        "5",
+        "6",
+        "4"
       ]
     }
   ],
@@ -339,20 +354,228 @@
   ],
   "calendarEvents": [
     {
-      "id": "event_2",
-      "title": "Aniversário do Colaborador Luan Alvarez",
-      "type": "Aniversário",
-      "date": "2026-08-20",
-      "description": "Comemoração no Espaço de Convivência - 16:30h",
-      "createdBy": "Marketing"
-    },
-    {
       "id": "event_3",
       "title": "Feriado Nacional - Independência do Brasil",
       "type": "Feriado",
       "date": "2026-09-07",
       "description": "Feriado Nacional (Sem expediente corporativo)",
       "createdBy": "Marketing"
+    },
+    {
+      "id": "bday_1786395693910_0",
+      "title": "Aniversário: Kaique Luiz Fernandes Da Silva",
+      "type": "Aniversário",
+      "date": "2026-01-25",
+      "description": "Aniversário dia 25/01",
+      "createdBy": "leptamaster"
+    },
+    {
+      "id": "bday_1786395693910_1",
+      "title": "Aniversário: Edilson José da Silva",
+      "type": "Aniversário",
+      "date": "2026-01-26",
+      "description": "Aniversário dia 26/01",
+      "createdBy": "leptamaster"
+    },
+    {
+      "id": "bday_1786395693910_2",
+      "title": "Aniversário: Ivoneide De Jesus Dos Anjos",
+      "type": "Aniversário",
+      "date": "2026-01-28",
+      "description": "Aniversário dia 28/01",
+      "createdBy": "leptamaster"
+    },
+    {
+      "id": "bday_1786395693910_3",
+      "title": "Aniversário: Jardel Márcio de Lima",
+      "type": "Aniversário",
+      "date": "2026-01-29",
+      "description": "Aniversário dia 29/01",
+      "createdBy": "leptamaster"
+    },
+    {
+      "id": "bday_1786395693910_4",
+      "title": "Aniversário: Gustavo Da Silva Franco Batimarco",
+      "type": "Aniversário",
+      "date": "2026-01-31",
+      "description": "Aniversário dia 31/01",
+      "createdBy": "leptamaster"
+    },
+    {
+      "id": "bday_1786395693910_5",
+      "title": "Aniversário: Renata Bezerra Oliveira",
+      "type": "Aniversário",
+      "date": "2026-02-03",
+      "description": "Aniversário dia 03/02",
+      "createdBy": "leptamaster"
+    },
+    {
+      "id": "bday_1786395693910_6",
+      "title": "Aniversário: Mirella Rodrigues Da Silva",
+      "type": "Aniversário",
+      "date": "2026-02-12",
+      "description": "Aniversário dia 12/02",
+      "createdBy": "leptamaster"
+    },
+    {
+      "id": "bday_1786395693910_7",
+      "title": "Aniversário: Evilin Ranna Alencar Silva",
+      "type": "Aniversário",
+      "date": "2026-02-18",
+      "description": "Aniversário dia 18/02",
+      "createdBy": "leptamaster"
+    },
+    {
+      "id": "bday_1786395693910_8",
+      "title": "Aniversário: Pietra Devecz Coscina",
+      "type": "Aniversário",
+      "date": "2026-02-18",
+      "description": "Aniversário dia 18/02",
+      "createdBy": "leptamaster"
+    },
+    {
+      "id": "bday_1786395693910_11",
+      "title": "Aniversário: Beatriz de Paula Cassoni Domingues",
+      "type": "Aniversário",
+      "date": "2026-03-04",
+      "description": "Aniversário dia 04/03",
+      "createdBy": "leptamaster"
+    },
+    {
+      "id": "bday_1786395693910_14",
+      "title": "Aniversário: Lucas Chueco",
+      "type": "Aniversário",
+      "date": "2026-04-01",
+      "description": "Aniversário dia 01/04",
+      "createdBy": "leptamaster"
+    },
+    {
+      "id": "bday_1786395693910_15",
+      "title": "Aniversário: Stephanie Castro Mendes",
+      "type": "Aniversário",
+      "date": "2026-04-09",
+      "description": "Aniversário dia 09/04",
+      "createdBy": "leptamaster"
+    },
+    {
+      "id": "bday_1786395693910_16",
+      "title": "Aniversário: Sebastião Rafael Pereira Neto",
+      "type": "Aniversário",
+      "date": "2026-04-30",
+      "description": "Aniversário dia 30/04",
+      "createdBy": "leptamaster"
+    },
+    {
+      "id": "bday_1786395693910_17",
+      "title": "Aniversário: Raphael De Simone",
+      "type": "Aniversário",
+      "date": "2026-06-18",
+      "description": "Aniversário dia 18/06",
+      "createdBy": "leptamaster"
+    },
+    {
+      "id": "bday_1786395693910_18",
+      "title": "Aniversário: Karina Marques Fernandes",
+      "type": "Aniversário",
+      "date": "2026-07-20",
+      "description": "Aniversário dia 20/07",
+      "createdBy": "leptamaster"
+    },
+    {
+      "id": "bday_1786395693910_20",
+      "title": "Aniversário: Tatiany Faustina Alvim",
+      "type": "Aniversário",
+      "date": "2026-08-19",
+      "description": "Aniversário dia 19/08",
+      "createdBy": "leptamaster"
+    },
+    {
+      "id": "bday_1786395693910_21",
+      "title": "Aniversário: Bruno Leonardo Rodrigues Domingues",
+      "type": "Aniversário",
+      "date": "2026-09-03",
+      "description": "Aniversário dia 03/09",
+      "createdBy": "leptamaster"
+    },
+    {
+      "id": "bday_1786395693910_23",
+      "title": "Aniversário: Gabriel Vieira Rodrigues Gardin",
+      "type": "Aniversário",
+      "date": "2026-10-31",
+      "description": "Aniversário dia 31/10",
+      "createdBy": "leptamaster"
+    },
+    {
+      "id": "bday_1786395693910_24",
+      "title": "Aniversário: Luan Alvarez Cabrera",
+      "type": "Aniversário",
+      "date": "2026-11-04",
+      "description": "Aniversário dia 04/11",
+      "createdBy": "leptamaster"
+    },
+    {
+      "id": "bday_1786395693910_26",
+      "title": "Aniversário: Leonardo Alvarez Tomaz",
+      "type": "Aniversário",
+      "date": "2026-12-03",
+      "description": "Aniversário dia 03/12",
+      "createdBy": "leptamaster"
+    },
+    {
+      "id": "bday_1786395693910_27",
+      "title": "Aniversário: Arthur Feltrin Deco",
+      "type": "Aniversário",
+      "date": "2026-12-06",
+      "description": "Aniversário dia 06/12",
+      "createdBy": "leptamaster"
+    },
+    {
+      "id": "bday_1786395693910_29",
+      "title": "Aniversário: Luiz Otavio Dantas de Souza",
+      "type": "Aniversário",
+      "date": "2026-12-09",
+      "description": "Aniversário dia 09/12",
+      "createdBy": "leptamaster"
+    },
+    {
+      "id": "bday_1786395693910_30",
+      "title": "Aniversário: Luis Longhini",
+      "type": "Aniversário",
+      "date": "2026-12-15",
+      "description": "Aniversário dia 15/12",
+      "createdBy": "leptamaster"
+    },
+    {
+      "id": "bday_1786395693910_31",
+      "title": "Aniversário: Tais De Castro Lima",
+      "type": "Aniversário",
+      "date": "2026-12-19",
+      "description": "Aniversário dia 19/12",
+      "createdBy": "leptamaster"
+    },
+    {
+      "id": "bday_1786395693910_32",
+      "title": "Aniversário: Gabrielle Silva Dantas Gico",
+      "type": "Aniversário",
+      "date": "2026-12-20",
+      "description": "Aniversário dia 20/12",
+      "createdBy": "leptamaster"
+    },
+    {
+      "id": "bday_1786395693910_33",
+      "title": "Aniversário: Victor Gomes Rodrigues Lopes",
+      "type": "Aniversário",
+      "date": "2026-12-23",
+      "description": "Aniversário dia 23/12",
+      "createdBy": "leptamaster"
+    },
+    {
+      "id": "bday_1786395693910_34",
+      "title": "Aniversário: Sheila Ferraz Gomes",
+      "type": "Aniversário",
+      "date": "2026-12-31",
+      "description": "Aniversário dia 31/12",
+      "createdBy": "leptamaster"
     }
   ]
 }
