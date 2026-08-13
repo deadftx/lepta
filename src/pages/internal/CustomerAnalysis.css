@@ -23,7 +23,7 @@
 
 .kpi-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
   gap: 1.25rem;
 }
 
@@ -62,12 +62,15 @@
   font-weight: 500;
 }
 
+.kpi-info {
+  min-width: 0;
+}
+
 .kpi-value {
-  font-size: clamp(1.1rem, 2vw, 1.5rem);
+  font-size: clamp(1.1rem, 2vw, 1.6rem);
   font-weight: 700;
   color: #fff;
-  word-break: break-word;
-  line-height: 1.2;
+  white-space: nowrap;
 }
 
 .kpi-sub {
