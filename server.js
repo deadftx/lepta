@@ -270,13 +270,18 @@ app.post('/api/sync-link', async (req, res) => {
 app.get('/api/analise-clientes', (req, res) => {
   try {
     const query = `
-      SELECT 
-        CLIENTE as cedente,
-        COUNT(id) as qtdTitulos,
-        SUM(VALOR) as valorGeral,
-        SUM(CASE WHEN Status = 'Vencido' THEN VALOR ELSE 0 END) as valorVencido
-      FROM "BASE"
-      WHERE CLIENTE IS NOT NULL AND CLIENTE != ''
+        SELECT 
+          CLIENTE as cedente,
+          COUNT(ID) as qtdTitulos,
+          SUM(CASE WHEN VENCIDO = 'Sim' THEN 1 ELSE 0 END) as qtdVencido,
+          SUM(CASE WHEN SITUACAO LIKE '%liquidado%' THEN 1 ELSE 0 END) as qtdLiquidado,
+          SUM(CASE WHEN SITUACAO LIKE '%ABERTO%' AND VENCIDO = 'Nao' THEN 1 ELSE 0 END) as qtdAberto,
+          SUM(VALOR_NOMINAL) as valorGeral,
+          SUM(CASE WHEN VENCIDO = 'Sim' THEN VALOR_NOMINAL ELSE 0 END) as valorVencido,
+          SUM(CASE WHEN SITUACAO LIKE '%liquidado%' THEN VALOR_LIQUIDO ELSE 0 END) as valorLiquidado,
+          SUM(CASE WHEN SITUACAO LIKE '%ABERTO%' AND VENCIDO = 'Nao' THEN VALOR_NOMINAL ELSE 0 END) as valorAberto
+        FROM "BASE_NOVA"
+        WHERE CLIENTE IS NOT NULL AND CLIENTE != ''
       GROUP BY CLIENTE
       ORDER BY valorGeral DESC
     `;
@@ -292,13 +297,18 @@ app.get('/api/analise-sacados/:cedente', (req, res) => {
   try {
     const cedente = req.params.cedente;
     const query = `
-      SELECT 
-        SACADO as sacado,
-        COUNT(id) as qtdTitulos,
-        SUM(VALOR) as valorGeral,
-        SUM(CASE WHEN Status = 'Vencido' THEN VALOR ELSE 0 END) as valorVencido
-      FROM "BASE"
-      WHERE CLIENTE = ? AND SACADO IS NOT NULL AND SACADO != ''
+        SELECT 
+          SACADO as sacado,
+          COUNT(ID) as qtdTitulos,
+          SUM(CASE WHEN VENCIDO = 'Sim' THEN 1 ELSE 0 END) as qtdVencido,
+          SUM(CASE WHEN SITUACAO LIKE '%liquidado%' THEN 1 ELSE 0 END) as qtdLiquidado,
+          SUM(CASE WHEN SITUACAO LIKE '%ABERTO%' AND VENCIDO = 'Nao' THEN 1 ELSE 0 END) as qtdAberto,
+          SUM(VALOR_NOMINAL) as valorGeral,
+          SUM(CASE WHEN VENCIDO = 'Sim' THEN VALOR_NOMINAL ELSE 0 END) as valorVencido,
+          SUM(CASE WHEN SITUACAO LIKE '%liquidado%' THEN VALOR_LIQUIDO ELSE 0 END) as valorLiquidado,
+          SUM(CASE WHEN SITUACAO LIKE '%ABERTO%' AND VENCIDO = 'Nao' THEN VALOR_NOMINAL ELSE 0 END) as valorAberto
+        FROM "BASE_NOVA"
+        WHERE CLIENTE = ? AND SACADO IS NOT NULL AND SACADO != ''
       GROUP BY SACADO
       ORDER BY valorGeral DESC
     `;
@@ -307,6 +317,33 @@ app.get('/api/analise-sacados/:cedente', (req, res) => {
   } catch (err) {
     console.error('Erro ao consultar analise de sacados:', err);
     res.status(500).json({ error: 'Erro ao consultar analise de sacados', message: err.message });
+  }
+});
+
+app.get('/api/analise-ua/:cedente', (req, res) => {
+  try {
+    const cedente = req.params.cedente;
+    const query = `
+        SELECT 
+          UA as ua,
+          COUNT(ID) as qtdTitulos,
+          SUM(CASE WHEN VENCIDO = 'Sim' THEN 1 ELSE 0 END) as qtdVencido,
+          SUM(CASE WHEN SITUACAO LIKE '%liquidado%' THEN 1 ELSE 0 END) as qtdLiquidado,
+          SUM(CASE WHEN SITUACAO LIKE '%ABERTO%' AND VENCIDO = 'Nao' THEN 1 ELSE 0 END) as qtdAberto,
+          SUM(VALOR_NOMINAL) as valorGeral,
+          SUM(CASE WHEN VENCIDO = 'Sim' THEN VALOR_NOMINAL ELSE 0 END) as valorVencido,
+          SUM(CASE WHEN SITUACAO LIKE '%liquidado%' THEN VALOR_LIQUIDO ELSE 0 END) as valorLiquidado,
+          SUM(CASE WHEN SITUACAO LIKE '%ABERTO%' AND VENCIDO = 'Nao' THEN VALOR_NOMINAL ELSE 0 END) as valorAberto
+        FROM "BASE_NOVA"
+        WHERE CLIENTE = ? AND UA IS NOT NULL AND UA != ''
+      GROUP BY UA
+      ORDER BY valorGeral DESC
+    `;
+    const rows = db.prepare(query).all(cedente);
+    res.json(rows);
+  } catch (err) {
+    console.error('Erro ao consultar analise de UA:', err);
+    res.status(500).json({ error: 'Erro ao consultar analise de UA', message: err.message });
   }
 });
 
