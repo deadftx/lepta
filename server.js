@@ -288,6 +288,28 @@ app.get('/api/analise-clientes', (req, res) => {
   }
 });
 
+app.get('/api/analise-sacados/:cedente', (req, res) => {
+  try {
+    const cedente = req.params.cedente;
+    const query = `
+      SELECT 
+        SACADO as sacado,
+        COUNT(id) as qtdTitulos,
+        SUM(VALOR) as valorGeral,
+        SUM(CASE WHEN Status = 'Vencido' THEN VALOR ELSE 0 END) as valorVencido
+      FROM "BASE"
+      WHERE CLIENTE = ? AND SACADO IS NOT NULL AND SACADO != ''
+      GROUP BY SACADO
+      ORDER BY valorGeral DESC
+    `;
+    const rows = db.prepare(query).all(cedente);
+    res.json(rows);
+  } catch (err) {
+    console.error('Erro ao consultar analise de sacados:', err);
+    res.status(500).json({ error: 'Erro ao consultar analise de sacados', message: err.message });
+  }
+});
+
 
 // -------------------------------------------------------------
 // GENERIC REST API (MIMICKING JSON-SERVER)
