@@ -54,3 +54,6 @@ dist-ssr
 *.sqlite-shm
 *.sqlite-wal
 *.xlsx
+
+# Arquivos de Dados e Banco
+*.csv
