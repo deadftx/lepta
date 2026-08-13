@@ -293,7 +293,7 @@ app.get('/api/analise-clientes', (req, res) => {
 // GENERIC REST API (MIMICKING JSON-SERVER)
 // -------------------------------------------------------------
 
-app.get('/:table', (req, res) => {
+app.get('/:table', (req, res, next) => {
   const table = getActualTableName(req.params.table);
   try {
     const rows = db.prepare(`SELECT * FROM "${table}"`).all();
@@ -303,11 +303,14 @@ app.get('/:table', (req, res) => {
        res.json(rows.map(parseRow));
     }
   } catch (err) {
-    res.status(404).json([]); // table doesn't exist
+    if (err.message.includes('no such table')) {
+      return next(); // Passa adiante para o React Router (ex: /dashboard)
+    }
+    res.status(404).json([]);
   }
 });
 
-app.get('/:table/:id', (req, res) => {
+app.get('/:table/:id', (req, res, next) => {
   const table = getActualTableName(req.params.table);
   try {
     const row = db.prepare(`SELECT * FROM "${table}" WHERE id = ?`).get(req.params.id);
@@ -319,6 +322,9 @@ app.get('/:table/:id', (req, res) => {
        res.json(parseRow(row));
     }
   } catch (err) {
+    if (err.message.includes('no such table')) {
+      return next();
+    }
     res.status(404).json({});
   }
 });

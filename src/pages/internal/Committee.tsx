@@ -29,7 +29,7 @@ const Committee = () => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetch('http://localhost:3004/committees')
+    fetch('/committees')
       .then(res => res.json())
       .then(data => {
         setDecisions(data);

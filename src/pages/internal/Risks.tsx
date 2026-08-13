@@ -24,7 +24,7 @@ const Risks = () => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetch('http://localhost:3004/risks')
+    fetch('/risks')
       .then(res => res.json())
       .then(data => {
         setRisks(data);

@@ -27,7 +27,7 @@ const CustomerAnalysis = () => {
     const fetchClients = async () => {
       try {
         setLoading(true);
-        const response = await fetch(`http://localhost:3004/api/analise-clientes?t=${Date.now()}`, { 
+        const response = await fetch(`/api/analise-clientes?t=${Date.now()}`, { 
           cache: 'no-store',
           headers: {
             'Pragma': 'no-cache',

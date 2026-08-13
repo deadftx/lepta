@@ -30,7 +30,7 @@ const Credits = () => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetch('http://localhost:3004/credits')
+    fetch('/credits')
       .then(res => res.json())
       .then(data => {
         setCredits(data);
