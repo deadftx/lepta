@@ -9,6 +9,10 @@ const app = express();
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 
+// Serve arquivos estáticos do frontend (pasta dist) em produção
+const __dirname = path.resolve();
+app.use(express.static(path.join(__dirname, 'dist')));
+
 // Inicializa banco de dados
 const dbPath = path.join(process.cwd(), 'database.sqlite');
 const db = new Database(dbPath, { fileMustExist: false });
@@ -388,6 +392,16 @@ app.delete('/:table/:id', (req, res) => {
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
+});
+
+// -------------------------------------------------------------
+// ROTA FALLBACK PARA O REACT ROUTER (DEVE SER A ÚLTIMA ANTES DO LISTEN)
+// -------------------------------------------------------------
+app.get('*', (req, res) => {
+  if (req.path.startsWith('/api/') || req.path.startsWith('/table/')) {
+    return res.status(404).json({ error: 'Endpoint not found' });
+  }
+  res.sendFile(path.join(__dirname, 'dist', 'index.html'));
 });
 
 const PORT = process.env.PORT || 3004;

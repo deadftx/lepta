@@ -249,8 +249,8 @@ const Dashboard = () => {
           </div>
         )}
 
-        {/* Card Completo: Próximos eventos, aniversário e feriado */}
-        <div className="internal-card glass full-width">
+        {/* Card de Eventos (agora ocupando apenas 1 coluna como o calendário) */}
+        <div className="internal-card glass">
           <h3>Próximos eventos, aniversário e feriado</h3>
           {loading ? (
             <p style={{ color: 'var(--text-muted)', marginTop: '1rem' }}>Carregando eventos...</p>
@@ -282,6 +282,20 @@ const Dashboard = () => {
               })}
             </div>
           )}
+        </div>
+
+        {/* Mascote Nix Flutuante fixo no limite inferior direito */}
+        <div style={{ position: 'fixed', bottom: 0, right: '40px', zIndex: 1000, pointerEvents: 'none' }}>
+          <img 
+            src="/mascote_nix.png" 
+            alt="Mascote Nix" 
+            style={{ 
+              maxWidth: '90vw', 
+              maxHeight: '300px', 
+              objectFit: 'contain', 
+              display: 'block'
+            }} 
+          />
         </div>
       </div>
     </>
