@@ -122,28 +122,33 @@ const CustomerAnalysis = () => {
 
   // KPIs
   let displayClients = [];
+  let kpiClients = clients; // Usado apenas para os totais no topo
   
   if (selectedCedente) {
-    displayClients = searchTerm.trim() === '' 
+    const currentSacados = searchTerm.trim() === '' 
       ? sacados 
       : sacados.filter(sac => (sac.sacado || '').toLowerCase().includes(searchTerm.toLowerCase()));
+    
+    displayClients = currentSacados;
+    kpiClients = currentSacados; // Quando em modo sacado, KPIs refletem os sacados (filtrados ou não)
   } else {
-    displayClients = filteredClients;
+    displayClients = filteredClients; // Tabela fica vazia ou mostra a busca
+    kpiClients = clients; // KPIs mostram a base inteira sempre
   }
   
-  const totalClients = displayClients.length;
-  const totalVolume = displayClients.reduce((acc, curr) => acc + curr.valorGeral, 0);
-  const totalVencido = displayClients.reduce((acc, curr) => acc + curr.valorVencido, 0);
+  const totalClients = kpiClients.length;
+  const totalVolume = kpiClients.reduce((acc, curr) => acc + curr.valorGeral, 0);
+  const totalVencido = kpiClients.reduce((acc, curr) => acc + curr.valorVencido, 0);
   
   const percVencidoGeral = totalVolume > 0 ? (totalVencido / totalVolume) * 100 : 0;
-  const avgScore = totalClients > 0 ? Math.floor(displayClients.reduce((acc, c) => acc + (c.score || 0), 0) / totalClients) : 0;
+  const avgScore = totalClients > 0 ? Math.floor(kpiClients.reduce((acc, c) => acc + (c.score || 0), 0) / totalClients) : 0;
 
   return (
     <div className="customer-analysis-page">
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '1rem' }}>
         <div>
           <div className="intelligence-badge">
-            <BrainCircuit size={16} /> Lepta Intelligence (Ao Vivo)
+            <BrainCircuit size={16} /> Lepta Intelligence
           </div>
           <h2 style={{ fontSize: '1.75rem', fontWeight: 700, marginTop: '0.5rem', color: '#fff' }}>
             Análise de Clientes
@@ -153,9 +158,6 @@ const CustomerAnalysis = () => {
           </p>
         </div>
 
-        <Link to="/banco-de-dados" className="btn-primary" style={{ display: 'inline-flex', alignItems: 'center', gap: '0.5rem', textDecoration: 'none' }}>
-          <Database size={18} /> Gerenciar Base de Dados
-        </Link>
       </div>
 
       {/* KPI Summary Grid */}

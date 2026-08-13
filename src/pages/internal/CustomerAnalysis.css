@@ -64,14 +64,18 @@
 
 .kpi-info {
   min-width: 0;
+  padding-right: 0.5rem;
+  overflow: hidden;
 }
 
 .kpi-value {
-  font-size: clamp(1rem, 1.2vw + 0.3rem, 1.5rem);
+  font-size: clamp(0.9rem, 1.1vw + 0.2rem, 1.4rem);
   font-weight: 700;
   color: #fff;
   white-space: nowrap;
   letter-spacing: -0.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .kpi-sub {
