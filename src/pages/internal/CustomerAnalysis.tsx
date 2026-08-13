@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Users, Search, BrainCircuit, Database, ShieldCheck, TrendingUp, BarChart3, AlertTriangle } from 'lucide-react';
+import { Users, Search, BrainCircuit, Database, ShieldCheck, TrendingUp, AlertTriangle } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import './CustomerAnalysis.css';
 import './Operations.css';
