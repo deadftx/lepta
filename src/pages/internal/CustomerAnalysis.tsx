@@ -220,20 +220,7 @@ const CustomerAnalysis = () => {
 
   return (
     <div className="customer-analysis-page">
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '1rem' }}>
-        <div>
-          <div className="intelligence-badge">
-            <BrainCircuit size={16} /> Lepta Intelligence
-          </div>
-          <h2 style={{ fontSize: '1.75rem', fontWeight: 700, marginTop: '0.5rem', color: '#fff' }}>
-            Análise de Clientes
-          </h2>
-          <p style={{ color: 'var(--text-muted, #94a3b8)', fontSize: '0.95rem' }}>
-            Dados sincronizados em tempo real diretamente da base do banco de dados.
-          </p>
-        </div>
-
-      </div>
+      {/* Title block removed to save space */ }
 
       {/* KPI Summary Grid */}
       <div className="kpi-grid">
@@ -293,10 +280,35 @@ const CustomerAnalysis = () => {
         </div>
       </div>
 
-      {/* Filter and Search Bar */}
-      <div className="filter-bar glass">
-        <div className="filter-group" style={{ width: '100%' }}>
-          <div className="search-input-wrapper" style={{ flex: 1 }}>
+      {/* Main Content Table */}
+      <div className="internal-card glass" style={{ marginTop: '1rem' }}>
+        <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
+          <h3>
+            {selectedCedente 
+              ? (drillDownMode === 'sacados' 
+                  ? `Visão Geral dos Sacados do Cedente "${selectedCedente}"` 
+                  : `Visão Geral das UAs do Cedente "${selectedCedente}"`)
+              : "Visão Geral dos Clientes"}
+          </h3>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+            <div className="intelligence-badge" style={{ margin: 0 }}>
+              <BrainCircuit size={16} /> Lepta Intelligence
+            </div>
+            {selectedCedente && (
+              <button 
+                onClick={handleBack}
+                className="btn-primary"
+                style={{ display: 'inline-flex', alignItems: 'center', gap: '0.5rem', padding: '0.5rem 1rem', background: 'rgba(255, 255, 255, 0.1)', color: '#fff', border: '1px solid rgba(255,255,255,0.2)' }}
+              >
+                <ArrowLeft size={16} /> Voltar para Cedentes
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Unified Search Bar */}
+        <div style={{ padding: '0 1.5rem 1.5rem 1.5rem' }}>
+          <div className="search-input-wrapper" style={{ width: '100%' }}>
             <Search size={18} />
             <input
               type="text"
@@ -307,28 +319,6 @@ const CustomerAnalysis = () => {
               style={{ width: '100%' }}
             />
           </div>
-        </div>
-      </div>
-
-      {/* Main Content Table */}
-      <div className="internal-card glass">
-        <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <h3>
-            {selectedCedente 
-              ? (drillDownMode === 'sacados' 
-                  ? `Visão Geral dos Sacados do Cedente "${selectedCedente}"` 
-                  : `Visão Geral das UAs do Cedente "${selectedCedente}"`)
-              : "Visão Geral dos Clientes"}
-          </h3>
-          {selectedCedente && (
-            <button 
-              onClick={handleBack}
-              className="btn-primary"
-              style={{ display: 'inline-flex', alignItems: 'center', gap: '0.5rem', padding: '0.5rem 1rem', background: 'rgba(255, 255, 255, 0.1)', color: '#fff', border: '1px solid rgba(255,255,255,0.2)' }}
-            >
-              <ArrowLeft size={16} /> Voltar para Cedentes
-            </button>
-          )}
         </div>
 
         {loading || loadingSubData ? (

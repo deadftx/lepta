@@ -212,9 +212,6 @@ const InternalLayout = () => {
             <button className="mobile-menu-btn" onClick={() => setIsMobileSidebarOpen(true)}>
               <Menu size={24} />
             </button>
-            <div className="header-search">
-              <input type="text" placeholder="Pesquisar..." className="input-field search-input" />
-            </div>
           </div>
           <div className="header-actions">
             <button className="icon-btn">
