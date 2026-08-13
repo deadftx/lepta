@@ -397,7 +397,7 @@ app.delete('/:table/:id', (req, res) => {
 // -------------------------------------------------------------
 // ROTA FALLBACK PARA O REACT ROUTER (DEVE SER A ÚLTIMA ANTES DO LISTEN)
 // -------------------------------------------------------------
-app.get('*', (req, res) => {
+app.get('/*', (req, res) => {
   if (req.path.startsWith('/api/') || req.path.startsWith('/table/')) {
     return res.status(404).json({ error: 'Endpoint not found' });
   }
