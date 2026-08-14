@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Users, Search, BrainCircuit, Database, ShieldCheck, TrendingUp, AlertTriangle, ArrowLeft, Building2, User, CheckCircle, Clock } from 'lucide-react';
-import { Link } from 'react-router-dom';
+import { Users, Search, BrainCircuit, Database, TrendingUp, AlertTriangle, ArrowLeft, Building2, User, CheckCircle, Clock } from 'lucide-react';
 import './CustomerAnalysis.css';
 import './Operations.css';
 
@@ -216,7 +215,7 @@ const CustomerAnalysis = () => {
   const totalAberto = kpiClients.reduce((acc, curr) => acc + (curr.valorAberto || 0), 0);
   
   const percVencidoGeral = totalVolume > 0 ? (totalVencido / totalVolume) * 100 : 0;
-  const avgScore = totalClients > 0 ? Math.floor(kpiClients.reduce((acc, c) => acc + (c.score || 0), 0) / totalClients) : 0;
+// const avgScore = totalClients > 0 ? Math.floor(kpiClients.reduce((acc, c) => acc + (c.score || 0), 0) / totalClients) : 0;
 
   return (
     <div className="customer-analysis-page">
