@@ -4,10 +4,22 @@ import fs from 'fs';
 import path from 'path';
 import ExcelJS from 'exceljs';
 import Database from 'better-sqlite3';
+import stringSimilarity from 'string-similarity';
 
 const app = express();
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
+
+// Load aliases globally
+let globalAliases = {};
+try {
+  const aliasesPath = path.join(path.resolve(), 'aliases.json');
+  if (fs.existsSync(aliasesPath)) {
+    globalAliases = JSON.parse(fs.readFileSync(aliasesPath, 'utf8'));
+  }
+} catch(e) {
+  console.log("Aviso: Falha ao ler aliases.json", e);
+}
 
 // Serve arquivos estáticos do frontend (pasta dist) em produção
 const __dirname = path.resolve();
@@ -267,9 +279,39 @@ app.post('/api/sync-link', async (req, res) => {
 // -------------------------------------------------------------
 // ROTA: ANÁLISE DE CLIENTES (Agregação da tabela BASE)
 // -------------------------------------------------------------
+function normalizeStr(str) {
+  if (!str) return '';
+  let s = str.normalize('NFD').replace(/[\u0300-\u036f]/g, "").toLowerCase();
+  
+  // Replace anything that is not alphanumeric with space
+  s = s.replace(/[^a-z0-9\s]/g, " ");
+
+  // Specific business aliases to merge groups (APPLY BEFORE STOPWORDS)
+  // If we find an alias match, we FORCE the entire string to be exactly that alias, 
+  // ensuring perfect 100% similarity.
+  for (const [key, val] of Object.entries(globalAliases)) {
+    if (s.includes(key)) {
+      return val;
+    }
+  }
+
+  // Remove common corporate suffixes/prefixes
+  const stopwords = ['ltda', 'indl', 'industria', 'grupo', 's a', 'sa', 'cia', 'me', 'epp', 'eireli', 'comercio', 'servicos', 'lt', 'da', 'ind', 'com'];
+  
+  const words = s.split(/\s+/);
+  const filtered = words.filter(w => !stopwords.includes(w) && w.length > 0);
+  
+  // If the result is empty (e.g. string was just "grupo ltda"), fallback to original
+  if (filtered.length === 0) return s.trim();
+  
+  let finalStr = filtered.join(' ').trim();
+  
+  return finalStr;
+}
+
 app.get('/api/analise-clientes', (req, res) => {
   try {
-    const query = `
+    const queryNova = `
         SELECT 
           CLIENTE as cedente,
           COUNT(ID) as qtdTitulos,
@@ -283,10 +325,97 @@ app.get('/api/analise-clientes', (req, res) => {
         FROM "BASE_NOVA"
         WHERE CLIENTE IS NOT NULL AND CLIENTE != ''
       GROUP BY CLIENTE
-      ORDER BY valorGeral DESC
     `;
-    const rows = db.prepare(query).all();
-    res.json(rows);
+    const rowsNova = db.prepare(queryNova).all();
+
+    let rowsNpl = [];
+    try {
+      rowsNpl = db.prepare(`
+        SELECT Sacado as sacado, SUM(Valor_do_Credito_Face) as valorNpl 
+        FROM BASE_NPL 
+        WHERE Sacado IS NOT NULL AND Sacado != '' 
+        GROUP BY Sacado
+      `).all();
+    } catch (e) {
+      console.log("Aviso: BASE_NPL indisponível.");
+    }
+
+    // Global deduplication array
+    const canonicals = [];
+
+    // Deduplicate BASE_NOVA
+    for (const row of rowsNova) {
+      const norm = normalizeStr(row.cedente);
+      
+      let bestMatch = null;
+      let highest = 0;
+      for (const canon of canonicals) {
+         const score = stringSimilarity.compareTwoStrings(norm, canon.norm);
+         if (score >= 0.70 && score > highest) {
+            highest = score;
+            bestMatch = canon;
+         }
+      }
+      
+      if (bestMatch) {
+         // Merge into bestMatch.data
+         bestMatch.data.qtdTitulos += row.qtdTitulos;
+         bestMatch.data.qtdVencido += row.qtdVencido;
+         bestMatch.data.qtdLiquidado += row.qtdLiquidado;
+         bestMatch.data.qtdAberto += row.qtdAberto;
+         bestMatch.data.valorGeral += row.valorGeral;
+         bestMatch.data.valorVencido += row.valorVencido;
+         bestMatch.data.valorLiquidado += row.valorLiquidado;
+         bestMatch.data.valorAberto += row.valorAberto;
+      } else {
+         canonicals.push({
+            norm: norm,
+            origName: row.cedente, // Keep first seen name as display name
+            data: { ...row, valorNpl: 0, hasNova: true }
+         });
+      }
+    }
+
+    // Merge NPL
+    for (const npl of rowsNpl) {
+      if (!npl.sacado) continue;
+      const norm = normalizeStr(npl.sacado);
+      
+      let bestMatch = null;
+      let highest = 0;
+      for (const canon of canonicals) {
+         const score = stringSimilarity.compareTwoStrings(norm, canon.norm);
+         if (score >= 0.70 && score > highest) {
+            highest = score;
+            bestMatch = canon;
+         }
+      }
+
+      if (bestMatch) {
+        bestMatch.data.valorNpl += (npl.valorNpl || 0);
+      } else {
+         canonicals.push({
+            norm: norm,
+            origName: npl.sacado,
+            data: {
+               cedente: npl.sacado,
+               qtdTitulos: 0,
+               qtdVencido: 0,
+               qtdLiquidado: 0,
+               qtdAberto: 0,
+               valorGeral: 0,
+               valorVencido: 0,
+               valorLiquidado: 0,
+               valorAberto: 0,
+               valorNpl: npl.valorNpl || 0,
+               hasNova: false
+            }
+         });
+      }
+    }
+
+    const mergedRows = canonicals.map(c => c.data).sort((a, b) => (b.valorGeral + b.valorNpl) - (a.valorGeral + a.valorNpl));
+    res.json(mergedRows);
   } catch (err) {
     console.error('Erro ao consultar análise de clientes:', err);
     res.status(500).json({ error: 'Erro ao consultar análise de clientes', message: err.message });
@@ -339,11 +468,96 @@ app.get('/api/analise-ua/:cedente', (req, res) => {
       GROUP BY UA
       ORDER BY valorGeral DESC
     `;
-    const rows = db.prepare(query).all(cedente);
-    res.json(rows);
+    let rows = db.prepare(query).all(cedente);
+    
+    // Inject NPL Cessionarios into the UA list
+    const allNpl = db.prepare(`SELECT Sacado, Cedente, Cessionario, SUM(Valor_do_Credito_Face) as valorNpl FROM BASE_NPL WHERE Sacado IS NOT NULL AND Sacado != '' GROUP BY Sacado, Cedente, Cessionario`).all();
+    const normCedente = normalizeStr(cedente);
+    
+    let nplUAs = [];
+    for (const npl of allNpl) {
+      const normDev = normalizeStr(npl.Sacado);
+      if (normDev === normCedente || stringSimilarity.compareTwoStrings(normDev, normCedente) >= 0.70) {
+          nplUAs.push({
+              ua: npl.Cessionario || 'Sem Informação',
+              qtdTitulos: 0,
+              qtdVencido: 0,
+              qtdLiquidado: 0,
+              qtdAberto: 0,
+              valorGeral: 0,
+              valorNpl: npl.valorNpl || 0,
+              valorVencido: 0,
+              valorLiquidado: 0,
+              valorAberto: 0,
+              isUN: true,
+              hasNova: false
+          });
+      }
+    }
+    
+    rows = rows.map(r => ({...r, valorNpl: 0, hasNova: true}));
+    
+    // Merge if same name? We'll just push them and group by UA if needed, or just append since names are distinct.
+    const resultMap = new Map();
+    for (const r of rows) {
+      resultMap.set(r.ua, r);
+    }
+    for (const npl of nplUAs) {
+      if (resultMap.has(npl.ua)) {
+        resultMap.get(npl.ua).valorNpl += npl.valorNpl;
+      } else {
+        resultMap.set(npl.ua, npl);
+      }
+    }
+    
+    const mergedRows = Array.from(resultMap.values()).sort((a, b) => ((b.valorGeral || 0) + (b.valorNpl || 0)) - ((a.valorGeral || 0) + (a.valorNpl || 0)));
+    
+    res.json(mergedRows);
   } catch (err) {
     console.error('Erro ao consultar analise de UA:', err);
     res.status(500).json({ error: 'Erro ao consultar analise de UA', message: err.message });
+  }
+});
+
+app.get('/api/analise-un/:cedente', (req, res) => {
+  try {
+    const cedente = req.params.cedente;
+    let rowsNpl = [];
+    try {
+      const allNpl = db.prepare(`SELECT Sacado, Cedente, Cessionario, SUM(Valor_do_Credito_Face) as valorNpl FROM BASE_NPL WHERE Sacado IS NOT NULL AND Sacado != '' GROUP BY Sacado, Cedente, Cessionario`).all();
+      const normCedente = normalizeStr(cedente);
+      
+      for (const npl of allNpl) {
+        const normDev = normalizeStr(npl.Sacado);
+        if (normDev === normCedente || stringSimilarity.compareTwoStrings(normDev, normCedente) >= 0.70) {
+            rowsNpl.push({
+                ua: npl.Cessionario || 'Sem Informação', // Fallback as requested
+                valorGeral: npl.valorNpl || 0,
+                qtdTitulos: 0,
+                qtdVencido: 0,
+                qtdLiquidado: 0,
+                qtdAberto: 0,
+                valorVencido: 0,
+                valorLiquidado: 0,
+                valorAberto: 0,
+                isUN: true
+            });
+        }
+      }
+    } catch (e) {
+      console.log("BASE_NPL error on UN analysis", e);
+    }
+    
+    const grouped = {};
+    for (const r of rowsNpl) {
+      if (!grouped[r.ua]) grouped[r.ua] = { ...r };
+      else grouped[r.ua].valorGeral += r.valorGeral;
+    }
+    
+    res.json(Object.values(grouped).sort((a, b) => b.valorGeral - a.valorGeral));
+  } catch (err) {
+    console.error('Erro ao consultar analise de UN:', err);
+    res.status(500).json({ error: 'Erro', message: err.message });
   }
 });
 

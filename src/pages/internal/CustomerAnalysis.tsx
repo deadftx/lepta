@@ -6,7 +6,7 @@ import './Operations.css';
 interface ClientAnalysis {
   cedente: string;
   sacado?: string; // used for drill-down view
-  ua?: string; // used for UA drill-down view
+  ua?: string; // used for UA/UN drill-down view
   qtdTitulos: number;
   qtdVencido?: number;
   qtdLiquidado?: number;
@@ -17,6 +17,9 @@ interface ClientAnalysis {
   valorAberto: number;
   riskLevel?: 'Baixo' | 'Médio' | 'Alto';
   score?: number;
+  hasNova?: boolean;
+  valorNpl?: number;
+  isUN?: boolean;
 }
 
 const formatCurrency = (value: number) => {
@@ -31,7 +34,7 @@ const CustomerAnalysis = () => {
 
   // Drill-down states
   const [selectedCedente, setSelectedCedente] = useState<string | null>(null);
-  const [drillDownMode, setDrillDownMode] = useState<'sacados' | 'ua' | null>(null);
+  const [drillDownMode, setDrillDownMode] = useState<'sacados' | 'ua' | 'un' | null>(null);
   const [activeKpiFilter, setActiveKpiFilter] = useState<'all' | 'liquidado' | 'aberto' | 'vencido'>('all');
   const [subData, setSubData] = useState<ClientAnalysis[]>([]);
   const [loadingSubData, setLoadingSubData] = useState(false);
@@ -123,7 +126,7 @@ const CustomerAnalysis = () => {
     });
   };
 
-  const handleSelectDrillDown = async (mode: 'sacados' | 'ua') => {
+  const handleSelectDrillDown = async (mode: 'sacados' | 'ua' | 'un') => {
     if (!popover) return;
     const cedente = popover.cedente;
     setPopover(null);
@@ -133,7 +136,11 @@ const CustomerAnalysis = () => {
     setLoadingSubData(true);
     setSubDataError('');
     try {
-      const endpoint = mode === 'sacados' ? `/api/analise-sacados/` : `/api/analise-ua/`;
+      let endpoint = '';
+      if (mode === 'sacados') endpoint = '/api/analise-sacados/';
+      else if (mode === 'ua') endpoint = '/api/analise-ua/';
+      else if (mode === 'un') endpoint = '/api/analise-un/';
+      
       const response = await fetch(`${endpoint}${encodeURIComponent(cedente)}`);
       if (!response.ok) throw new Error('Erro ao buscar dados da API');
       const data = await response.json();
@@ -198,18 +205,27 @@ const CustomerAnalysis = () => {
     });
 
     displayClients.sort((a, b) => {
+      const bTotal = (b.valorGeral || 0) + (b.valorNpl || 0);
+      const aTotal = (a.valorGeral || 0) + (a.valorNpl || 0);
       if (activeKpiFilter === 'liquidado') return (b.valorLiquidado || 0) - (a.valorLiquidado || 0);
       if (activeKpiFilter === 'aberto') return (b.valorAberto || 0) - (a.valorAberto || 0);
       if (activeKpiFilter === 'vencido') return (b.valorVencido || 0) - (a.valorVencido || 0);
-      return (b.valorGeral || 0) - (a.valorGeral || 0);
+      return bTotal - aTotal;
     });
   } else {
     // Ordenação padrão
-    displayClients.sort((a, b) => (b.valorGeral || 0) - (a.valorGeral || 0));
+    displayClients.sort((a, b) => {
+      const bTotal = (b.valorGeral || 0) + (b.valorNpl || 0);
+      const aTotal = (a.valorGeral || 0) + (a.valorNpl || 0);
+      return bTotal - aTotal;
+    });
   }
   
   const totalClients = kpiClients.length;
+  // Volume Geral only uses BASE_NOVA
   const totalVolume = kpiClients.reduce((acc, curr) => acc + (curr.valorGeral || 0), 0);
+  // Separate Volume for NPL
+  const totalVolumeNpl = kpiClients.reduce((acc, curr) => acc + (curr.valorNpl || 0), 0);
   const totalVencido = kpiClients.reduce((acc, curr) => acc + (curr.valorVencido || 0), 0);
   const totalLiquidado = kpiClients.reduce((acc, curr) => acc + (curr.valorLiquidado || 0), 0);
   const totalAberto = kpiClients.reduce((acc, curr) => acc + (curr.valorAberto || 0), 0);
@@ -242,6 +258,17 @@ const CustomerAnalysis = () => {
             <h4>Volume Geral</h4>
             <div className="kpi-value">{loading || loadingSubData ? '...' : formatCurrency(totalVolume)}</div>
             <div className="kpi-sub">Total {selectedCedente ? 'do detalhamento' : 'da Base'}</div>
+          </div>
+        </div>
+
+        <div className={`kpi-card ${activeKpiFilter === 'all' ? 'active' : ''}`} onClick={() => setActiveKpiFilter('all')}>
+          <div className="kpi-icon" style={{ color: '#f59e0b', background: 'rgba(245, 158, 11, 0.12)' }}>
+            <TrendingUp size={24} />
+          </div>
+          <div className="kpi-info">
+            <h4>Volume NPL</h4>
+            <div className="kpi-value">{loading || loadingSubData ? '...' : formatCurrency(totalVolumeNpl)}</div>
+            <div className="kpi-sub">Total {selectedCedente ? 'do detalhamento' : 'da Base NPL'}</div>
           </div>
         </div>
 
@@ -312,7 +339,7 @@ const CustomerAnalysis = () => {
             <input
               type="text"
               className="input-field"
-              placeholder={selectedCedente ? `Buscar ${drillDownMode === 'sacados' ? 'sacado' : 'UA'}...` : "Buscar instantânea por nome do cliente ou cedente..."}
+              placeholder={selectedCedente ? `Buscar ${drillDownMode === 'sacados' ? 'sacado' : drillDownMode === 'un' ? 'UN' : 'UA'}...` : "Buscar instantânea por nome do cliente ou cedente..."}
               value={searchTerm}
               onChange={e => setSearchTerm(e.target.value)}
               style={{ width: '100%' }}
@@ -334,7 +361,7 @@ const CustomerAnalysis = () => {
             <table className="data-table">
               <thead>
                 <tr>
-                  <th>{selectedCedente ? (drillDownMode === 'sacados' ? 'Sacado' : 'Unidade Administrativa (UA)') : 'Cliente (Cedente)'}</th>
+                  <th>{selectedCedente ? (drillDownMode === 'sacados' ? 'Sacado' : drillDownMode === 'un' ? 'Unidade de Negócio (UN)' : 'Unidade Administrativa (UA)') : 'Cliente (Cedente)'}</th>
                   <th>Títulos (Qtd)</th>
                   {activeKpiFilter === 'all' && <th>Valor Geral (R$)</th>}
                   {activeKpiFilter === 'liquidado' && <th>Total Liquidado (R$)</th>}
@@ -352,17 +379,17 @@ const CustomerAnalysis = () => {
                       {selectedCedente ? (drillDownMode === 'sacados' ? client.sacado : client.ua) : client.cedente}
                     </td>
                     <td style={{ color: 'var(--text-muted, #94a3b8)' }}>
-                      {activeKpiFilter === 'all' && client.qtdTitulos}
+                      {activeKpiFilter === 'all' && (client.hasNova === false ? '-' : client.qtdTitulos)}
                       {activeKpiFilter === 'liquidado' && client.qtdLiquidado}
                       {activeKpiFilter === 'aberto' && client.qtdAberto}
                       {activeKpiFilter === 'vencido' && client.qtdVencido}
                     </td>
-                    {activeKpiFilter === 'all' && <td style={{ fontWeight: 600 }}>{formatCurrency(client.valorGeral)}</td>}
+                    {activeKpiFilter === 'all' && <td style={{ fontWeight: 600 }}>{formatCurrency((client.valorGeral || 0) + (client.valorNpl || 0))}</td>}
                     {activeKpiFilter === 'liquidado' && <td style={{ fontWeight: 600, color: '#10b981' }}>{formatCurrency(client.valorLiquidado)}</td>}
                     {activeKpiFilter === 'aberto' && <td style={{ fontWeight: 600, color: '#f59e0b' }}>{formatCurrency(client.valorAberto)}</td>}
                     {(activeKpiFilter === 'vencido' || activeKpiFilter === 'all') && (
                       <td style={{ color: client.valorVencido > 0 ? '#ef4444' : 'inherit' }}>
-                        {formatCurrency(client.valorVencido)}
+                        {client.hasNova === false ? '-' : formatCurrency(client.valorVencido)}
                       </td>
                     )}
                   </tr>
@@ -387,42 +414,63 @@ const CustomerAnalysis = () => {
         )}
       </div>
 
-      {popover && popover.visible && (
-        <div 
-          className="popover-modal glass"
-          style={{
-            position: 'fixed',
-            top: popover.y,
-            left: popover.x,
-            zIndex: 1000,
-            padding: '1.25rem',
-            borderRadius: '16px',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: '0.75rem',
-            minWidth: '280px',
-            boxShadow: '0 20px 40px -5px rgba(0, 0, 0, 0.6), 0 10px 15px -6px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(255,255,255,0.05)',
-            animation: 'fadeIn 0.2s ease-out'
-          }}
-          onClick={e => e.stopPropagation()}
-        >
-          <div style={{ fontSize: '0.9rem', color: '#94a3b8', marginBottom: '0.5rem', fontWeight: 600 }}>Detalhar <span style={{ color: '#fff' }}>{popover.cedente}</span> por:</div>
-          <button 
-            className="btn-primary" 
-            style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', justifyContent: 'flex-start', padding: '0.75rem 1rem' }}
-            onClick={() => handleSelectDrillDown('sacados')}
+      {popover && popover.visible && (() => {
+        const currentClient = clients.find(c => c.cedente === popover.cedente);
+        const hasNova = currentClient?.hasNova !== false;
+        const hasNpl = (currentClient?.valorNpl || 0) > 0;
+        
+        return (
+          <div 
+            className="popover-modal glass"
+            style={{
+              position: 'fixed',
+              top: popover.y,
+              left: popover.x,
+              zIndex: 1000,
+              padding: '1.25rem',
+              borderRadius: '16px',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '0.75rem',
+              minWidth: '280px',
+              boxShadow: '0 20px 40px -5px rgba(0, 0, 0, 0.6), 0 10px 15px -6px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(255,255,255,0.05)',
+              animation: 'fadeIn 0.2s ease-out'
+            }}
+            onClick={e => e.stopPropagation()}
           >
-            <User size={18} /> Sacados
-          </button>
-          <button 
-            className="btn-primary" 
-            style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', justifyContent: 'flex-start', padding: '0.75rem 1rem', background: 'var(--accent-color, #10b981)' }}
-            onClick={() => handleSelectDrillDown('ua')}
-          >
-            <Building2 size={18} /> Unidades Administrativas (UA)
-          </button>
-        </div>
-      )}
+            <div style={{ fontSize: '0.9rem', color: '#94a3b8', marginBottom: '0.5rem', fontWeight: 600 }}>Detalhar <span style={{ color: '#fff' }}>{popover.cedente}</span> por:</div>
+            
+            {hasNova && (
+              <>
+                <button 
+                  className="btn-primary" 
+                  style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', justifyContent: 'flex-start', padding: '0.75rem 1rem' }}
+                  onClick={() => handleSelectDrillDown('sacados')}
+                >
+                  <User size={18} /> Sacados
+                </button>
+                <button 
+                  className="btn-primary" 
+                  style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', justifyContent: 'flex-start', padding: '0.75rem 1rem', background: 'var(--accent-color, #10b981)' }}
+                  onClick={() => handleSelectDrillDown('ua')}
+                >
+                  <Building2 size={18} /> Unidades Administrativas (UA)
+                </button>
+              </>
+            )}
+
+            {hasNpl && (
+              <button 
+                className="btn-primary" 
+                style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', justifyContent: 'flex-start', padding: '0.75rem 1rem', background: '#f59e0b', color: '#fff' }}
+                onClick={() => handleSelectDrillDown('un')}
+              >
+                <TrendingUp size={18} /> Unidade de Negócio (UN)
+              </button>
+            )}
+          </div>
+        );
+      })()}
     </div>
   );
 };
