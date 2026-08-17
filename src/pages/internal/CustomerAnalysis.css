@@ -94,6 +94,35 @@
   }
 }
 
+@media (max-width: 767px) and (orientation: portrait) {
+  .analysis-header-actions {
+    width: 100%;
+    min-width: 0;
+    gap: 0.5rem !important;
+    flex-wrap: wrap;
+  }
+
+  .analysis-header-actions .data-source-badge,
+  .analysis-header-actions .intelligence-badge {
+    flex: 0 1 auto;
+    max-width: 100%;
+  }
+
+  .analysis-header-actions .analysis-back-button {
+    flex: 0 0 100%;
+    width: fit-content;
+    min-height: 36px;
+    margin-top: 0.1rem;
+    padding: 0.4rem 0.7rem !important;
+    gap: 0.35rem !important;
+    border-color: rgba(255, 255, 255, 0.12) !important;
+    background: rgba(255, 255, 255, 0.045) !important;
+    color: #cbd5e1 !important;
+    font-size: 0.76rem;
+    font-weight: 500;
+  }
+}
+
 .intelligence-badge {
   display: inline-flex;
   align-items: center;
