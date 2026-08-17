@@ -427,7 +427,7 @@ const CustomerAnalysis = () => {
                   : `Visão Geral das UAs do Cedente "${selectedCedente}"`)
               : "Visão Geral dos Clientes"}
           </h3>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+          <div className="analysis-header-actions" style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
             {dataSource === 'api' ? (
               <div className="data-source-badge" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.35rem 0.75rem', borderRadius: '16px', background: 'rgba(16, 185, 129, 0.1)', color: '#10b981', fontSize: '0.75rem', fontWeight: 600, border: '1px solid rgba(16, 185, 129, 0.2)', animation: 'pulse-green 2s infinite' }}>
                 <Database size={14} /> VIA API
@@ -443,7 +443,7 @@ const CustomerAnalysis = () => {
             {selectedCedente && (
               <button 
                 onClick={handleBack}
-                className="btn-primary"
+                className="btn-primary analysis-back-button"
                 style={{ display: 'inline-flex', alignItems: 'center', gap: '0.5rem', padding: '0.5rem 1rem', background: 'rgba(255, 255, 255, 0.1)', color: '#fff', border: '1px solid rgba(255,255,255,0.2)' }}
               >
                 <ArrowLeft size={16} /> Voltar para Cedentes
