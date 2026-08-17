@@ -81,6 +81,31 @@ const Dashboard = () => {
     return { day: '--', month: '--' };
   };
 
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  const upcomingEvents = events
+    .map(event => {
+      const [eventYear, eventMonth, eventDay] = event.date.split('-').map(Number);
+      if (!eventYear || !eventMonth || !eventDay) return null;
+
+      const normalizedType = event.type.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+      const isRecurring = normalizedType.includes('aniversario') || normalizedType.includes('feriado');
+      let nextDate = new Date(eventYear, eventMonth - 1, eventDay);
+      nextDate.setHours(0, 0, 0, 0);
+
+      if (isRecurring) {
+        nextDate = new Date(today.getFullYear(), eventMonth - 1, eventDay);
+        if (nextDate < today) nextDate.setFullYear(today.getFullYear() + 1);
+      }
+
+      if (nextDate < today) return null;
+      return { event, nextDate };
+    })
+    .filter((item): item is { event: CalendarEvent; nextDate: Date } => item !== null)
+    .sort((a, b) => a.nextDate.getTime() - b.nextDate.getTime())
+    .slice(0, 3);
+
   const renderBadge = (type: string) => {
     if (type === 'Aniversário') {
       return <span className="badge" style={{ background: 'rgba(255, 153, 0, 0.2)', color: '#ff9900', padding: '2px 8px', fontSize: '0.75rem', display: 'inline-flex', alignItems: 'center', gap: '3px' }}><Gift size={12} /> Aniversário</span>;
@@ -254,12 +279,13 @@ const Dashboard = () => {
           <h3>Próximos eventos, aniversário e feriado</h3>
           {loading ? (
             <p style={{ color: 'var(--text-muted)', marginTop: '1rem' }}>Carregando eventos...</p>
-          ) : events.length === 0 ? (
-            <p style={{ color: 'var(--text-muted)', marginTop: '1rem' }}>Nenhum evento cadastrado no calendário.</p>
+          ) : upcomingEvents.length === 0 ? (
+            <p style={{ color: 'var(--text-muted)', marginTop: '1rem' }}>Nenhum próximo evento cadastrado no calendário.</p>
           ) : (
             <div className="events-list">
-              {events.slice(0, 3).map(evt => {
-                const dateObj = formatEventDateDayMonth(evt.date);
+              {upcomingEvents.map(({ event: evt, nextDate }) => {
+                const effectiveDate = `${nextDate.getFullYear()}-${String(nextDate.getMonth() + 1).padStart(2, '0')}-${String(nextDate.getDate()).padStart(2, '0')}`;
+                const dateObj = formatEventDateDayMonth(effectiveDate);
                 return (
                   <div key={evt.id} className="event-item" style={{ marginBottom: '0.75rem' }}>
                     <div className="event-date">
