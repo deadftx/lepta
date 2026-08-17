@@ -145,12 +145,22 @@ const CustomerAnalysis = () => {
     let popX = e.clientX + 15;
     let popY = e.clientY + 15;
 
-    // Inteligência de tela: não deixar estourar a tela
-    if (popX + modalWidth > window.innerWidth) {
-      popX = e.clientX - modalWidth - 15; // Joga pra esquerda do cursor
-    }
-    if (popY + modalHeight > window.innerHeight) {
-      popY = e.clientY - modalHeight - 15; // Joga pra cima do cursor
+    if (window.matchMedia('(max-width: 767px), (max-width: 900px) and (hover: none) and (pointer: coarse)').matches) {
+      const targetRect = e.currentTarget.getBoundingClientRect();
+      const viewportHeight = window.visualViewport?.height || window.innerHeight;
+      const mobileModalHeight = 230;
+      popX = 12;
+      popY = targetRect.bottom + 8;
+      if (popY + mobileModalHeight > viewportHeight - 12) {
+        popY = Math.max(12, targetRect.top - mobileModalHeight - 8);
+      }
+    } else {
+      if (popX + modalWidth > window.innerWidth) {
+        popX = e.clientX - modalWidth - 15;
+      }
+      if (popY + modalHeight > window.innerHeight) {
+        popY = e.clientY - modalHeight - 15;
+      }
     }
 
     setPopover({
@@ -443,7 +453,7 @@ const CustomerAnalysis = () => {
         </div>
 
         {/* Unified Search Bar */}
-        <div style={{ padding: '0 1.5rem 1.5rem 1.5rem', display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
+        <div className="analysis-filter-row" style={{ padding: '0 1.5rem 1.5rem 1.5rem', display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
           <div className="search-input-wrapper" style={{ flex: '1 1 40%' }}>
             <Search size={18} />
             <input
@@ -456,8 +466,8 @@ const CustomerAnalysis = () => {
             />
           </div>
           
-          <div style={{ display: 'flex', gap: '0.5rem', flex: '1 1 auto', alignItems: 'center' }}>
-            <div className="search-input-wrapper" style={{ flex: 1 }}>
+          <div className="analysis-date-filters" style={{ display: 'flex', gap: '0.5rem', flex: '1 1 auto', alignItems: 'center' }}>
+            <div className="search-input-wrapper analysis-date-field" style={{ flex: 1 }}>
               <span style={{ position: 'absolute', left: '1rem', color: '#94a3b8', fontSize: '0.85rem' }}>De:</span>
               <input 
                 type="date"
@@ -467,7 +477,7 @@ const CustomerAnalysis = () => {
                 style={{ width: '100%', paddingLeft: '3rem' }}
               />
             </div>
-            <div className="search-input-wrapper" style={{ flex: 1 }}>
+            <div className="search-input-wrapper analysis-date-field" style={{ flex: 1 }}>
               <span style={{ position: 'absolute', left: '1rem', color: '#94a3b8', fontSize: '0.85rem' }}>Até:</span>
               <input 
                 type="date"
