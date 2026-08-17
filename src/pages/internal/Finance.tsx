@@ -196,109 +196,46 @@ const Finance = () => {
 
   const generateAndDownloadExcel = async (data: TargetTransaction[]) => {
     try {
-      // Fetch the template from the public folder
-      const response = await fetch('/template_extrato.xlsx');
-      if (!response.ok) throw new Error('Template não encontrado. Certifique-se de que o arquivo "template_extrato.xlsx" existe.');
-      const arrayBuffer = await response.arrayBuffer();
-      
       // @ts-ignore
       const ExcelJS = (await import('exceljs/dist/exceljs.min.js')).default || window.ExcelJS || await import('exceljs/dist/exceljs.min.js');
       const wb = new ExcelJS.Workbook();
-      await wb.xlsx.load(arrayBuffer);
+      const ws = wb.addWorksheet('Extrato Padronizado');
       
-      // Remove all tabs except the first one
-      while (wb.worksheets.length > 1) {
-        wb.removeWorksheet(wb.worksheets[1].id);
-      }
-      
-      const ws = wb.worksheets[0];
-      
-      // Fix logo overlapping by ensuring Row 1 has enough height to fit the image
-      ws.getRow(1).height = 105;
-      
-      // Remove printer settings to avoid prompt
-      ws.pageSetup = { printArea: undefined };
-      ws.views = [{ state: 'normal', activeCell: 'A1' }];
-      wb.views = [];
-      
-      // Fix exceljs shared formula bug by stripping formulas before manipulating rows
-      ws.eachRow((r: any) => {
-        r.eachCell((c: any) => {
-          if (c.value && typeof c.value === 'object' && ('formula' in c.value || 'sharedFormula' in c.value)) {
-            // @ts-ignore
-            c.value = c.value.result || null;
-          }
+      // Setup Columns
+      ws.columns = [
+        { header: 'Data', key: 'data', width: 15 },
+        { header: 'Histórico', key: 'historico', width: 30 },
+        { header: '  Complemento', key: 'complemento', width: 40 },
+        { header: 'Créditos', key: 'creditos', width: 15 },
+        { header: 'Débitos', key: 'debitos', width: 15 },
+        { header: 'Saldo', key: 'saldo', width: 15 }
+      ];
+
+      // Insert data
+      data.forEach(item => {
+        ws.addRow({
+          data: item.Data,
+          historico: item.Histórico,
+          complemento: item['  Complemento'],
+          creditos: item.Créditos,
+          debitos: item.Débitos,
+          saldo: item.Saldo
         });
       });
-      
-      // Cache style from row 9 to maintain format
-      const baseRow = ws.getRow(9);
-      const styles = {
-        A: baseRow.getCell('A').style,
-        B: baseRow.getCell('B').style,
-        C: baseRow.getCell('C').style,
-        D: baseRow.getCell('D').style,
-        E: baseRow.getCell('E').style,
-        F: baseRow.getCell('F').style,
-      };
-      
-      // Insert new rows
-      data.forEach((item, index) => {
-        const rowIndex = 9 + index;
-        const row = ws.getRow(rowIndex);
-        row.getCell('A').value = item.Data;
-        row.getCell('B').value = item.Histórico;
-        row.getCell('C').value = item['  Complemento'];
-        row.getCell('D').value = item.Créditos;
-        row.getCell('E').value = item.Débitos;
-        row.getCell('F').value = item.Saldo;
-        
-        row.getCell('A').style = styles.A;
-        row.getCell('B').style = styles.B;
-        row.getCell('C').style = styles.C;
-        row.getCell('D').style = styles.D;
-        row.getCell('E').style = styles.E;
-        row.getCell('F').style = styles.F;
-        
-        row.commit();
-      });
-      
-      // Manually clear all extra rows from template instead of using spliceRows
-      const lastDataRow = 8 + data.length;
-      const maxRow = ws.rowCount; // Cache this because getRow() expands rowCount!
-      for (let i = lastDataRow + 1; i <= maxRow; i++) {
-        const row = ws.getRow(i);
-        if (row.hasValues || row.height) {
-          row.values = [];
-          row.eachCell((c: any) => {
-            c.value = null;
-            c.style = {}; // Clear styling (borders, etc)
-          });
-          row.commit();
-        }
-      }
-      
-      // Update formulas in row 6
-      const lastRow = 8 + (data.length > 0 ? data.length : 1);
-      ws.getCell('D6').value = { formula: `SUM(D9:D${lastRow})` };
-      ws.getCell('E6').value = { formula: `SUM(E9:E${lastRow})` };
-      ws.getCell('F6').value = { formula: `F${lastRow}` };
+
+      // Format headers
+      ws.getRow(1).font = { bold: true };
       
       const buffer = await wb.xlsx.writeBuffer();
       const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
       const url = URL.createObjectURL(blob);
-      
-      // Get dynamic file name
-      const nomeEmpresa = (ws.getCell('B5').value as string) || 'empresa';
-      const nomeBanco = (ws.getCell('B4').value as string) || 'banco';
-      const cleanString = (str: string) => (str || '').replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
       
       const date = new Date();
       const day = String(date.getDate()).padStart(2, '0');
       const month = String(date.getMonth() + 1).padStart(2, '0');
       const dateStr = `${day}${month}`;
       
-      const fileName = `${cleanString(nomeEmpresa)}_${dateStr}_${cleanString(nomeBanco)}.xlsx`;
+      const fileName = `extrato_padronizado_${dateStr}.xlsx`;
       
       const a = document.createElement('a');
       a.href = url;
@@ -318,25 +255,11 @@ const Finance = () => {
     setIsProcessing(true);
 
     try {
-      const response = await fetch(`${API_BASE_URL}/financialTransactions`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          fileName: selectedFile?.name,
-          uploadDate: new Date().toISOString(),
-          transactions: processedData
-        })
-      });
-
-      if (!response.ok) throw new Error('Erro ao salvar no banco de dados');
-      
-      generateAndDownloadExcel(processedData);
+      await generateAndDownloadExcel(processedData);
       setIsSaved(true);
     } catch (err) {
       console.error(err);
-      setError('Falha ao salvar dados no servidor. Tente novamente.');
+      setError('Falha ao gerar o arquivo padronizado. Tente novamente.');
     } finally {
       setIsProcessing(false);
     }
@@ -419,7 +342,7 @@ const Finance = () => {
                 disabled={isProcessing || isSaved}
               >
                 <Download size={20} />
-                {isProcessing ? 'Processando...' : 'Salvar no BD e Baixar Padrão'}
+                {isProcessing ? 'Processando...' : 'Gerar Extrato Padronizado'}
               </button>
               
               {isSaved && (

@@ -62,7 +62,7 @@ function getActualTableName(reqTable) {
 // -------------------------------------------------------------
 // HELPER PARA BUSCAR TÍTULOS DA API UNLTD
 // -------------------------------------------------------------
-const UNLTD_TOKEN = 'FCFAF0D8C6570D1D9A1BE2D3571B53D5DF0F3BD3BCCE63A8849CCC8F1FA6072A';
+const UNLTD_TOKEN = '4E5BF2FC1313695BD24FB21591DC3D4E69B24CC04BCC6DB53CC2541CAA7A1367';
 
 async function fetchTitulosDaAPI(req) {
   const { startDate, endDate } = req.query;
@@ -78,9 +78,9 @@ async function fetchTitulosDaAPI(req) {
   const response = await fetch('https://lepta-backend.bit-unltd.com.br/recebiveis/titulos', {
     method: 'POST',
     headers: {
-      'Content-Type': 'application/json',
-      'Authorization': UNLTD_TOKEN
-    },
+        'Content-Type': 'application/json',
+        'Authorization': `UNLTD-BackEnd ${UNLTD_TOKEN}`
+      },
     body: JSON.stringify(payload)
   });
   
