@@ -4,10 +4,22 @@ import fs from 'fs';
 import path from 'path';
 import ExcelJS from 'exceljs';
 import Database from 'better-sqlite3';
+import stringSimilarity from 'string-similarity';
 
 const app = express();
-app.use(cors());
+app.use(cors({ exposedHeaders: ['x-data-source'] }));
 app.use(express.json({ limit: '50mb' }));
+
+// Load aliases globally
+let globalAliases = {};
+try {
+  const aliasesPath = path.join(path.resolve(), 'aliases.json');
+  if (fs.existsSync(aliasesPath)) {
+    globalAliases = JSON.parse(fs.readFileSync(aliasesPath, 'utf8'));
+  }
+} catch(e) {
+  console.log("Aviso: Falha ao ler aliases.json", e);
+}
 
 // Serve arquivos estáticos do frontend (pasta dist) em produção
 const __dirname = path.resolve();
@@ -45,6 +57,140 @@ function parseRow(row) {
 function getActualTableName(reqTable) {
   if (reqTable === 'users') return 'usuarios_lepta';
   return reqTable;
+}
+
+// -------------------------------------------------------------
+// HELPER PARA BUSCAR TÍTULOS DA API UNLTD
+// -------------------------------------------------------------
+const UNLTD_TOKEN = '4E5BF2FC1313695BD24FB21591DC3D4E69B24CC04BCC6DB53CC2541CAA7A1367';
+const UNLTD_INITIAL_YEAR = 2021;
+const UNLTD_FINAL_YEAR_LIMIT = 2099;
+const UNLTD_CONCURRENCY = 3;
+const UNLTD_CACHE_TTL_MS = 60 * 60 * 1000;
+const UNLTD_SITUACOES = [
+  'Em Aberto',
+  'Liquidado',
+  'Liquidado em Cartório',
+  'Baixado',
+  'Recomprado',
+  'Recuperação de Crédito',
+  'Pró-Solvendo',
+  'Perda'
+];
+let unltdFullHistoryCache = { data: null, updatedAt: 0, pending: null };
+
+function buildDateWindows(startDate, endDate) {
+  const windows = [];
+  let cursor = new Date(`${startDate}T00:00:00.000Z`);
+  const limit = new Date(`${endDate}T23:59:59.999Z`);
+
+  while (cursor <= limit) {
+    const windowStart = new Date(cursor);
+    const windowEnd = new Date(cursor);
+    windowEnd.setUTCDate(windowEnd.getUTCDate() + 29);
+    windowEnd.setUTCHours(23, 59, 59, 999);
+    if (windowEnd > limit) windowEnd.setTime(limit.getTime());
+
+    windows.push({
+      dataInicial: windowStart.toISOString(),
+      dataFinal: windowEnd.toISOString()
+    });
+
+    cursor = new Date(windowEnd.getTime() + 1);
+    cursor.setUTCHours(0, 0, 0, 0);
+  }
+
+  return windows;
+}
+
+async function mapWithConcurrency(items, concurrency, mapper) {
+  const results = new Array(items.length);
+  let nextIndex = 0;
+
+  async function worker() {
+    while (nextIndex < items.length) {
+      const currentIndex = nextIndex++;
+      results[currentIndex] = await mapper(items[currentIndex], currentIndex);
+    }
+  }
+
+  await Promise.all(Array.from({ length: Math.min(concurrency, items.length) }, worker));
+  return results;
+}
+
+async function fetchTitulosPeriod(period) {
+  const response = await fetch('https://lepta-backend.bit-unltd.com.br/recebiveis/titulos', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `UNLTD-BackEnd ${UNLTD_TOKEN}`
+    },
+    body: JSON.stringify({ tipoDeData: 'Vencimento', situacoes: UNLTD_SITUACOES, ...period })
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`UNLTD respondeu ${response.status}: ${errorText}`);
+  }
+
+  const titulos = await response.json();
+  return Array.isArray(titulos) ? titulos : [];
+}
+
+async function fetchTitulosRange(startDate, endDate) {
+  const windows = buildDateWindows(startDate, endDate);
+  const batches = await mapWithConcurrency(windows, UNLTD_CONCURRENCY, fetchTitulosPeriod);
+  return batches.flat();
+}
+
+function deduplicateTitulos(titulos) {
+  const unique = new Map();
+  for (const titulo of titulos) {
+    const key = titulo.id ?? titulo.numero ?? `${titulo.dataDeVencimento}-${titulo.valorNominal}-${unique.size}`;
+    unique.set(String(key), titulo);
+  }
+  return Array.from(unique.values());
+}
+
+async function fetchFullTitulosHistory() {
+  const currentYear = new Date().getUTCFullYear();
+  const allTitulos = [];
+
+  for (let year = UNLTD_INITIAL_YEAR; year <= UNLTD_FINAL_YEAR_LIMIT; year++) {
+    const yearTitulos = await fetchTitulosRange(`${year}-01-01`, `${year}-12-31`);
+    allTitulos.push(...yearTitulos);
+
+    // Só encerra depois do ano atual para não confundir lacunas históricas com fim da base.
+    if (year > currentYear && yearTitulos.length === 0) break;
+  }
+
+  return deduplicateTitulos(allTitulos);
+}
+
+async function fetchTitulosDaAPI(req) {
+  const { startDate, endDate } = req.query;
+
+  if (startDate && endDate) {
+    return deduplicateTitulos(await fetchTitulosRange(startDate, endDate));
+  }
+
+  const cacheIsFresh = unltdFullHistoryCache.data
+    && Date.now() - unltdFullHistoryCache.updatedAt < UNLTD_CACHE_TTL_MS;
+  if (cacheIsFresh) return unltdFullHistoryCache.data;
+
+  if (!unltdFullHistoryCache.pending) {
+    unltdFullHistoryCache.pending = fetchFullTitulosHistory()
+      .then(data => {
+        unltdFullHistoryCache.data = data;
+        unltdFullHistoryCache.updatedAt = Date.now();
+        return data;
+      })
+      .finally(() => {
+        unltdFullHistoryCache.pending = null;
+      });
+  }
+
+  return unltdFullHistoryCache.pending;
 }
 
 // -------------------------------------------------------------
@@ -92,7 +238,7 @@ app.post('/api/sync-link', async (req, res) => {
       });
 
       if (!resFetch.ok) {
-        throw new Error(`Falha ao baixar arquivo remoto (${resFetch.status}).`);
+        throw new Error(`Falha ao baixar arquivo remoto (${resFetch.SITUACAO}).`);
       }
 
       const arrayBuffer = await resFetch.arrayBuffer();
@@ -267,52 +413,246 @@ app.post('/api/sync-link', async (req, res) => {
 // -------------------------------------------------------------
 // ROTA: ANÁLISE DE CLIENTES (Agregação da tabela BASE)
 // -------------------------------------------------------------
-app.get('/api/analise-clientes', (req, res) => {
+function normalizeStr(str) {
+  if (!str) return '';
+  let s = str.normalize('NFD').replace(/[\u0300-\u036f]/g, "").toLowerCase();
+  
+  // Replace anything that is not alphanumeric with space
+  s = s.replace(/[^a-z0-9\s]/g, " ");
+
+  // Specific business aliases to merge groups (APPLY BEFORE STOPWORDS)
+  // If we find an alias match, we FORCE the entire string to be exactly that alias, 
+  // ensuring perfect 100% similarity.
+  for (const [key, val] of Object.entries(globalAliases)) {
+    if (s.includes(key)) {
+      return val;
+    }
+  }
+
+  // Remove common corporate suffixes/prefixes
+  const stopwords = ['ltda', 'indl', 'industria', 'grupo', 's a', 'sa', 'cia', 'me', 'epp', 'eireli', 'comercio', 'servicos', 'lt', 'da', 'ind', 'com'];
+  
+  const words = s.split(/\s+/);
+  const filtered = words.filter(w => !stopwords.includes(w) && w.length > 0);
+  
+  // If the result is empty (e.g. string was just "grupo ltda"), fallback to original
+  if (filtered.length === 0) return s.trim();
+  
+  let finalStr = filtered.join(' ').trim();
+  
+  return finalStr;
+}
+
+app.get('/api/analise-clientes', async (req, res) => {
   try {
-    const query = `
+    let rowsNova = [];
+    let dataSource = 'api';
+    try {
+      const titulos = await fetchTitulosDaAPI(req);
+      const mapCedentes = new Map();
+      const hoje = new Date();
+      hoje.setHours(0, 0, 0, 0);
+      for (const t of titulos) {
+        if (!t.contaOperacional?.cliente?.entidade?.nome) continue;
+        const cedente = t.contaOperacional.cliente.entidade.nome;
+        const situacao = (t.situacao || '').toLowerCase();
+        let dataVenc = t.dataDeVencimento ? new Date(t.dataDeVencimento) : null;
+        if (dataVenc) dataVenc.setHours(0, 0, 0, 0);
+        const isAberto = situacao.includes('aberto');
+        const isLiquidado = situacao.includes('liquidado') || situacao.includes('liq.');
+        const isVencido = Boolean(isAberto && dataVenc && !Number.isNaN(dataVenc.getTime()) && dataVenc < hoje);
+        const valNominal = Number(t.valorNominal) || 0;
+        if (!mapCedentes.has(cedente)) {
+          mapCedentes.set(cedente, {
+            cedente: cedente, qtdTitulos: 0, qtdVencido: 0, qtdLiquidado: 0, qtdAberto: 0,
+            valorGeral: 0, valorVencido: 0, valorLiquidado: 0, valorAberto: 0
+          });
+        }
+        const curr = mapCedentes.get(cedente);
+        curr.qtdTitulos += 1;
+        curr.valorGeral += valNominal;
+        if (isVencido) { curr.qtdVencido += 1; curr.valorVencido += valNominal; }
+        if (isLiquidado) { curr.qtdLiquidado += 1; curr.valorLiquidado += valNominal; }
+        if (isAberto) { curr.qtdAberto += 1; curr.valorAberto += valNominal; }
+      }
+      rowsNova = Array.from(mapCedentes.values());
+    } catch (apiErr) {
+      console.log('Falha na API UNLTD (clientes), fallback SQLite...', apiErr.message);
+      dataSource = 'db';
+      const { startDate, endDate } = req.query;
+      let dateFilter = '';
+      if (startDate && endDate) {
+         dateFilter = ` AND (substr(VENCIMENTO, 7, 4) || '-' || substr(VENCIMENTO, 4, 2) || '-' || substr(VENCIMENTO, 1, 2)) BETWEEN '${startDate}' AND '${endDate}' `;
+      }
+      const queryNova = `
         SELECT 
-          CLIENTE as cedente,
-          COUNT(ID) as qtdTitulos,
-          SUM(CASE WHEN VENCIDO = 'Sim' THEN 1 ELSE 0 END) as qtdVencido,
-          SUM(CASE WHEN SITUACAO LIKE '%liquidado%' THEN 1 ELSE 0 END) as qtdLiquidado,
-          SUM(CASE WHEN SITUACAO LIKE '%ABERTO%' AND VENCIDO = 'Nao' THEN 1 ELSE 0 END) as qtdAberto,
-          SUM(VALOR_NOMINAL) as valorGeral,
-          SUM(CASE WHEN VENCIDO = 'Sim' THEN VALOR_NOMINAL ELSE 0 END) as valorVencido,
-          SUM(CASE WHEN SITUACAO LIKE '%liquidado%' THEN VALOR_LIQUIDO ELSE 0 END) as valorLiquidado,
-          SUM(CASE WHEN SITUACAO LIKE '%ABERTO%' AND VENCIDO = 'Nao' THEN VALOR_NOMINAL ELSE 0 END) as valorAberto
+           CLIENTE as cedente,
+           COUNT(ID) as qtdTitulos,
+           SUM(CASE WHEN VENCIDO = 'Sim' THEN 1 ELSE 0 END) as qtdVencido,
+           SUM(CASE WHEN SITUACAO LIKE '%liquidado%' THEN 1 ELSE 0 END) as qtdLiquidado,
+           SUM(CASE WHEN SITUACAO LIKE '%ABERTO%' AND VENCIDO = 'Nao' THEN 1 ELSE 0 END) as qtdAberto,
+           SUM(VALOR_NOMINAL) as valorGeral,
+           SUM(CASE WHEN VENCIDO = 'Sim' THEN VALOR_NOMINAL ELSE 0 END) as valorVencido,
+           SUM(CASE WHEN SITUACAO LIKE '%liquidado%' THEN VALOR_LIQUIDO ELSE 0 END) as valorLiquidado,
+           SUM(CASE WHEN SITUACAO LIKE '%ABERTO%' AND VENCIDO = 'Nao' THEN VALOR_NOMINAL ELSE 0 END) as valorAberto
         FROM "BASE_NOVA"
-        WHERE CLIENTE IS NOT NULL AND CLIENTE != ''
+        WHERE CLIENTE IS NOT NULL AND CLIENTE != '' ${dateFilter}
       GROUP BY CLIENTE
-      ORDER BY valorGeral DESC
-    `;
-    const rows = db.prepare(query).all();
-    res.json(rows);
+      `;
+      rowsNova = db.prepare(queryNova).all();
+    }
+    
+    let rowsNpl = [];
+    try {
+      rowsNpl = db.prepare(`
+        SELECT Sacado as sacado, SUM(Valor_do_Credito_Face) as valorNpl 
+        FROM BASE_NPL 
+        WHERE Sacado IS NOT NULL AND Sacado != '' 
+        GROUP BY Sacado
+      `).all();
+    } catch (e) {
+      console.log("Aviso: BASE_NPL indisponível.");
+    }
+
+    // Global deduplication array
+    const canonicals = [];
+
+    // Deduplicate BASE_NOVA
+    for (const row of rowsNova) {
+      const norm = normalizeStr(row.cedente);
+      let bestMatch = null;
+      let highest = 0;
+      for (const canon of canonicals) {
+         const score = stringSimilarity.compareTwoStrings(norm, canon.norm);
+         if (score >= 0.70 && score > highest) {
+            highest = score;
+            bestMatch = canon;
+         }
+      }
+      if (bestMatch) {
+         bestMatch.data.qtdTitulos += row.qtdTitulos;
+         bestMatch.data.qtdVencido += row.qtdVencido;
+         bestMatch.data.qtdLiquidado += row.qtdLiquidado;
+         bestMatch.data.qtdAberto += row.qtdAberto;
+         bestMatch.data.valorGeral += row.valorGeral;
+         bestMatch.data.valorVencido += row.valorVencido;
+         bestMatch.data.valorLiquidado += row.valorLiquidado;
+         bestMatch.data.valorAberto += row.valorAberto;
+      } else {
+         canonicals.push({
+            norm: norm,
+            origName: row.cedente,
+            data: { ...row, valorNpl: 0, hasNova: true }
+         });
+      }
+    }
+
+    // Merge NPL
+    for (const npl of rowsNpl) {
+      if (!npl.sacado) continue;
+      const norm = normalizeStr(npl.sacado);
+      let bestMatch = null;
+      let highest = 0;
+      for (const canon of canonicals) {
+         const score = stringSimilarity.compareTwoStrings(norm, canon.norm);
+         if (score >= 0.70 && score > highest) {
+            highest = score;
+            bestMatch = canon;
+         }
+      }
+      if (bestMatch) {
+        bestMatch.data.valorNpl += (npl.valorNpl || 0);
+      } else {
+         canonicals.push({
+            norm: norm,
+            origName: npl.sacado,
+            data: {
+               cedente: npl.sacado,
+               qtdTitulos: 0, qtdVencido: 0, qtdLiquidado: 0, qtdAberto: 0,
+               valorGeral: 0, valorVencido: 0, valorLiquidado: 0, valorAberto: 0,
+               valorNpl: npl.valorNpl || 0,
+               hasNova: false
+            }
+         });
+      }
+    }
+
+    const mergedRows = canonicals.map(c => c.data).sort((a, b) => (b.valorGeral + b.valorNpl) - (a.valorGeral + a.valorNpl));
+    res.setHeader('x-data-source', dataSource);
+    res.json(mergedRows);
   } catch (err) {
     console.error('Erro ao consultar análise de clientes:', err);
     res.status(500).json({ error: 'Erro ao consultar análise de clientes', message: err.message });
   }
 });
 
-app.get('/api/analise-sacados/:cedente', (req, res) => {
+app.get('/api/analise-sacados/:cedente', async (req, res) => {
   try {
-    const cedente = req.params.cedente;
-    const query = `
+    const cedenteParams = req.params.cedente;
+    const normCedenteParams = normalizeStr(cedenteParams);
+    
+    let rows = [];
+    let dataSource = 'api';
+    
+    try {
+      const titulos = await fetchTitulosDaAPI(req);
+      const mapSacados = new Map();
+      const hoje = new Date();
+      hoje.setHours(0, 0, 0, 0);
+      for (const t of titulos) {
+        if (!t.contaOperacional?.cliente?.entidade?.nome) continue;
+        const clienteTit = t.contaOperacional.cliente.entidade.nome;
+        if (normalizeStr(clienteTit) !== normCedenteParams) continue;
+        const sacado = t.sacado?.entidade?.nome;
+        if (!sacado) continue;
+        const situacao = (t.situacao || '').toLowerCase();
+        let dataVenc = t.dataDeVencimento ? new Date(t.dataDeVencimento) : null;
+        if (dataVenc) dataVenc.setHours(0, 0, 0, 0);
+        const isAberto = situacao.includes('aberto');
+        const isLiquidado = situacao.includes('liquidado') || situacao.includes('liq.');
+        const isVencido = Boolean(isAberto && dataVenc && !Number.isNaN(dataVenc.getTime()) && dataVenc < hoje);
+        const valNominal = Number(t.valorNominal) || 0;
+        if (!mapSacados.has(sacado)) {
+          mapSacados.set(sacado, {
+            sacado: sacado, qtdTitulos: 0, qtdVencido: 0, qtdLiquidado: 0, qtdAberto: 0,
+            valorGeral: 0, valorVencido: 0, valorLiquidado: 0, valorAberto: 0
+          });
+        }
+        const curr = mapSacados.get(sacado);
+        curr.qtdTitulos += 1;
+        curr.valorGeral += valNominal;
+        if (isVencido) { curr.qtdVencido += 1; curr.valorVencido += valNominal; }
+        if (isLiquidado) { curr.qtdLiquidado += 1; curr.valorLiquidado += valNominal; }
+        if (isAberto) { curr.qtdAberto += 1; curr.valorAberto += valNominal; }
+      }
+      rows = Array.from(mapSacados.values()).sort((a, b) => b.valorGeral - a.valorGeral);
+    } catch (apiErr) {
+      console.log('Falha na API UNLTD (sacados), fallback SQLite...', apiErr.message);
+      dataSource = 'db';
+      const { startDate, endDate } = req.query;
+      let dateFilter = '';
+      if (startDate && endDate) {
+         dateFilter = ` AND (substr(VENCIMENTO, 7, 4) || '-' || substr(VENCIMENTO, 4, 2) || '-' || substr(VENCIMENTO, 1, 2)) BETWEEN '${startDate}' AND '${endDate}' `;
+      }
+      const queryNova = `
         SELECT 
-          SACADO as sacado,
-          COUNT(ID) as qtdTitulos,
-          SUM(CASE WHEN VENCIDO = 'Sim' THEN 1 ELSE 0 END) as qtdVencido,
-          SUM(CASE WHEN SITUACAO LIKE '%liquidado%' THEN 1 ELSE 0 END) as qtdLiquidado,
-          SUM(CASE WHEN SITUACAO LIKE '%ABERTO%' AND VENCIDO = 'Nao' THEN 1 ELSE 0 END) as qtdAberto,
-          SUM(VALOR_NOMINAL) as valorGeral,
-          SUM(CASE WHEN VENCIDO = 'Sim' THEN VALOR_NOMINAL ELSE 0 END) as valorVencido,
-          SUM(CASE WHEN SITUACAO LIKE '%liquidado%' THEN VALOR_LIQUIDO ELSE 0 END) as valorLiquidado,
-          SUM(CASE WHEN SITUACAO LIKE '%ABERTO%' AND VENCIDO = 'Nao' THEN VALOR_NOMINAL ELSE 0 END) as valorAberto
+           SACADO as sacado,
+           COUNT(ID) as qtdTitulos,
+           SUM(CASE WHEN VENCIDO = 'Sim' THEN 1 ELSE 0 END) as qtdVencido,
+           SUM(CASE WHEN SITUACAO = 'Liquidado' THEN 1 ELSE 0 END) as qtdLiquidado,
+           SUM(CASE WHEN SITUACAO = 'Aberto' THEN 1 ELSE 0 END) as qtdAberto,
+           SUM(CAST(REPLACE(REPLACE(VALOR_NOMINAL, '.', ''), ',', '.') AS REAL)) as valorGeral,
+           SUM(CASE WHEN VENCIDO = 'Sim' THEN CAST(REPLACE(REPLACE(VALOR_NOMINAL, '.', ''), ',', '.') AS REAL) ELSE 0 END) as valorVencido,
+           SUM(CASE WHEN SITUACAO = 'Liquidado' THEN CAST(REPLACE(REPLACE(VALOR_LIQUIDO, '.', ''), ',', '.') AS REAL) ELSE 0 END) as valorLiquidado,
+           SUM(CASE WHEN SITUACAO = 'Aberto' AND VENCIDO = 'Nao' THEN CAST(REPLACE(REPLACE(VALOR_NOMINAL, '.', ''), ',', '.') AS REAL) ELSE 0 END) as valorAberto
         FROM "BASE_NOVA"
-        WHERE CLIENTE = ? AND SACADO IS NOT NULL AND SACADO != ''
+        WHERE CLIENTE = ? AND SACADO IS NOT NULL AND SACADO != '' ${dateFilter}
       GROUP BY SACADO
       ORDER BY valorGeral DESC
-    `;
-    const rows = db.prepare(query).all(cedente);
+      `;
+      rows = db.prepare(queryNova).all(cedenteParams);
+    }
+    res.setHeader('x-data-source', dataSource);
     res.json(rows);
   } catch (err) {
     console.error('Erro ao consultar analise de sacados:', err);
@@ -320,30 +660,150 @@ app.get('/api/analise-sacados/:cedente', (req, res) => {
   }
 });
 
-app.get('/api/analise-ua/:cedente', (req, res) => {
+app.get('/api/analise-ua/:cedente', async (req, res) => {
   try {
-    const cedente = req.params.cedente;
-    const query = `
+    const cedenteParams = req.params.cedente;
+    const normCedenteParams = normalizeStr(cedenteParams);
+    
+    let rows = [];
+    let dataSource = 'api';
+    
+    try {
+      const titulos = await fetchTitulosDaAPI(req);
+      const mapUA = new Map();
+      const hoje = new Date();
+      hoje.setHours(0, 0, 0, 0);
+      for (const t of titulos) {
+        if (!t.contaOperacional?.cliente?.entidade?.nome) continue;
+        const clienteTit = t.contaOperacional.cliente.entidade.nome;
+        if (normalizeStr(clienteTit) !== normCedenteParams) continue;
+        const ua = t.contaOperacional?.unidadeAdministrativa?.alias;
+        if (!ua) continue;
+        const situacao = (t.situacao || '').toLowerCase();
+        let dataVenc = t.dataDeVencimento ? new Date(t.dataDeVencimento) : null;
+        if (dataVenc) dataVenc.setHours(0, 0, 0, 0);
+        const isAberto = situacao.includes('aberto');
+        const isLiquidado = situacao.includes('liquidado') || situacao.includes('liq.');
+        const isVencido = Boolean(isAberto && dataVenc && !Number.isNaN(dataVenc.getTime()) && dataVenc < hoje);
+        const valNominal = Number(t.valorNominal) || 0;
+        if (!mapUA.has(ua)) {
+          mapUA.set(ua, {
+            ua: ua, qtdTitulos: 0, qtdVencido: 0, qtdLiquidado: 0, qtdAberto: 0,
+            valorGeral: 0, valorVencido: 0, valorLiquidado: 0, valorAberto: 0
+          });
+        }
+        const curr = mapUA.get(ua);
+        curr.qtdTitulos += 1;
+        curr.valorGeral += valNominal;
+        if (isVencido) { curr.qtdVencido += 1; curr.valorVencido += valNominal; }
+        if (isLiquidado) { curr.qtdLiquidado += 1; curr.valorLiquidado += valNominal; }
+        if (isAberto) { curr.qtdAberto += 1; curr.valorAberto += valNominal; }
+      }
+      rows = Array.from(mapUA.values()).sort((a, b) => b.valorGeral - a.valorGeral);
+    } catch (apiErr) {
+      console.log('Falha na API UNLTD (UA), fallback SQLite...', apiErr.message);
+      dataSource = 'db';
+      const { startDate, endDate } = req.query;
+      let dateFilter = '';
+      if (startDate && endDate) {
+         dateFilter = ` AND (substr(VENCIMENTO, 7, 4) || '-' || substr(VENCIMENTO, 4, 2) || '-' || substr(VENCIMENTO, 1, 2)) BETWEEN '${startDate}' AND '${endDate}' `;
+      }
+      const queryNova = `
         SELECT 
-          UA as ua,
-          COUNT(ID) as qtdTitulos,
-          SUM(CASE WHEN VENCIDO = 'Sim' THEN 1 ELSE 0 END) as qtdVencido,
-          SUM(CASE WHEN SITUACAO LIKE '%liquidado%' THEN 1 ELSE 0 END) as qtdLiquidado,
-          SUM(CASE WHEN SITUACAO LIKE '%ABERTO%' AND VENCIDO = 'Nao' THEN 1 ELSE 0 END) as qtdAberto,
-          SUM(VALOR_NOMINAL) as valorGeral,
-          SUM(CASE WHEN VENCIDO = 'Sim' THEN VALOR_NOMINAL ELSE 0 END) as valorVencido,
-          SUM(CASE WHEN SITUACAO LIKE '%liquidado%' THEN VALOR_LIQUIDO ELSE 0 END) as valorLiquidado,
-          SUM(CASE WHEN SITUACAO LIKE '%ABERTO%' AND VENCIDO = 'Nao' THEN VALOR_NOMINAL ELSE 0 END) as valorAberto
+           UA as ua,
+           COUNT(ID) as qtdTitulos,
+           SUM(CASE WHEN VENCIDO = 'Sim' THEN 1 ELSE 0 END) as qtdVencido,
+           SUM(CASE WHEN SITUACAO = 'Liquidado' THEN 1 ELSE 0 END) as qtdLiquidado,
+           SUM(CASE WHEN SITUACAO = 'Aberto' THEN 1 ELSE 0 END) as qtdAberto,
+           SUM(CAST(REPLACE(REPLACE(VALOR_NOMINAL, '.', ''), ',', '.') AS REAL)) as valorGeral,
+           SUM(CASE WHEN VENCIDO = 'Sim' THEN CAST(REPLACE(REPLACE(VALOR_NOMINAL, '.', ''), ',', '.') AS REAL) ELSE 0 END) as valorVencido,
+           SUM(CASE WHEN SITUACAO = 'Liquidado' THEN CAST(REPLACE(REPLACE(VALOR_LIQUIDO, '.', ''), ',', '.') AS REAL) ELSE 0 END) as valorLiquidado,
+           SUM(CASE WHEN SITUACAO = 'Aberto' AND VENCIDO = 'Nao' THEN CAST(REPLACE(REPLACE(VALOR_NOMINAL, '.', ''), ',', '.') AS REAL) ELSE 0 END) as valorAberto
         FROM "BASE_NOVA"
-        WHERE CLIENTE = ? AND UA IS NOT NULL AND UA != ''
+        WHERE CLIENTE = ? AND UA IS NOT NULL AND UA != '' ${dateFilter}
       GROUP BY UA
       ORDER BY valorGeral DESC
-    `;
-    const rows = db.prepare(query).all(cedente);
-    res.json(rows);
+      `;
+      rows = db.prepare(queryNova).all(cedenteParams);
+    }
+    
+    // Inject NPL Cessionarios into the UA list
+    const allNpl = db.prepare(`SELECT Sacado, Cedente, Cessionario, SUM(Valor_do_Credito_Face) as valorNpl FROM BASE_NPL WHERE Sacado IS NOT NULL AND Sacado != '' GROUP BY Sacado, Cedente, Cessionario`).all();
+    const normCedente = normCedenteParams;
+    let nplUAs = [];
+    for (const npl of allNpl) {
+      const normDev = normalizeStr(npl.Sacado);
+      if (normDev === normCedente || stringSimilarity.compareTwoStrings(normDev, normCedente) >= 0.70) {
+          nplUAs.push({
+              ua: npl.Cessionario || 'Sem Informação',
+              qtdTitulos: 0, qtdVencido: 0, qtdLiquidado: 0, qtdAberto: 0,
+              valorGeral: 0, valorNpl: npl.valorNpl || 0,
+              valorVencido: 0, valorLiquidado: 0, valorAberto: 0,
+              isUN: true, hasNova: false
+          });
+      }
+    }
+    rows = rows.map(r => ({...r, valorNpl: 0, hasNova: true}));
+    const resultMap = new Map();
+    for (const r of rows) {
+      resultMap.set(r.ua, r);
+    }
+    for (const npl of nplUAs) {
+      if (resultMap.has(npl.ua)) {
+        resultMap.get(npl.ua).valorNpl += npl.valorNpl;
+      } else {
+        resultMap.set(npl.ua, npl);
+      }
+    }
+    const mergedRows = Array.from(resultMap.values()).sort((a, b) => ((b.valorGeral || 0) + (b.valorNpl || 0)) - ((a.valorGeral || 0) + (a.valorNpl || 0)));
+    
+    res.setHeader('x-data-source', dataSource);
+    res.json(mergedRows);
   } catch (err) {
     console.error('Erro ao consultar analise de UA:', err);
     res.status(500).json({ error: 'Erro ao consultar analise de UA', message: err.message });
+  }
+});
+
+app.get('/api/analise-un/:cedente', (req, res) => {
+  try {
+    const cedente = req.params.cedente;
+    let rowsNpl = [];
+    try {
+      const allNpl = db.prepare(`SELECT Sacado, Cedente, Cessionario, SUM(Valor_do_Credito_Face) as valorNpl FROM BASE_NPL WHERE Sacado IS NOT NULL AND Sacado != '' GROUP BY Sacado, Cedente, Cessionario`).all();
+      const normCedente = normalizeStr(cedente);
+      
+      for (const npl of allNpl) {
+        const normDev = normalizeStr(npl.Sacado);
+        if (normDev === normCedente || stringSimilarity.compareTwoStrings(normDev, normCedente) >= 0.70) {
+            rowsNpl.push({
+                ua: npl.Cessionario || 'Sem Informação', // Fallback as requested
+                valorGeral: npl.valorNpl || 0,
+                qtdTitulos: 0,
+                qtdVencido: 0,
+                qtdLiquidado: 0,
+                qtdAberto: 0,
+                valorVencido: 0,
+                valorLiquidado: 0,
+                valorAberto: 0,
+                isUN: true
+            });
+        }
+      }
+    } catch (e) {
+      console.log("BASE_NPL error on UN analysis", e);
+    }
+    
+    const grouped = {};
+    for (const r of rowsNpl) {
+      if (!grouped[r.ua]) grouped[r.ua] = { ...r };
+      else grouped[r.ua].valorGeral += r.valorGeral;
+    }
+    
+    res.json(Object.values(grouped).sort((a, b) => b.valorGeral - a.valorGeral));
+  } catch (err) {
+    console.error('Erro ao consultar analise de UN:', err);
+    res.status(500).json({ error: 'Erro', message: err.message });
   }
 });
 

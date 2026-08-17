@@ -1,7 +1,6 @@
 import React, { useState, useRef } from 'react';
 import { UploadCloud, FileSpreadsheet, CheckCircle, AlertCircle, Download, FileText, X } from 'lucide-react';
 import * as xlsx from 'xlsx';
-import { API_BASE_URL } from '../../config/api';
 import './Finance.css';
 
 interface SourceTransaction {
@@ -22,11 +21,30 @@ interface TargetTransaction {
   Saldo: number | null;
 }
 
+interface StatementMetadata {
+  banco: string;
+  agencia: string | number;
+  conta: string;
+  empresa: string;
+  cnpj: string;
+  saldoAnterior: number;
+}
+
+const EMPTY_STATEMENT_METADATA: StatementMetadata = {
+  banco: 'LEPTA BANK (274)',
+  agencia: '1',
+  conta: '',
+  empresa: '',
+  cnpj: '',
+  saldoAnterior: 0
+};
+
 const Finance = () => {
   const [dragActive, setDragActive] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [processedData, setProcessedData] = useState<TargetTransaction[]>([]);
+  const [statementMetadata, setStatementMetadata] = useState<StatementMetadata>(EMPTY_STATEMENT_METADATA);
   const [isProcessing, setIsProcessing] = useState(false);
   const [isSaved, setIsSaved] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -79,6 +97,7 @@ const Finance = () => {
     setError(null);
     setIsSaved(false);
     setProcessedData([]);
+    setStatementMetadata(EMPTY_STATEMENT_METADATA);
     
     if (!file.name.match(/\.(xlsx|xls)$/)) {
       setError('Por favor, envie apenas arquivos no formato Excel (.xlsx ou .xls)');
@@ -96,6 +115,25 @@ const Finance = () => {
       
       // Read everything as json array of arrays
       const rawData = xlsx.utils.sheet_to_json<any[]>(worksheet, { header: 1 });
+
+      const normalizeLabel = (value: unknown) => String(value || '')
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .trim()
+        .toLowerCase();
+
+      const findMetadataValue = (...labels: string[]): any => {
+        const normalizedLabels = labels.map(normalizeLabel);
+        for (const row of rawData.slice(0, 20)) {
+          if (!Array.isArray(row)) continue;
+          for (let column = 0; column < row.length - 1; column++) {
+            if (normalizedLabels.includes(normalizeLabel(row[column]))) {
+              return row[column + 1];
+            }
+          }
+        }
+        return undefined;
+      };
       
       // Extract Razão Social from the first few rows for intelligence matching
       let razaoSocial = '';
@@ -105,6 +143,15 @@ const Finance = () => {
           break;
         }
       }
+
+      const parsedMetadata: StatementMetadata = {
+        banco: String(findMetadataValue('Banco') || EMPTY_STATEMENT_METADATA.banco),
+        agencia: findMetadataValue('Agência', 'Agencia') || EMPTY_STATEMENT_METADATA.agencia,
+        conta: String(findMetadataValue('Conta') || ''),
+        empresa: String(findMetadataValue('Razão Social', 'Razao Social', 'Empresa') || razaoSocial),
+        cnpj: String(findMetadataValue('CNPJ') || ''),
+        saldoAnterior: Number(findMetadataValue('Saldo Anterior') || 0)
+      };
       
       const razaoWords = razaoSocial
         .toLowerCase()
@@ -175,6 +222,7 @@ const Finance = () => {
       }
 
       setProcessedData(formatted);
+      setStatementMetadata(parsedMetadata);
     } catch (err: any) {
       console.error(err);
       setError(err.message || 'Ocorreu um erro ao processar a planilha.');
@@ -187,6 +235,7 @@ const Finance = () => {
   const removeFile = () => {
     setSelectedFile(null);
     setProcessedData([]);
+    setStatementMetadata(EMPTY_STATEMENT_METADATA);
     setError(null);
     setIsSaved(false);
     if (fileInputRef.current) {
@@ -196,109 +245,106 @@ const Finance = () => {
 
   const generateAndDownloadExcel = async (data: TargetTransaction[]) => {
     try {
-      // Fetch the template from the public folder
-      const response = await fetch('/template_extrato.xlsx');
-      if (!response.ok) throw new Error('Template não encontrado. Certifique-se de que o arquivo "template_extrato.xlsx" existe.');
-      const arrayBuffer = await response.arrayBuffer();
-      
       // @ts-ignore
       const ExcelJS = (await import('exceljs/dist/exceljs.min.js')).default || window.ExcelJS || await import('exceljs/dist/exceljs.min.js');
       const wb = new ExcelJS.Workbook();
-      await wb.xlsx.load(arrayBuffer);
-      
-      // Remove all tabs except the first one
-      while (wb.worksheets.length > 1) {
-        wb.removeWorksheet(wb.worksheets[1].id);
-      }
-      
-      const ws = wb.worksheets[0];
-      
-      // Fix logo overlapping by ensuring Row 1 has enough height to fit the image
-      ws.getRow(1).height = 105;
-      
-      // Remove printer settings to avoid prompt
-      ws.pageSetup = { printArea: undefined };
-      ws.views = [{ state: 'normal', activeCell: 'A1' }];
-      wb.views = [];
-      
-      // Fix exceljs shared formula bug by stripping formulas before manipulating rows
-      ws.eachRow((r: any) => {
-        r.eachCell((c: any) => {
-          if (c.value && typeof c.value === 'object' && ('formula' in c.value || 'sharedFormula' in c.value)) {
-            // @ts-ignore
-            c.value = c.value.result || null;
-          }
+      const ws = wb.addWorksheet('Extrato Padronizado');
+
+      const orange = 'FFF19B61';
+      const lightOrange = 'FFFBE4D5';
+      const darkRed = 'FFBD132F';
+      const lightGreen = 'FFE2EFD9';
+      const currencyFormat = '_-"R$" * #,##0.00_-;-"R$" * #,##0.00_-;_-"R$" * "-"??_-;_-@';
+
+      ws.columns = [
+        { key: 'data', width: 16 },
+        { key: 'historico', width: 44 },
+        { key: 'complemento', width: 57 },
+        { key: 'creditos', width: 23 },
+        { key: 'debitos', width: 23 },
+        { key: 'saldo', width: 25 }
+      ];
+
+      ws.mergeCells('A2:F2');
+      ws.getCell('A2').value = 'EXTRATO DE MOVIMENTAÇÃO';
+      ws.getCell('A2').font = { bold: true, color: { argb: 'FFFFFFFF' }, size: 16 };
+      ws.getCell('A2').alignment = { horizontal: 'center', vertical: 'middle' };
+      ws.getCell('A2').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: darkRed } };
+      ws.getRow(2).height = 30;
+
+      const totalCreditos = data.reduce((sum, item) => sum + (item.Créditos || 0), 0);
+      const totalDebitos = data.reduce((sum, item) => sum + (item.Débitos || 0), 0);
+      const saldoDisponivel = data.length > 0
+        ? (data[data.length - 1].Saldo ?? statementMetadata.saldoAnterior)
+        : statementMetadata.saldoAnterior;
+
+      const metadataRows: Array<Array<string | number>> = [
+        ['Banco', statementMetadata.banco, 'Agência', statementMetadata.agencia, 'Conta', statementMetadata.conta],
+        ['Empresa', statementMetadata.empresa, 'Saldo Anterior', statementMetadata.saldoAnterior, '', 'Saldo Disponível'],
+        ['CNPJ', statementMetadata.cnpj, 'Totais (Entradas/Saídas)', totalCreditos, totalDebitos, saldoDisponivel]
+      ];
+
+      metadataRows.forEach((values, index) => {
+        const rowNumber = index + 4;
+        ws.getRow(rowNumber).values = values;
+        ['A', 'C', 'E'].forEach(column => {
+          const cell = ws.getCell(`${column}${rowNumber}`);
+          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: orange } };
+          cell.font = { bold: true };
+          cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+        });
+        ['B', 'D', 'F'].forEach(column => {
+          const cell = ws.getCell(`${column}${rowNumber}`);
+          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: lightOrange } };
+          cell.alignment = { horizontal: 'center', vertical: 'middle' };
         });
       });
-      
-      // Cache style from row 9 to maintain format
-      const baseRow = ws.getRow(9);
-      const styles = {
-        A: baseRow.getCell('A').style,
-        B: baseRow.getCell('B').style,
-        C: baseRow.getCell('C').style,
-        D: baseRow.getCell('D').style,
-        E: baseRow.getCell('E').style,
-        F: baseRow.getCell('F').style,
-      };
-      
-      // Insert new rows
-      data.forEach((item, index) => {
-        const rowIndex = 9 + index;
-        const row = ws.getRow(rowIndex);
-        row.getCell('A').value = item.Data;
-        row.getCell('B').value = item.Histórico;
-        row.getCell('C').value = item['  Complemento'];
-        row.getCell('D').value = item.Créditos;
-        row.getCell('E').value = item.Débitos;
-        row.getCell('F').value = item.Saldo;
-        
-        row.getCell('A').style = styles.A;
-        row.getCell('B').style = styles.B;
-        row.getCell('C').style = styles.C;
-        row.getCell('D').style = styles.D;
-        row.getCell('E').style = styles.E;
-        row.getCell('F').style = styles.F;
-        
-        row.commit();
+
+      ws.getCell('E5').value = '';
+      ws.getCell('E5').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: lightOrange } };
+      ws.getCell('E6').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: lightOrange } };
+      ws.getCell('E6').font = { bold: false };
+      ws.getCell('F5').value = 'Saldo Disponível';
+      ws.getCell('F5').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: orange } };
+      ws.getCell('F5').font = { bold: true };
+      ws.getCell('F5').alignment = { horizontal: 'center', vertical: 'middle' };
+      ws.getCell('F6').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: lightGreen } };
+      ['D5', 'D6', 'E6', 'F6'].forEach(address => { ws.getCell(address).numFmt = currencyFormat; });
+
+      ws.getRow(8).values = ['Data', 'Histórico', '  Complemento', 'Créditos', 'Débitos', 'Saldo'];
+      ws.getRow(8).eachCell((cell: any) => {
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: orange } };
+        cell.font = { bold: true };
+        cell.alignment = { horizontal: 'left', vertical: 'middle' };
       });
-      
-      // Manually clear all extra rows from template instead of using spliceRows
-      const lastDataRow = 8 + data.length;
-      const maxRow = ws.rowCount; // Cache this because getRow() expands rowCount!
-      for (let i = lastDataRow + 1; i <= maxRow; i++) {
-        const row = ws.getRow(i);
-        if (row.hasValues || row.height) {
-          row.values = [];
-          row.eachCell((c: any) => {
-            c.value = null;
-            c.style = {}; // Clear styling (borders, etc)
-          });
-          row.commit();
-        }
-      }
-      
-      // Update formulas in row 6
-      const lastRow = 8 + (data.length > 0 ? data.length : 1);
-      ws.getCell('D6').value = { formula: `SUM(D9:D${lastRow})` };
-      ws.getCell('E6').value = { formula: `SUM(E9:E${lastRow})` };
-      ws.getCell('F6').value = { formula: `F${lastRow}` };
+
+      data.forEach(item => {
+        const row = ws.addRow({
+          data: item.Data,
+          historico: item.Histórico,
+          complemento: item['  Complemento'],
+          creditos: item.Créditos,
+          debitos: item.Débitos,
+          saldo: item.Saldo
+        });
+        row.getCell(1).alignment = { horizontal: 'center' };
+        [4, 5, 6].forEach(column => { row.getCell(column).numFmt = currencyFormat; });
+        row.getCell(6).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: lightGreen } };
+      });
+
+      ws.autoFilter = { from: 'A8', to: 'F8' };
+      ws.views = [{ state: 'frozen', ySplit: 8, showGridLines: true }];
       
       const buffer = await wb.xlsx.writeBuffer();
       const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
       const url = URL.createObjectURL(blob);
-      
-      // Get dynamic file name
-      const nomeEmpresa = (ws.getCell('B5').value as string) || 'empresa';
-      const nomeBanco = (ws.getCell('B4').value as string) || 'banco';
-      const cleanString = (str: string) => (str || '').replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
       
       const date = new Date();
       const day = String(date.getDate()).padStart(2, '0');
       const month = String(date.getMonth() + 1).padStart(2, '0');
       const dateStr = `${day}${month}`;
       
-      const fileName = `${cleanString(nomeEmpresa)}_${dateStr}_${cleanString(nomeBanco)}.xlsx`;
+      const fileName = `extrato_padronizado_${dateStr}.xlsx`;
       
       const a = document.createElement('a');
       a.href = url;
@@ -318,25 +364,11 @@ const Finance = () => {
     setIsProcessing(true);
 
     try {
-      const response = await fetch(`${API_BASE_URL}/financialTransactions`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          fileName: selectedFile?.name,
-          uploadDate: new Date().toISOString(),
-          transactions: processedData
-        })
-      });
-
-      if (!response.ok) throw new Error('Erro ao salvar no banco de dados');
-      
-      generateAndDownloadExcel(processedData);
+      await generateAndDownloadExcel(processedData);
       setIsSaved(true);
     } catch (err) {
       console.error(err);
-      setError('Falha ao salvar dados no servidor. Tente novamente.');
+      setError('Falha ao gerar o arquivo padronizado. Tente novamente.');
     } finally {
       setIsProcessing(false);
     }
@@ -419,7 +451,7 @@ const Finance = () => {
                 disabled={isProcessing || isSaved}
               >
                 <Download size={20} />
-                {isProcessing ? 'Processando...' : 'Salvar no BD e Baixar Padrão'}
+                {isProcessing ? 'Processando...' : 'Gerar Extrato Padronizado'}
               </button>
               
               {isSaved && (
