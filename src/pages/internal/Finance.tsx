@@ -1,7 +1,6 @@
 import React, { useState, useRef } from 'react';
 import { UploadCloud, FileSpreadsheet, CheckCircle, AlertCircle, Download, FileText, X } from 'lucide-react';
 import * as xlsx from 'xlsx';
-import { API_BASE_URL } from '../../config/api';
 import './Finance.css';
 
 interface SourceTransaction {
@@ -22,11 +21,30 @@ interface TargetTransaction {
   Saldo: number | null;
 }
 
+interface StatementMetadata {
+  banco: string;
+  agencia: string | number;
+  conta: string;
+  empresa: string;
+  cnpj: string;
+  saldoAnterior: number;
+}
+
+const EMPTY_STATEMENT_METADATA: StatementMetadata = {
+  banco: 'LEPTA BANK (274)',
+  agencia: '1',
+  conta: '',
+  empresa: '',
+  cnpj: '',
+  saldoAnterior: 0
+};
+
 const Finance = () => {
   const [dragActive, setDragActive] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [processedData, setProcessedData] = useState<TargetTransaction[]>([]);
+  const [statementMetadata, setStatementMetadata] = useState<StatementMetadata>(EMPTY_STATEMENT_METADATA);
   const [isProcessing, setIsProcessing] = useState(false);
   const [isSaved, setIsSaved] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -79,6 +97,7 @@ const Finance = () => {
     setError(null);
     setIsSaved(false);
     setProcessedData([]);
+    setStatementMetadata(EMPTY_STATEMENT_METADATA);
     
     if (!file.name.match(/\.(xlsx|xls)$/)) {
       setError('Por favor, envie apenas arquivos no formato Excel (.xlsx ou .xls)');
@@ -96,6 +115,25 @@ const Finance = () => {
       
       // Read everything as json array of arrays
       const rawData = xlsx.utils.sheet_to_json<any[]>(worksheet, { header: 1 });
+
+      const normalizeLabel = (value: unknown) => String(value || '')
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .trim()
+        .toLowerCase();
+
+      const findMetadataValue = (...labels: string[]): any => {
+        const normalizedLabels = labels.map(normalizeLabel);
+        for (const row of rawData.slice(0, 20)) {
+          if (!Array.isArray(row)) continue;
+          for (let column = 0; column < row.length - 1; column++) {
+            if (normalizedLabels.includes(normalizeLabel(row[column]))) {
+              return row[column + 1];
+            }
+          }
+        }
+        return undefined;
+      };
       
       // Extract Razão Social from the first few rows for intelligence matching
       let razaoSocial = '';
@@ -105,6 +143,15 @@ const Finance = () => {
           break;
         }
       }
+
+      const parsedMetadata: StatementMetadata = {
+        banco: String(findMetadataValue('Banco') || EMPTY_STATEMENT_METADATA.banco),
+        agencia: findMetadataValue('Agência', 'Agencia') || EMPTY_STATEMENT_METADATA.agencia,
+        conta: String(findMetadataValue('Conta') || ''),
+        empresa: String(findMetadataValue('Razão Social', 'Razao Social', 'Empresa') || razaoSocial),
+        cnpj: String(findMetadataValue('CNPJ') || ''),
+        saldoAnterior: Number(findMetadataValue('Saldo Anterior') || 0)
+      };
       
       const razaoWords = razaoSocial
         .toLowerCase()
@@ -175,6 +222,7 @@ const Finance = () => {
       }
 
       setProcessedData(formatted);
+      setStatementMetadata(parsedMetadata);
     } catch (err: any) {
       console.error(err);
       setError(err.message || 'Ocorreu um erro ao processar a planilha.');
@@ -187,6 +235,7 @@ const Finance = () => {
   const removeFile = () => {
     setSelectedFile(null);
     setProcessedData([]);
+    setStatementMetadata(EMPTY_STATEMENT_METADATA);
     setError(null);
     setIsSaved(false);
     if (fileInputRef.current) {
@@ -200,20 +249,77 @@ const Finance = () => {
       const ExcelJS = (await import('exceljs/dist/exceljs.min.js')).default || window.ExcelJS || await import('exceljs/dist/exceljs.min.js');
       const wb = new ExcelJS.Workbook();
       const ws = wb.addWorksheet('Extrato Padronizado');
-      
-      // Setup Columns
+
+      const orange = 'FFF19B61';
+      const lightOrange = 'FFFBE4D5';
+      const darkRed = 'FFBD132F';
+      const lightGreen = 'FFE2EFD9';
+      const currencyFormat = '_-"R$" * #,##0.00_-;-"R$" * #,##0.00_-;_-"R$" * "-"??_-;_-@';
+
       ws.columns = [
-        { header: 'Data', key: 'data', width: 15 },
-        { header: 'Histórico', key: 'historico', width: 30 },
-        { header: '  Complemento', key: 'complemento', width: 40 },
-        { header: 'Créditos', key: 'creditos', width: 15 },
-        { header: 'Débitos', key: 'debitos', width: 15 },
-        { header: 'Saldo', key: 'saldo', width: 15 }
+        { key: 'data', width: 16 },
+        { key: 'historico', width: 44 },
+        { key: 'complemento', width: 57 },
+        { key: 'creditos', width: 23 },
+        { key: 'debitos', width: 23 },
+        { key: 'saldo', width: 25 }
       ];
 
-      // Insert data
+      ws.mergeCells('A2:F2');
+      ws.getCell('A2').value = 'EXTRATO DE MOVIMENTAÇÃO';
+      ws.getCell('A2').font = { bold: true, color: { argb: 'FFFFFFFF' }, size: 16 };
+      ws.getCell('A2').alignment = { horizontal: 'center', vertical: 'middle' };
+      ws.getCell('A2').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: darkRed } };
+      ws.getRow(2).height = 30;
+
+      const totalCreditos = data.reduce((sum, item) => sum + (item.Créditos || 0), 0);
+      const totalDebitos = data.reduce((sum, item) => sum + (item.Débitos || 0), 0);
+      const saldoDisponivel = data.length > 0
+        ? (data[data.length - 1].Saldo ?? statementMetadata.saldoAnterior)
+        : statementMetadata.saldoAnterior;
+
+      const metadataRows: Array<Array<string | number>> = [
+        ['Banco', statementMetadata.banco, 'Agência', statementMetadata.agencia, 'Conta', statementMetadata.conta],
+        ['Empresa', statementMetadata.empresa, 'Saldo Anterior', statementMetadata.saldoAnterior, '', 'Saldo Disponível'],
+        ['CNPJ', statementMetadata.cnpj, 'Totais (Entradas/Saídas)', totalCreditos, totalDebitos, saldoDisponivel]
+      ];
+
+      metadataRows.forEach((values, index) => {
+        const rowNumber = index + 4;
+        ws.getRow(rowNumber).values = values;
+        ['A', 'C', 'E'].forEach(column => {
+          const cell = ws.getCell(`${column}${rowNumber}`);
+          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: orange } };
+          cell.font = { bold: true };
+          cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+        });
+        ['B', 'D', 'F'].forEach(column => {
+          const cell = ws.getCell(`${column}${rowNumber}`);
+          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: lightOrange } };
+          cell.alignment = { horizontal: 'center', vertical: 'middle' };
+        });
+      });
+
+      ws.getCell('E5').value = '';
+      ws.getCell('E5').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: lightOrange } };
+      ws.getCell('E6').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: lightOrange } };
+      ws.getCell('E6').font = { bold: false };
+      ws.getCell('F5').value = 'Saldo Disponível';
+      ws.getCell('F5').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: orange } };
+      ws.getCell('F5').font = { bold: true };
+      ws.getCell('F5').alignment = { horizontal: 'center', vertical: 'middle' };
+      ws.getCell('F6').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: lightGreen } };
+      ['D5', 'D6', 'E6', 'F6'].forEach(address => { ws.getCell(address).numFmt = currencyFormat; });
+
+      ws.getRow(8).values = ['Data', 'Histórico', '  Complemento', 'Créditos', 'Débitos', 'Saldo'];
+      ws.getRow(8).eachCell((cell: any) => {
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: orange } };
+        cell.font = { bold: true };
+        cell.alignment = { horizontal: 'left', vertical: 'middle' };
+      });
+
       data.forEach(item => {
-        ws.addRow({
+        const row = ws.addRow({
           data: item.Data,
           historico: item.Histórico,
           complemento: item['  Complemento'],
@@ -221,10 +327,13 @@ const Finance = () => {
           debitos: item.Débitos,
           saldo: item.Saldo
         });
+        row.getCell(1).alignment = { horizontal: 'center' };
+        [4, 5, 6].forEach(column => { row.getCell(column).numFmt = currencyFormat; });
+        row.getCell(6).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: lightGreen } };
       });
 
-      // Format headers
-      ws.getRow(1).font = { bold: true };
+      ws.autoFilter = { from: 'A8', to: 'F8' };
+      ws.views = [{ state: 'frozen', ySplit: 8, showGridLines: true }];
       
       const buffer = await wb.xlsx.writeBuffer();
       const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });

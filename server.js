@@ -63,35 +63,134 @@ function getActualTableName(reqTable) {
 // HELPER PARA BUSCAR TÍTULOS DA API UNLTD
 // -------------------------------------------------------------
 const UNLTD_TOKEN = '4E5BF2FC1313695BD24FB21591DC3D4E69B24CC04BCC6DB53CC2541CAA7A1367';
+const UNLTD_INITIAL_YEAR = 2021;
+const UNLTD_FINAL_YEAR_LIMIT = 2099;
+const UNLTD_CONCURRENCY = 3;
+const UNLTD_CACHE_TTL_MS = 60 * 60 * 1000;
+const UNLTD_SITUACOES = [
+  'Em Aberto',
+  'Liquidado',
+  'Liquidado em Cartório',
+  'Baixado',
+  'Recomprado',
+  'Recuperação de Crédito',
+  'Pró-Solvendo',
+  'Perda'
+];
+let unltdFullHistoryCache = { data: null, updatedAt: 0, pending: null };
 
-async function fetchTitulosDaAPI(req) {
-  const { startDate, endDate } = req.query;
-  const payload = {};
-  
-  if (startDate && endDate) {
-    payload.tipoDeData = 'Vencimento';
-    // Adiciona timezone Z para manter em UTC conforme especificação, ajustando o final do dia
-    payload.dataInicial = `${startDate}T00:00:00Z`;
-    payload.dataFinal = `${endDate}T23:59:59Z`;
+function buildDateWindows(startDate, endDate) {
+  const windows = [];
+  let cursor = new Date(`${startDate}T00:00:00.000Z`);
+  const limit = new Date(`${endDate}T23:59:59.999Z`);
+
+  while (cursor <= limit) {
+    const windowStart = new Date(cursor);
+    const windowEnd = new Date(cursor);
+    windowEnd.setUTCDate(windowEnd.getUTCDate() + 29);
+    windowEnd.setUTCHours(23, 59, 59, 999);
+    if (windowEnd > limit) windowEnd.setTime(limit.getTime());
+
+    windows.push({
+      dataInicial: windowStart.toISOString(),
+      dataFinal: windowEnd.toISOString()
+    });
+
+    cursor = new Date(windowEnd.getTime() + 1);
+    cursor.setUTCHours(0, 0, 0, 0);
   }
-  
+
+  return windows;
+}
+
+async function mapWithConcurrency(items, concurrency, mapper) {
+  const results = new Array(items.length);
+  let nextIndex = 0;
+
+  async function worker() {
+    while (nextIndex < items.length) {
+      const currentIndex = nextIndex++;
+      results[currentIndex] = await mapper(items[currentIndex], currentIndex);
+    }
+  }
+
+  await Promise.all(Array.from({ length: Math.min(concurrency, items.length) }, worker));
+  return results;
+}
+
+async function fetchTitulosPeriod(period) {
   const response = await fetch('https://lepta-backend.bit-unltd.com.br/recebiveis/titulos', {
     method: 'POST',
     headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `UNLTD-BackEnd ${UNLTD_TOKEN}`
-      },
-    body: JSON.stringify(payload)
+      'Content-Type': 'application/json',
+      'Authorization': `UNLTD-BackEnd ${UNLTD_TOKEN}`
+    },
+    body: JSON.stringify({ tipoDeData: 'Vencimento', situacoes: UNLTD_SITUACOES, ...period })
   });
-  
+
   if (!response.ok) {
     const errorText = await response.text();
-    console.error(`Erro API UNLTD (${response.SITUACAO}):`, errorText);
-    throw new Error(`Erro API UNLTD: ${response.SITUACAO}`);
+    throw new Error(`UNLTD respondeu ${response.status}: ${errorText}`);
   }
-  
+
   const titulos = await response.json();
   return Array.isArray(titulos) ? titulos : [];
+}
+
+async function fetchTitulosRange(startDate, endDate) {
+  const windows = buildDateWindows(startDate, endDate);
+  const batches = await mapWithConcurrency(windows, UNLTD_CONCURRENCY, fetchTitulosPeriod);
+  return batches.flat();
+}
+
+function deduplicateTitulos(titulos) {
+  const unique = new Map();
+  for (const titulo of titulos) {
+    const key = titulo.id ?? titulo.numero ?? `${titulo.dataDeVencimento}-${titulo.valorNominal}-${unique.size}`;
+    unique.set(String(key), titulo);
+  }
+  return Array.from(unique.values());
+}
+
+async function fetchFullTitulosHistory() {
+  const currentYear = new Date().getUTCFullYear();
+  const allTitulos = [];
+
+  for (let year = UNLTD_INITIAL_YEAR; year <= UNLTD_FINAL_YEAR_LIMIT; year++) {
+    const yearTitulos = await fetchTitulosRange(`${year}-01-01`, `${year}-12-31`);
+    allTitulos.push(...yearTitulos);
+
+    // Só encerra depois do ano atual para não confundir lacunas históricas com fim da base.
+    if (year > currentYear && yearTitulos.length === 0) break;
+  }
+
+  return deduplicateTitulos(allTitulos);
+}
+
+async function fetchTitulosDaAPI(req) {
+  const { startDate, endDate } = req.query;
+
+  if (startDate && endDate) {
+    return deduplicateTitulos(await fetchTitulosRange(startDate, endDate));
+  }
+
+  const cacheIsFresh = unltdFullHistoryCache.data
+    && Date.now() - unltdFullHistoryCache.updatedAt < UNLTD_CACHE_TTL_MS;
+  if (cacheIsFresh) return unltdFullHistoryCache.data;
+
+  if (!unltdFullHistoryCache.pending) {
+    unltdFullHistoryCache.pending = fetchFullTitulosHistory()
+      .then(data => {
+        unltdFullHistoryCache.data = data;
+        unltdFullHistoryCache.updatedAt = Date.now();
+        return data;
+      })
+      .finally(() => {
+        unltdFullHistoryCache.pending = null;
+      });
+  }
+
+  return unltdFullHistoryCache.pending;
 }
 
 // -------------------------------------------------------------
@@ -360,10 +459,9 @@ app.get('/api/analise-clientes', async (req, res) => {
         let dataVenc = t.dataDeVencimento ? new Date(t.dataDeVencimento) : null;
         if (dataVenc) dataVenc.setHours(0, 0, 0, 0);
         const isAberto = situacao.includes('aberto');
-        const isLiquidado = situacao.includes('liquidado');
-        const isVencido = isAberto && dataVenc && dataVenc < hoje;
-        const valNominal = t.valorNominal || 0;
-        const valLiquido = t.valorLiquido || 0;
+        const isLiquidado = situacao.includes('liquidado') || situacao.includes('liq.');
+        const isVencido = Boolean(isAberto && dataVenc && !Number.isNaN(dataVenc.getTime()) && dataVenc < hoje);
+        const valNominal = Number(t.valorNominal) || 0;
         if (!mapCedentes.has(cedente)) {
           mapCedentes.set(cedente, {
             cedente: cedente, qtdTitulos: 0, qtdVencido: 0, qtdLiquidado: 0, qtdAberto: 0,
@@ -374,8 +472,8 @@ app.get('/api/analise-clientes', async (req, res) => {
         curr.qtdTitulos += 1;
         curr.valorGeral += valNominal;
         if (isVencido) { curr.qtdVencido += 1; curr.valorVencido += valNominal; }
-        if (isLiquidado) { curr.qtdLiquidado += 1; curr.valorLiquidado += valLiquido; }
-        if (isAberto && !isVencido) { curr.qtdAberto += 1; curr.valorAberto += valNominal; }
+        if (isLiquidado) { curr.qtdLiquidado += 1; curr.valorLiquidado += valNominal; }
+        if (isAberto) { curr.qtdAberto += 1; curr.valorAberto += valNominal; }
       }
       rowsNova = Array.from(mapCedentes.values());
     } catch (apiErr) {
@@ -511,10 +609,9 @@ app.get('/api/analise-sacados/:cedente', async (req, res) => {
         let dataVenc = t.dataDeVencimento ? new Date(t.dataDeVencimento) : null;
         if (dataVenc) dataVenc.setHours(0, 0, 0, 0);
         const isAberto = situacao.includes('aberto');
-        const isLiquidado = situacao.includes('liquidado');
-        const isVencido = isAberto && dataVenc && dataVenc < hoje;
-        const valNominal = t.valorNominal || 0;
-        const valLiquido = t.valorLiquido || 0;
+        const isLiquidado = situacao.includes('liquidado') || situacao.includes('liq.');
+        const isVencido = Boolean(isAberto && dataVenc && !Number.isNaN(dataVenc.getTime()) && dataVenc < hoje);
+        const valNominal = Number(t.valorNominal) || 0;
         if (!mapSacados.has(sacado)) {
           mapSacados.set(sacado, {
             sacado: sacado, qtdTitulos: 0, qtdVencido: 0, qtdLiquidado: 0, qtdAberto: 0,
@@ -525,8 +622,8 @@ app.get('/api/analise-sacados/:cedente', async (req, res) => {
         curr.qtdTitulos += 1;
         curr.valorGeral += valNominal;
         if (isVencido) { curr.qtdVencido += 1; curr.valorVencido += valNominal; }
-        if (isLiquidado) { curr.qtdLiquidado += 1; curr.valorLiquidado += valLiquido; }
-        if (isAberto && !isVencido) { curr.qtdAberto += 1; curr.valorAberto += valNominal; }
+        if (isLiquidado) { curr.qtdLiquidado += 1; curr.valorLiquidado += valNominal; }
+        if (isAberto) { curr.qtdAberto += 1; curr.valorAberto += valNominal; }
       }
       rows = Array.from(mapSacados.values()).sort((a, b) => b.valorGeral - a.valorGeral);
     } catch (apiErr) {
@@ -586,10 +683,9 @@ app.get('/api/analise-ua/:cedente', async (req, res) => {
         let dataVenc = t.dataDeVencimento ? new Date(t.dataDeVencimento) : null;
         if (dataVenc) dataVenc.setHours(0, 0, 0, 0);
         const isAberto = situacao.includes('aberto');
-        const isLiquidado = situacao.includes('liquidado');
-        const isVencido = isAberto && dataVenc && dataVenc < hoje;
-        const valNominal = t.valorNominal || 0;
-        const valLiquido = t.valorLiquido || 0;
+        const isLiquidado = situacao.includes('liquidado') || situacao.includes('liq.');
+        const isVencido = Boolean(isAberto && dataVenc && !Number.isNaN(dataVenc.getTime()) && dataVenc < hoje);
+        const valNominal = Number(t.valorNominal) || 0;
         if (!mapUA.has(ua)) {
           mapUA.set(ua, {
             ua: ua, qtdTitulos: 0, qtdVencido: 0, qtdLiquidado: 0, qtdAberto: 0,
@@ -600,8 +696,8 @@ app.get('/api/analise-ua/:cedente', async (req, res) => {
         curr.qtdTitulos += 1;
         curr.valorGeral += valNominal;
         if (isVencido) { curr.qtdVencido += 1; curr.valorVencido += valNominal; }
-        if (isLiquidado) { curr.qtdLiquidado += 1; curr.valorLiquidado += valLiquido; }
-        if (isAberto && !isVencido) { curr.qtdAberto += 1; curr.valorAberto += valNominal; }
+        if (isLiquidado) { curr.qtdLiquidado += 1; curr.valorLiquidado += valNominal; }
+        if (isAberto) { curr.qtdAberto += 1; curr.valorAberto += valNominal; }
       }
       rows = Array.from(mapUA.values()).sort((a, b) => b.valorGeral - a.valorGeral);
     } catch (apiErr) {

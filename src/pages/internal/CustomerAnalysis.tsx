@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Users, Search, BrainCircuit, Database, TrendingUp, AlertTriangle, ArrowLeft, Building2, User, CheckCircle, Clock, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
+import { Users, Search, BrainCircuit, Database, TrendingUp, AlertTriangle, ArrowLeft, Building2, User, CheckCircle, Clock, ArrowUpDown, ArrowUp, ArrowDown, Wifi } from 'lucide-react';
 import './CustomerAnalysis.css';
 import './Operations.css';
 
@@ -69,9 +69,17 @@ const CustomerAnalysis = () => {
   }, []);
 
   useEffect(() => {
+    const controller = new AbortController();
+
     const fetchClients = async () => {
+      if ((startDate && !endDate) || (!startDate && endDate)) {
+        setLoading(false);
+        return;
+      }
+
       try {
         setLoading(true);
+        setError('');
         
         const queryParams = new URLSearchParams();
         queryParams.append('t', Date.now().toString());
@@ -80,6 +88,7 @@ const CustomerAnalysis = () => {
 
         const response = await fetch(`/api/analise-clientes?${queryParams.toString()}`, { 
           cache: 'no-store',
+          signal: controller.signal,
           headers: {
             'Pragma': 'no-cache',
             'Cache-Control': 'no-cache'
@@ -113,20 +122,17 @@ const CustomerAnalysis = () => {
         });
         setClients(enriched);
         setLoading(false);
-      } catch (err) {
+      } catch (err: any) {
+        if (err.name === 'AbortError') return;
         console.error('Erro ao buscar dados:', err);
-        setError('Erro ao carregar dados do banco.');
+        setError('Erro ao carregar dados da API.');
         setLoading(false);
       }
     };
     fetchClients();
-  }, [startDate, endDate]);
 
-  const filteredClients = searchTerm.trim() === ''
-    ? []
-    : clients.filter(client => {
-        return client.cedente.toLowerCase().includes(searchTerm.toLowerCase());
-      });
+    return () => controller.abort();
+  }, [startDate, endDate]);
 
   const handleCedenteClick = (e: React.MouseEvent, cedente: string) => {
     e.stopPropagation();
@@ -318,69 +324,84 @@ const CustomerAnalysis = () => {
 
       {/* KPI Summary Grid */}
       <div className="kpi-grid">
-        <div className={`kpi-card ${kpiFilters.includes('cedentes') ? 'active' : ''}`} onClick={() => toggleKpiFilter('cedentes')}>
-          <div className="kpi-icon">
-            <Users size={24} />
+        <div className="kpi-row kpi-row-primary">
+          <div className={`kpi-card ${kpiFilters.includes('cedentes') ? 'active' : ''}`} onClick={() => toggleKpiFilter('cedentes')}>
+            <div className="kpi-icon">
+              <Users size={24} />
+            </div>
+            <div className="kpi-info">
+              <h4>{selectedCedente ? (drillDownMode === 'sacados' ? 'Sacados' : 'Unid. Administrativas') : 'Cedentes / Clientes'}</h4>
+              <div className="kpi-value">{loading || loadingSubData ? '...' : totalClients}</div>
+              <div className="kpi-sub">{selectedCedente ? 'Do cedente selecionado' : 'Cadastrados na Base'}</div>
+            </div>
           </div>
-          <div className="kpi-info">
-            <h4>{selectedCedente ? (drillDownMode === 'sacados' ? 'Sacados' : 'Unid. Administrativas') : 'Cedentes / Clientes'}</h4>
-            <div className="kpi-value">{loading || loadingSubData ? '...' : totalClients}</div>
-            <div className="kpi-sub">{selectedCedente ? 'Do cedente selecionado' : 'Cadastrados na Base'}</div>
+
+          <div className={`kpi-card ${kpiFilters.includes('volume_npl') ? 'active' : ''}`} onClick={() => toggleKpiFilter('volume_npl')}>
+            <div className="kpi-icon" style={{ color: '#f59e0b', background: 'rgba(245, 158, 11, 0.12)' }}>
+              <TrendingUp size={24} />
+            </div>
+            <div className="kpi-info">
+              <h4>NPL</h4>
+              <div className="kpi-value">{loading || loadingSubData ? '...' : formatCurrency(totalVolumeNpl)}</div>
+              <div className="kpi-sub">Total {selectedCedente ? 'do detalhamento' : 'da Base NPL'}</div>
+            </div>
+          </div>
+
+          <div className="kpi-card kpi-card-placeholder">
+            <div className="kpi-icon" style={{ color: '#8b5cf6', background: 'rgba(139, 92, 246, 0.12)' }}>
+              <BrainCircuit size={24} />
+            </div>
+            <div className="kpi-info">
+              <h4>LeptaHUB</h4>
+              <div className="kpi-value">---</div>
+              <div className="kpi-sub">---</div>
+            </div>
           </div>
         </div>
 
-        <div className={`kpi-card ${kpiFilters.includes('volume_geral') ? 'active' : ''}`} onClick={() => toggleKpiFilter('volume_geral')}>
-          <div className="kpi-icon" style={{ color: '#3b82f6', background: 'rgba(59, 130, 246, 0.12)' }}>
-            <TrendingUp size={24} />
+        <div className="kpi-row kpi-row-secondary">
+          <div className={`kpi-card ${kpiFilters.includes('volume_geral') ? 'active' : ''}`} onClick={() => toggleKpiFilter('volume_geral')}>
+            <div className="kpi-icon" style={{ color: '#3b82f6', background: 'rgba(59, 130, 246, 0.12)' }}>
+              <TrendingUp size={24} />
+            </div>
+            <div className="kpi-info">
+              <h4>Operações de desconto</h4>
+              <div className="kpi-value">{loading || loadingSubData ? '...' : formatCurrency(totalVolume)}</div>
+              <div className="kpi-sub">Total {selectedCedente ? 'do detalhamento' : 'da Base'}</div>
+            </div>
           </div>
-          <div className="kpi-info">
-            <h4>Volume Geral</h4>
-            <div className="kpi-value">{loading || loadingSubData ? '...' : formatCurrency(totalVolume)}</div>
-            <div className="kpi-sub">Total {selectedCedente ? 'do detalhamento' : 'da Base'}</div>
-          </div>
-        </div>
 
-        <div className={`kpi-card ${kpiFilters.includes('volume_npl') ? 'active' : ''}`} onClick={() => toggleKpiFilter('volume_npl')}>
-          <div className="kpi-icon" style={{ color: '#f59e0b', background: 'rgba(245, 158, 11, 0.12)' }}>
-            <TrendingUp size={24} />
+          <div className={`kpi-card ${kpiFilters.includes('total_aberto') ? 'active' : ''}`} onClick={() => toggleKpiFilter('total_aberto')}>
+            <div className="kpi-icon" style={{ color: '#f59e0b', background: 'rgba(245, 158, 11, 0.12)' }}>
+              <Clock size={24} />
+            </div>
+            <div className="kpi-info">
+              <h4>Total em aberto</h4>
+              <div className="kpi-value">{loading || loadingSubData ? '...' : formatCurrency(totalAberto)}</div>
+              <div className="kpi-sub" style={{ color: '#f59e0b' }}>A vencer (Títulos Abertos)</div>
+            </div>
           </div>
-          <div className="kpi-info">
-            <h4>Volume NPL</h4>
-            <div className="kpi-value">{loading || loadingSubData ? '...' : formatCurrency(totalVolumeNpl)}</div>
-            <div className="kpi-sub">Total {selectedCedente ? 'do detalhamento' : 'da Base NPL'}</div>
-          </div>
-        </div>
 
-        <div className={`kpi-card ${kpiFilters.includes('total_liquidado') ? 'active' : ''}`} onClick={() => toggleKpiFilter('total_liquidado')}>
-          <div className="kpi-icon" style={{ color: '#10b981', background: 'rgba(16, 185, 129, 0.12)' }}>
-            <CheckCircle size={24} />
+          <div className={`kpi-card ${kpiFilters.includes('total_liquidado') ? 'active' : ''}`} onClick={() => toggleKpiFilter('total_liquidado')}>
+            <div className="kpi-icon" style={{ color: '#10b981', background: 'rgba(16, 185, 129, 0.12)' }}>
+              <CheckCircle size={24} />
+            </div>
+            <div className="kpi-info">
+              <h4>Total Liquidado</h4>
+              <div className="kpi-value">{loading || loadingSubData ? '...' : formatCurrency(totalLiquidado)}</div>
+              <div className="kpi-sub" style={{ color: '#10b981' }}>Titulos Liquidados</div>
+            </div>
           </div>
-          <div className="kpi-info">
-            <h4>Total Liquidado</h4>
-            <div className="kpi-value">{loading || loadingSubData ? '...' : formatCurrency(totalLiquidado)}</div>
-            <div className="kpi-sub" style={{ color: '#10b981' }}>Titulos Liquidados</div>
-          </div>
-        </div>
 
-        <div className={`kpi-card ${kpiFilters.includes('total_aberto') ? 'active' : ''}`} onClick={() => toggleKpiFilter('total_aberto')}>
-          <div className="kpi-icon" style={{ color: '#f59e0b', background: 'rgba(245, 158, 11, 0.12)' }}>
-            <Clock size={24} />
-          </div>
-          <div className="kpi-info">
-            <h4>Total em Aberto</h4>
-            <div className="kpi-value">{loading || loadingSubData ? '...' : formatCurrency(totalAberto)}</div>
-            <div className="kpi-sub" style={{ color: '#f59e0b' }}>A vencer (Títulos Abertos)</div>
-          </div>
-        </div>
-
-        <div className={`kpi-card ${kpiFilters.includes('total_vencido') ? 'active' : ''}`} onClick={() => toggleKpiFilter('total_vencido')}>
-          <div className="kpi-icon" style={{ color: '#ef4444', background: 'rgba(239, 68, 68, 0.12)' }}>
-            <AlertTriangle size={24} />
-          </div>
-          <div className="kpi-info">
-            <h4>Total Vencido</h4>
-            <div className="kpi-value">{loading || loadingSubData ? '...' : formatCurrency(totalVencido)}</div>
-            <div className="kpi-sub" style={{ color: '#ef4444' }}>{percVencidoGeral.toFixed(2)}% da carteira</div>
+          <div className={`kpi-card ${kpiFilters.includes('total_vencido') ? 'active' : ''}`} onClick={() => toggleKpiFilter('total_vencido')}>
+            <div className="kpi-icon" style={{ color: '#ef4444', background: 'rgba(239, 68, 68, 0.12)' }}>
+              <AlertTriangle size={24} />
+            </div>
+            <div className="kpi-info">
+              <h4>Total Vencidos</h4>
+              <div className="kpi-value">{loading || loadingSubData ? '...' : formatCurrency(totalVencido)}</div>
+              <div className="kpi-sub" style={{ color: '#ef4444' }}>{percVencidoGeral.toFixed(2)}% da carteira</div>
+            </div>
           </div>
         </div>
       </div>
@@ -459,9 +480,15 @@ const CustomerAnalysis = () => {
         </div>
 
         {loading || loadingSubData ? (
-          <div style={{ padding: '3rem', textAlign: 'center', color: '#94a3b8' }}>
-            <Database size={48} className="animate-pulse" style={{ margin: '0 auto 1rem', opacity: 0.5 }} />
-            <p>Consultando e agregando registros no SQLite...</p>
+          <div className="unltd-loading">
+            <div className="unltd-connection-icon">
+              <Wifi size={30} />
+            </div>
+            <p>Consultando dados na API UNLTD</p>
+            <div className="unltd-loading-dots" aria-label="Conectando">
+              <span></span><span></span><span></span>
+            </div>
+            <small>A conexão está ativa. Os períodos estão sendo consultados e consolidados.</small>
           </div>
         ) : error || subDataError ? (
           <div style={{ padding: '2rem', textAlign: 'center', color: '#ef4444' }}>
