@@ -2,6 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import fs from 'fs';
 import path from 'path';
+import { fileURLToPath } from 'url';
 import ExcelJS from 'exceljs';
 import Database from 'better-sqlite3';
 import stringSimilarity from 'string-similarity';
@@ -22,11 +23,12 @@ try {
 }
 
 // Serve arquivos estáticos do frontend (pasta dist) em produção
-const __dirname = path.resolve();
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 app.use(express.static(path.join(__dirname, 'dist')));
 
 // Inicializa banco de dados
-const dbPath = path.join(process.cwd(), 'database.sqlite');
+const dbPath = path.join(__dirname, 'database.sqlite');
 const db = new Database(dbPath, { fileMustExist: false });
 db.pragma('journal_mode = WAL');
 
