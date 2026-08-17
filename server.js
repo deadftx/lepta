@@ -6,6 +6,7 @@ import { fileURLToPath } from 'url';
 import ExcelJS from 'exceljs';
 import Database from 'better-sqlite3';
 import stringSimilarity from 'string-similarity';
+import { createCipheriv, createDecipheriv, createHash, randomBytes, scryptSync, timingSafeEqual } from 'crypto';
 
 const app = express();
 app.use(cors({ exposedHeaders: ['x-data-source'] }));
@@ -31,6 +32,130 @@ app.use(express.static(path.join(__dirname, 'dist')));
 const dbPath = path.join(__dirname, 'database.sqlite');
 const db = new Database(dbPath, { fileMustExist: false });
 db.pragma('journal_mode = WAL');
+
+const authSecretPath = path.join(__dirname, '.auth-secret');
+if (!process.env.AUTH_ENCRYPTION_KEY && !fs.existsSync(authSecretPath)) {
+  fs.writeFileSync(authSecretPath, randomBytes(32).toString('hex'), { mode: 0o600 });
+}
+const authEncryptionKey = createHash('sha256')
+  .update(process.env.AUTH_ENCRYPTION_KEY || fs.readFileSync(authSecretPath, 'utf8').trim())
+  .digest();
+
+const PASSWORD_PREFIX = 'scrypt';
+const authSessions = new Map();
+
+function ensureUserSecurityColumns() {
+  try {
+    const columns = new Set(db.prepare(`PRAGMA table_info(usuarios_lepta)`).all().map(column => column.name));
+    const additions = [
+      ['secret_question', 'TEXT'],
+      ['secret_answer', 'TEXT'],
+      ['login_attempts', 'INTEGER NOT NULL DEFAULT 0'],
+      ['secret_attempts', 'INTEGER NOT NULL DEFAULT 0'],
+      ['access_locked', 'INTEGER NOT NULL DEFAULT 0'],
+      ['fully_locked', 'INTEGER NOT NULL DEFAULT 0']
+    ];
+    for (const [name, definition] of additions) {
+      if (!columns.has(name)) db.exec(`ALTER TABLE usuarios_lepta ADD COLUMN ${name} ${definition}`);
+    }
+  } catch (error) {
+    if (!String(error.message).includes('no such table')) throw error;
+  }
+}
+
+function hashPassword(password) {
+  const salt = randomBytes(16).toString('hex');
+  const hash = scryptSync(password, salt, 64).toString('hex');
+  return `${PASSWORD_PREFIX}$${salt}$${hash}`;
+}
+
+function isPasswordHash(value) {
+  return typeof value === 'string' && value.startsWith(`${PASSWORD_PREFIX}$`);
+}
+
+function verifyPassword(password, storedValue) {
+  if (!isPasswordHash(storedValue)) return false;
+  const [, salt, storedHash] = storedValue.split('$');
+  if (!salt || !storedHash) return false;
+  const suppliedHash = scryptSync(password, salt, 64);
+  const expectedHash = Buffer.from(storedHash, 'hex');
+  return suppliedHash.length === expectedHash.length && timingSafeEqual(suppliedHash, expectedHash);
+}
+
+function encryptSecret(value) {
+  const iv = randomBytes(12);
+  const cipher = createCipheriv('aes-256-gcm', authEncryptionKey, iv);
+  const encrypted = Buffer.concat([cipher.update(value, 'utf8'), cipher.final()]);
+  return `enc$${iv.toString('hex')}$${cipher.getAuthTag().toString('hex')}$${encrypted.toString('hex')}`;
+}
+
+function decryptSecret(value) {
+  if (!String(value).startsWith('enc$')) return String(value || '');
+  const [, iv, tag, encrypted] = String(value).split('$');
+  const decipher = createDecipheriv('aes-256-gcm', authEncryptionKey, Buffer.from(iv, 'hex'));
+  decipher.setAuthTag(Buffer.from(tag, 'hex'));
+  return Buffer.concat([decipher.update(Buffer.from(encrypted, 'hex')), decipher.final()]).toString('utf8');
+}
+
+function sanitizeUser(row) {
+  if (!row) return null;
+  const parsed = parseRow(row);
+  const {
+    password, secret_question, secret_answer,
+    login_attempts, secret_attempts,
+    ...safeUser
+  } = parsed;
+  return {
+    ...safeUser,
+    accessLocked: Boolean(parsed.access_locked),
+    fullyLocked: Boolean(parsed.fully_locked),
+    requiresSecuritySetup: !parsed.secret_question || !parsed.secret_answer
+  };
+}
+
+function createAuthSession(user, purpose = 'auth') {
+  const token = randomBytes(32).toString('hex');
+  authSessions.set(token, { userId: user.id, role: user.role, purpose, expiresAt: Date.now() + 12 * 60 * 60 * 1000 });
+  return token;
+}
+
+function readSession(req) {
+  const token = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '');
+  const session = authSessions.get(token);
+  if (session && session.expiresAt >= Date.now()) return session;
+  if (token) authSessions.delete(token);
+  return null;
+}
+
+function requireSession(req, res, next) {
+  const session = readSession(req);
+  if (!session || session.expiresAt < Date.now()) {
+    return res.status(401).json({ error: 'Sessão inválida ou expirada.' });
+  }
+  req.authSession = session;
+  next();
+}
+
+ensureUserSecurityColumns();
+
+function migratePlaintextPasswords() {
+  try {
+    const users = db.prepare(`SELECT id, password FROM usuarios_lepta WHERE password IS NOT NULL AND password != ''`).all();
+    const update = db.prepare(`UPDATE usuarios_lepta SET password = ? WHERE id = ?`);
+    const migrate = db.transaction(rows => {
+      for (const user of rows) {
+        if (!isPasswordHash(user.password)) update.run(hashPassword(String(user.password)), user.id);
+      }
+    });
+    migrate(users);
+  } catch (error) {
+    if (!String(error.message).includes('no such table')) {
+      console.error('Falha ao proteger senhas existentes:', error.message);
+    }
+  }
+}
+
+migratePlaintextPasswords();
 
 /**
  * Helper to parse row from SQLite.
@@ -80,6 +205,7 @@ const UNLTD_SITUACOES = [
   'Perda'
 ];
 let unltdFullHistoryCache = { data: null, updatedAt: 0, pending: null };
+let unltdLiquidacoesCache = { data: null, updatedAt: 0, pending: null };
 
 function buildDateWindows(startDate, endDate) {
   const windows = [];
@@ -139,10 +265,40 @@ async function fetchTitulosPeriod(period) {
   return Array.isArray(titulos) ? titulos : [];
 }
 
+async function fetchLiquidacoesPeriod(period) {
+  const response = await fetch('https://lepta-backend.bit-unltd.com.br/recebiveis/liquidacoes', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `UNLTD-BackEnd ${UNLTD_TOKEN}`
+    },
+    body: JSON.stringify({ tipoDeData: 'Efetivacao', ...period })
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`UNLTD (liquidacoes) respondeu ${response.status}: ${errorText}`);
+  }
+
+  const liquidacoes = await response.json();
+  return Array.isArray(liquidacoes) ? liquidacoes : [];
+}
+
 async function fetchTitulosRange(startDate, endDate) {
   const windows = buildDateWindows(startDate, endDate);
   const batches = await mapWithConcurrency(windows, UNLTD_CONCURRENCY, fetchTitulosPeriod);
   return batches.flat();
+}
+
+async function fetchLiquidacoesRange(startDate, endDate) {
+  const windows = buildDateWindows(startDate, endDate);
+  const batches = await mapWithConcurrency(windows, UNLTD_CONCURRENCY, fetchLiquidacoesPeriod);
+  const unique = new Map();
+  for (const liquidacao of batches.flat()) {
+    const key = liquidacao.id ?? `${liquidacao.dataDeEfetivacao}-${liquidacao.totalLiquido}-${unique.size}`;
+    unique.set(String(key), liquidacao);
+  }
+  return Array.from(unique.values());
 }
 
 function deduplicateTitulos(titulos) {
@@ -193,6 +349,33 @@ async function fetchTitulosDaAPI(req) {
   }
 
   return unltdFullHistoryCache.pending;
+}
+
+async function fetchLiquidacoesDaAPI(req) {
+  const { startDate, endDate } = req.query;
+  if (startDate && endDate) return fetchLiquidacoesRange(startDate, endDate);
+
+  const cacheIsFresh = unltdLiquidacoesCache.data
+    && Date.now() - unltdLiquidacoesCache.updatedAt < UNLTD_CACHE_TTL_MS;
+  if (cacheIsFresh) return unltdLiquidacoesCache.data;
+
+  if (!unltdLiquidacoesCache.pending) {
+    const currentYear = new Date().getUTCFullYear();
+    unltdLiquidacoesCache.pending = fetchLiquidacoesRange(
+      `${UNLTD_INITIAL_YEAR}-01-01`,
+      `${currentYear}-12-31`
+    )
+      .then(data => {
+        unltdLiquidacoesCache.data = data;
+        unltdLiquidacoesCache.updatedAt = Date.now();
+        return data;
+      })
+      .finally(() => {
+        unltdLiquidacoesCache.pending = null;
+      });
+  }
+
+  return unltdLiquidacoesCache.pending;
 }
 
 // -------------------------------------------------------------
@@ -450,7 +633,10 @@ app.get('/api/analise-clientes', async (req, res) => {
     let rowsNova = [];
     let dataSource = 'api';
     try {
-      const titulos = await fetchTitulosDaAPI(req);
+      const [titulos, liquidacoes] = await Promise.all([
+        fetchTitulosDaAPI(req),
+        fetchLiquidacoesDaAPI(req)
+      ]);
       const mapCedentes = new Map();
       const hoje = new Date();
       hoje.setHours(0, 0, 0, 0);
@@ -474,8 +660,19 @@ app.get('/api/analise-clientes', async (req, res) => {
         curr.qtdTitulos += 1;
         curr.valorGeral += valNominal;
         if (isVencido) { curr.qtdVencido += 1; curr.valorVencido += valNominal; }
-        if (isLiquidado) { curr.qtdLiquidado += 1; curr.valorLiquidado += valNominal; }
+        if (isLiquidado) { curr.qtdLiquidado += 1; }
         if (isAberto) { curr.qtdAberto += 1; curr.valorAberto += valNominal; }
+      }
+      for (const liquidacao of liquidacoes) {
+        const cedente = liquidacao.contaOperacional?.cliente?.entidade?.nome;
+        if (!cedente) continue;
+        if (!mapCedentes.has(cedente)) {
+          mapCedentes.set(cedente, {
+            cedente, qtdTitulos: 0, qtdVencido: 0, qtdLiquidado: 0, qtdAberto: 0,
+            valorGeral: 0, valorVencido: 0, valorLiquidado: 0, valorAberto: 0
+          });
+        }
+        mapCedentes.get(cedente).valorLiquidado += Number(liquidacao.totalLiquido) || 0;
       }
       rowsNova = Array.from(mapCedentes.values());
     } catch (apiErr) {
@@ -671,7 +868,10 @@ app.get('/api/analise-ua/:cedente', async (req, res) => {
     let dataSource = 'api';
     
     try {
-      const titulos = await fetchTitulosDaAPI(req);
+      const [titulos, liquidacoes] = await Promise.all([
+        fetchTitulosDaAPI(req),
+        fetchLiquidacoesDaAPI(req)
+      ]);
       const mapUA = new Map();
       const hoje = new Date();
       hoje.setHours(0, 0, 0, 0);
@@ -698,8 +898,21 @@ app.get('/api/analise-ua/:cedente', async (req, res) => {
         curr.qtdTitulos += 1;
         curr.valorGeral += valNominal;
         if (isVencido) { curr.qtdVencido += 1; curr.valorVencido += valNominal; }
-        if (isLiquidado) { curr.qtdLiquidado += 1; curr.valorLiquidado += valNominal; }
+        if (isLiquidado) { curr.qtdLiquidado += 1; }
         if (isAberto) { curr.qtdAberto += 1; curr.valorAberto += valNominal; }
+      }
+      for (const liquidacao of liquidacoes) {
+        const cliente = liquidacao.contaOperacional?.cliente?.entidade?.nome;
+        if (!cliente || normalizeStr(cliente) !== normCedenteParams) continue;
+        const ua = liquidacao.contaOperacional?.unidadeAdministrativa?.alias;
+        if (!ua) continue;
+        if (!mapUA.has(ua)) {
+          mapUA.set(ua, {
+            ua, qtdTitulos: 0, qtdVencido: 0, qtdLiquidado: 0, qtdAberto: 0,
+            valorGeral: 0, valorVencido: 0, valorLiquidado: 0, valorAberto: 0
+          });
+        }
+        mapUA.get(ua).valorLiquidado += Number(liquidacao.totalLiquido) || 0;
       }
       rows = Array.from(mapUA.values()).sort((a, b) => b.valorGeral - a.valorGeral);
     } catch (apiErr) {
@@ -814,12 +1027,168 @@ app.get('/api/analise-un/:cedente', (req, res) => {
 // GENERIC REST API (MIMICKING JSON-SERVER)
 // -------------------------------------------------------------
 
+app.get('/api/health', (req, res) => {
+  try {
+    db.prepare('SELECT 1').get();
+    res.json({ status: 'ok', database: path.basename(dbPath) });
+  } catch (error) {
+    res.status(503).json({ status: 'error' });
+  }
+});
+
+app.post('/api/auth/login', (req, res) => {
+  const loginId = String(req.body?.loginId || '').trim().toLowerCase();
+  const password = String(req.body?.password || '');
+  if (!loginId || !password) {
+    return res.status(400).json({ error: 'Login e senha são obrigatórios.' });
+  }
+
+  try {
+    const user = db.prepare(`
+      SELECT * FROM usuarios_lepta
+      WHERE lower(username) = ? OR lower(email) = ?
+      LIMIT 1
+    `).get(loginId, loginId);
+
+    if (user?.fully_locked) {
+      return res.status(423).json({ error: 'Acesso bloqueado. Solicite o desbloqueio ao administrador.', fullyLocked: true });
+    }
+    if (user?.access_locked) {
+      return res.status(423).json({ error: 'Acesso bloqueado. Use sua palavra secreta para redefinir a senha.', recoveryRequired: true });
+    }
+    if (!user?.password || !verifyPassword(password, user.password)) {
+      if (user) {
+        const attempts = Number(user.login_attempts || 0) + 1;
+        db.prepare(`UPDATE usuarios_lepta SET login_attempts = ?, access_locked = ? WHERE id = ?`)
+          .run(attempts, attempts >= 3 ? 1 : 0, user.id);
+        if (attempts >= 3) {
+          return res.status(423).json({ error: 'Acesso bloqueado após 3 tentativas. Use sua palavra secreta.', recoveryRequired: true });
+        }
+      }
+      return res.status(401).json({ error: 'Credenciais incorretas.' });
+    }
+
+    db.prepare(`UPDATE usuarios_lepta SET login_attempts = 0 WHERE id = ?`).run(user.id);
+    return res.json({ user: sanitizeUser(user), token: createAuthSession(user) });
+  } catch (error) {
+    console.error('Erro no login:', error.message);
+    return res.status(500).json({ error: 'Não foi possível realizar o login.' });
+  }
+});
+
+app.post('/api/auth/first-access/check', (req, res) => {
+  const loginId = String(req.body?.loginId || '').trim().toLowerCase();
+  if (!loginId) return res.status(400).json({ error: 'Informe o e-mail ou usuário.' });
+
+  try {
+    const user = db.prepare(`
+      SELECT * FROM usuarios_lepta
+      WHERE lower(username) = ? OR lower(email) = ?
+      LIMIT 1
+    `).get(loginId, loginId);
+
+    if (!user) return res.status(404).json({ error: 'Usuário não cadastrado.' });
+    if (user.password) return res.status(409).json({ error: 'Este usuário já possui senha cadastrada.' });
+    return res.json({ user: sanitizeUser(user) });
+  } catch (error) {
+    return res.status(500).json({ error: 'Não foi possível validar o primeiro acesso.' });
+  }
+});
+
+app.post('/api/auth/first-access/password', (req, res) => {
+  const id = String(req.body?.id || '');
+  const password = String(req.body?.password || '');
+  if (password.length < 10) {
+    return res.status(400).json({ error: 'A senha deve possuir pelo menos 10 caracteres.' });
+  }
+
+  try {
+    const result = db.prepare(`
+      UPDATE usuarios_lepta SET password = ?
+      WHERE id = ? AND (password IS NULL OR password = '')
+    `).run(hashPassword(password), id);
+    if (result.changes !== 1) {
+      return res.status(409).json({ error: 'Senha já cadastrada ou usuário inválido.' });
+    }
+    const user = db.prepare(`SELECT * FROM usuarios_lepta WHERE id = ?`).get(id);
+    return res.json({ user: sanitizeUser(user), setupToken: createAuthSession(user, 'security-setup') });
+  } catch (error) {
+    return res.status(500).json({ error: 'Não foi possível cadastrar a senha.' });
+  }
+});
+
+app.post('/api/auth/security-setup', requireSession, (req, res) => {
+  const question = String(req.body?.question || '').trim();
+  const answer = String(req.body?.answer || '').trim().toLowerCase();
+  if (question.length < 5) return res.status(400).json({ error: 'Informe uma pergunta secreta válida.' });
+  if (!/^\p{L}+$/u.test(answer)) return res.status(400).json({ error: 'A palavra secreta deve conter somente uma palavra, sem números ou espaços.' });
+
+  try {
+    db.prepare(`
+      UPDATE usuarios_lepta
+      SET secret_question = ?, secret_answer = ?, secret_attempts = 0, access_locked = 0
+      WHERE id = ?
+    `).run(encryptSecret(question), hashPassword(answer), req.authSession.userId);
+    const user = db.prepare(`SELECT * FROM usuarios_lepta WHERE id = ?`).get(req.authSession.userId);
+    return res.json({ user: sanitizeUser(user) });
+  } catch (error) {
+    return res.status(500).json({ error: 'Não foi possível salvar a pergunta secreta.' });
+  }
+});
+
+app.post('/api/auth/recovery/question', (req, res) => {
+  const loginId = String(req.body?.loginId || '').trim().toLowerCase();
+  const user = db.prepare(`SELECT * FROM usuarios_lepta WHERE lower(username) = ? OR lower(email) = ? LIMIT 1`).get(loginId, loginId);
+  if (!user || !user.secret_question) return res.status(404).json({ error: 'Recuperação não disponível.' });
+  if (user.fully_locked) return res.status(423).json({ error: 'Acesso bloqueado. Procure o administrador.', fullyLocked: true });
+  return res.json({ question: decryptSecret(user.secret_question) });
+});
+
+app.post('/api/auth/recovery/reset', (req, res) => {
+  const loginId = String(req.body?.loginId || '').trim().toLowerCase();
+  const answer = String(req.body?.answer || '').trim().toLowerCase();
+  const password = String(req.body?.password || '');
+  if (password.length < 10) return res.status(400).json({ error: 'A nova senha deve possuir pelo menos 10 caracteres.' });
+
+  const user = db.prepare(`SELECT * FROM usuarios_lepta WHERE lower(username) = ? OR lower(email) = ? LIMIT 1`).get(loginId, loginId);
+  if (!user || !user.secret_answer) return res.status(404).json({ error: 'Recuperação não disponível.' });
+  if (user.fully_locked) return res.status(423).json({ error: 'Acesso bloqueado. Procure o administrador.', fullyLocked: true });
+
+  if (!verifyPassword(answer, user.secret_answer)) {
+    const attempts = Number(user.secret_attempts || 0) + 1;
+    db.prepare(`UPDATE usuarios_lepta SET secret_attempts = ?, fully_locked = ? WHERE id = ?`)
+      .run(attempts, attempts >= 3 ? 1 : 0, user.id);
+    if (attempts >= 3) return res.status(423).json({ error: 'Usuário bloqueado completamente. Procure o administrador.', fullyLocked: true });
+    return res.status(401).json({ error: `Palavra secreta incorreta. Restam ${3 - attempts} tentativa(s).` });
+  }
+
+  db.prepare(`
+    UPDATE usuarios_lepta
+    SET password = ?, login_attempts = 0, secret_attempts = 0, access_locked = 0
+    WHERE id = ?
+  `).run(hashPassword(password), user.id);
+  return res.json({ success: true });
+});
+
+app.post('/api/auth/admin/unlock/:id', requireSession, (req, res) => {
+  if (req.authSession.role !== 'MASTER') return res.status(403).json({ error: 'Somente um usuário MASTER pode desbloquear acessos.' });
+  const result = db.prepare(`
+    UPDATE usuarios_lepta SET login_attempts = 0, secret_attempts = 0, access_locked = 0, fully_locked = 0
+    WHERE id = ?
+  `).run(req.params.id);
+  if (!result.changes) return res.status(404).json({ error: 'Usuário não encontrado.' });
+  return res.json({ success: true });
+});
+
 app.get('/:table', (req, res, next) => {
   const table = getActualTableName(req.params.table);
+  if (table === 'usuarios_lepta' && !readSession(req)) return res.status(401).json({ error: 'Sessão inválida.' });
   try {
     const rows = db.prepare(`SELECT * FROM "${table}"`).all();
     if (table === 'databaseTables') {
        res.json(rows.map(r => JSON.parse(r.json_content)));
+    } else if (table === 'usuarios_lepta') {
+       res.json(rows.map(sanitizeUser));
     } else {
        res.json(rows.map(parseRow));
     }
@@ -833,12 +1202,15 @@ app.get('/:table', (req, res, next) => {
 
 app.get('/:table/:id', (req, res, next) => {
   const table = getActualTableName(req.params.table);
+  if (table === 'usuarios_lepta' && !readSession(req)) return res.status(401).json({ error: 'Sessão inválida.' });
   try {
     const row = db.prepare(`SELECT * FROM "${table}" WHERE id = ?`).get(req.params.id);
     if (!row) return res.status(404).json({});
     
     if (table === 'databaseTables') {
        res.json(JSON.parse(row.json_content));
+    } else if (table === 'usuarios_lepta') {
+       res.json(sanitizeUser(row));
     } else {
        res.json(parseRow(row));
     }
@@ -852,7 +1224,10 @@ app.get('/:table/:id', (req, res, next) => {
 
 app.post('/:table', (req, res) => {
   const table = getActualTableName(req.params.table);
-  const data = req.body;
+  const session = table === 'usuarios_lepta' ? readSession(req) : null;
+  if (table === 'usuarios_lepta' && session?.role !== 'MASTER') return res.status(403).json({ error: 'Somente MASTER pode criar usuários.' });
+  const data = { ...req.body };
+  if (table === 'usuarios_lepta') data.password = '';
   if (!data.id) data.id = Date.now().toString();
 
   try {
@@ -866,7 +1241,7 @@ app.post('/:table', (req, res) => {
     db.exec(`CREATE TABLE IF NOT EXISTS "${table}" (${createCols})`);
     
     db.prepare(`INSERT INTO "${table}" (${colsSql}) VALUES (${placeholders})`).run(values);
-    res.status(201).json(data);
+    res.status(201).json(table === 'usuarios_lepta' ? sanitizeUser(data) : data);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -874,8 +1249,11 @@ app.post('/:table', (req, res) => {
 
 app.put('/:table/:id', (req, res) => {
   const table = getActualTableName(req.params.table);
+  const session = table === 'usuarios_lepta' ? readSession(req) : null;
+  if (table === 'usuarios_lepta' && session?.role !== 'MASTER') return res.status(403).json({ error: 'Somente MASTER pode alterar usuários.' });
   const id = req.params.id;
-  const data = req.body;
+  const data = { ...req.body };
+  if (table === 'usuarios_lepta') delete data.password;
   if (!data.id) data.id = id;
 
   try {
@@ -884,7 +1262,14 @@ app.put('/:table/:id', (req, res) => {
     const placeholders = keys.map(() => '?').join(', ');
     const values = keys.map(k => typeof data[k] === 'object' ? JSON.stringify(data[k]) : data[k]);
 
-    // Usamos REPLACE INTO para simplificar PUT (que sobrescreve)
+    if (table === 'usuarios_lepta') {
+      const setSql = keys.filter(k => k !== 'id').map(k => `"${k}" = ?`).join(', ');
+      const updateKeys = keys.filter(k => k !== 'id');
+      const updateValues = updateKeys.map(k => typeof data[k] === 'object' ? JSON.stringify(data[k]) : data[k]);
+      db.prepare(`UPDATE "${table}" SET ${setSql} WHERE id = ?`).run(...updateValues, id);
+      const row = db.prepare(`SELECT * FROM "${table}" WHERE id = ?`).get(id);
+      return res.json(sanitizeUser(row));
+    }
     db.prepare(`REPLACE INTO "${table}" (${colsSql}) VALUES (${placeholders})`).run(values);
     res.json(data);
   } catch (err) {
@@ -894,8 +1279,11 @@ app.put('/:table/:id', (req, res) => {
 
 app.patch('/:table/:id', (req, res) => {
   const table = getActualTableName(req.params.table);
+  const session = table === 'usuarios_lepta' ? readSession(req) : null;
+  if (table === 'usuarios_lepta' && session?.role !== 'MASTER') return res.status(403).json({ error: 'Somente MASTER pode alterar usuários.' });
   const id = req.params.id;
-  const data = req.body;
+  const data = { ...req.body };
+  if (table === 'usuarios_lepta') delete data.password;
 
   try {
     const keys = Object.keys(data);
@@ -905,7 +1293,7 @@ app.patch('/:table/:id', (req, res) => {
 
     db.prepare(`UPDATE "${table}" SET ${setSql} WHERE id = ?`).run(values);
     const row = db.prepare(`SELECT * FROM "${table}" WHERE id = ?`).get(id);
-    res.json(parseRow(row));
+    res.json(table === 'usuarios_lepta' ? sanitizeUser(row) : parseRow(row));
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -913,6 +1301,8 @@ app.patch('/:table/:id', (req, res) => {
 
 app.delete('/:table/:id', (req, res) => {
   const table = getActualTableName(req.params.table);
+  const session = table === 'usuarios_lepta' ? readSession(req) : null;
+  if (table === 'usuarios_lepta' && session?.role !== 'MASTER') return res.status(403).json({ error: 'Somente MASTER pode excluir usuários.' });
   try {
     db.prepare(`DELETE FROM "${table}" WHERE id = ?`).run(req.params.id);
     res.json({});

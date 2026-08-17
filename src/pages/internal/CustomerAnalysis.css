@@ -5,6 +5,78 @@
   padding-bottom: 2rem;
 }
 
+.popover-modal {
+  box-sizing: border-box;
+  max-width: min(360px, calc(100vw - 24px));
+}
+
+.popover-title {
+  padding-right: 1.5rem;
+  margin-bottom: 0.5rem;
+  color: #94a3b8;
+  font-size: 0.9rem;
+  font-weight: 600;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.popover-title span {
+  color: #fff;
+}
+
+.popover-close {
+  position: absolute;
+  top: 0.65rem;
+  right: 0.65rem;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 9px;
+  color: #cbd5e1;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+@media (max-width: 600px) and (orientation: portrait) {
+  .popover-modal {
+    top: max(12px, env(safe-area-inset-top)) !important;
+    left: 50% !important;
+    width: calc(100vw - 24px) !important;
+    min-width: 0 !important;
+    max-width: 340px !important;
+    max-height: calc(100dvh - 24px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+    padding: 1rem !important;
+    gap: 0.625rem !important;
+    overflow-x: hidden;
+    overflow-y: auto;
+    transform: translateX(-50%);
+    overscroll-behavior: contain;
+    touch-action: manipulation;
+  }
+
+  .popover-modal .popover-close {
+    display: flex;
+  }
+
+  .popover-modal .popover-title {
+    padding-right: 2.5rem;
+    margin-bottom: 0.25rem;
+    font-size: 0.82rem;
+  }
+
+  .popover-modal .btn-primary {
+    width: 100%;
+    min-height: 44px;
+    padding: 0.65rem 0.8rem !important;
+    font-size: 0.82rem;
+    line-height: 1.25;
+    white-space: normal;
+  }
+}
+
 .intelligence-badge {
   display: inline-flex;
   align-items: center;

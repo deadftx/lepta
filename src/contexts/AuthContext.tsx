@@ -8,6 +8,9 @@ export interface User {
   role: 'MASTER' | 'USER';
   groupId?: string;
   permissions: string[];
+  requiresSecuritySetup?: boolean;
+  accessLocked?: boolean;
+  fullyLocked?: boolean;
 }
 
 interface AuthContextType {
@@ -19,6 +22,57 @@ interface AuthContextType {
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
+
+const SecuritySetup = ({ onComplete, onLogout }: { onComplete: (user: User) => void; onLogout: () => void }) => {
+  const [question, setQuestion] = useState('');
+  const [answer, setAnswer] = useState('');
+  const [error, setError] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  const submit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setError('');
+    if (!/^\p{L}+$/u.test(answer.trim())) {
+      setError('A palavra secreta deve ser uma única palavra, sem números ou espaços.');
+      return;
+    }
+    setSaving(true);
+    try {
+      const token = localStorage.getItem('lepta_auth_token');
+      const response = await fetch(`${API_BASE_URL}/api/auth/security-setup`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ question, answer })
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || 'Não foi possível salvar.');
+      onComplete(result.user);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Não foi possível salvar.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="login-page">
+      <div className="login-container glass">
+        <div className="login-header">
+          <h2>Proteja seu acesso</h2>
+          <p>Cadastre uma pergunta e uma palavra secreta para recuperar sua conta.</p>
+        </div>
+        {error && <div className="login-error">{error}</div>}
+        <form onSubmit={submit} className="login-form">
+          <input value={question} onChange={event => setQuestion(event.target.value)} placeholder="Ex.: Qual era o nome do meu primeiro animal?" minLength={5} required />
+          <input value={answer} onChange={event => setAnswer(event.target.value)} placeholder="Palavra secreta" autoComplete="off" required />
+          <small>A resposta deve conter somente uma palavra. Ela não poderá ser visualizada depois.</small>
+          <button type="submit" className="btn-primary login-submit" disabled={saving}>{saving ? 'Salvando...' : 'Salvar e continuar'}</button>
+          <button type="button" className="btn-secondary" onClick={onLogout}>Sair</button>
+        </form>
+      </div>
+    </div>
+  );
+};
 
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
@@ -36,19 +90,18 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
   const login = async (loginId: string, pass: string): Promise<boolean> => {
     try {
-      const res = await fetch(`${API_BASE_URL}/users`);
-      const users: User[] = await res.json();
+      const res = await fetch(`${API_BASE_URL}/api/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ loginId, password: pass })
+      });
 
-      const foundUser = users.find(
-        (u: any) => 
-          (u.username === loginId || u.email === loginId) && 
-          u.password === pass
-      );
-
-      if (foundUser) {
+      if (res.ok) {
+        const { user: authenticatedUser, token } = await res.json();
         setIsAuthenticated(true);
-        setUser(foundUser);
-        localStorage.setItem('lepta_user', JSON.stringify(foundUser));
+        setUser(authenticatedUser);
+        localStorage.setItem('lepta_user', JSON.stringify(authenticatedUser));
+        localStorage.setItem('lepta_auth_token', token);
         return true;
       }
       return false;
@@ -62,11 +115,19 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     setIsAuthenticated(false);
     setUser(null);
     localStorage.removeItem('lepta_user');
+    localStorage.removeItem('lepta_auth_token');
+  };
+
+  const completeSecuritySetup = (updatedUser: User) => {
+    setUser(updatedUser);
+    localStorage.setItem('lepta_user', JSON.stringify(updatedUser));
   };
 
   return (
     <AuthContext.Provider value={{ isAuthenticated, user, login, logout, isLoading }}>
-      {!isLoading && children}
+      {!isLoading && user?.requiresSecuritySetup
+        ? <SecuritySetup onComplete={completeSecuritySetup} onLogout={logout} />
+        : !isLoading && children}
     </AuthContext.Provider>
   );
 };

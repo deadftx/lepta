@@ -25,6 +25,11 @@ const Login = () => {
   const [firstAccessError, setFirstAccessError] = useState('');
   const [firstAccessSuccess, setFirstAccessSuccess] = useState('');
   const [firstAccessLoading, setFirstAccessLoading] = useState(false);
+  const [isRecoveryMode, setIsRecoveryMode] = useState(false);
+  const [recoveryQuestion, setRecoveryQuestion] = useState('');
+  const [secretAnswer, setSecretAnswer] = useState('');
+  const [recoveryPassword, setRecoveryPassword] = useState('');
+  const [recoveryError, setRecoveryError] = useState('');
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -41,6 +46,34 @@ const Login = () => {
     }
   };
 
+  const loadRecoveryQuestion = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setRecoveryError('');
+    const response = await fetch(`${API_BASE_URL}/api/auth/recovery/question`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ loginId })
+    });
+    const result = await response.json();
+    if (!response.ok) return setRecoveryError(result.error || 'Recuperação indisponível.');
+    setRecoveryQuestion(result.question);
+  };
+
+  const resetForgottenPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setRecoveryError('');
+    const response = await fetch(`${API_BASE_URL}/api/auth/recovery/reset`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ loginId, answer: secretAnswer, password: recoveryPassword })
+    });
+    const result = await response.json();
+    if (!response.ok) return setRecoveryError(result.error || 'Não foi possível redefinir a senha.');
+    setPassword(recoveryPassword);
+    setRecoveryPassword('');
+    setSecretAnswer('');
+    setRecoveryQuestion('');
+    setIsRecoveryMode(false);
+    setError('Senha redefinida. Entre com a nova senha.');
+  };
+
   // Step 1: Check or register email in db.json
   const handleFirstAccessStep1 = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -54,12 +87,17 @@ const Login = () => {
 
     try {
       setFirstAccessLoading(true);
-      const res = await fetch(`${API_BASE_URL}/users`);
-      const users = await res.json();
-
-      let target = users.find(
-        (u: any) => u.email?.toLowerCase() === emailToSearch || u.username?.toLowerCase() === emailToSearch
-      );
+      const res = await fetch(`${API_BASE_URL}/api/auth/first-access/check`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ loginId: emailToSearch })
+      });
+      const result = await res.json();
+      let target = result.user;
+      if (!res.ok) {
+        setFirstAccessError(result.error || 'Não foi possível validar o primeiro acesso.');
+        return;
+      }
 
       if (!target) {
         // Create new user in db.json if not existing
@@ -103,8 +141,8 @@ const Login = () => {
     e.preventDefault();
     setFirstAccessError('');
 
-    if (!newPassword) {
-      setFirstAccessError('Por favor, digite a nova senha.');
+    if (newPassword.length < 10) {
+      setFirstAccessError('A senha deve possuir pelo menos 10 caracteres.');
       return;
     }
 
@@ -116,15 +154,10 @@ const Login = () => {
     try {
       setFirstAccessLoading(true);
 
-      const updatedUser = {
-        ...firstAccessUser,
-        password: newPassword
-      };
-
-      const res = await fetch(`${API_BASE_URL}/users/${firstAccessUser.id}`, {
-        method: 'PUT',
+      const res = await fetch(`${API_BASE_URL}/api/auth/first-access/password`, {
+        method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(updatedUser)
+        body: JSON.stringify({ id: firstAccessUser.id, password: newPassword })
       });
 
       if (res.ok) {
@@ -164,7 +197,30 @@ const Login = () => {
   return (
     <div className="login-page">
       <div className="login-container glass">
-        {!isFirstAccessMode ? (
+        {isRecoveryMode ? (
+          <>
+            <div className="login-header">
+              <h2>Recuperar <span className="text-gradient">Acesso</span></h2>
+              <p>Após três erros na palavra secreta, somente o administrador poderá desbloquear sua conta.</p>
+            </div>
+            {recoveryError && <div className="login-error"><AlertCircle size={18} /><span>{recoveryError}</span></div>}
+            {!recoveryQuestion ? (
+              <form onSubmit={loadRecoveryQuestion} className="login-form">
+                <div className="input-group"><User className="input-icon" size={18} /><input className="input-field with-icon" value={loginId} onChange={e => setLoginId(e.target.value)} placeholder="E-mail ou usuário" required /></div>
+                <button type="submit" className="btn-primary login-submit">Continuar</button>
+                <button type="button" className="btn-outline" onClick={() => setIsRecoveryMode(false)}>Voltar</button>
+              </form>
+            ) : (
+              <form onSubmit={resetForgottenPassword} className="login-form">
+                <p><strong>{recoveryQuestion}</strong></p>
+                <div className="input-group"><KeyRound className="input-icon" size={18} /><input className="input-field with-icon" value={secretAnswer} onChange={e => setSecretAnswer(e.target.value)} placeholder="Palavra secreta" autoComplete="off" required /></div>
+                <div className="input-group"><Lock className="input-icon" size={18} /><input type="password" className="input-field with-icon" value={recoveryPassword} onChange={e => setRecoveryPassword(e.target.value)} placeholder="Nova senha (mínimo 10 caracteres)" minLength={10} required /></div>
+                <button type="submit" className="btn-primary login-submit">Redefinir senha e desbloquear</button>
+                <button type="button" className="btn-outline" onClick={() => setRecoveryQuestion('')}>Voltar</button>
+              </form>
+            )}
+          </>
+        ) : !isFirstAccessMode ? (
           <>
             <div className="login-header">
               <h2>Área <span className="text-gradient">Interna</span></h2>
@@ -207,7 +263,7 @@ const Login = () => {
                 <label className="remember-me">
                   <input type="checkbox" /> Lembrar-me
                 </label>
-                <a href="#" className="forgot-password">Esqueci minha senha</a>
+                <button type="button" className="forgot-password" onClick={() => setIsRecoveryMode(true)}>Esqueci minha senha</button>
               </div>
 
               <button type="submit" className="btn-primary login-submit" disabled={loading}>

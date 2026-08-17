@@ -83,7 +83,8 @@ const CreateUser = () => {
       setSubmitting(true);
 
       // Check existing users in database
-      const usersRes = await fetch(`${API_BASE_URL}/users`);
+      const authHeaders = { Authorization: `Bearer ${localStorage.getItem('lepta_auth_token')}` };
+      const usersRes = await fetch(`${API_BASE_URL}/users`, { headers: authHeaders });
       const existingUsers = await usersRes.json();
 
       const emailExists = existingUsers.some(
@@ -106,7 +107,7 @@ const CreateUser = () => {
 
       const saveRes = await fetch(`${API_BASE_URL}/users`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...authHeaders },
         body: JSON.stringify(newUser)
       });
 
