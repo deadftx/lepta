@@ -104,7 +104,7 @@ const BI = () => {
       const [dashRes, groupsRes, usersRes] = await Promise.all([
         fetch(`${API_BASE_URL}/dashboards`),
         fetch(`${API_BASE_URL}/groups`),
-        fetch(`${API_BASE_URL}/users`)
+        fetch(`${API_BASE_URL}/users`, { headers: { Authorization: `Bearer ${localStorage.getItem('lepta_auth_token')}` } })
       ]);
 
       const dashData: Dashboard[] = await dashRes.json();

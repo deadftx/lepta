@@ -462,3 +462,8 @@
     padding: 16px;
   }
 }
+@media (max-width: 767px), (max-width: 900px) and (hover: none) and (pointer: coarse) {
+  .nix-mascot {
+    display: none !important;
+  }
+}

@@ -285,7 +285,7 @@ const Dashboard = () => {
         </div>
 
         {/* Mascote Nix Flutuante fixo no limite inferior direito */}
-        <div style={{ position: 'fixed', bottom: 0, right: '40px', zIndex: 1000, pointerEvents: 'none' }}>
+        <div className="nix-mascot" style={{ position: 'fixed', bottom: 0, right: '40px', zIndex: 1000, pointerEvents: 'none' }}>
           <img 
             src="/mascote_nix.png" 
             alt="Mascote Nix" 

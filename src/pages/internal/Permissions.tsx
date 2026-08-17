@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { User } from '../../contexts/AuthContext';
-import { Edit, Save, X, Users, UserPlus } from 'lucide-react';
+import { Edit, Save, X, Users, UserPlus, Unlock } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { API_BASE_URL } from '../../config/api';
 import './Permissions.css';
@@ -20,8 +20,9 @@ const Permissions = () => {
   const fetchData = async () => {
     try {
       setLoading(true);
+      const authHeaders = { Authorization: `Bearer ${localStorage.getItem('lepta_auth_token')}` };
       const [usersRes, areasRes] = await Promise.all([
-        fetch(`${API_BASE_URL}/users`),
+        fetch(`${API_BASE_URL}/users`, { headers: authHeaders }),
         fetch(`${API_BASE_URL}/areas`)
       ]);
       const usersData = await usersRes.json();
@@ -59,7 +60,7 @@ const Permissions = () => {
       const updatedUser = { ...editingUser, permissions: selectedPermissions };
       await fetch(`${API_BASE_URL}/users/${editingUser.id}`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('lepta_auth_token')}` },
         body: JSON.stringify(updatedUser)
       });
       
@@ -67,6 +68,19 @@ const Permissions = () => {
       setEditingUser(null);
     } catch (error) {
       console.error("Erro ao salvar", error);
+    }
+  };
+
+  const handleUnlock = async (user: User) => {
+    const token = localStorage.getItem('lepta_auth_token');
+    const response = await fetch(`${API_BASE_URL}/api/auth/admin/unlock/${user.id}`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    if (response.ok) {
+      setUsers(current => current.map(item => item.id === user.id
+        ? { ...item, accessLocked: false, fullyLocked: false }
+        : item));
     }
   };
 
@@ -105,6 +119,11 @@ const Permissions = () => {
                     <td>{user.email || '-'}</td>
                     <td><span className={`badge ${user.role === 'MASTER' ? 'master' : 'user'}`}>{user.role}</span></td>
                     <td>
+                      {(user.accessLocked || user.fullyLocked) && (
+                        <button className="btn-icon" onClick={() => handleUnlock(user)} title="Desbloquear usuário">
+                          <Unlock size={18} /> Desbloquear
+                        </button>
+                      )}
                       {user.role !== 'MASTER' && (
                         <button className="btn-icon" onClick={() => handleEditClick(user)}>
                           <Edit size={18} /> Configurar

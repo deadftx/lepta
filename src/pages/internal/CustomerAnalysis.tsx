@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
-import { Users, Search, BrainCircuit, Database, TrendingUp, AlertTriangle, ArrowLeft, Building2, User, CheckCircle, Clock, ArrowUpDown, ArrowUp, ArrowDown, Wifi } from 'lucide-react';
+import { createPortal } from 'react-dom';
+import { Users, Search, BrainCircuit, Database, TrendingUp, AlertTriangle, ArrowLeft, Building2, User, CheckCircle, Clock, ArrowUpDown, ArrowUp, ArrowDown, Wifi, X } from 'lucide-react';
 import './CustomerAnalysis.css';
 import './Operations.css';
 
@@ -616,7 +617,7 @@ const CustomerAnalysis = () => {
         )}
       </div>
 
-      {popover && popover.visible && (() => {
+      {popover && popover.visible && createPortal((() => {
         const currentClient = clients.find(c => c.cedente === popover.cedente);
         const hasNova = currentClient?.hasNova !== false;
         const hasNpl = (currentClient?.valorNpl || 0) > 0;
@@ -624,6 +625,9 @@ const CustomerAnalysis = () => {
         return (
           <div 
             className="popover-modal glass"
+            role="dialog"
+            aria-modal="true"
+            aria-label={`Detalhar ${popover.cedente}`}
             style={{
               position: 'fixed',
               top: popover.y,
@@ -640,7 +644,10 @@ const CustomerAnalysis = () => {
             }}
             onClick={e => e.stopPropagation()}
           >
-            <div style={{ fontSize: '0.9rem', color: '#94a3b8', marginBottom: '0.5rem', fontWeight: 600 }}>Detalhar <span style={{ color: '#fff' }}>{popover.cedente}</span> por:</div>
+            <button className="popover-close" type="button" onClick={() => setPopover(null)} aria-label="Fechar">
+              <X size={18} />
+            </button>
+            <div className="popover-title">Detalhar <span>{popover.cedente}</span> por:</div>
             
             {hasNova && (
               <>
@@ -672,7 +679,7 @@ const CustomerAnalysis = () => {
             )}
           </div>
         );
-      })()}
+      })(), document.body)}
     </div>
   );
 };
