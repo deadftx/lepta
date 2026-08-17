@@ -728,7 +728,12 @@ app.get('/api/analise-ua/:cedente', async (req, res) => {
     }
     
     // Inject NPL Cessionarios into the UA list
-    const allNpl = db.prepare(`SELECT Sacado, Cedente, Cessionario, SUM(Valor_do_Credito_Face) as valorNpl FROM BASE_NPL WHERE Sacado IS NOT NULL AND Sacado != '' GROUP BY Sacado, Cedente, Cessionario`).all();
+    let allNpl = [];
+    try {
+      allNpl = db.prepare(`SELECT Sacado, Cedente, Cessionario, SUM(Valor_do_Credito_Face) as valorNpl FROM BASE_NPL WHERE Sacado IS NOT NULL AND Sacado != '' GROUP BY Sacado, Cedente, Cessionario`).all();
+    } catch (nplError) {
+      console.log('Aviso: BASE_NPL indisponível para complementar a análise de UA.', nplError.message);
+    }
     const normCedente = normCedenteParams;
     let nplUAs = [];
     for (const npl of allNpl) {
