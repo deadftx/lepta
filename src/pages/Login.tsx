@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Lock, User, ArrowRight, AlertCircle, CheckCircle2, KeyRound, Mail, ArrowLeft } from 'lucide-react';
-import { useAuth } from '../contexts/AuthContext';
+import { useAuth } from '../internal/core/AuthContext';
 import { API_BASE_URL } from '../config/api';
 import './Login.css';
 
