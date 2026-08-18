@@ -37,7 +37,10 @@ const DashboardsView = () => {
     const fetchDashboards = async () => {
       try {
         setLoading(true);
-        const res = await fetch(`${API_BASE_URL}/dashboards`);
+        const res = await fetch(`${API_BASE_URL}/api/power-bi-dashboards`, {
+          headers: { Authorization: `Bearer ${localStorage.getItem('lepta_auth_token')}` }
+        });
+        if (!res.ok) throw new Error('Não foi possível consultar os dashboards salvos.');
         const dashData: Dashboard[] = await res.json();
 
         // Filter dashboards for this user
