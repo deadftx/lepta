@@ -101,11 +101,14 @@ const BI = () => {
   const fetchData = async () => {
     try {
       setLoading(true);
+      const authHeaders = { Authorization: `Bearer ${localStorage.getItem('lepta_auth_token')}` };
       const [dashRes, groupsRes, usersRes] = await Promise.all([
-        fetch(`${API_BASE_URL}/dashboards`),
+        fetch(`${API_BASE_URL}/api/power-bi-dashboards`, { headers: authHeaders }),
         fetch(`${API_BASE_URL}/groups`),
-        fetch(`${API_BASE_URL}/users`, { headers: { Authorization: `Bearer ${localStorage.getItem('lepta_auth_token')}` } })
+        fetch(`${API_BASE_URL}/users`, { headers: authHeaders })
       ]);
+
+      if (!dashRes.ok) throw new Error('Não foi possível consultar os dashboards salvos.');
 
       const dashData: Dashboard[] = await dashRes.json();
       const groupsData: Group[] = await groupsRes.json();
@@ -152,7 +155,11 @@ const BI = () => {
   const handleDeleteDashboard = async (id: string, title: string) => {
     if (!window.confirm(`Tem certeza que deseja excluir o dashboard "${title}"?`)) return;
     try {
-      await fetch(`${API_BASE_URL}/dashboards/${id}`, { method: 'DELETE' });
+      const response = await fetch(`${API_BASE_URL}/api/power-bi-dashboards/${id}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${localStorage.getItem('lepta_auth_token')}` }
+      });
+      if (!response.ok) throw new Error('Não foi possível excluir o dashboard.');
       setDashboards(dashboards.filter(d => d.id !== id));
     } catch (err) {
       console.error('Erro ao deletar dashboard:', err);
@@ -201,13 +208,15 @@ const BI = () => {
 
     try {
       setSaving(true);
+      const authToken = localStorage.getItem('lepta_auth_token');
       if (editingDashboard) {
         // Edit existing
-        const res = await fetch(`${API_BASE_URL}/dashboards/${editingDashboard.id}`, {
+        const res = await fetch(`${API_BASE_URL}/api/power-bi-dashboards/${editingDashboard.id}`, {
           method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${authToken}` },
           body: JSON.stringify({ ...editingDashboard, ...payload })
         });
+        if (!res.ok) throw new Error('Não foi possível atualizar o dashboard.');
         const updated = await res.json();
         setDashboards(dashboards.map(d => (d.id === updated.id ? updated : d)));
       } else {
@@ -216,11 +225,12 @@ const BI = () => {
           id: `dash_${Date.now()}`,
           ...payload
         };
-        const res = await fetch(`${API_BASE_URL}/dashboards`, {
+        const res = await fetch(`${API_BASE_URL}/api/power-bi-dashboards`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${authToken}` },
           body: JSON.stringify(newDash)
         });
+        if (!res.ok) throw new Error('Não foi possível salvar o dashboard.');
         const saved = await res.json();
         setDashboards([...dashboards, saved]);
       }

@@ -25,6 +25,11 @@ jobs:
             git fetch --all
             git reset --hard origin/HOMOLOG
             git pull origin HOMOLOG
+
+            # O banco é persistente e pertence à VPS; nunca deve vir do Git.
+            # Interrompe o deploy antes do restart se o arquivo estiver ausente,
+            # evitando que a aplicação crie acidentalmente uma base vazia.
+            test -f /var/www/lepta/database.sqlite || { echo "ERRO: database.sqlite da VPS não encontrado"; exit 1; }
             
             # Instala dependências e gera o build
             npm install
