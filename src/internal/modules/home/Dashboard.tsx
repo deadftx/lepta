@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { FileText, Settings, Users, HelpCircle, Calendar as CalendarIcon, ChevronLeft, ChevronRight, Gift, Sun } from 'lucide-react';
+import { Users, HelpCircle, Calendar as CalendarIcon, ChevronLeft, ChevronRight, Gift, Sun } from 'lucide-react';
 import { API_BASE_URL, getAuthHeaders } from '../../../config/api';
 import '../../core/styles/Dashboard.css';
 
@@ -221,17 +221,9 @@ const Dashboard = () => {
         <div className="internal-card glass">
           <h3>Acessos Rápidos</h3>
           <div className="quick-links-grid">
-            <a href="#" className="quick-link">
-              <FileText size={24} />
-              <span>Holerite</span>
-            </a>
             <a href="https://manager.flitapp.com.br/login" target="_blank" rel="noreferrer" className="quick-link">
               <Users size={24} />
               <span>Ponto Eletrônico</span>
-            </a>
-            <a href="#" className="quick-link">
-              <Settings size={24} />
-              <span>Sistema ERP</span>
             </a>
             <a href="#" className="quick-link" onClick={(e) => {
               e.preventDefault();

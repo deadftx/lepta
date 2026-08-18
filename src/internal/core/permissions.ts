@@ -10,9 +10,6 @@ export interface PermissionGroup extends PermissionItem {
 }
 
 export const permissionGroups: PermissionGroup[] = [
-  { id: '1', name: 'Créditos' },
-  { id: '2', name: 'Análise de Riscos' },
-  { id: '3', name: 'Comitê de Crédito' },
   { id: '6', name: 'Calendário' },
   {
     id: '7',
@@ -24,7 +21,8 @@ export const permissionGroups: PermissionGroup[] = [
     name: 'Lepta Intelligence',
     children: [
       { id: '8.1', name: 'Análise de Clientes' },
-      { id: '8.2', name: 'Cadastro de Clientes' }
+      { id: '8.2', name: 'Cadastro de Clientes' },
+      { id: '8.3', name: 'Análise de Riscos' }
     ]
   },
   { id: '10', name: 'Confirmação' },

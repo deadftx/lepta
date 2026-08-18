@@ -177,6 +177,7 @@ function ensureAccessAreas() {
     ['7.1', 'Financeiro > Processar Extrato'],
     ['8.1', 'Lepta Intelligence > Análise de Clientes'],
     ['8.2', 'Lepta Intelligence > Cadastro de Clientes'],
+    ['8.3', 'Lepta Intelligence > Análise de Riscos'],
     ['10', 'Confirmação']
   ];
   try {
@@ -518,22 +519,39 @@ async function mapWithConcurrency(items, concurrency, mapper) {
 }
 
 async function fetchTitulosPeriod(period) {
-  const response = await fetch('https://lepta-backend.bit-unltd.com.br/recebiveis/titulos', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `UNLTD-BackEnd ${UNLTD_TOKEN}`
-    },
-    body: JSON.stringify({ tipoDeData: 'Vencimento', situacoes: UNLTD_SITUACOES, ...period })
-  });
+  let lastError;
+  for (let attempt = 1; attempt <= 4; attempt++) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 45000);
+    try {
+      const response = await fetch('https://lepta-backend.bit-unltd.com.br/recebiveis/titulos', {
+        method: 'POST',
+        signal: controller.signal,
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `UNLTD-BackEnd ${UNLTD_TOKEN}`
+        },
+        body: JSON.stringify({ tipoDeData: 'Vencimento', situacoes: UNLTD_SITUACOES, ...period })
+      });
 
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(`UNLTD respondeu ${response.status}: ${errorText}`);
+      if (response.ok) {
+        const titulos = await response.json();
+        return Array.isArray(titulos) ? titulos : [];
+      }
+
+      const errorText = await response.text();
+      lastError = new Error(`UNLTD respondeu ${response.status}: ${errorText}`);
+      if (response.status < 500 && response.status !== 429) throw lastError;
+    } catch (error) {
+      lastError = error;
+      if (attempt === 4) break;
+    } finally {
+      clearTimeout(timeout);
+    }
+
+    await new Promise(resolve => setTimeout(resolve, attempt * 750));
   }
-
-  const titulos = await response.json();
-  return Array.isArray(titulos) ? titulos : [];
+  throw lastError || new Error('A API UNLTD não respondeu à consulta de títulos.');
 }
 
 async function fetchLiquidacoesPeriod(period) {
@@ -1223,7 +1241,7 @@ app.post('/api/sync-link', requireSession, requirePermission('9'), async (req, r
 // -------------------------------------------------------------
 function normalizeStr(str) {
   if (!str) return '';
-  let s = str.normalize('NFD').replace(/[\u0300-\u036f]/g, "").toLowerCase();
+  let s = String(str).normalize('NFD').replace(/[\u0300-\u036f]/g, "").toLowerCase();
 
   // Replace anything that is not alphanumeric with space
   s = s.replace(/[^a-z0-9\s]/g, " ");
@@ -1250,6 +1268,401 @@ function normalizeStr(str) {
 
   return finalStr;
 }
+
+function toRiskDate(value) {
+  if (!value) return null;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function riskEntityFromTitle(title, type) {
+  return type === 'sacado'
+    ? title?.sacado?.entidade
+    : title?.contaOperacional?.cliente?.entidade;
+}
+
+function riskCounterpartyFromTitle(title, type) {
+  return type === 'sacado'
+    ? title?.contaOperacional?.cliente?.entidade
+    : title?.sacado?.entidade;
+}
+
+function riskTitleMatches(title, type, document, name) {
+  const entity = riskEntityFromTitle(title, type);
+  if (!entity) return false;
+  if (document) return normalizeEntityDocument(entity.documento) === document;
+  return normalizeStr(entity.nome) === normalizeStr(name);
+}
+
+function riskSituation(title) {
+  return String(title?.situacao || '').toLowerCase();
+}
+
+function isOpenRiskTitle(title) {
+  return riskSituation(title).includes('aberto');
+}
+
+function isLiquidatedRiskTitle(title) {
+  return riskSituation(title).includes('liquidado') || riskSituation(title).includes('liq.');
+}
+
+function daysBetweenRiskDates(later, earlier) {
+  if (!later || !earlier) return null;
+  return Math.floor((later.getTime() - earlier.getTime()) / 86400000);
+}
+
+function riskLevelFromScore(score) {
+  if (score >= 80) return 'Baixo';
+  if (score >= 60) return 'Moderado';
+  if (score >= 40) return 'Alto';
+  return 'Crítico';
+}
+
+function buildRiskList(titles, type, search) {
+  const searchNormalized = normalizeStr(search);
+  const searchDocument = normalizeEntityDocument(search);
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const entities = new Map();
+  let ignoredRecords = 0;
+
+  for (const title of titles) {
+    try {
+      const entity = riskEntityFromTitle(title, type);
+      if (!entity?.nome) continue;
+      const entityName = String(entity.nome).trim();
+      if (!entityName) continue;
+      const document = normalizeEntityDocument(entity.documento);
+      const key = document || normalizeStr(entityName);
+      if (!key) continue;
+      const matchesSearch = !search
+        || normalizeStr(entityName).includes(searchNormalized)
+        || (searchDocument && document.includes(searchDocument));
+      if (!matchesSearch) continue;
+
+      if (!entities.has(key)) {
+        entities.set(key, {
+          nome: entityName,
+          documento: document,
+          grupoEconomico: String(entity.grupoEconomico?.nome || ''),
+          qtdTitulos: 0,
+          valorGeral: 0,
+          valorAberto: 0,
+          valorVencido: 0
+        });
+      }
+      const current = entities.get(key);
+      const nominal = Number(title.valorNominal) || 0;
+      const dueDate = toRiskDate(title.dataDeVencimento);
+      const open = isOpenRiskTitle(title);
+      current.qtdTitulos += 1;
+      current.valorGeral += nominal;
+      if (open) current.valorAberto += nominal;
+      if (open && dueDate && dueDate < today) current.valorVencido += nominal;
+    } catch {
+      ignoredRecords += 1;
+    }
+  }
+
+  if (ignoredRecords) console.log(`Análise de riscos ignorou ${ignoredRecords} título(s) com estrutura inválida.`);
+
+  return Array.from(entities.values())
+    .map(entity => ({
+      ...entity,
+      percentualVencido: entity.valorAberto > 0 ? entity.valorVencido / entity.valorAberto : 0
+    }))
+    .sort((left, right) => right.valorAberto - left.valorAberto)
+    .slice(0, 30);
+}
+
+function buildRiskClientSuggestionsFromDatabase(search) {
+  if (!tableExists('BASE_NOVA')) return [];
+  const normalizedSearch = `%${String(search || '').trim().toLowerCase()}%`;
+  const rows = db.prepare(`
+    SELECT
+      CLIENTE AS nome,
+      DOCUMENTO AS documento,
+      COUNT(*) AS qtdTitulos,
+      COALESCE(SUM(CAST(VALOR_NOMINAL AS REAL)), 0) AS valorGeral,
+      COALESCE(SUM(CASE
+        WHEN lower(COALESCE(SITUACAO, '')) LIKE '%aberto%'
+        THEN CAST(VALOR_NOMINAL AS REAL) ELSE 0 END), 0) AS valorAberto,
+      COALESCE(SUM(CASE
+        WHEN lower(COALESCE(SITUACAO, '')) LIKE '%aberto%'
+          AND lower(COALESCE(VENCIDO, '')) IN ('sim', 'yes', 'true', '1')
+        THEN CAST(VALOR_NOMINAL AS REAL) ELSE 0 END), 0) AS valorVencido
+    FROM BASE_NOVA
+    WHERE CLIENTE IS NOT NULL
+      AND trim(CLIENTE) != ''
+      AND lower(CLIENTE) LIKE ?
+    GROUP BY CLIENTE, DOCUMENTO
+    ORDER BY valorAberto DESC, valorGeral DESC
+    LIMIT 30
+  `).all(normalizedSearch);
+
+  return rows.map(row => ({
+    nome: String(row.nome || '').trim(),
+    documento: normalizeEntityDocument(row.documento),
+    grupoEconomico: '',
+    qtdTitulos: Number(row.qtdTitulos) || 0,
+    valorGeral: Number(row.valorGeral) || 0,
+    valorAberto: Number(row.valorAberto) || 0,
+    valorVencido: Number(row.valorVencido) || 0,
+    percentualVencido: Number(row.valorAberto) > 0
+      ? (Number(row.valorVencido) || 0) / Number(row.valorAberto)
+      : 0,
+    indicePesquisa: 'BASE_NOVA',
+    fonteCalculos: 'API UNLTD'
+  }));
+}
+
+function buildLiquidationTitleDates(liquidations) {
+  const dates = new Map();
+  for (const liquidation of liquidations) {
+    const effectiveDate = toRiskDate(liquidation.dataDeEfetivacao || liquidation.dataDeCadastro);
+    if (!effectiveDate) continue;
+    const rawItems = liquidation?.itens;
+    const items = Array.isArray(rawItems)
+      ? rawItems
+      : (rawItems && typeof rawItems === 'object' ? Object.values(rawItems) : []);
+    for (const item of items) {
+      const titleId = item?.titulo?.id;
+      if (titleId !== undefined && titleId !== null) dates.set(String(titleId), effectiveDate);
+    }
+  }
+  return dates;
+}
+
+async function buildRiskDetails(titles, liquidations, type, document, name) {
+  const selected = titles.filter(title => riskTitleMatches(title, type, document, name));
+  if (!selected.length) return null;
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const entity = riskEntityFromTitle(selected[0], type);
+  const liquidationDates = buildLiquidationTitleDates(liquidations);
+  const aging = [
+    { chave: '1-7', rotulo: '1 a 7 dias', minimo: 1, maximo: 7, valor: 0, quantidade: 0 },
+    { chave: '8-15', rotulo: '8 a 15 dias', minimo: 8, maximo: 15, valor: 0, quantidade: 0 },
+    { chave: '16-30', rotulo: '16 a 30 dias', minimo: 16, maximo: 30, valor: 0, quantidade: 0 },
+    { chave: '31-60', rotulo: '31 a 60 dias', minimo: 31, maximo: 60, valor: 0, quantidade: 0 },
+    { chave: '61-90', rotulo: '61 a 90 dias', minimo: 61, maximo: 90, valor: 0, quantidade: 0 },
+    { chave: '90+', rotulo: 'Acima de 90 dias', minimo: 91, maximo: Infinity, valor: 0, quantidade: 0 }
+  ];
+  const future = [
+    { rotulo: 'Próximos 30 dias', minimo: 0, maximo: 30, valor: 0 },
+    { rotulo: '31 a 60 dias', minimo: 31, maximo: 60, valor: 0 },
+    { rotulo: '61 a 90 dias', minimo: 61, maximo: 90, valor: 0 },
+    { rotulo: 'Acima de 90 dias', minimo: 91, maximo: Infinity, valor: 0 }
+  ];
+  const counterparties = new Map();
+  const situations = new Map();
+  const monthly = new Map();
+  const limitValues = new Set();
+  const delays = [];
+  let onTime = 0;
+  let settledWithDate = 0;
+  let valorGeral = 0;
+  let valorAberto = 0;
+  let valorVencido = 0;
+  let valorLiquidado = 0;
+  let valorAdverso = 0;
+  let valorAcima60 = 0;
+  let documented = 0;
+
+  for (const title of selected) {
+    const nominal = Number(title.valorNominal) || 0;
+    const dueDate = toRiskDate(title.dataDeVencimento);
+    const open = isOpenRiskTitle(title);
+    const liquidated = isLiquidatedRiskTitle(title);
+    const situation = String(title.situacao || 'Sem situação');
+    const situationNormalized = riskSituation(title);
+    const counterparty = riskCounterpartyFromTitle(title, type);
+    const counterpartyKey = normalizeEntityDocument(counterparty?.documento) || normalizeStr(counterparty?.nome) || 'sem-contraparte';
+    const counterpartyCurrent = counterparties.get(counterpartyKey) || {
+      nome: counterparty?.nome || 'Não informado',
+      documento: normalizeEntityDocument(counterparty?.documento),
+      valorAberto: 0,
+      valorVencido: 0,
+      qtdTitulos: 0
+    };
+
+    valorGeral += nominal;
+    situations.set(situation, (situations.get(situation) || 0) + nominal);
+    counterpartyCurrent.qtdTitulos += 1;
+    if (open) {
+      valorAberto += nominal;
+      counterpartyCurrent.valorAberto += nominal;
+    }
+    if (open && dueDate && dueDate < today) {
+      const overdueDays = Math.max(1, -daysBetweenRiskDates(dueDate, today));
+      valorVencido += nominal;
+      counterpartyCurrent.valorVencido += nominal;
+      const bucket = aging.find(item => overdueDays >= item.minimo && overdueDays <= item.maximo);
+      if (bucket) {
+        bucket.valor += nominal;
+        bucket.quantidade += 1;
+      }
+      if (overdueDays > 60) valorAcima60 += nominal;
+    } else if (open && dueDate) {
+      const daysUntilDue = Math.max(0, daysBetweenRiskDates(dueDate, today));
+      const bucket = future.find(item => daysUntilDue >= item.minimo && daysUntilDue <= item.maximo);
+      if (bucket) bucket.valor += nominal;
+    }
+    if (liquidated) {
+      valorLiquidado += Number(title.valorLiquido ?? title.valorNominal) || 0;
+      const paidDate = liquidationDates.get(String(title.id)) || toRiskDate(title.dataDaSituacao);
+      const delay = daysBetweenRiskDates(paidDate, dueDate);
+      if (delay !== null) {
+        settledWithDate += 1;
+        delays.push(Math.max(0, delay));
+        if (delay <= 0) onTime += 1;
+      }
+    }
+    if (['recomprado', 'recuperação de crédito', 'recuperacao de credito', 'pró-solvendo', 'pro-solvendo', 'perda']
+      .some(status => situationNormalized.includes(status))) {
+      valorAdverso += nominal;
+    }
+    if (title.codigoDoLastro && title.manifesto && title.registradoNoCobrador !== false) documented += 1;
+    counterparties.set(counterpartyKey, counterpartyCurrent);
+
+    if (dueDate) {
+      const monthKey = dueDate.toISOString().slice(0, 7);
+      const row = monthly.get(monthKey) || { mes: monthKey, valorGeral: 0, valorAberto: 0, valorVencido: 0 };
+      row.valorGeral += nominal;
+      if (open) row.valorAberto += nominal;
+      if (open && dueDate < today) row.valorVencido += nominal;
+      monthly.set(monthKey, row);
+    }
+
+    const limit = Number(title.contaOperacional?.limite);
+    if (Number.isFinite(limit) && limit > 0) limitValues.add(limit);
+  }
+
+  const concentration = Array.from(counterparties.values())
+    .sort((left, right) => right.valorAberto - left.valorAberto);
+  const topConcentration = valorAberto > 0 ? (concentration[0]?.valorAberto || 0) / valorAberto : 0;
+  const limit = type === 'cliente' ? Array.from(limitValues).reduce((sum, value) => sum + value, 0) : 0;
+  const limitUsage = limit > 0 ? valorAberto / limit : null;
+  const overdueRate = valorAberto > 0 ? valorVencido / valorAberto : 0;
+  const severeRate = valorAberto > 0 ? valorAcima60 / valorAberto : 0;
+  const adverseRate = valorGeral > 0 ? valorAdverso / valorGeral : 0;
+  const documentationRate = selected.length ? documented / selected.length : 0;
+  const factors = [
+    { nome: 'Inadimplência da carteira', peso: 45, impacto: Math.min(45, overdueRate * 90), valor: overdueRate },
+    { nome: 'Atrasos acima de 60 dias', peso: 15, impacto: Math.min(15, severeRate * 30), valor: severeRate },
+    { nome: 'Ocorrências negativas', peso: 15, impacto: Math.min(15, adverseRate * 45), valor: adverseRate },
+    { nome: 'Concentração na maior contraparte', peso: 15, impacto: Math.min(15, topConcentration * 15), valor: topConcentration },
+    { nome: 'Qualidade documental', peso: 10, impacto: (1 - documentationRate) * 10, valor: documentationRate }
+  ];
+  if (limitUsage !== null) {
+    const excessUsage = Math.max(0, limitUsage - 0.75);
+    factors.push({ nome: 'Utilização do limite', peso: 10, impacto: Math.min(10, excessUsage * 20), valor: limitUsage });
+  }
+  const score = Math.max(0, Math.round(100 - factors.reduce((sum, factor) => sum + factor.impacto, 0)));
+  const entityDocument = normalizeEntityDocument(entity?.documento);
+  const economicGroup = entity?.grupoEconomico
+    || (entityDocument ? await fetchEconomicGroupByDocument(entityDocument) : null);
+
+  return {
+    tipo: type,
+    entidade: {
+      nome: entity?.nome || name,
+      documento: entityDocument,
+      email: entity?.email || '',
+      telefone: entity?.telefone || '',
+      grupoEconomico: economicGroup?.nome || ''
+    },
+    indicador: { score, nivel: riskLevelFromScore(score), fatores: factors },
+    metricas: {
+      qtdTitulos: selected.length,
+      valorGeral,
+      valorAberto,
+      valorVencido,
+      valorLiquidado,
+      percentualVencido: overdueRate,
+      atrasoMedio: delays.length ? delays.reduce((sum, value) => sum + value, 0) / delays.length : 0,
+      atrasoMaximo: delays.length ? Math.max(...delays) : 0,
+      percentualNoPrazo: settledWithDate ? onTime / settledWithDate : 0,
+      ocorrenciasNegativas: selected.filter(title => ['recomprado', 'recuperação', 'recuperacao', 'pró-solvendo', 'pro-solvendo', 'perda'].some(status => riskSituation(title).includes(status))).length,
+      valorOcorrenciasNegativas: valorAdverso,
+      limite: limit,
+      utilizacaoLimite: limitUsage,
+      qualidadeDocumental: documentationRate,
+      quantidadeContrapartes: concentration.length
+    },
+    aging: aging.map(bucket => ({
+      chave: bucket.chave,
+      rotulo: bucket.rotulo,
+      valor: bucket.valor,
+      quantidade: bucket.quantidade
+    })),
+    agendaVencimentos: future.map(bucket => ({ rotulo: bucket.rotulo, valor: bucket.valor })),
+    concentracao: concentration.slice(0, 10),
+    situacoes: Array.from(situations.entries())
+      .map(([situacao, valor]) => ({ situacao, valor }))
+      .sort((left, right) => right.valor - left.valor),
+    historico: Array.from(monthly.values()).sort((left, right) => left.mes.localeCompare(right.mes)).slice(-18),
+    titulos: selected
+      .map(title => ({
+        id: title.id,
+        numero: title.numero || '',
+        contraparte: riskCounterpartyFromTitle(title, type)?.nome || 'Não informado',
+        documentoContraparte: normalizeEntityDocument(riskCounterpartyFromTitle(title, type)?.documento),
+        vencimento: title.dataDeVencimento || null,
+        situacao: title.situacao || 'Sem situação',
+        valorNominal: Number(title.valorNominal) || 0,
+        valorLiquido: Number(title.valorLiquido) || 0,
+        manifesto: title.manifesto || '',
+        codigoDoLastro: title.codigoDoLastro || '',
+        registradoNoCobrador: title.registradoNoCobrador !== false
+      }))
+      .sort((left, right) => String(right.vencimento || '').localeCompare(String(left.vencimento || '')))
+      .slice(0, 500)
+  };
+}
+
+app.get('/api/analise-riscos', requireSession, requirePermission('8.3'), async (req, res) => {
+  try {
+    const type = req.query.tipo === 'sacado' ? 'sacado' : 'cliente';
+    const mode = req.query.modo === 'detalhe' ? 'detalhe' : 'lista';
+    res.setHeader('x-data-source', 'api');
+
+    if (mode === 'lista') {
+      const search = String(req.query.busca || '').trim();
+      if (type === 'cliente' && search.length >= 2) {
+        if (unltdFullHistoryCache.data) {
+          const apiResults = buildRiskList(unltdFullHistoryCache.data, type, search);
+          if (apiResults.length) return res.json(apiResults);
+        }
+        const indexedResults = buildRiskClientSuggestionsFromDatabase(search);
+        if (indexedResults.length) return res.json(indexedResults);
+      }
+      const titles = await fetchTitulosDaAPI(req);
+      return res.json(buildRiskList(titles, type, search));
+    }
+
+    const document = normalizeEntityDocument(req.query.documento);
+    const name = String(req.query.nome || '').trim();
+    if (!document && !name) return res.status(400).json({ error: 'Informe a entidade que deseja analisar.' });
+    const titles = await fetchTitulosDaAPI(req);
+    let liquidations = [];
+    let enrichmentWarning = '';
+    try {
+      liquidations = await fetchLiquidacoesDaAPI(req);
+    } catch (liquidationError) {
+      enrichmentWarning = 'O histórico detalhado de liquidações está temporariamente indisponível. Os demais indicadores foram calculados pelos títulos.';
+      console.log('Aviso: análise de riscos sem enriquecimento de liquidações:', liquidationError.message);
+    }
+    const details = await buildRiskDetails(titles, liquidations, type, document, name);
+    if (!details) return res.status(404).json({ error: 'Não foram encontrados títulos para esta entidade.' });
+    if (enrichmentWarning) details.aviso = enrichmentWarning;
+    return res.json(details);
+  } catch (error) {
+    console.error('Erro na análise de riscos:', error.message);
+    return res.status(500).json({ error: 'Não foi possível compor a análise de riscos.', message: error.message });
+  }
+});
 
 app.get('/api/analise-clientes', requireSession, requirePermission('8.1'), async (req, res) => {
   try {
@@ -1851,6 +2264,51 @@ app.post('/api/auth/admin/unlock/:id', requireSession, requireMaster, (req, res)
   return res.json({ success: true });
 });
 
+const ASSIGNABLE_PERMISSION_IDS = new Set([
+  '4', '5', '6', '7.1', '8.1', '8.2', '8.3', '9', '10'
+]);
+
+function normalizeAssignablePermissions(value) {
+  if (!Array.isArray(value)) return null;
+  return Array.from(new Set(value.map(String)))
+    .filter(permission => ASSIGNABLE_PERMISSION_IDS.has(permission));
+}
+
+app.put('/api/admin/users/:id/permissions', requireSession, requireMaster, (req, res) => {
+  const permissions = normalizeAssignablePermissions(req.body?.permissions);
+  if (!permissions) return res.status(400).json({ error: 'Lista de permissões inválida.' });
+
+  try {
+    const target = db.prepare(`SELECT * FROM usuarios_lepta WHERE id = ?`).get(req.params.id);
+    if (!target) return res.status(404).json({ error: 'Usuário não encontrado.' });
+    if (target.role === 'MASTER') {
+      return res.status(400).json({ error: 'Usuários MASTER possuem acesso integral e não precisam de permissões individuais.' });
+    }
+
+    const serializedPermissions = JSON.stringify(permissions);
+    const result = db.prepare(`
+      UPDATE usuarios_lepta
+      SET permissions = ?
+      WHERE id = ?
+    `).run(serializedPermissions, req.params.id);
+    if (result.changes !== 1) return res.status(500).json({ error: 'O banco não confirmou a alteração.' });
+
+    const persisted = db.prepare(`SELECT * FROM usuarios_lepta WHERE id = ?`).get(req.params.id);
+    if (!persisted || persisted.permissions !== serializedPermissions) {
+      return res.status(500).json({ error: 'Não foi possível confirmar as permissões gravadas no banco.' });
+    }
+
+    return res.json({
+      success: true,
+      user: sanitizeUser(persisted),
+      permissions: parseStringArray(persisted.permissions)
+    });
+  } catch (error) {
+    console.error('Erro ao persistir permissões do usuário:', error.message);
+    return res.status(500).json({ error: 'Não foi possível salvar as permissões no banco de dados.' });
+  }
+});
+
 function parseStringArray(value) {
   if (Array.isArray(value)) return value.map(String);
   try {
@@ -2052,10 +2510,7 @@ const genericTablePolicies = {
   usuarios_lepta: { read: 'MASTER', write: 'MASTER' },
   groups: { read: 'AUTHENTICATED', write: 'MASTER' },
   calendarEvents: { read: 'AUTHENTICATED', write: '6' },
-  databaseTables: { read: '9', write: '9' },
-  credits: { read: '1', write: '1' },
-  risks: { read: '2', write: '2' },
-  committees: { read: '3', write: '3' }
+  databaseTables: { read: '9', write: '9' }
 };
 
 function resolveGenericTable(req, res, next) {

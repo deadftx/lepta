@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import type { User } from '../../../core/AuthContext';
 import { Edit, Save, X, Users, UserPlus, Unlock, Trash2 } from 'lucide-react';
 import { Link } from 'react-router-dom';
-import { API_BASE_URL } from '../../../../config/api';
+import { API_BASE_URL, getAuthHeaders } from '../../../../config/api';
 import '../../../core/styles/Permissions.css';
 import PermissionSelector from '../../../core/PermissionSelector';
 import { normalizePermissions } from '../../../core/permissions';
@@ -12,16 +12,21 @@ const Permissions = () => {
   const [loading, setLoading] = useState(true);
   const [editingUser, setEditingUser] = useState<User | null>(null);
   const [selectedPermissions, setSelectedPermissions] = useState<string[]>([]);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
 
   const fetchData = async () => {
     try {
       setLoading(true);
-      const authHeaders = { Authorization: `Bearer ${localStorage.getItem('lepta_auth_token')}` };
-      const usersRes = await fetch(`${API_BASE_URL}/users`, { headers: authHeaders });
+      setError('');
+      const usersRes = await fetch(`${API_BASE_URL}/users`, { headers: getAuthHeaders() });
+      if (!usersRes.ok) throw new Error('Não foi possível carregar os usuários.');
       const usersData = await usersRes.json();
-      setUsers(usersData);
+      setUsers(Array.isArray(usersData) ? usersData : []);
     } catch (error) {
       console.error("Erro ao buscar dados", error);
+      setError(error instanceof Error ? error.message : 'Não foi possível carregar os usuários.');
     } finally {
       setLoading(false);
     }
@@ -32,6 +37,8 @@ const Permissions = () => {
   }, []);
 
   const handleEditClick = (user: User) => {
+    setError('');
+    setSuccess('');
     setEditingUser(user);
     setSelectedPermissions(normalizePermissions(user.permissions));
   };
@@ -46,19 +53,29 @@ const Permissions = () => {
 
   const handleSavePermissions = async () => {
     if (!editingUser) return;
-    
+    setSaving(true);
+    setError('');
+    setSuccess('');
     try {
-      const updatedUser = { ...editingUser, permissions: selectedPermissions };
-      await fetch(`${API_BASE_URL}/users/${editingUser.id}`, {
+      const response = await fetch(`${API_BASE_URL}/api/admin/users/${editingUser.id}/permissions`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('lepta_auth_token')}` },
-        body: JSON.stringify(updatedUser)
+        headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ permissions: selectedPermissions })
       });
-      
-      setUsers(users.map(u => u.id === editingUser.id ? updatedUser : u));
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload.error || 'Não foi possível salvar as permissões.');
+      if (!payload.user || !Array.isArray(payload.user.permissions)) {
+        throw new Error('O servidor não confirmou as permissões gravadas.');
+      }
+
+      setUsers(current => current.map(user => user.id === editingUser.id ? payload.user : user));
+      setSuccess(`Permissões de ${editingUser.username} salvas e confirmadas no banco.`);
       setEditingUser(null);
     } catch (error) {
       console.error("Erro ao salvar", error);
+      setError(error instanceof Error ? error.message : 'Não foi possível salvar as permissões.');
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -106,6 +123,9 @@ const Permissions = () => {
             </Link>
           </div>
         </div>
+
+        {error && <div className="permissions-feedback error">{error}</div>}
+        {success && <div className="permissions-feedback success">{success}</div>}
 
         {loading ? (
           <p>Carregando usuários...</p>
@@ -163,8 +183,8 @@ const Permissions = () => {
               </button>
               <span className="modal-footer-spacer" />
               <button className="btn-outline" onClick={() => setEditingUser(null)}>Cancelar</button>
-              <button className="btn-primary" onClick={handleSavePermissions}>
-                <Save size={18} /> Salvar Permissões
+              <button className="btn-primary" onClick={handleSavePermissions} disabled={saving}>
+                <Save size={18} /> {saving ? 'Salvando no banco...' : 'Salvar Permissões'}
               </button>
             </div>
           </div>

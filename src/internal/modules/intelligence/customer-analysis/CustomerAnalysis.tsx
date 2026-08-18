@@ -478,7 +478,7 @@ const CustomerAnalysis = () => {
       </div>
 
       {/* Main Content Table */}
-      <div className="internal-card glass" style={{ marginTop: '1rem' }}>
+      <div className="internal-card glass analysis-results-card" style={{ marginTop: '1rem' }}>
         <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
           <h3>
             {selectedCedente 
@@ -634,7 +634,9 @@ const CustomerAnalysis = () => {
 
                   return (
                   <tr key={client.grupoEconomicoId ?? `${rowName}-${idx}`}>
-                    <td 
+                    <td
+                      className="analysis-client-cell"
+                      data-label="Cedente"
                       style={{ fontWeight: 600, cursor: selectedCedente || groupMode ? 'default' : 'pointer', color: selectedCedente || groupMode ? 'inherit' : '#3b82f6' }}
                       onClick={(e) => !selectedCedente && !groupMode && handleCedenteClick(e, client.cedente)}
                     >
@@ -666,35 +668,35 @@ const CustomerAnalysis = () => {
                         </div>
                       )}
                     </td>
-                    <td style={{ color: 'var(--text-muted, #94a3b8)' }}>
+                    <td className="analysis-value-cell" data-label="Títulos" style={{ color: 'var(--text-muted, #94a3b8)' }}>
                       {client.hasNova === false ? '-' : client.qtdTitulos}
                     </td>
                     
                     {/* Default View */}
                     {(!kpiFilters.includes('total_liquidado') && !kpiFilters.includes('total_aberto') && !kpiFilters.includes('total_vencido')) && (
-                      <td style={{ fontWeight: 600 }}>{formatCurrency((client.valorGeral || 0) + (client.valorNpl || 0))}</td>
+                      <td className="analysis-value-cell" data-label="Valor geral" style={{ fontWeight: 600 }}>{formatCurrency((client.valorGeral || 0) + (client.valorNpl || 0))}</td>
                     )}
                     
                     {/* Liquidado View */}
                     {kpiFilters.includes('total_liquidado') && (
-                      <td style={{ fontWeight: 600, color: '#10b981' }}>{formatCurrency(client.valorLiquidado || 0)}</td>
+                      <td className="analysis-value-cell" data-label="Liquidado" style={{ fontWeight: 600, color: '#10b981' }}>{formatCurrency(client.valorLiquidado || 0)}</td>
                     )}
                     
                     {/* Aberto View */}
                     {kpiFilters.includes('total_aberto') && (
-                      <td style={{ fontWeight: 600, color: '#f59e0b' }}>{formatCurrency(client.valorAberto || 0)}</td>
+                      <td className="analysis-value-cell" data-label="Em aberto" style={{ fontWeight: 600, color: '#f59e0b' }}>{formatCurrency(client.valorAberto || 0)}</td>
                     )}
 
                     {/* Vencido View (Isolated) */}
                     {kpiFilters.includes('total_vencido') && (
-                      <td style={{ color: (client.valorVencido || 0) > 0 ? '#ef4444' : 'inherit' }}>
+                      <td className="analysis-value-cell" data-label="Vencido" style={{ color: (client.valorVencido || 0) > 0 ? '#ef4444' : 'inherit' }}>
                         {client.hasNova === false ? '-' : formatCurrency(client.valorVencido || 0)}
                       </td>
                     )}
                     
                     {/* Default Vencido Column */}
                     {(!kpiFilters.includes('total_liquidado') && !kpiFilters.includes('total_aberto') && !kpiFilters.includes('total_vencido')) && (
-                      <td style={{ color: (client.valorVencido || 0) > 0 ? '#ef4444' : 'inherit' }}>
+                      <td className="analysis-value-cell" data-label="Vencido" style={{ color: (client.valorVencido || 0) > 0 ? '#ef4444' : 'inherit' }}>
                         {client.hasNova === false ? '-' : formatCurrency(client.valorVencido || 0)}
                       </td>
                     )}
@@ -702,7 +704,7 @@ const CustomerAnalysis = () => {
                   );
                 })}
                 {displayClients.length === 0 && (
-                  <tr>
+                  <tr className="analysis-empty-row">
                     <td colSpan={6} style={{ textAlign: 'center', padding: '3rem', color: '#94a3b8' }}>
                       {searchTerm.trim() === '' ? (
                         <>
