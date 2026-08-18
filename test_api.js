@@ -1,4 +1,5 @@
-const token = '4E5BF2FC1313695BD24FB21591DC3D4E69B24CC04BCC6DB53CC2541CAA7A1367';
+const token = String(process.env.UNLTD_API_TOKEN || '').trim();
+if (!token) throw new Error('UNLTD_API_TOKEN não configurado.');
 fetch('https://lepta-backend.bit-unltd.com.br/recebiveis/titulos', {
   method: 'POST',
   headers: {

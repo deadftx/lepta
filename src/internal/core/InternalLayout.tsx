@@ -1,9 +1,9 @@
 import { useState, useEffect } from 'react';
-import { LogOut, User, Bell, ShieldAlert, DollarSign, Shield, Scale, UserPlus, Users, ChevronDown, ChevronRight, LayoutDashboard, Sliders, Home, Calendar, Menu, X, Wallet, FileSpreadsheet, BrainCircuit, Database, ClipboardCheck } from 'lucide-react';
+import { LogOut, User, Bell, ShieldAlert, DollarSign, Shield, Scale, UserPlus, Users, ChevronDown, ChevronRight, LayoutDashboard, Sliders, Home, Calendar, Menu, X, Wallet, FileSpreadsheet, BrainCircuit, Database, ClipboardCheck, ContactRound } from 'lucide-react';
 import { useNavigate, Outlet, Link, useLocation } from 'react-router-dom';
 import { useAuth } from './AuthContext';
 import './styles/Dashboard.css';
-import { hasPermission } from './permissions';
+import { hasAnyPermission, hasPermission } from './permissions';
 
 const InternalLayout = () => {
   const navigate = useNavigate();
@@ -129,7 +129,7 @@ const InternalLayout = () => {
               )}
             </div>
           )}
-          {hasAccess('8.1') && (
+          {hasAnyPermission(user, ['8.1', '8.2']) && (
             <div className="nav-menu-group">
               <div 
                 className={`nav-item nav-item-parent ${isIntelligenceActive ? 'active' : ''}`}
@@ -144,9 +144,16 @@ const InternalLayout = () => {
 
               {isIntelligenceOpen && (
                 <div className="nav-submenu" style={{ paddingLeft: '1rem' }}>
-                  <Link to="/intelligence/analise-clientes" className={navItemClass('/intelligence/analise-clientes')}>
-                    <Users size={18} /> Análise de Clientes
-                  </Link>
+                  {hasAccess('8.1') && (
+                    <Link to="/intelligence/analise-clientes" className={navItemClass('/intelligence/analise-clientes')}>
+                      <Users size={18} /> Análise de Clientes
+                    </Link>
+                  )}
+                  {hasAccess('8.2') && (
+                    <Link to="/intelligence/cadastro-clientes" className={navItemClass('/intelligence/cadastro-clientes')}>
+                      <ContactRound size={18} /> Cadastro de Clientes
+                    </Link>
+                  )}
                 </div>
               )}
             </div>

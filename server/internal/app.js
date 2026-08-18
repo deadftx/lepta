@@ -69,6 +69,7 @@ function ensureAccessAreas() {
   const areas = [
     ['7.1', 'Financeiro > Processar Extrato'],
     ['8.1', 'Lepta Intelligence > Análise de Clientes'],
+    ['8.2', 'Lepta Intelligence > Cadastro de Clientes'],
     ['10', 'Confirmação']
   ];
   try {
@@ -256,7 +257,10 @@ function getActualTableName(reqTable) {
 // -------------------------------------------------------------
 // HELPER PARA BUSCAR TÍTULOS DA API UNLTD
 // -------------------------------------------------------------
-const UNLTD_TOKEN = '4E5BF2FC1313695BD24FB21591DC3D4E69B24CC04BCC6DB53CC2541CAA7A1367';
+const UNLTD_TOKEN = String(process.env.UNLTD_API_TOKEN || '').trim();
+if (!UNLTD_TOKEN) {
+  throw new Error('UNLTD_API_TOKEN não configurado no ambiente do servidor.');
+}
 const UNLTD_INITIAL_YEAR = 2021;
 const UNLTD_FINAL_YEAR_LIMIT = 2099;
 const UNLTD_CONCURRENCY = 3;
@@ -274,6 +278,7 @@ const UNLTD_SITUACOES = [
 let unltdFullHistoryCache = { data: null, updatedAt: 0, pending: null };
 let unltdLiquidacoesCache = { data: null, updatedAt: 0, pending: null };
 const unltdEconomicGroupCache = new Map();
+const unltdClientDetailsCache = new Map();
 
 function normalizeEntityDocument(document) {
   let digits = String(document || '').replace(/\D/g, '');
@@ -497,6 +502,297 @@ async function fetchLiquidacoesDaAPI(req) {
 
   return unltdLiquidacoesCache.pending;
 }
+
+async function fetchUnltdClientDetails(document, forceRefresh = false) {
+  const normalizedDocument = normalizeEntityDocument(document);
+  if (![11, 14].includes(normalizedDocument.length)) return null;
+
+  const cached = unltdClientDetailsCache.get(normalizedDocument);
+  if (!forceRefresh && cached?.data !== undefined && Date.now() - cached.updatedAt < UNLTD_CACHE_TTL_MS) {
+    return cached.data;
+  }
+  if (!forceRefresh && cached?.pending) return cached.pending;
+
+  const pending = fetch(`https://lepta-backend.bit-unltd.com.br/entidades/cliente/${normalizedDocument}`, {
+    headers: { 'Authorization': `UNLTD-BackEnd ${UNLTD_TOKEN}` }
+  }).then(async response => {
+    if (response.status === 404) return null;
+    if (!response.ok) throw new Error(`UNLTD (cliente) respondeu ${response.status}`);
+    const payload = await response.json();
+    return Array.isArray(payload) ? (payload[0] || null) : payload;
+  }).then(data => {
+    unltdClientDetailsCache.set(normalizedDocument, { data, updatedAt: Date.now(), pending: null });
+    return data;
+  }).finally(() => {
+    const current = unltdClientDetailsCache.get(normalizedDocument);
+    if (current?.pending) current.pending = null;
+  });
+
+  unltdClientDetailsCache.set(normalizedDocument, {
+    data: cached?.data,
+    updatedAt: cached?.updatedAt || 0,
+    pending
+  });
+  return pending;
+}
+
+function ensureClientRegistrationTableForWrite() {
+  if (tableExists('clientes_cadastro')) return false;
+  db.exec(`
+    CREATE TABLE clientes_cadastro (
+      documento TEXT PRIMARY KEY,
+      api_snapshot_json TEXT,
+      override_json TEXT NOT NULL DEFAULT '{}',
+      local_only INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      updated_by TEXT
+    )
+  `);
+  return true;
+}
+
+function parseJsonObject(value, fallback = null) {
+  if (!value) return fallback;
+  if (typeof value === 'object') return value;
+  try {
+    return JSON.parse(value);
+  } catch {
+    return fallback;
+  }
+}
+
+function deepMerge(base, override) {
+  if (override === undefined) return base;
+  if (override === null || Array.isArray(override) || typeof override !== 'object') return override;
+  const result = base && typeof base === 'object' && !Array.isArray(base) ? { ...base } : {};
+  for (const [key, value] of Object.entries(override)) {
+    result[key] = deepMerge(result[key], value);
+  }
+  return result;
+}
+
+function deepDifference(base, edited) {
+  if (Array.isArray(edited)) {
+    return JSON.stringify(base) === JSON.stringify(edited) ? undefined : edited;
+  }
+  if (edited && typeof edited === 'object') {
+    const difference = {};
+    for (const [key, value] of Object.entries(edited)) {
+      const childDifference = deepDifference(base?.[key], value);
+      if (childDifference !== undefined) difference[key] = childDifference;
+    }
+    return Object.keys(difference).length ? difference : undefined;
+  }
+  return Object.is(base, edited) ? undefined : edited;
+}
+
+function getLocalClientRow(document) {
+  if (!tableExists('clientes_cadastro')) return null;
+  return db.prepare(`SELECT * FROM clientes_cadastro WHERE documento = ?`).get(normalizeEntityDocument(document)) || null;
+}
+
+function getAllLocalClientRows() {
+  if (!tableExists('clientes_cadastro')) return [];
+  return db.prepare(`SELECT * FROM clientes_cadastro ORDER BY updated_at DESC`).all();
+}
+
+function composeClientRegistration(apiData, localRow) {
+  const snapshot = parseJsonObject(localRow?.api_snapshot_json, null);
+  const override = parseJsonObject(localRow?.override_json, {});
+  const base = apiData || snapshot || {};
+  const mergedData = deepMerge(base, override);
+  const data = mergedData?.entidade ? {
+    ...mergedData,
+    entidade: {
+      ...mergedData.entidade,
+      documento: normalizeEntityDocument(mergedData.entidade.documento || localRow?.documento)
+    }
+  } : mergedData;
+  return {
+    data,
+    source: apiData ? (localRow ? 'api+local' : 'api') : 'local',
+    hasLocalData: Boolean(localRow),
+    localOnly: Boolean(localRow?.local_only),
+    apiAvailable: Boolean(apiData),
+    updatedAt: localRow?.updated_at || null,
+    updatedBy: localRow?.updated_by || null
+  };
+}
+
+function clientRegistrationSummary(composed) {
+  const entidade = composed.data?.entidade || {};
+  return {
+    documento: normalizeEntityDocument(entidade.documento),
+    nome: entidade.nome || 'Cliente sem nome',
+    telefone: entidade.telefone || '',
+    email: entidade.email || '',
+    tipo: entidade.tipo || '',
+    grupoEconomico: entidade.grupoEconomico?.nome || '',
+    source: composed.source,
+    hasLocalData: composed.hasLocalData,
+    localOnly: composed.localOnly,
+    apiAvailable: composed.apiAvailable,
+    updatedAt: composed.updatedAt
+  };
+}
+
+function requireClientRegistrationAccess(req, res, next) {
+  const user = getAuthenticatedUser(req);
+  if (!user || !hasPermission(user, '8.2')) {
+    return res.status(403).json({ error: 'Usuário sem acesso ao Cadastro de Clientes.' });
+  }
+  req.clientRegistrationUser = user;
+  next();
+}
+
+app.get('/api/clientes-cadastro', requireSession, requireClientRegistrationAccess, async (req, res) => {
+  const search = String(req.query.search || '').trim();
+  if (search.length < 2) return res.status(400).json({ error: 'Informe pelo menos 2 caracteres para buscar.' });
+
+  try {
+    const normalizedSearch = normalizeStr(search);
+    const documentSearch = normalizeEntityDocument(search);
+    const candidates = new Map();
+    let apiWarning = null;
+
+    if ([11, 14].includes(documentSearch.length)) {
+      try {
+        const detail = await fetchUnltdClientDetails(documentSearch);
+        if (detail?.entidade) candidates.set(documentSearch, detail);
+      } catch (error) {
+        apiWarning = error.message;
+      }
+    } else {
+      try {
+        const titles = await fetchTitulosDaAPI(req);
+        for (const title of titles) {
+          const entidade = title?.contaOperacional?.cliente?.entidade;
+          const document = normalizeEntityDocument(entidade?.documento);
+          if (!document || candidates.has(document)) continue;
+          if (normalizeStr(entidade?.nome).includes(normalizedSearch)) {
+            candidates.set(document, { entidade, contasOperacionais: [], contasGraficas: [] });
+          }
+        }
+      } catch (error) {
+        apiWarning = error.message;
+      }
+    }
+
+    const localRows = getAllLocalClientRows();
+    const localByDocument = new Map(localRows.map(row => [row.documento, row]));
+    for (const row of localRows) {
+      const localComposed = composeClientRegistration(null, row);
+      const summary = clientRegistrationSummary(localComposed);
+      const matches = normalizeStr(summary.nome).includes(normalizedSearch)
+        || (documentSearch && summary.documento.includes(documentSearch))
+        || normalizeStr(summary.email).includes(normalizedSearch);
+      if (matches && !candidates.has(row.documento)) candidates.set(row.documento, null);
+    }
+
+    const selectedCandidates = Array.from(candidates.entries()).slice(0, 30);
+    const results = await mapWithConcurrency(selectedCandidates, 5, async ([document, preliminary]) => {
+      let apiData = null;
+      try {
+        apiData = preliminary?.contasOperacionais?.length
+          ? preliminary
+          : await fetchUnltdClientDetails(document);
+      } catch {
+        apiData = preliminary;
+      }
+      return clientRegistrationSummary(composeClientRegistration(apiData, localByDocument.get(document)));
+    });
+
+    results.sort((a, b) => a.nome.localeCompare(b.nome));
+    return res.json({ results, warning: apiWarning, total: results.length });
+  } catch (error) {
+    console.error('Erro na busca cadastral de clientes:', error.message);
+    return res.status(500).json({ error: 'Não foi possível buscar os clientes.' });
+  }
+});
+
+app.get('/api/clientes-cadastro/:documento', requireSession, requireClientRegistrationAccess, async (req, res) => {
+  const document = normalizeEntityDocument(req.params.documento);
+  if (![11, 14].includes(document.length)) return res.status(400).json({ error: 'CPF/CNPJ inválido.' });
+
+  const localRow = getLocalClientRow(document);
+  let apiData = null;
+  let apiWarning = null;
+  try {
+    apiData = await fetchUnltdClientDetails(document);
+  } catch (error) {
+    apiWarning = error.message;
+  }
+  if (!apiData && !localRow) return res.status(404).json({ error: 'Cliente não encontrado.' });
+  return res.json({ ...composeClientRegistration(apiData, localRow), warning: apiWarning });
+});
+
+app.post('/api/clientes-cadastro', requireSession, requireClientRegistrationAccess, async (req, res) => {
+  const data = req.body?.data;
+  const document = normalizeEntityDocument(data?.entidade?.documento);
+  if (![11, 14].includes(document.length)) return res.status(400).json({ error: 'Informe um CPF/CNPJ válido.' });
+  if (!String(data?.entidade?.nome || '').trim()) return res.status(400).json({ error: 'Informe o nome do cliente.' });
+
+  let apiData = null;
+  try { apiData = await fetchUnltdClientDetails(document, true); } catch { /* cadastro local permitido */ }
+  if (apiData) return res.status(409).json({ error: 'Este cliente já existe na UNLTD. Abra o cadastro encontrado para editar.' });
+
+  ensureClientRegistrationTableForWrite();
+  if (getLocalClientRow(document)) return res.status(409).json({ error: 'Este cliente já possui cadastro interno.' });
+
+  const now = new Date().toISOString();
+  db.prepare(`
+    INSERT INTO clientes_cadastro (
+      documento, api_snapshot_json, override_json, local_only,
+      created_at, updated_at, updated_by
+    ) VALUES (?, NULL, ?, 1, ?, ?, ?)
+  `).run(document, JSON.stringify(data), now, now, req.clientRegistrationUser.username || req.clientRegistrationUser.id);
+  return res.status(201).json(composeClientRegistration(null, getLocalClientRow(document)));
+});
+
+app.put('/api/clientes-cadastro/:documento', requireSession, requireClientRegistrationAccess, async (req, res) => {
+  const document = normalizeEntityDocument(req.params.documento);
+  const editedData = req.body?.data;
+  if (![11, 14].includes(document.length)) return res.status(400).json({ error: 'CPF/CNPJ inválido.' });
+  if (!String(editedData?.entidade?.nome || '').trim()) return res.status(400).json({ error: 'Informe o nome do cliente.' });
+
+  const existing = getLocalClientRow(document);
+  let apiData = null;
+  try { apiData = await fetchUnltdClientDetails(document, true); } catch { /* usa snapshot local */ }
+  const snapshot = apiData || parseJsonObject(existing?.api_snapshot_json, null);
+  const override = snapshot ? (deepDifference(snapshot, editedData) || {}) : editedData;
+  const now = new Date().toISOString();
+  ensureClientRegistrationTableForWrite();
+  db.prepare(`
+    INSERT INTO clientes_cadastro (
+      documento, api_snapshot_json, override_json, local_only,
+      created_at, updated_at, updated_by
+    ) VALUES (?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(documento) DO UPDATE SET
+      api_snapshot_json = excluded.api_snapshot_json,
+      override_json = excluded.override_json,
+      local_only = excluded.local_only,
+      updated_at = excluded.updated_at,
+      updated_by = excluded.updated_by
+  `).run(
+    document,
+    snapshot ? JSON.stringify(snapshot) : null,
+    JSON.stringify(override),
+    apiData ? 0 : (existing?.local_only ?? 1),
+    existing?.created_at || now,
+    now,
+    req.clientRegistrationUser.username || req.clientRegistrationUser.id
+  );
+  return res.json(composeClientRegistration(apiData, getLocalClientRow(document)));
+});
+
+app.delete('/api/clientes-cadastro/:documento', requireSession, requireClientRegistrationAccess, (req, res) => {
+  const document = normalizeEntityDocument(req.params.documento);
+  if (!tableExists('clientes_cadastro')) return res.status(404).json({ error: 'Não há cadastro interno para excluir.' });
+  const result = db.prepare(`DELETE FROM clientes_cadastro WHERE documento = ?`).run(document);
+  if (!result.changes) return res.status(404).json({ error: 'Não há cadastro interno para excluir.' });
+  return res.json({ success: true });
+});
 
 // -------------------------------------------------------------
 // ROTA CUSTOMIZADA: IMPORTAÇÃO DE PLANILHA VIA STREAMING PARA SQLITE
