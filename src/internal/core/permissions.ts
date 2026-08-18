@@ -22,7 +22,10 @@ export const permissionGroups: PermissionGroup[] = [
   {
     id: '8',
     name: 'Lepta Intelligence',
-    children: [{ id: '8.1', name: 'Análise de Clientes' }]
+    children: [
+      { id: '8.1', name: 'Análise de Clientes' },
+      { id: '8.2', name: 'Cadastro de Clientes' }
+    ]
   },
   { id: '10', name: 'Confirmação' },
   { id: '9', name: 'Banco de Dados' },

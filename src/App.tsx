@@ -16,6 +16,7 @@ import Marketing from './internal/modules/calendar/Marketing';
 import Finance from './internal/modules/finance/statement-processing/Finance';
 import FinanceDashboard from './internal/modules/finance/FinanceDashboard';
 import CustomerAnalysis from './internal/modules/intelligence/customer-analysis/CustomerAnalysis';
+import CustomerRegistration from './internal/modules/intelligence/customer-registration/CustomerRegistration';
 import DatabaseManagement from './internal/modules/database/DatabaseManagement';
 import ProtectedRoute from './internal/core/ProtectedRoute';
 import InternalLayout from './internal/core/InternalLayout';
@@ -59,6 +60,7 @@ function App() {
               <Route path="/financeiro" element={<AccessRoute permission="7.1"><FinanceDashboard /></AccessRoute>} />
               <Route path="/financeiro/extratos" element={<AccessRoute permission="7.1"><Finance /></AccessRoute>} />
               <Route path="/intelligence/analise-clientes" element={<AccessRoute permission="8.1"><CustomerAnalysis /></AccessRoute>} />
+              <Route path="/intelligence/cadastro-clientes" element={<AccessRoute permission="8.2"><CustomerRegistration /></AccessRoute>} />
               <Route path="/banco-de-dados" element={<AccessRoute permission="9"><DatabaseManagement /></AccessRoute>} />
               <Route path="/permissions" element={<AccessRoute masterOnly><Permissions /></AccessRoute>} />
               <Route path="/permissions/create-user" element={<AccessRoute masterOnly><CreateUser /></AccessRoute>} />
