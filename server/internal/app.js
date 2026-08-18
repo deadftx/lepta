@@ -222,6 +222,59 @@ const UNLTD_SITUACOES = [
 ];
 let unltdFullHistoryCache = { data: null, updatedAt: 0, pending: null };
 let unltdLiquidacoesCache = { data: null, updatedAt: 0, pending: null };
+const unltdEconomicGroupCache = new Map();
+
+function normalizeEntityDocument(document) {
+  let digits = String(document || '').replace(/\D/g, '');
+  while (![11, 14].includes(digits.length) && digits.startsWith('0')) {
+    digits = digits.slice(1);
+  }
+  return digits;
+}
+
+async function fetchEconomicGroupByDocument(document) {
+  const normalizedDocument = normalizeEntityDocument(document);
+  if (![11, 14].includes(normalizedDocument.length)) return null;
+
+  const cached = unltdEconomicGroupCache.get(normalizedDocument);
+  if (cached?.data !== undefined && Date.now() - cached.updatedAt < UNLTD_CACHE_TTL_MS) {
+    return cached.data;
+  }
+  if (cached?.pending) return cached.pending;
+
+  const pending = fetch(`https://lepta-backend.bit-unltd.com.br/entidades/${normalizedDocument}`, {
+    headers: { 'Authorization': `UNLTD-BackEnd ${UNLTD_TOKEN}` }
+  })
+    .then(async response => {
+      if (!response.ok) throw new Error(`UNLTD (entidade) respondeu ${response.status}`);
+      const entidade = await response.json();
+      return entidade?.grupoEconomico?.valido === false ? null : (entidade?.grupoEconomico || null);
+    })
+    .catch(error => {
+      console.log(`Aviso: grupo econômico indisponível para ${normalizedDocument}:`, error.message);
+      return null;
+    })
+    .then(data => {
+      unltdEconomicGroupCache.set(normalizedDocument, { data, updatedAt: Date.now(), pending: null });
+      return data;
+    });
+
+  unltdEconomicGroupCache.set(normalizedDocument, { data: undefined, updatedAt: 0, pending });
+  return pending;
+}
+
+async function fetchEconomicGroupsForRecords(records) {
+  const documents = Array.from(new Set(records
+    .map(record => record?.contaOperacional?.cliente?.entidade?.documento)
+    .map(normalizeEntityDocument)
+    .filter(document => [11, 14].includes(document.length))));
+
+  const groups = await mapWithConcurrency(documents, 5, async document => ({
+    document,
+    group: await fetchEconomicGroupByDocument(document)
+  }));
+  return new Map(groups.map(({ document, group }) => [document, group]));
+}
 
 function buildDateWindows(startDate, endDate) {
   const windows = [];
@@ -646,6 +699,7 @@ function normalizeStr(str) {
 
 app.get('/api/analise-clientes', async (req, res) => {
   try {
+    const groupByEconomic = req.query.groupBy === 'economicGroup';
     let rowsNova = [];
     let dataSource = 'api';
     try {
@@ -653,12 +707,21 @@ app.get('/api/analise-clientes', async (req, res) => {
         fetchTitulosDaAPI(req),
         fetchLiquidacoesDaAPI(req)
       ]);
+      const economicGroupsByDocument = groupByEconomic
+        ? await fetchEconomicGroupsForRecords([...titulos, ...liquidacoes])
+        : new Map();
       const mapCedentes = new Map();
       const hoje = new Date();
       hoje.setHours(0, 0, 0, 0);
       for (const t of titulos) {
-        if (!t.contaOperacional?.cliente?.entidade?.nome) continue;
-        const cedente = t.contaOperacional.cliente.entidade.nome;
+        const entidade = t.contaOperacional?.cliente?.entidade;
+        if (!entidade?.nome) continue;
+        const cedente = entidade.nome;
+        const economicGroup = entidade.grupoEconomico
+          || economicGroupsByDocument.get(normalizeEntityDocument(entidade.documento));
+        if (groupByEconomic && (!economicGroup?.id || !economicGroup?.nome)) continue;
+        const aggregationKey = groupByEconomic ? `grupo:${economicGroup.id}` : cedente;
+        const aggregationName = groupByEconomic ? economicGroup.nome : cedente;
         const situacao = (t.situacao || '').toLowerCase();
         let dataVenc = t.dataDeVencimento ? new Date(t.dataDeVencimento) : null;
         if (dataVenc) dataVenc.setHours(0, 0, 0, 0);
@@ -666,13 +729,15 @@ app.get('/api/analise-clientes', async (req, res) => {
         const isLiquidado = situacao.includes('liquidado') || situacao.includes('liq.');
         const isVencido = Boolean(isAberto && dataVenc && !Number.isNaN(dataVenc.getTime()) && dataVenc < hoje);
         const valNominal = Number(t.valorNominal) || 0;
-        if (!mapCedentes.has(cedente)) {
-          mapCedentes.set(cedente, {
-            cedente: cedente, qtdTitulos: 0, qtdVencido: 0, qtdLiquidado: 0, qtdAberto: 0,
-            valorGeral: 0, valorVencido: 0, valorLiquidado: 0, valorAberto: 0
+        if (!mapCedentes.has(aggregationKey)) {
+          mapCedentes.set(aggregationKey, {
+            cedente: aggregationName, qtdTitulos: 0, qtdVencido: 0, qtdLiquidado: 0, qtdAberto: 0,
+            valorGeral: 0, valorVencido: 0, valorLiquidado: 0, valorAberto: 0,
+            ...(groupByEconomic ? { grupoEconomicoId: economicGroup.id, cedentes: new Set() } : {})
           });
         }
-        const curr = mapCedentes.get(cedente);
+        const curr = mapCedentes.get(aggregationKey);
+        if (groupByEconomic) curr.cedentes.add(cedente);
         curr.qtdTitulos += 1;
         curr.valorGeral += valNominal;
         if (isVencido) { curr.qtdVencido += 1; curr.valorVencido += valNominal; }
@@ -680,18 +745,31 @@ app.get('/api/analise-clientes', async (req, res) => {
         if (isAberto) { curr.qtdAberto += 1; curr.valorAberto += valNominal; }
       }
       for (const liquidacao of liquidacoes) {
-        const cedente = liquidacao.contaOperacional?.cliente?.entidade?.nome;
+        const entidade = liquidacao.contaOperacional?.cliente?.entidade;
+        const cedente = entidade?.nome;
         if (!cedente) continue;
-        if (!mapCedentes.has(cedente)) {
-          mapCedentes.set(cedente, {
-            cedente, qtdTitulos: 0, qtdVencido: 0, qtdLiquidado: 0, qtdAberto: 0,
-            valorGeral: 0, valorVencido: 0, valorLiquidado: 0, valorAberto: 0
+        const economicGroup = entidade.grupoEconomico
+          || economicGroupsByDocument.get(normalizeEntityDocument(entidade.documento));
+        if (groupByEconomic && (!economicGroup?.id || !economicGroup?.nome)) continue;
+        const aggregationKey = groupByEconomic ? `grupo:${economicGroup.id}` : cedente;
+        const aggregationName = groupByEconomic ? economicGroup.nome : cedente;
+        if (!mapCedentes.has(aggregationKey)) {
+          mapCedentes.set(aggregationKey, {
+            cedente: aggregationName, qtdTitulos: 0, qtdVencido: 0, qtdLiquidado: 0, qtdAberto: 0,
+            valorGeral: 0, valorVencido: 0, valorLiquidado: 0, valorAberto: 0,
+            ...(groupByEconomic ? { grupoEconomicoId: economicGroup.id, cedentes: new Set() } : {})
           });
         }
-        mapCedentes.get(cedente).valorLiquidado += Number(liquidacao.totalLiquido) || 0;
+        const curr = mapCedentes.get(aggregationKey);
+        if (groupByEconomic) curr.cedentes.add(cedente);
+        curr.valorLiquidado += Number(liquidacao.totalLiquido) || 0;
       }
-      rowsNova = Array.from(mapCedentes.values());
+      rowsNova = Array.from(mapCedentes.values()).map(row => ({
+        ...row,
+        ...(groupByEconomic ? { cedentes: Array.from(row.cedentes).sort((a, b) => a.localeCompare(b)) } : {})
+      }));
     } catch (apiErr) {
+      if (groupByEconomic) throw apiErr;
       console.log('Falha na API UNLTD (clientes), fallback SQLite...', apiErr.message);
       dataSource = 'db';
       const { startDate, endDate } = req.query;
@@ -715,6 +793,14 @@ app.get('/api/analise-clientes', async (req, res) => {
       GROUP BY CLIENTE
       `;
       rowsNova = db.prepare(queryNova).all();
+    }
+
+    if (groupByEconomic) {
+      const groupedRows = rowsNova
+        .map(row => ({ ...row, valorNpl: 0, hasNova: true }))
+        .sort((a, b) => b.valorGeral - a.valorGeral);
+      res.setHeader('x-data-source', dataSource);
+      return res.json(groupedRows);
     }
 
     let rowsNpl = [];

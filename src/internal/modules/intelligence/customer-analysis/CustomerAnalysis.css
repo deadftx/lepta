@@ -151,7 +151,7 @@
 }
 
 .kpi-row-primary {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
 .kpi-row-secondary {
@@ -237,6 +237,111 @@
   font-size: 0.75rem;
   color: #10b981;
   margin-top: 0.2rem;
+}
+
+.truncated-name {
+  position: relative;
+  display: inline-block;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+
+.has-full-name {
+  cursor: help;
+}
+
+.full-name-tooltip,
+.economic-group-members-popover {
+  position: absolute;
+  z-index: 1200;
+  left: 0;
+  top: calc(100% + 0.45rem);
+  width: max-content;
+  max-width: min(430px, calc(100vw - 48px));
+  padding: 0.7rem 0.8rem;
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  border-radius: 10px;
+  color: #e2e8f0;
+  background: #111827;
+  box-shadow: 0 18px 42px rgba(0, 0, 0, 0.45);
+  font-size: 0.78rem;
+  font-weight: 500;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transform: translateY(-4px);
+  transition: opacity 0.16s ease, transform 0.16s ease, visibility 0.16s ease;
+}
+
+.has-full-name:hover > .full-name-tooltip,
+.has-full-name:focus-visible > .full-name-tooltip {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0);
+}
+
+.economic-group-members-control {
+  position: relative;
+  width: fit-content;
+  margin-top: 0.55rem;
+}
+
+.economic-group-members-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.38rem;
+  min-height: 30px;
+  padding: 0.32rem 0.65rem;
+  border: 1px solid rgba(6, 182, 212, 0.3);
+  border-radius: 8px;
+  color: #67e8f9;
+  background: rgba(6, 182, 212, 0.09);
+  font-size: 0.72rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color 0.18s ease, background 0.18s ease, color 0.18s ease;
+}
+
+.economic-group-members-button:hover,
+.economic-group-members-button:focus-visible,
+.economic-group-members-control.is-open .economic-group-members-button {
+  border-color: rgba(6, 182, 212, 0.65);
+  color: #cffafe;
+  background: rgba(6, 182, 212, 0.18);
+}
+
+.economic-group-members-popover {
+  min-width: min(340px, calc(100vw - 48px));
+  pointer-events: auto;
+}
+
+.economic-group-members-control:hover > .economic-group-members-popover,
+.economic-group-members-control:focus-within > .economic-group-members-popover,
+.economic-group-members-control.is-open > .economic-group-members-popover {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0);
+}
+
+.economic-group-members-popover strong {
+  display: block;
+  margin-bottom: 0.55rem;
+  color: #fff;
+  font-size: 0.8rem;
+}
+
+.economic-group-members-popover ul {
+  max-height: 280px;
+  margin: 0;
+  padding: 0 0 0 1rem;
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
+.economic-group-members-popover li + li {
+  margin-top: 0.38rem;
 }
 
 .unltd-loading {
@@ -394,6 +499,7 @@
 /* Tabela Base Styles */
 .data-table {
   width: 100%;
+  table-layout: fixed;
   border-collapse: separate;
   border-spacing: 0;
   text-align: left;
@@ -406,7 +512,8 @@
   font-weight: 600;
   text-transform: uppercase;
   border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-  white-space: nowrap;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .data-table td {
@@ -414,10 +521,53 @@
   border-bottom: 1px solid rgba(255, 255, 255, 0.05);
   color: #e2e8f0;
   font-size: 0.95rem;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.customer-analysis-page .table-responsive {
+  width: 100%;
+  max-width: 100%;
+  overflow: visible;
+}
+
+.customer-analysis-page .data-table th:first-child,
+.customer-analysis-page .data-table td:first-child {
+  width: 40%;
+}
+
+.customer-analysis-page .data-table th:nth-child(2),
+.customer-analysis-page .data-table td:nth-child(2) {
+  width: 12%;
+}
+
+.customer-analysis-page .data-table td:not(:first-child) {
+  font-size: clamp(0.74rem, 0.8vw, 0.95rem);
 }
 
 .data-table tr:hover td {
   background: rgba(255, 255, 255, 0.02);
+}
+
+@media (max-width: 767px) {
+  .customer-analysis-page .data-table th,
+  .customer-analysis-page .data-table td {
+    padding: 0.8rem 0.55rem;
+  }
+
+  .customer-analysis-page .data-table th {
+    font-size: 0.68rem;
+  }
+
+  .customer-analysis-page .data-table th:first-child,
+  .customer-analysis-page .data-table td:first-child {
+    width: 42%;
+  }
+
+  .economic-group-members-button {
+    max-width: 100%;
+    white-space: normal;
+  }
 }
 
 .kpi-card.active { border-color: #3b82f6; box-shadow: 0 0 0 1px rgba(59, 130, 246, 0.5), 0 6px 16px var(--shadow); transform: translateY(-2px); }

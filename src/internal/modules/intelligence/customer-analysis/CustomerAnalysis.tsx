@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { Users, Search, BrainCircuit, Database, TrendingUp, AlertTriangle, ArrowLeft, Building2, User, CheckCircle, Clock, ArrowUpDown, ArrowUp, ArrowDown, Wifi, X } from 'lucide-react';
+import { Users, Search, BrainCircuit, Database, TrendingUp, AlertTriangle, ArrowLeft, Building2, User, CheckCircle, Clock, ArrowUpDown, ArrowUp, ArrowDown, Wifi, X, Network } from 'lucide-react';
 import './CustomerAnalysis.css';
 import '../../../core/styles/Operations.css';
 
@@ -21,10 +21,30 @@ interface ClientAnalysis {
   hasNova?: boolean;
   valorNpl?: number;
   isUN?: boolean;
+  grupoEconomicoId?: number;
+  cedentes?: string[];
 }
 
 const formatCurrency = (value: number) => {
   return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value);
+};
+
+const MAX_VISIBLE_NAME_LENGTH = 70;
+
+const TruncatedName = ({ value }: { value: string }) => {
+  const isTruncated = value.length > MAX_VISIBLE_NAME_LENGTH;
+  const visibleValue = isTruncated ? `${value.slice(0, MAX_VISIBLE_NAME_LENGTH).trimEnd()}...` : value;
+
+  return (
+    <span
+      className={`truncated-name ${isTruncated ? 'has-full-name' : ''}`}
+      tabIndex={isTruncated ? 0 : undefined}
+      title={isTruncated ? value : undefined}
+    >
+      <span>{visibleValue}</span>
+      {isTruncated && <span className="full-name-tooltip" role="tooltip">{value}</span>}
+    </span>
+  );
 };
 
 const CustomerAnalysis = () => {
@@ -32,8 +52,10 @@ const CustomerAnalysis = () => {
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   const [clients, setClients] = useState<ClientAnalysis[]>([]);
+  const [economicGroups, setEconomicGroups] = useState<ClientAnalysis[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [groupError, setGroupError] = useState('');
   const [dataSource, setDataSource] = useState<'api' | 'db'>('api');
 
   const [selectedCedente, setSelectedCedente] = useState<string | null>(null);
@@ -61,10 +83,14 @@ const CustomerAnalysis = () => {
   
   // Popover state
   const [popover, setPopover] = useState<{ visible: boolean; x: number; y: number; cedente: string } | null>(null);
+  const [openGroupMembers, setOpenGroupMembers] = useState<number | null>(null);
 
   // Close popover when clicking outside
   useEffect(() => {
-    const handleClickOutside = () => setPopover(null);
+    const handleClickOutside = () => {
+      setPopover(null);
+      setOpenGroupMembers(null);
+    };
     window.addEventListener('click', handleClickOutside);
     return () => window.removeEventListener('click', handleClickOutside);
   }, []);
@@ -87,20 +113,25 @@ const CustomerAnalysis = () => {
         if (startDate) queryParams.append('startDate', startDate);
         if (endDate) queryParams.append('endDate', endDate);
 
-        const response = await fetch(`/api/analise-clientes?${queryParams.toString()}`, { 
-          cache: 'no-store',
+        const requestOptions = {
+          cache: 'no-store' as RequestCache,
           signal: controller.signal,
-          headers: {
-            'Pragma': 'no-cache',
-            'Cache-Control': 'no-cache'
-          }
-        });
+          headers: { 'Pragma': 'no-cache', 'Cache-Control': 'no-cache' }
+        };
+        const groupQueryParams = new URLSearchParams(queryParams);
+        groupQueryParams.append('groupBy', 'economicGroup');
+        const [response, groupResponse] = await Promise.all([
+          fetch(`/api/analise-clientes?${queryParams.toString()}`, requestOptions),
+          fetch(`/api/analise-clientes?${groupQueryParams.toString()}`, requestOptions)
+        ]);
         if (!response.ok) throw new Error('Erro ao buscar dados da API');
         
         const source = response.headers.get('x-data-source') === 'db' ? 'db' : 'api';
         setDataSource(source);
         
         const data = await response.json();
+        const groupData = groupResponse.ok ? await groupResponse.json() : [];
+        setGroupError(groupResponse.ok ? '' : 'Não foi possível carregar os grupos financeiros da API.');
         
         // Enriquecer dados com inteligência simulada baseada em regras de negócio
         const enriched = data.map((client: ClientAnalysis) => {
@@ -122,6 +153,7 @@ const CustomerAnalysis = () => {
           return { ...client, riskLevel, score };
         });
         setClients(enriched);
+        setEconomicGroups(groupData.map((group: ClientAnalysis) => ({ ...group, riskLevel: 'Baixo', score: 900 })));
         setLoading(false);
       } catch (err: any) {
         if (err.name === 'AbortError') return;
@@ -244,6 +276,19 @@ const CustomerAnalysis = () => {
   // Logic for combinable filters
   const toggleKpiFilter = (filter: string) => {
     setKpiFilters(prev => {
+      if (filter === 'grupos_financeiros') {
+        setSelectedCedente(null);
+        setDrillDownMode(null);
+        setSubData([]);
+        setPopover(null);
+        setSearchTerm('');
+        return prev.includes(filter) ? ['volume_geral'] : ['grupos_financeiros'];
+      }
+      if (filter === 'cedentes' || filter === 'volume_npl') {
+        const next = prev.filter(item => item !== 'grupos_financeiros' && item !== 'volume_geral');
+        if (next.includes(filter)) return next.filter(item => item !== filter).length ? next.filter(item => item !== filter) : ['volume_geral'];
+        return [...next, filter];
+      }
       if (filter === 'volume_geral') return ['volume_geral'];
       let newFilters = [...prev].filter(f => f !== 'volume_geral');
       if (newFilters.includes(filter)) {
@@ -257,7 +302,8 @@ const CustomerAnalysis = () => {
   };
 
   // KPIs
-  let displayClients = [];
+  const groupMode = !selectedCedente && kpiFilters.includes('grupos_financeiros');
+  let displayClients: ClientAnalysis[] = [];
   let kpiClients = clients; // Usado apenas para os totais no topo
   
   if (selectedCedente) {
@@ -272,11 +318,12 @@ const CustomerAnalysis = () => {
     kpiClients = currentSubData; 
   } else {
     // Filtragem combinada para a visão geral
-    const showListWithoutSearch = kpiFilters.includes('cedentes');
+    const showListWithoutSearch = kpiFilters.includes('cedentes') || groupMode;
     
-    let baseFiltered = clients;
+    const activeBase = groupMode ? economicGroups : clients;
+    let baseFiltered = activeBase;
     if (searchTerm.trim() !== '') {
-      baseFiltered = clients.filter(c => c.cedente.toLowerCase().includes(searchTerm.toLowerCase()));
+      baseFiltered = activeBase.filter(c => c.cedente.toLowerCase().includes(searchTerm.toLowerCase()));
     } else if (!showListWithoutSearch) {
       baseFiltered = []; // Padrão: esconde se não tiver busca e só volume_geral ativo
     }
@@ -286,8 +333,8 @@ const CustomerAnalysis = () => {
       baseFiltered = baseFiltered.filter(c => (c.valorNpl || 0) > 0);
     }
 
-    displayClients = baseFiltered; 
-    kpiClients = clients; 
+    displayClients = [...baseFiltered];
+    kpiClients = activeBase;
   }
 
   // Ordenação padrão
@@ -317,11 +364,12 @@ const CustomerAnalysis = () => {
     return bTotal - aTotal;
   });
   
-  const totalClients = kpiClients.length;
+  const totalClients = selectedCedente ? kpiClients.length : clients.length;
+  const totalGroups = economicGroups.length;
   // Volume Geral only uses BASE_NOVA
   const totalVolume = kpiClients.reduce((acc, curr) => acc + (curr.valorGeral || 0), 0);
   // Separate Volume for NPL
-  const totalVolumeNpl = kpiClients.reduce((acc, curr) => acc + (curr.valorNpl || 0), 0);
+  const totalVolumeNpl = (selectedCedente ? kpiClients : clients).reduce((acc, curr) => acc + (curr.valorNpl || 0), 0);
   const totalVencido = kpiClients.reduce((acc, curr) => acc + (curr.valorVencido || 0), 0);
   const totalLiquidado = kpiClients.reduce((acc, curr) => acc + (curr.valorLiquidado || 0), 0);
   const totalAberto = kpiClients.reduce((acc, curr) => acc + (curr.valorAberto || 0), 0);
@@ -344,6 +392,17 @@ const CustomerAnalysis = () => {
               <h4>{selectedCedente ? (drillDownMode === 'sacados' ? 'Sacados' : 'Unid. Administrativas') : 'Cedentes / Clientes'}</h4>
               <div className="kpi-value">{loading || loadingSubData ? '...' : totalClients}</div>
               <div className="kpi-sub">{selectedCedente ? 'Do cedente selecionado' : 'Cadastrados na Base'}</div>
+            </div>
+          </div>
+
+          <div className={`kpi-card ${groupMode ? 'active' : ''}`} onClick={() => toggleKpiFilter('grupos_financeiros')}>
+            <div className="kpi-icon" style={{ color: '#06b6d4', background: 'rgba(6, 182, 212, 0.12)' }}>
+              <Network size={24} />
+            </div>
+            <div className="kpi-info">
+              <h4>Grupos Financeiros</h4>
+              <div className="kpi-value">{loading ? '...' : totalGroups}</div>
+              <div className="kpi-sub" style={{ color: '#06b6d4' }}>Vinculados pela API UNLTD</div>
             </div>
           </div>
 
@@ -425,7 +484,7 @@ const CustomerAnalysis = () => {
               ? (drillDownMode === 'sacados' 
                   ? `Visão Geral dos Sacados do Cedente "${selectedCedente}"` 
                   : `Visão Geral das UAs do Cedente "${selectedCedente}"`)
-              : "Visão Geral dos Clientes"}
+              : groupMode ? 'Visão Geral dos Grupos Financeiros' : 'Visão Geral dos Clientes'}
           </h3>
           <div className="analysis-header-actions" style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
             {dataSource === 'api' ? (
@@ -459,7 +518,7 @@ const CustomerAnalysis = () => {
             <input
               type="text"
               className="input-field"
-              placeholder={selectedCedente ? `Buscar ${drillDownMode === 'sacados' ? 'sacado' : drillDownMode === 'un' ? 'UN' : 'UA'}...` : "Buscar instantânea por nome do cliente ou cedente..."}
+              placeholder={selectedCedente ? `Buscar ${drillDownMode === 'sacados' ? 'sacado' : drillDownMode === 'un' ? 'UN' : 'UA'}...` : groupMode ? 'Buscar por nome do grupo financeiro...' : "Buscar instantânea por nome do cliente ou cedente..."}
               value={searchTerm}
               onChange={e => setSearchTerm(e.target.value)}
               style={{ width: '100%' }}
@@ -501,9 +560,9 @@ const CustomerAnalysis = () => {
             </div>
             <small>A conexão está ativa. Os períodos estão sendo consultados e consolidados.</small>
           </div>
-        ) : error || subDataError ? (
+        ) : error || subDataError || (groupMode && groupError) ? (
           <div style={{ padding: '2rem', textAlign: 'center', color: '#ef4444' }}>
-            <p>{error || subDataError}</p>
+            <p>{error || subDataError || groupError}</p>
           </div>
         ) : (
           <div className="table-responsive">
@@ -512,7 +571,7 @@ const CustomerAnalysis = () => {
                 <tr>
                   <th onClick={() => requestSort('cliente')} style={{ cursor: 'pointer', userSelect: 'none' }}>
                     <div style={{ display: 'flex', alignItems: 'center' }}>
-                      {selectedCedente ? (drillDownMode === 'sacados' ? 'Sacado' : drillDownMode === 'un' ? 'Unidade de Negócio (UN)' : 'Unidade Administrativa (UA)') : 'Cliente (Cedente)'}
+                      {selectedCedente ? (drillDownMode === 'sacados' ? 'Sacado' : drillDownMode === 'un' ? 'Unidade de Negócio (UN)' : 'Unidade Administrativa (UA)') : groupMode ? 'Grupo Financeiro' : 'Cliente (Cedente)'}
                       {sortConfig?.key === 'cliente' ? (sortConfig.direction === 'asc' ? <ArrowUp size={14} style={{ marginLeft: '0.25rem', color: '#3b82f6' }} /> : <ArrowDown size={14} style={{ marginLeft: '0.25rem', color: '#3b82f6' }} />) : <ArrowUpDown size={14} style={{ marginLeft: '0.25rem', opacity: 0.3 }} />}
                     </div>
                   </th>
@@ -565,13 +624,46 @@ const CustomerAnalysis = () => {
                 </tr>
               </thead>
               <tbody>
-                {displayClients.map((client, idx) => (
-                  <tr key={idx}>
+                {displayClients.map((client, idx) => {
+                  const rowName = selectedCedente
+                    ? (drillDownMode === 'sacados' ? client.sacado : client.ua) || ''
+                    : client.cedente;
+                  const groupKey = client.grupoEconomicoId ?? idx;
+                  const isMembersOpen = groupMode && openGroupMembers === groupKey;
+
+                  return (
+                  <tr key={client.grupoEconomicoId ?? `${rowName}-${idx}`}>
                     <td 
-                      style={{ fontWeight: 600, cursor: selectedCedente ? 'default' : 'pointer', color: selectedCedente ? 'inherit' : '#3b82f6' }}
-                      onClick={(e) => !selectedCedente && handleCedenteClick(e, client.cedente)}
+                      style={{ fontWeight: 600, cursor: selectedCedente || groupMode ? 'default' : 'pointer', color: selectedCedente || groupMode ? 'inherit' : '#3b82f6' }}
+                      onClick={(e) => !selectedCedente && !groupMode && handleCedenteClick(e, client.cedente)}
                     >
-                      {selectedCedente ? (drillDownMode === 'sacados' ? client.sacado : client.ua) : client.cedente}
+                      <TruncatedName value={rowName} />
+                      {groupMode && client.cedentes && client.cedentes.length > 0 && (
+                        <div
+                          className={`economic-group-members-control ${isMembersOpen ? 'is-open' : ''}`}
+                          onClick={event => event.stopPropagation()}
+                        >
+                          <button
+                            type="button"
+                            className="economic-group-members-button"
+                            aria-expanded={isMembersOpen}
+                            onClick={event => {
+                              event.stopPropagation();
+                              setOpenGroupMembers(current => current === groupKey ? null : groupKey);
+                            }}
+                          >
+                            <Users size={14} /> Visualizar cedentes ({client.cedentes.length})
+                          </button>
+                          <div className="economic-group-members-popover" role="tooltip">
+                            <strong>Cedentes deste grupo</strong>
+                            <ul>
+                              {client.cedentes.map(cedente => (
+                                <li key={cedente}><TruncatedName value={cedente} /></li>
+                              ))}
+                            </ul>
+                          </div>
+                        </div>
+                      )}
                     </td>
                     <td style={{ color: 'var(--text-muted, #94a3b8)' }}>
                       {client.hasNova === false ? '-' : client.qtdTitulos}
@@ -606,14 +698,15 @@ const CustomerAnalysis = () => {
                       </td>
                     )}
                   </tr>
-                ))}
+                  );
+                })}
                 {displayClients.length === 0 && (
                   <tr>
                     <td colSpan={6} style={{ textAlign: 'center', padding: '3rem', color: '#94a3b8' }}>
                       {searchTerm.trim() === '' ? (
                         <>
                           <Search size={48} style={{ margin: '0 auto 1rem', opacity: 0.2 }} />
-                          <p style={{ fontSize: '1.1rem' }}>Digite o nome de um cliente ou cedente para visualizar os dados</p>
+                          <p style={{ fontSize: '1.1rem' }}>{groupMode ? 'Nenhum grupo financeiro encontrado para o período selecionado' : 'Digite o nome de um cliente ou cedente para visualizar os dados'}</p>
                         </>
                       ) : (
                         <p>Nenhum registro encontrado com a busca "{searchTerm}"</p>
