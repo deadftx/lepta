@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import * as XLSX from 'xlsx';
 import { useAuth } from '../../core/AuthContext';
-import { API_BASE_URL } from '../../../config/api';
+import { API_BASE_URL, getAuthHeaders } from '../../../config/api';
 import {
   Plus,
   Edit,
@@ -69,7 +69,7 @@ const Marketing = () => {
   const fetchEvents = async () => {
     try {
       setLoading(true);
-      const res = await fetch(`${API_BASE_URL}/calendarEvents`);
+      const res = await fetch(`${API_BASE_URL}/calendarEvents`, { headers: getAuthHeaders() });
       const evtsData: CalendarEvent[] = await res.json();
       setEvents(evtsData || []);
     } catch (err) {
@@ -119,7 +119,7 @@ const Marketing = () => {
   const handleDeleteEvent = async (id: string, titleStr: string) => {
     if (!window.confirm(`Deseja remover "${titleStr}" do sistema?`)) return;
     try {
-      await fetch(`${API_BASE_URL}/calendarEvents/${id}`, { method: 'DELETE' });
+      await fetch(`${API_BASE_URL}/calendarEvents/${id}`, { method: 'DELETE', headers: getAuthHeaders() });
       setEvents(events.filter(e => e.id !== id));
     } catch (err) {
       console.error('Erro ao remover registro:', err);
@@ -157,7 +157,7 @@ const Marketing = () => {
       if (editingEvent) {
         const res = await fetch(`${API_BASE_URL}/calendarEvents/${editingEvent.id}`, {
           method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
+          headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
           body: JSON.stringify({ ...editingEvent, ...payload })
         });
         const updated = await res.json();
@@ -169,7 +169,7 @@ const Marketing = () => {
         };
         const res = await fetch(`${API_BASE_URL}/calendarEvents`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
           body: JSON.stringify(newEvt)
         });
         const saved = await res.json();
@@ -239,7 +239,7 @@ const Marketing = () => {
       for (const evt of newEvents) {
         await fetch(`${API_BASE_URL}/calendarEvents`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
           body: JSON.stringify(evt)
         }).catch(() => null);
       }
@@ -310,7 +310,7 @@ const Marketing = () => {
         for (const evt of newEvents) {
           await fetch(`${API_BASE_URL}/calendarEvents`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
             body: JSON.stringify(evt)
           }).catch(() => null);
         }

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { DollarSign, CheckCircle, XCircle, Clock, Plus } from 'lucide-react';
 import '../../core/styles/Operations.css';
+import { API_BASE_URL, getAuthHeaders } from '../../../config/api';
 
 interface Credit {
   id: string;
@@ -30,7 +31,7 @@ const Credits = () => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetch('/credits')
+    fetch(`${API_BASE_URL}/credits`, { headers: getAuthHeaders() })
       .then(res => res.json())
       .then(data => {
         setCredits(data);

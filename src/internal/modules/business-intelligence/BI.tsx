@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useAuth } from '../../core/AuthContext';
-import { API_BASE_URL } from '../../../config/api';
+import { API_BASE_URL, getAuthHeaders } from '../../../config/api';
 import {
   PieChart,
   Plus,
@@ -104,7 +104,7 @@ const BI = () => {
       const authHeaders = { Authorization: `Bearer ${localStorage.getItem('lepta_auth_token')}` };
       const [dashRes, groupsRes, usersRes] = await Promise.all([
         fetch(`${API_BASE_URL}/api/power-bi-dashboards`, { headers: authHeaders }),
-        fetch(`${API_BASE_URL}/groups`),
+        fetch(`${API_BASE_URL}/groups`, { headers: getAuthHeaders() }),
         fetch(`${API_BASE_URL}/users`, { headers: authHeaders })
       ]);
 

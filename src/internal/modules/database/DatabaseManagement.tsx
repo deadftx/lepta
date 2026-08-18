@@ -22,7 +22,7 @@ import {
   FileText
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
-import { API_BASE_URL } from '../../../config/api';
+import { API_BASE_URL, getAuthHeaders } from '../../../config/api';
 import { saveTableRows, getTableRows, deleteTableRows } from './dbStorage';
 import './DatabaseManagement.css';
 import '../../core/styles/Operations.css';
@@ -155,7 +155,7 @@ const DatabaseManagement: React.FC = () => {
   const fetchTables = async () => {
     setLoading(true);
     try {
-      const res = await fetch(`${API_BASE_URL}/databaseTables`);
+      const res = await fetch(`${API_BASE_URL}/databaseTables`, { headers: getAuthHeaders() });
       if (res.ok) {
         const data = await res.json();
         if (Array.isArray(data) && data.length > 0) {
@@ -214,12 +214,12 @@ const DatabaseManagement: React.FC = () => {
       for (const table of lightTables) {
         await fetch(`${API_BASE_URL}/databaseTables/${table.id}`, {
           method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
+          headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
           body: JSON.stringify(table)
         }).catch(async () => {
           await fetch(`${API_BASE_URL}/databaseTables`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
             body: JSON.stringify(table)
           }).catch(() => {});
         });
@@ -502,7 +502,7 @@ const DatabaseManagement: React.FC = () => {
         try {
           const res = await fetch(`${API_BASE_URL}/api/sync-link`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
             body: JSON.stringify({ url: formSourceUrl })
           });
           const result = await res.json();
@@ -545,7 +545,7 @@ const DatabaseManagement: React.FC = () => {
         // Trigger Node backend streaming download & sync for SharePoint link
         const res = await fetch(`${API_BASE_URL}/api/sync-link`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
           body: JSON.stringify({ url: table.sourceUrl })
         });
         const result = await res.json();
@@ -596,7 +596,7 @@ const DatabaseManagement: React.FC = () => {
       const fixedPath = 'C:\\Users\\ArthurFeltrinDeco\\OneDrive - Lepta\\Depto Credito - Documentos\\DEPTO CREDITO\\Lepta - TitulosEmAberto.xlsx';
       const res = await fetch(`${API_BASE_URL}/api/sync-link`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({ url: fixedPath })
       });
       const result = await res.json();
@@ -634,7 +634,7 @@ const DatabaseManagement: React.FC = () => {
         if (table.sourceUrl) {
           await fetch(`${API_BASE_URL}/api/sync-link`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
             body: JSON.stringify({ url: table.sourceUrl })
           }).catch(() => {});
         } else {

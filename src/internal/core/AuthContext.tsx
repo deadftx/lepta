@@ -141,6 +141,14 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   };
 
   const logout = () => {
+    const token = localStorage.getItem('lepta_auth_token');
+    if (token) {
+      fetch(`${API_BASE_URL}/api/auth/logout`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+        keepalive: true
+      }).catch(() => {});
+    }
     setIsAuthenticated(false);
     setUser(null);
     localStorage.removeItem('lepta_user');

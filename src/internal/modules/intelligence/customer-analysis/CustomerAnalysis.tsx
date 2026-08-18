@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { Users, Search, BrainCircuit, Database, TrendingUp, AlertTriangle, ArrowLeft, Building2, User, CheckCircle, Clock, ArrowUpDown, ArrowUp, ArrowDown, Wifi, X, Network } from 'lucide-react';
 import './CustomerAnalysis.css';
 import '../../../core/styles/Operations.css';
+import { getAuthHeaders } from '../../../../config/api';
 
 interface ClientAnalysis {
   cedente: string;
@@ -116,7 +117,7 @@ const CustomerAnalysis = () => {
         const requestOptions = {
           cache: 'no-store' as RequestCache,
           signal: controller.signal,
-          headers: { 'Pragma': 'no-cache', 'Cache-Control': 'no-cache' }
+          headers: getAuthHeaders({ 'Pragma': 'no-cache', 'Cache-Control': 'no-cache' })
         };
         const groupQueryParams = new URLSearchParams(queryParams);
         groupQueryParams.append('groupBy', 'economicGroup');
@@ -218,7 +219,7 @@ const CustomerAnalysis = () => {
       
       const url = `${endpoint}${encodeURIComponent(cedente)}${queryParams.toString() ? '?' + queryParams.toString() : ''}`;
 
-      const response = await fetch(url);
+      const response = await fetch(url, { headers: getAuthHeaders() });
       if (!response.ok) throw new Error('Erro ao buscar dados da API');
       
       const source = response.headers.get('x-data-source') === 'db' ? 'db' : 'api';

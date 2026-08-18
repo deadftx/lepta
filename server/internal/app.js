@@ -9,8 +9,72 @@ import stringSimilarity from 'string-similarity';
 import { createCipheriv, createDecipheriv, createHash, randomBytes, scryptSync, timingSafeEqual } from 'crypto';
 
 const app = express();
-app.use(cors({ exposedHeaders: ['x-data-source'] }));
-app.use(express.json({ limit: '50mb' }));
+app.disable('x-powered-by');
+app.set('trust proxy', 1);
+
+const configuredOrigins = String(process.env.LEPTA_ALLOWED_ORIGINS || '')
+  .split(',')
+  .map(origin => origin.trim())
+  .filter(Boolean);
+const allowedOrigins = new Set([
+  'https://lepta.com.br',
+  'https://www.lepta.com.br',
+  ...configuredOrigins
+]);
+
+function isAllowedOrigin(origin) {
+  if (!origin || allowedOrigins.has(origin)) return true;
+  try {
+    const url = new URL(origin);
+    const isDevelopmentPort = url.port === '5173';
+    const isLocalHost = ['localhost', '127.0.0.1', '::1'].includes(url.hostname)
+      || /^192\.168\.\d{1,3}\.\d{1,3}$/.test(url.hostname)
+      || /^10\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(url.hostname)
+      || /^172\.(1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3}$/.test(url.hostname);
+    return isDevelopmentPort && isLocalHost;
+  } catch {
+    return false;
+  }
+}
+
+app.use(cors({
+  exposedHeaders: ['x-data-source'],
+  origin(origin, callback) {
+    callback(null, isAllowedOrigin(origin));
+  }
+}));
+app.use(express.json({ limit: '2mb', strict: true }));
+app.use((error, req, res, next) => {
+  if (error?.type === 'entity.too.large') {
+    return res.status(413).json({ error: 'Conteúdo enviado excede o limite permitido.' });
+  }
+  if (error instanceof SyntaxError && error.status === 400 && 'body' in error) {
+    return res.status(400).json({ error: 'JSON inválido.' });
+  }
+  next(error);
+});
+app.use((req, res, next) => {
+  res.setHeader('Content-Security-Policy', [
+    "default-src 'self'",
+    "base-uri 'self'",
+    "object-src 'none'",
+    "frame-ancestors 'self'",
+    "form-action 'self'",
+    "script-src 'self'",
+    "style-src 'self' 'unsafe-inline'",
+    "img-src 'self' data: blob:",
+    "font-src 'self' data:",
+    "connect-src 'self'",
+    "frame-src https://app.powerbi.com https://*.powerbi.com"
+  ].join('; '));
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'SAMEORIGIN');
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
+  if (req.secure) res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+  if (req.path.startsWith('/api/auth/')) res.setHeader('Cache-Control', 'no-store');
+  next();
+});
 
 // Load aliases globally
 let globalAliases = {};
@@ -45,6 +109,49 @@ const authEncryptionKey = createHash('sha256')
 
 const PASSWORD_PREFIX = 'scrypt';
 const authSessions = new Map();
+const SESSION_TTL_MS = 8 * 60 * 60 * 1000;
+const rateLimitBuckets = new Map();
+
+function createRateLimiter({ windowMs, max, keyPrefix, includeLoginId = false }) {
+  return (req, res, next) => {
+    const now = Date.now();
+    const loginId = String(req.body?.loginId || '').trim().toLowerCase();
+    const key = `${keyPrefix}:${req.ip}${includeLoginId ? `:${loginId}` : ''}`;
+    const current = rateLimitBuckets.get(key);
+    const bucket = !current || current.resetAt <= now
+      ? { count: 0, resetAt: now + windowMs }
+      : current;
+    bucket.count += 1;
+    rateLimitBuckets.set(key, bucket);
+
+    if (bucket.count > max) {
+      res.setHeader('Retry-After', Math.max(1, Math.ceil((bucket.resetAt - now) / 1000)));
+      return res.status(429).json({ error: 'Muitas tentativas. Aguarde alguns minutos e tente novamente.' });
+    }
+    next();
+  };
+}
+
+const authIpRateLimiter = createRateLimiter({ windowMs: 15 * 60 * 1000, max: 60, keyPrefix: 'auth-ip' });
+const loginRateLimiter = createRateLimiter({ windowMs: 15 * 60 * 1000, max: 10, keyPrefix: 'login', includeLoginId: true });
+const recoveryRateLimiter = createRateLimiter({ windowMs: 15 * 60 * 1000, max: 12, keyPrefix: 'recovery', includeLoginId: true });
+
+function revokeSessionsForUser(userId) {
+  for (const [token, session] of authSessions.entries()) {
+    if (session.userId === userId) authSessions.delete(token);
+  }
+}
+
+const sessionCleanupTimer = setInterval(() => {
+  const now = Date.now();
+  for (const [token, session] of authSessions.entries()) {
+    if (session.expiresAt < now) authSessions.delete(token);
+  }
+  for (const [key, bucket] of rateLimitBuckets.entries()) {
+    if (bucket.resetAt < now) rateLimitBuckets.delete(key);
+  }
+}, 15 * 60 * 1000);
+sessionCleanupTimer.unref();
 
 function ensureUserSecurityColumns() {
   try {
@@ -149,6 +256,8 @@ function verifyPassword(password, storedValue) {
   return suppliedHash.length === expectedHash.length && timingSafeEqual(suppliedHash, expectedHash);
 }
 
+const DUMMY_PASSWORD_HASH = hashPassword('invalid-login-timing-padding');
+
 function encryptSecret(value) {
   const iv = randomBytes(12);
   const cipher = createCipheriv('aes-256-gcm', authEncryptionKey, iv);
@@ -181,25 +290,62 @@ function sanitizeUser(row) {
 }
 
 function createAuthSession(user, purpose = 'auth') {
+  const existingSessions = [...authSessions.entries()]
+    .filter(([, session]) => session.userId === user.id)
+    .sort((left, right) => left[1].createdAt - right[1].createdAt);
+  while (existingSessions.length >= 5) {
+    const [oldestToken] = existingSessions.shift();
+    authSessions.delete(oldestToken);
+  }
   const token = randomBytes(32).toString('hex');
-  authSessions.set(token, { userId: user.id, role: user.role, purpose, expiresAt: Date.now() + 12 * 60 * 60 * 1000 });
+  const createdAt = Date.now();
+  authSessions.set(token, { userId: user.id, purpose, createdAt, expiresAt: createdAt + SESSION_TTL_MS });
   return token;
 }
 
 function readSession(req) {
-  const token = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '');
+  const authorization = String(req.headers.authorization || '');
+  if (!/^Bearer\s+[a-f0-9]{64}$/i.test(authorization)) return null;
+  const token = authorization.replace(/^Bearer\s+/i, '');
   const session = authSessions.get(token);
   if (session && session.expiresAt >= Date.now()) return session;
   if (token) authSessions.delete(token);
   return null;
 }
 
-function requireSession(req, res, next) {
-  const session = readSession(req);
-  if (!session || session.expiresAt < Date.now()) {
-    return res.status(401).json({ error: 'Sessão inválida ou expirada.' });
+function requireSessionPurpose(allowedPurposes = ['auth']) {
+  return (req, res, next) => {
+    const session = readSession(req);
+    if (!session || !allowedPurposes.includes(session.purpose)) {
+      return res.status(401).json({ error: 'Sessão inválida ou expirada.' });
+    }
+    const user = db.prepare(`SELECT * FROM usuarios_lepta WHERE id = ?`).get(session.userId);
+    if (!user || user.fully_locked || user.access_locked) {
+      revokeSessionsForUser(session.userId);
+      return res.status(423).json({ error: 'Acesso bloqueado.' });
+    }
+    req.authSession = { ...session, role: user.role };
+    req.authUser = user;
+    next();
+  };
+}
+
+const requireSession = requireSessionPurpose(['auth']);
+const requireSecuritySetupSession = requireSessionPurpose(['auth', 'security-setup']);
+
+function requirePermission(permission) {
+  return (req, res, next) => {
+    if (!req.authUser || !hasPermission(req.authUser, permission)) {
+      return res.status(403).json({ error: 'Usuário sem permissão para acessar este recurso.' });
+    }
+    next();
+  };
+}
+
+function requireMaster(req, res, next) {
+  if (req.authSession?.role !== 'MASTER') {
+    return res.status(403).json({ error: 'Acesso restrito ao administrador.' });
   }
-  req.authSession = session;
   next();
 }
 
@@ -797,8 +943,52 @@ app.delete('/api/clientes-cadastro/:documento', requireSession, requireClientReg
 // -------------------------------------------------------------
 // ROTA CUSTOMIZADA: IMPORTAÇÃO DE PLANILHA VIA STREAMING PARA SQLITE
 // -------------------------------------------------------------
-app.post('/api/sync-link', async (req, res) => {
-  const sourceUrl = req.body.url || req.body.sourceUrl;
+const MAX_SYNC_FILE_BYTES = 350 * 1024 * 1024;
+
+function quoteSqlIdentifier(value) {
+  return `"${String(value).replace(/"/g, '""')}"`;
+}
+
+const PROTECTED_DATABASE_TABLES = new Set([
+  'usuarios_lepta', 'groups', 'areas', 'calendarevents', 'databasetables',
+  'dashboards', 'power_bi_dashboards', 'clientes_cadastro', 'sqlite_sequence'
+]);
+
+function validateImportedSchema(tableName, headers) {
+  const normalizedTableName = String(tableName || '').trim().toLowerCase();
+  const hasControlCharacters = [...normalizedTableName].some(character => character.charCodeAt(0) < 32);
+  if (!normalizedTableName || normalizedTableName.length > 120 || hasControlCharacters) {
+    throw new Error('A planilha contém um nome de base inválido.');
+  }
+  if (PROTECTED_DATABASE_TABLES.has(normalizedTableName) || normalizedTableName.startsWith('sqlite_')) {
+    throw new Error(`A base "${tableName}" usa um nome reservado do sistema.`);
+  }
+  if (!headers.length || headers.length > 500 || headers.some(header => String(header).length > 200)) {
+    throw new Error(`A base "${tableName}" possui colunas fora dos limites permitidos.`);
+  }
+}
+
+function isLoopbackRequest(req) {
+  return ['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(req.ip);
+}
+
+function validateRemoteSpreadsheetUrl(value) {
+  const url = new URL(value);
+  if (url.username || url.password) throw new Error('Links com credenciais embutidas não são permitidos.');
+  if (url.protocol !== 'https:') throw new Error('Somente links HTTPS são permitidos.');
+  const hostname = url.hostname.toLowerCase();
+  const configuredHosts = String(process.env.LEPTA_SYNC_ALLOWED_HOSTS || '')
+    .split(',').map(host => host.trim().toLowerCase()).filter(Boolean);
+  const allowedHosts = ['sharepoint.com', 'onedrive.live.com', '1drv.ms', ...configuredHosts];
+  const isAllowed = allowedHosts.some(host => hostname === host || hostname.endsWith(`.${host}`));
+  if (!isAllowed) throw new Error('O domínio informado não está autorizado para importação.');
+  return url;
+}
+
+app.post('/api/sync-link', requireSession, requirePermission('9'), async (req, res) => {
+  const sourceUrl = typeof req.body?.url === 'string'
+    ? req.body.url
+    : (typeof req.body?.sourceUrl === 'string' ? req.body.sourceUrl : '');
 
   if (!sourceUrl) {
     return res.status(400).json({ success: false, message: 'URL da planilha não fornecida.' });
@@ -813,18 +1003,30 @@ app.post('/api/sync-link', async (req, res) => {
       cleanUrl = cleanUrl.slice(1, -1);
     }
 
-    if (cleanUrl.startsWith('file://')) {
-      cleanUrl = cleanUrl.replace(/^file:\/\/\//, '');
-    }
-
-    if (fs.existsSync(cleanUrl)) {
-      const stats = fs.statSync(cleanUrl);
+    const looksLikeRemoteUrl = /^https?:\/\//i.test(cleanUrl);
+    if (!looksLikeRemoteUrl) {
+      if (!isLoopbackRequest(req) && process.env.LEPTA_ALLOW_LOCAL_SYNC !== 'true') {
+        return res.status(403).json({ success: false, message: 'Leitura de arquivos locais não permitida neste servidor.' });
+      }
+      if (cleanUrl.startsWith('file://')) cleanUrl = cleanUrl.replace(/^file:\/\/\//, '');
+      tempFilePath = path.resolve(cleanUrl);
+      if (!['.xlsx', '.xlsm'].includes(path.extname(tempFilePath).toLowerCase())) {
+        return res.status(400).json({ success: false, message: 'Somente planilhas .xlsx ou .xlsm são permitidas.' });
+      }
+      if (!fs.existsSync(tempFilePath)) {
+        return res.status(404).json({ success: false, message: 'Arquivo local não encontrado.' });
+      }
+      const stats = fs.statSync(tempFilePath);
       if (stats.isDirectory()) {
          return res.status(400).json({ success: false, message: 'O caminho informado é de uma pasta, não de um arquivo Excel. Por favor, aponte para o arquivo .xlsx final.' });
       }
-      tempFilePath = cleanUrl;
+      if (stats.size > MAX_SYNC_FILE_BYTES) {
+        return res.status(413).json({ success: false, message: 'A planilha excede o limite seguro de 350 MB.' });
+      }
       console.log(`📂 Lendo arquivo local diretamente: ${tempFilePath}`);
     } else {
+      const remoteUrl = validateRemoteSpreadsheetUrl(cleanUrl);
+      cleanUrl = remoteUrl.toString();
       tempFilePath = path.join(process.cwd(), `temp_download_${Date.now()}.xlsx`);
       console.log(`📡 Baixando planilha do SharePoint/OneDrive no servidor Node: ${cleanUrl}`);
 
@@ -839,10 +1041,13 @@ app.post('/api/sync-link', async (req, res) => {
       });
 
       if (!resFetch.ok) {
-        throw new Error(`Falha ao baixar arquivo remoto (${resFetch.SITUACAO}).`);
+        throw new Error(`Falha ao baixar arquivo remoto (${resFetch.status}).`);
       }
 
+      const contentLength = Number(resFetch.headers.get('content-length') || 0);
+      if (contentLength > MAX_SYNC_FILE_BYTES) throw new Error('A planilha excede o limite seguro de 350 MB.');
       const arrayBuffer = await resFetch.arrayBuffer();
+      if (arrayBuffer.byteLength > MAX_SYNC_FILE_BYTES) throw new Error('A planilha excede o limite seguro de 350 MB.');
       fs.writeFileSync(tempFilePath, Buffer.from(arrayBuffer));
       console.log(`💾 Download concluído!`);
     }
@@ -929,13 +1134,15 @@ app.post('/api/sync-link', async (req, res) => {
         });
 
         if (headers.length > 0) {
-           const colsSql = headers.map(h => `"${h}" TEXT`).join(', ');
-           const createSql = `CREATE TABLE "${tableName}" (${colsSql})`;
+           validateImportedSchema(tableName, headers);
+           const quotedTableName = quoteSqlIdentifier(tableName);
+           const colsSql = headers.map(h => `${quoteSqlIdentifier(h)} TEXT`).join(', ');
+           const createSql = `CREATE TABLE ${quotedTableName} (${colsSql})`;
            try {
-             db.exec(`DROP TABLE IF EXISTS "${tableName}"`);
+             db.exec(`DROP TABLE IF EXISTS ${quotedTableName}`);
              db.exec(createSql);
              const placeholders = headers.map(() => '?').join(', ');
-             const insertSql = `INSERT INTO "${tableName}" (${headers.map(h => `"${h}"`).join(', ')}) VALUES (${placeholders})`;
+             const insertSql = `INSERT INTO ${quotedTableName} (${headers.map(quoteSqlIdentifier).join(', ')}) VALUES (${placeholders})`;
              insertStmt = db.prepare(insertSql);
            } catch (sqlErr) {
              console.error(`ERRO SQLITE NA ABA "${tableName}":`, sqlErr.message);
@@ -1044,7 +1251,7 @@ function normalizeStr(str) {
   return finalStr;
 }
 
-app.get('/api/analise-clientes', async (req, res) => {
+app.get('/api/analise-clientes', requireSession, requirePermission('8.1'), async (req, res) => {
   try {
     const groupByEconomic = req.query.groupBy === 'economicGroup';
     let rowsNova = [];
@@ -1234,7 +1441,7 @@ app.get('/api/analise-clientes', async (req, res) => {
   }
 });
 
-app.get('/api/analise-sacados/:cedente', async (req, res) => {
+app.get('/api/analise-sacados/:cedente', requireSession, requirePermission('8.1'), async (req, res) => {
   try {
     const cedenteParams = req.params.cedente;
     const normCedenteParams = normalizeStr(cedenteParams);
@@ -1308,7 +1515,7 @@ app.get('/api/analise-sacados/:cedente', async (req, res) => {
   }
 });
 
-app.get('/api/analise-ua/:cedente', async (req, res) => {
+app.get('/api/analise-ua/:cedente', requireSession, requirePermission('8.1'), async (req, res) => {
   try {
     const cedenteParams = req.params.cedente;
     const normCedenteParams = normalizeStr(cedenteParams);
@@ -1429,7 +1636,7 @@ app.get('/api/analise-ua/:cedente', async (req, res) => {
   }
 });
 
-app.get('/api/analise-un/:cedente', (req, res) => {
+app.get('/api/analise-un/:cedente', requireSession, requirePermission('8.1'), (req, res) => {
   try {
     const cedente = req.params.cedente;
     let rowsNpl = [];
@@ -1485,7 +1692,7 @@ app.get('/api/health', (req, res) => {
   }
 });
 
-app.post('/api/auth/login', (req, res) => {
+app.post('/api/auth/login', authIpRateLimiter, loginRateLimiter, (req, res) => {
   const loginId = String(req.body?.loginId || '').trim().toLowerCase();
   const password = String(req.body?.password || '');
   if (!loginId || !password) {
@@ -1506,6 +1713,7 @@ app.post('/api/auth/login', (req, res) => {
       return res.status(423).json({ error: 'Acesso bloqueado. Use sua palavra secreta para redefinir a senha.', recoveryRequired: true });
     }
     if (!user?.password || !verifyPassword(password, user.password)) {
+      if (!user) verifyPassword(password, DUMMY_PASSWORD_HASH);
       if (user) {
         const attempts = Number(user.login_attempts || 0) + 1;
         db.prepare(`UPDATE usuarios_lepta SET login_attempts = ?, access_locked = ? WHERE id = ?`)
@@ -1532,7 +1740,13 @@ app.get('/api/auth/me', requireSession, (req, res) => {
   return res.json({ user: sanitizeUser(user) });
 });
 
-app.post('/api/auth/first-access/check', (req, res) => {
+app.post('/api/auth/logout', requireSession, (req, res) => {
+  const token = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '');
+  authSessions.delete(token);
+  return res.status(204).end();
+});
+
+app.post('/api/auth/first-access/check', authIpRateLimiter, recoveryRateLimiter, (req, res) => {
   const loginId = String(req.body?.loginId || '').trim().toLowerCase();
   if (!loginId) return res.status(400).json({ error: 'Informe o e-mail ou usuário.' });
 
@@ -1551,7 +1765,7 @@ app.post('/api/auth/first-access/check', (req, res) => {
   }
 });
 
-app.post('/api/auth/first-access/password', (req, res) => {
+app.post('/api/auth/first-access/password', authIpRateLimiter, recoveryRateLimiter, (req, res) => {
   const id = String(req.body?.id || '');
   const password = String(req.body?.password || '');
   if (password.length < 10) {
@@ -1573,7 +1787,7 @@ app.post('/api/auth/first-access/password', (req, res) => {
   }
 });
 
-app.post('/api/auth/security-setup', requireSession, (req, res) => {
+app.post('/api/auth/security-setup', requireSecuritySetupSession, (req, res) => {
   const question = String(req.body?.question || '').trim();
   const answer = String(req.body?.answer || '').trim().toLowerCase();
   if (question.length < 5) return res.status(400).json({ error: 'Informe uma pergunta secreta válida.' });
@@ -1592,7 +1806,7 @@ app.post('/api/auth/security-setup', requireSession, (req, res) => {
   }
 });
 
-app.post('/api/auth/recovery/question', (req, res) => {
+app.post('/api/auth/recovery/question', authIpRateLimiter, recoveryRateLimiter, (req, res) => {
   const loginId = String(req.body?.loginId || '').trim().toLowerCase();
   const user = db.prepare(`SELECT * FROM usuarios_lepta WHERE lower(username) = ? OR lower(email) = ? LIMIT 1`).get(loginId, loginId);
   if (!user || !user.secret_question) return res.status(404).json({ error: 'Recuperação não disponível.' });
@@ -1600,7 +1814,7 @@ app.post('/api/auth/recovery/question', (req, res) => {
   return res.json({ question: decryptSecret(user.secret_question) });
 });
 
-app.post('/api/auth/recovery/reset', (req, res) => {
+app.post('/api/auth/recovery/reset', authIpRateLimiter, recoveryRateLimiter, (req, res) => {
   const loginId = String(req.body?.loginId || '').trim().toLowerCase();
   const answer = String(req.body?.answer || '').trim().toLowerCase();
   const password = String(req.body?.password || '');
@@ -1623,16 +1837,17 @@ app.post('/api/auth/recovery/reset', (req, res) => {
     SET password = ?, login_attempts = 0, secret_attempts = 0, access_locked = 0
     WHERE id = ?
   `).run(hashPassword(password), user.id);
+  revokeSessionsForUser(user.id);
   return res.json({ success: true });
 });
 
-app.post('/api/auth/admin/unlock/:id', requireSession, (req, res) => {
-  if (req.authSession.role !== 'MASTER') return res.status(403).json({ error: 'Somente um usuário MASTER pode desbloquear acessos.' });
+app.post('/api/auth/admin/unlock/:id', requireSession, requireMaster, (req, res) => {
   const result = db.prepare(`
     UPDATE usuarios_lepta SET login_attempts = 0, secret_attempts = 0, access_locked = 0, fully_locked = 0
     WHERE id = ?
   `).run(req.params.id);
   if (!result.changes) return res.status(404).json({ error: 'Usuário não encontrado.' });
+  revokeSessionsForUser(req.params.id);
   return res.json({ success: true });
 });
 
@@ -1643,6 +1858,16 @@ function parseStringArray(value) {
     return Array.isArray(parsed) ? parsed.map(String) : [];
   } catch {
     return [];
+  }
+}
+
+function isAllowedPowerBiUrl(value) {
+  try {
+    const url = new URL(String(value || '').trim());
+    const hostname = url.hostname.toLowerCase();
+    return url.protocol === 'https:' && (hostname === 'app.powerbi.com' || hostname.endsWith('.powerbi.com'));
+  } catch {
+    return false;
   }
 }
 
@@ -1733,6 +1958,10 @@ app.get('/api/power-bi-dashboards', requireSession, (req, res) => {
 app.post('/api/power-bi-dashboards', requireSession, requirePowerBiManager, (req, res) => {
   const title = String(req.body?.title || '').trim();
   const url = String(req.body?.url || '').trim();
+  const embedUrl = String(req.body?.embedUrl || url).trim();
+  if ((url && !isAllowedPowerBiUrl(url)) || (embedUrl && !isAllowedPowerBiUrl(embedUrl))) {
+    return res.status(400).json({ error: 'Informe um link HTTPS válido do Power BI.' });
+  }
   if (!title || !url) return res.status(400).json({ error: 'Nome e link do Power BI são obrigatórios.' });
 
   try {
@@ -1749,7 +1978,7 @@ app.post('/api/power-bi-dashboards', requireSession, requirePowerBiManager, (req
       id,
       title,
       url,
-      String(req.body?.embedUrl || url),
+      embedUrl,
       String(req.body?.description || '').trim(),
       accessType,
       JSON.stringify(parseStringArray(req.body?.allowedGroups)),
@@ -1769,6 +1998,10 @@ app.post('/api/power-bi-dashboards', requireSession, requirePowerBiManager, (req
 app.put('/api/power-bi-dashboards/:id', requireSession, requirePowerBiManager, (req, res) => {
   const title = String(req.body?.title || '').trim();
   const url = String(req.body?.url || '').trim();
+  const embedUrl = String(req.body?.embedUrl || url).trim();
+  if ((url && !isAllowedPowerBiUrl(url)) || (embedUrl && !isAllowedPowerBiUrl(embedUrl))) {
+    return res.status(400).json({ error: 'Informe um link HTTPS válido do Power BI.' });
+  }
   if (!title || !url) return res.status(400).json({ error: 'Nome e link do Power BI são obrigatórios.' });
 
   try {
@@ -1782,7 +2015,7 @@ app.put('/api/power-bi-dashboards/:id', requireSession, requirePowerBiManager, (
     `).run(
       title,
       url,
-      String(req.body?.embedUrl || url),
+      embedUrl,
       String(req.body?.description || '').trim(),
       accessType,
       JSON.stringify(parseStringArray(req.body?.allowedGroups)),
@@ -1815,18 +2048,75 @@ function isReservedPowerBiTable(table) {
   return table === 'dashboards' || table === 'power_bi_dashboards';
 }
 
-app.get('/:table', (req, res, next) => {
+const genericTablePolicies = {
+  usuarios_lepta: { read: 'MASTER', write: 'MASTER' },
+  groups: { read: 'AUTHENTICATED', write: 'MASTER' },
+  calendarEvents: { read: 'AUTHENTICATED', write: '6' },
+  databaseTables: { read: '9', write: '9' },
+  credits: { read: '1', write: '1' },
+  risks: { read: '2', write: '2' },
+  committees: { read: '3', write: '3' }
+};
+
+function resolveGenericTable(req, res, next) {
   const table = getActualTableName(req.params.table);
-  if (isReservedPowerBiTable(table)) return next();
-  if (table === 'usuarios_lepta') {
-    const session = readSession(req);
-    if (!session) return res.status(401).json({ error: 'Sessão inválida.' });
-    if (session.role !== 'MASTER') return res.status(403).json({ error: 'Acesso restrito ao administrador.' });
+  const policy = genericTablePolicies[table];
+  if (!policy) {
+    if (['GET', 'HEAD'].includes(req.method)) return next('route');
+    return res.status(404).json({ error: 'Recurso não encontrado.' });
   }
+  req.genericTable = table;
+  next();
+}
+
+function authorizeGenericTable(req, res, next) {
+  const policy = genericTablePolicies[req.genericTable];
+  const requiredAccess = ['GET', 'HEAD'].includes(req.method) ? policy.read : policy.write;
+  if (requiredAccess === 'MASTER' && req.authSession.role !== 'MASTER') {
+    return res.status(403).json({ error: 'Acesso restrito ao administrador.' });
+  }
+  if (!['MASTER', 'AUTHENTICATED'].includes(requiredAccess) && !hasPermission(req.authUser, requiredAccess)) {
+    return res.status(403).json({ error: 'Usuário sem permissão para acessar este recurso.' });
+  }
+  next();
+}
+
+function validateGenericData(data) {
+  const keys = Object.keys(data);
+  if (!keys.length || keys.length > 50 || keys.some(key => !/^[A-Za-z_][A-Za-z0-9_]*$/.test(key))) {
+    throw new Error('Estrutura de dados inválida.');
+  }
+  return keys;
+}
+
+function restrictUserWriteFields(data) {
+  const allowedFields = new Set(['id', 'username', 'email', 'role', 'permissions']);
+  for (const key of Object.keys(data)) {
+    if (!allowedFields.has(key)) delete data[key];
+  }
+}
+
+function usesJsonContentStorage(table) {
+  if (!['databaseTables', 'groups'].includes(table) || !tableExists(table)) return false;
+  return db.prepare(`SELECT 1 FROM pragma_table_info(?) WHERE name = 'json_content'`).get(table) !== undefined;
+}
+
+function parseJsonContentRow(row) {
+  if (!row) return null;
+  try {
+    return { id: row.id, ...JSON.parse(row.json_content || '{}') };
+  } catch {
+    return { id: row.id };
+  }
+}
+
+app.get('/:table', resolveGenericTable, requireSession, authorizeGenericTable, (req, res, next) => {
+  const table = req.genericTable;
+  if (isReservedPowerBiTable(table)) return next();
   try {
     const rows = db.prepare(`SELECT * FROM "${table}"`).all();
-    if (table === 'databaseTables') {
-       res.json(rows.map(r => JSON.parse(r.json_content)));
+    if (usesJsonContentStorage(table)) {
+       res.json(rows.map(parseJsonContentRow));
     } else if (table === 'usuarios_lepta') {
        res.json(rows.map(sanitizeUser));
     } else {
@@ -1840,22 +2130,15 @@ app.get('/:table', (req, res, next) => {
   }
 });
 
-app.get('/:table/:id', (req, res, next) => {
-  const table = getActualTableName(req.params.table);
+app.get('/:table/:id', resolveGenericTable, requireSession, authorizeGenericTable, (req, res, next) => {
+  const table = req.genericTable;
   if (isReservedPowerBiTable(table)) return next();
-  if (table === 'usuarios_lepta') {
-    const session = readSession(req);
-    if (!session) return res.status(401).json({ error: 'Sessão inválida.' });
-    if (session.role !== 'MASTER' && session.userId !== req.params.id) {
-      return res.status(403).json({ error: 'Acesso não autorizado.' });
-    }
-  }
   try {
     const row = db.prepare(`SELECT * FROM "${table}" WHERE id = ?`).get(req.params.id);
     if (!row) return res.status(404).json({});
 
-    if (table === 'databaseTables') {
-       res.json(JSON.parse(row.json_content));
+    if (usesJsonContentStorage(table)) {
+       res.json(parseJsonContentRow(row));
     } else if (table === 'usuarios_lepta') {
        res.json(sanitizeUser(row));
     } else {
@@ -1869,17 +2152,23 @@ app.get('/:table/:id', (req, res, next) => {
   }
 });
 
-app.post('/:table', (req, res) => {
-  const table = getActualTableName(req.params.table);
+app.post('/:table', resolveGenericTable, requireSession, authorizeGenericTable, (req, res) => {
+  const table = req.genericTable;
   if (isReservedPowerBiTable(table)) return res.status(410).json({ error: 'Use a API dedicada de dashboards do Power BI.' });
-  const session = table === 'usuarios_lepta' ? readSession(req) : null;
-  if (table === 'usuarios_lepta' && session?.role !== 'MASTER') return res.status(403).json({ error: 'Somente MASTER pode criar usuários.' });
   const data = { ...req.body };
-  if (table === 'usuarios_lepta') data.password = '';
+  if (table === 'usuarios_lepta') {
+    restrictUserWriteFields(data);
+    data.password = '';
+  }
   if (!data.id) data.id = Date.now().toString();
 
   try {
-    const keys = Object.keys(data);
+    if (usesJsonContentStorage(table)) {
+      db.prepare(`INSERT INTO "${table}" (id, json_content) VALUES (?, ?)`)
+        .run(data.id, JSON.stringify(data));
+      return res.status(201).json(data);
+    }
+    const keys = validateGenericData(data);
     const colsSql = keys.map(k => `"${k}"`).join(', ');
     const placeholders = keys.map(() => '?').join(', ');
     const values = keys.map(k => typeof data[k] === 'object' ? JSON.stringify(data[k]) : data[k]);
@@ -1891,22 +2180,26 @@ app.post('/:table', (req, res) => {
     db.prepare(`INSERT INTO "${table}" (${colsSql}) VALUES (${placeholders})`).run(values);
     res.status(201).json(table === 'usuarios_lepta' ? sanitizeUser(data) : data);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error('Erro ao criar registro:', err.message);
+    res.status(500).json({ error: 'Não foi possível criar o registro.' });
   }
 });
 
-app.put('/:table/:id', (req, res) => {
-  const table = getActualTableName(req.params.table);
+app.put('/:table/:id', resolveGenericTable, requireSession, authorizeGenericTable, (req, res) => {
+  const table = req.genericTable;
   if (isReservedPowerBiTable(table)) return res.status(410).json({ error: 'Use a API dedicada de dashboards do Power BI.' });
-  const session = table === 'usuarios_lepta' ? readSession(req) : null;
-  if (table === 'usuarios_lepta' && session?.role !== 'MASTER') return res.status(403).json({ error: 'Somente MASTER pode alterar usuários.' });
   const id = req.params.id;
   const data = { ...req.body };
-  if (table === 'usuarios_lepta') delete data.password;
+  if (table === 'usuarios_lepta') restrictUserWriteFields(data);
   if (!data.id) data.id = id;
 
   try {
-    const keys = Object.keys(data);
+    if (usesJsonContentStorage(table)) {
+      db.prepare(`INSERT OR REPLACE INTO "${table}" (id, json_content) VALUES (?, ?)`)
+        .run(id, JSON.stringify(data));
+      return res.json(data);
+    }
+    const keys = validateGenericData(data);
     const colsSql = keys.map(k => `"${k}"`).join(', ');
     const placeholders = keys.map(() => '?').join(', ');
     const values = keys.map(k => typeof data[k] === 'object' ? JSON.stringify(data[k]) : data[k]);
@@ -1922,21 +2215,27 @@ app.put('/:table/:id', (req, res) => {
     db.prepare(`REPLACE INTO "${table}" (${colsSql}) VALUES (${placeholders})`).run(values);
     res.json(data);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error('Erro ao atualizar registro:', err.message);
+    res.status(500).json({ error: 'Não foi possível atualizar o registro.' });
   }
 });
 
-app.patch('/:table/:id', (req, res) => {
-  const table = getActualTableName(req.params.table);
+app.patch('/:table/:id', resolveGenericTable, requireSession, authorizeGenericTable, (req, res) => {
+  const table = req.genericTable;
   if (isReservedPowerBiTable(table)) return res.status(410).json({ error: 'Use a API dedicada de dashboards do Power BI.' });
-  const session = table === 'usuarios_lepta' ? readSession(req) : null;
-  if (table === 'usuarios_lepta' && session?.role !== 'MASTER') return res.status(403).json({ error: 'Somente MASTER pode alterar usuários.' });
   const id = req.params.id;
   const data = { ...req.body };
-  if (table === 'usuarios_lepta') delete data.password;
+  if (table === 'usuarios_lepta') restrictUserWriteFields(data);
 
   try {
-    const keys = Object.keys(data);
+    if (usesJsonContentStorage(table)) {
+      const existing = parseJsonContentRow(db.prepare(`SELECT * FROM "${table}" WHERE id = ?`).get(id));
+      if (!existing) return res.status(404).json({ error: 'Registro não encontrado.' });
+      const updated = { ...existing, ...data, id };
+      db.prepare(`UPDATE "${table}" SET json_content = ? WHERE id = ?`).run(JSON.stringify(updated), id);
+      return res.json(updated);
+    }
+    const keys = validateGenericData(data);
     const setSql = keys.map(k => `"${k}" = ?`).join(', ');
     const values = keys.map(k => typeof data[k] === 'object' ? JSON.stringify(data[k]) : data[k]);
     values.push(id);
@@ -1945,32 +2244,34 @@ app.patch('/:table/:id', (req, res) => {
     const row = db.prepare(`SELECT * FROM "${table}" WHERE id = ?`).get(id);
     res.json(table === 'usuarios_lepta' ? sanitizeUser(row) : parseRow(row));
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error('Erro ao alterar registro:', err.message);
+    res.status(500).json({ error: 'Não foi possível alterar o registro.' });
   }
 });
 
-app.delete('/:table/:id', (req, res) => {
-  const table = getActualTableName(req.params.table);
+app.delete('/:table/:id', resolveGenericTable, requireSession, authorizeGenericTable, (req, res) => {
+  const table = req.genericTable;
   if (isReservedPowerBiTable(table)) return res.status(410).json({ error: 'Use a API dedicada de dashboards do Power BI.' });
-  const session = table === 'usuarios_lepta' ? readSession(req) : null;
-  if (table === 'usuarios_lepta' && session?.role !== 'MASTER') return res.status(403).json({ error: 'Somente MASTER pode excluir usuários.' });
   try {
     if (table === 'usuarios_lepta') {
       const target = db.prepare(`SELECT role FROM usuarios_lepta WHERE id = ?`).get(req.params.id);
       if (!target) return res.status(404).json({ error: 'Usuário não encontrado.' });
+      if (req.authSession.userId === req.params.id) return res.status(400).json({ error: 'Você não pode excluir o próprio usuário.' });
       if (target.role === 'MASTER') return res.status(400).json({ error: 'Usuários MASTER não podem ser excluídos por esta tela.' });
     }
     db.prepare(`DELETE FROM "${table}" WHERE id = ?`).run(req.params.id);
+    if (table === 'usuarios_lepta') revokeSessionsForUser(req.params.id);
     res.json({});
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error('Erro ao excluir registro:', err.message);
+    res.status(500).json({ error: 'Não foi possível excluir o registro.' });
   }
 });
 
 // -------------------------------------------------------------
 // ROTA FALLBACK PARA O REACT ROUTER (DEVE SER A ÚLTIMA ANTES DO LISTEN)
 // -------------------------------------------------------------
-app.use((req, res, next) => {
+app.use((req, res) => {
   if (req.path.startsWith('/api/') || req.path.startsWith('/table/')) {
     return res.status(404).json({ error: 'Endpoint not found' });
   }

@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { FileText, Settings, Users, HelpCircle, Calendar as CalendarIcon, ChevronLeft, ChevronRight, Gift, Sun } from 'lucide-react';
-import { API_BASE_URL } from '../../../config/api';
+import { API_BASE_URL, getAuthHeaders } from '../../../config/api';
 import '../../core/styles/Dashboard.css';
 
 interface CalendarEvent {
@@ -33,7 +33,7 @@ const Dashboard = () => {
     const fetchEvents = async () => {
       try {
         setLoading(true);
-        const res = await fetch(`${API_BASE_URL}/calendarEvents`);
+        const res = await fetch(`${API_BASE_URL}/calendarEvents`, { headers: getAuthHeaders() });
         const data: CalendarEvent[] = await res.json();
         setEvents(data || []);
       } catch (err) {
