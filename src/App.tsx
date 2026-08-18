@@ -19,6 +19,7 @@ import CustomerAnalysis from './pages/internal/CustomerAnalysis';
 import DatabaseManagement from './pages/internal/DatabaseManagement';
 import ProtectedRoute from './components/ProtectedRoute';
 import InternalLayout from './components/InternalLayout';
+import AccessRoute from './components/AccessRoute';
 import { AuthProvider } from './contexts/AuthContext';
 import './App.css';
 
@@ -49,19 +50,19 @@ function App() {
           <Route element={<ProtectedRoute />}>
             <Route element={<InternalLayout />}>
               <Route path="/dashboard" element={<Dashboard />} />
-              <Route path="/creditos" element={<Credits />} />
-              <Route path="/riscos" element={<Risks />} />
-              <Route path="/comite" element={<Committee />} />
-              <Route path="/marketing" element={<Marketing />} />
-              <Route path="/dashboards" element={<DashboardsView />} />
-              <Route path="/bi" element={<BI />} />
-              <Route path="/financeiro" element={<FinanceDashboard />} />
-              <Route path="/financeiro/extratos" element={<Finance />} />
-              <Route path="/intelligence/analise-clientes" element={<CustomerAnalysis />} />
-              <Route path="/banco-de-dados" element={<DatabaseManagement />} />
-              <Route path="/permissions" element={<Permissions />} />
-              <Route path="/permissions/create-user" element={<CreateUser />} />
-              <Route path="/permissions/groups" element={<Groups />} />
+              <Route path="/creditos" element={<AccessRoute permission="1"><Credits /></AccessRoute>} />
+              <Route path="/riscos" element={<AccessRoute permission="2"><Risks /></AccessRoute>} />
+              <Route path="/comite" element={<AccessRoute permission="3"><Committee /></AccessRoute>} />
+              <Route path="/marketing" element={<AccessRoute permission="6"><Marketing /></AccessRoute>} />
+              <Route path="/dashboards" element={<AccessRoute permission="5"><DashboardsView /></AccessRoute>} />
+              <Route path="/bi" element={<AccessRoute permission="4"><BI /></AccessRoute>} />
+              <Route path="/financeiro" element={<AccessRoute permission="7.1"><FinanceDashboard /></AccessRoute>} />
+              <Route path="/financeiro/extratos" element={<AccessRoute permission="7.1"><Finance /></AccessRoute>} />
+              <Route path="/intelligence/analise-clientes" element={<AccessRoute permission="8.1"><CustomerAnalysis /></AccessRoute>} />
+              <Route path="/banco-de-dados" element={<AccessRoute permission="9"><DatabaseManagement /></AccessRoute>} />
+              <Route path="/permissions" element={<AccessRoute masterOnly><Permissions /></AccessRoute>} />
+              <Route path="/permissions/create-user" element={<AccessRoute masterOnly><CreateUser /></AccessRoute>} />
+              <Route path="/permissions/groups" element={<AccessRoute masterOnly><Groups /></AccessRoute>} />
             </Route>
           </Route>
         </Routes>

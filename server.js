@@ -63,6 +63,20 @@ function ensureUserSecurityColumns() {
   }
 }
 
+function ensureAccessAreas() {
+  const areas = [
+    ['7.1', 'Financeiro > Processar Extrato'],
+    ['8.1', 'Lepta Intelligence > Análise de Clientes'],
+    ['10', 'Confirmação']
+  ];
+  try {
+    const insert = db.prepare(`INSERT OR IGNORE INTO areas (id, name) VALUES (?, ?)`);
+    db.transaction(() => areas.forEach(area => insert.run(...area)))();
+  } catch (error) {
+    if (!String(error.message).includes('no such table')) throw error;
+  }
+}
+
 function hashPassword(password) {
   const salt = randomBytes(16).toString('hex');
   const hash = scryptSync(password, salt, 64).toString('hex');
@@ -137,6 +151,7 @@ function requireSession(req, res, next) {
 }
 
 ensureUserSecurityColumns();
+ensureAccessAreas();
 
 function migratePlaintextPasswords() {
   try {
@@ -1076,6 +1091,13 @@ app.post('/api/auth/login', (req, res) => {
   }
 });
 
+app.get('/api/auth/me', requireSession, (req, res) => {
+  const user = db.prepare(`SELECT * FROM usuarios_lepta WHERE id = ?`).get(req.authSession.userId);
+  if (!user) return res.status(404).json({ error: 'Usuário não encontrado.' });
+  if (user.fully_locked || user.access_locked) return res.status(423).json({ error: 'Acesso bloqueado.' });
+  return res.json({ user: sanitizeUser(user) });
+});
+
 app.post('/api/auth/first-access/check', (req, res) => {
   const loginId = String(req.body?.loginId || '').trim().toLowerCase();
   if (!loginId) return res.status(400).json({ error: 'Informe o e-mail ou usuário.' });
@@ -1182,7 +1204,11 @@ app.post('/api/auth/admin/unlock/:id', requireSession, (req, res) => {
 
 app.get('/:table', (req, res, next) => {
   const table = getActualTableName(req.params.table);
-  if (table === 'usuarios_lepta' && !readSession(req)) return res.status(401).json({ error: 'Sessão inválida.' });
+  if (table === 'usuarios_lepta') {
+    const session = readSession(req);
+    if (!session) return res.status(401).json({ error: 'Sessão inválida.' });
+    if (session.role !== 'MASTER') return res.status(403).json({ error: 'Acesso restrito ao administrador.' });
+  }
   try {
     const rows = db.prepare(`SELECT * FROM "${table}"`).all();
     if (table === 'databaseTables') {
@@ -1202,7 +1228,13 @@ app.get('/:table', (req, res, next) => {
 
 app.get('/:table/:id', (req, res, next) => {
   const table = getActualTableName(req.params.table);
-  if (table === 'usuarios_lepta' && !readSession(req)) return res.status(401).json({ error: 'Sessão inválida.' });
+  if (table === 'usuarios_lepta') {
+    const session = readSession(req);
+    if (!session) return res.status(401).json({ error: 'Sessão inválida.' });
+    if (session.role !== 'MASTER' && session.userId !== req.params.id) {
+      return res.status(403).json({ error: 'Acesso não autorizado.' });
+    }
+  }
   try {
     const row = db.prepare(`SELECT * FROM "${table}" WHERE id = ?`).get(req.params.id);
     if (!row) return res.status(404).json({});
@@ -1304,6 +1336,11 @@ app.delete('/:table/:id', (req, res) => {
   const session = table === 'usuarios_lepta' ? readSession(req) : null;
   if (table === 'usuarios_lepta' && session?.role !== 'MASTER') return res.status(403).json({ error: 'Somente MASTER pode excluir usuários.' });
   try {
+    if (table === 'usuarios_lepta') {
+      const target = db.prepare(`SELECT role FROM usuarios_lepta WHERE id = ?`).get(req.params.id);
+      if (!target) return res.status(404).json({ error: 'Usuário não encontrado.' });
+      if (target.role === 'MASTER') return res.status(400).json({ error: 'Usuários MASTER não podem ser excluídos por esta tela.' });
+    }
     db.prepare(`DELETE FROM "${table}" WHERE id = ?`).run(req.params.id);
     res.json({});
   } catch (err) {

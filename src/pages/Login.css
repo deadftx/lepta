@@ -74,12 +74,32 @@
 }
 
 .forgot-password {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.35rem 0.55rem;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: transparent;
   color: var(--accent-orange);
+  font: inherit;
+  font-size: 0.86rem;
+  font-weight: 600;
   text-decoration: none;
+  cursor: pointer;
+  transition: color 0.2s ease, background 0.2s ease, border-color 0.2s ease;
 }
 
 .forgot-password:hover {
-  text-decoration: underline;
+  color: #ff9a3c;
+  border-color: rgba(245, 124, 0, 0.22);
+  background: rgba(245, 124, 0, 0.08);
+}
+
+.forgot-password:focus-visible {
+  outline: 2px solid rgba(245, 124, 0, 0.65);
+  outline-offset: 2px;
 }
 
 .login-submit {
@@ -90,4 +110,76 @@
   gap: 8px;
   padding: 12px;
   font-size: 1rem;
+}
+
+.security-setup-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+
+.security-field label {
+  display: block;
+  margin-bottom: 0.4rem;
+  color: #d8dbe2;
+  font-size: 0.84rem;
+  font-weight: 600;
+}
+
+.security-setup-form .input-group,
+.security-setup-form .input-field {
+  margin-bottom: 0;
+}
+
+.security-setup-form .input-field {
+  min-height: 46px;
+  border-radius: 9px;
+  background: rgba(4, 6, 12, 0.42);
+}
+
+.security-hint {
+  display: block;
+  padding: 0.7rem 0.8rem;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 8px;
+  color: var(--text-secondary);
+  background: rgba(255, 255, 255, 0.025);
+  font-size: 0.79rem;
+  line-height: 1.5;
+}
+
+.security-exit {
+  width: 100%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  color: var(--text-secondary);
+}
+
+.security-exit:hover {
+  color: #fff;
+}
+
+@media (max-width: 520px) {
+  .login-page {
+    padding: 14px;
+  }
+
+  .login-container {
+    padding: 1.5rem;
+  }
+
+  .login-header h2 {
+    font-size: 1.7rem;
+  }
+
+  .login-options {
+    gap: 0.75rem;
+    align-items: center;
+  }
+
+  .forgot-password {
+    text-align: right;
+  }
 }

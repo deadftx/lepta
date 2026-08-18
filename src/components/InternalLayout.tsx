@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react';
-import { LogOut, User, Bell, ShieldAlert, DollarSign, Shield, Scale, UserPlus, Users, ChevronDown, ChevronRight, LayoutDashboard, Sliders, Home, Calendar, Menu, X, Wallet, FileSpreadsheet, BrainCircuit, Database } from 'lucide-react';
+import { LogOut, User, Bell, ShieldAlert, DollarSign, Shield, Scale, UserPlus, Users, ChevronDown, ChevronRight, LayoutDashboard, Sliders, Home, Calendar, Menu, X, Wallet, FileSpreadsheet, BrainCircuit, Database, ClipboardCheck } from 'lucide-react';
 import { useNavigate, Outlet, Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import '../pages/internal/Dashboard.css';
+import { hasPermission } from '../config/permissions';
 
 const InternalLayout = () => {
   const navigate = useNavigate();
@@ -44,7 +45,7 @@ const InternalLayout = () => {
   };
 
   const hasAccess = (areaId: string) => {
-    return user?.role === 'MASTER' || user?.permissions.includes(areaId);
+    return hasPermission(user, areaId);
   };
 
   const navItemClass = (path: string) => {
@@ -106,7 +107,7 @@ const InternalLayout = () => {
               <Calendar size={20} /> Calendário
             </Link>
           )}
-          {hasAccess('7') && (
+          {hasAccess('7.1') && (
             <div className="nav-menu-group">
               <div 
                 className={`nav-item nav-item-parent ${isFinanceActive ? 'active' : ''}`}
@@ -128,7 +129,7 @@ const InternalLayout = () => {
               )}
             </div>
           )}
-          {(hasAccess('8') || user?.role === 'MASTER') && (
+          {hasAccess('8.1') && (
             <div className="nav-menu-group">
               <div 
                 className={`nav-item nav-item-parent ${isIntelligenceActive ? 'active' : ''}`}
@@ -150,17 +151,22 @@ const InternalLayout = () => {
               )}
             </div>
           )}
-          {(hasAccess('9') || user?.role === 'MASTER') && (
+          {hasAccess('10') && (
+            <div className="nav-item" aria-label="Confirmação">
+              <ClipboardCheck size={20} /> Confirmação
+            </div>
+          )}
+          {hasAccess('9') && (
             <Link to="/banco-de-dados" className={navItemClass('/banco-de-dados')}>
               <Database size={20} /> Banco de Dados
             </Link>
           )}
-          {(hasAccess('5') || user?.role === 'MASTER') && (
+          {hasAccess('5') && (
             <Link to="/dashboards" className={navItemClass('/dashboards')}>
               <LayoutDashboard size={20} /> Dashboards
             </Link>
           )}
-          {(hasAccess('4') || user?.role === 'MASTER') && (
+          {hasAccess('4') && (
             <Link to="/bi" className={navItemClass('/bi')}>
               <Sliders size={20} /> Business Intelligence
             </Link>

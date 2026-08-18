@@ -84,6 +84,8 @@
   max-width: 500px;
   padding: 2rem;
   border-radius: 1rem;
+  max-height: calc(100vh - 2rem);
+  overflow-y: auto;
 }
 
 .modal-header {
@@ -133,4 +135,79 @@
   display: flex;
   justify-content: flex-end;
   gap: 1rem;
+}
+
+.modal-footer-spacer {
+  flex: 1;
+}
+
+.btn-danger {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.55rem 0.85rem;
+  border: 1px solid rgba(239, 68, 68, 0.4);
+  border-radius: 0.5rem;
+  color: #f87171;
+  background: rgba(239, 68, 68, 0.08);
+  cursor: pointer;
+}
+
+.btn-danger:hover {
+  background: rgba(239, 68, 68, 0.16);
+}
+
+.permission-group {
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 0.6rem;
+  background: rgba(255, 255, 255, 0.035);
+  overflow: hidden;
+}
+
+.permission-group summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.8rem;
+  cursor: pointer;
+  font-weight: 600;
+  list-style: none;
+}
+
+.permission-group summary::-webkit-details-marker {
+  display: none;
+}
+
+.permission-group summary svg {
+  transition: transform 0.2s ease;
+}
+
+.permission-group[open] summary svg {
+  transform: rotate(180deg);
+}
+
+.permission-children {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0 0.65rem 0.65rem 1.1rem;
+}
+
+.permission-children .permission-item {
+  border-left: 2px solid rgba(255, 107, 0, 0.45);
+}
+
+@media (max-width: 600px) {
+  .modal-footer {
+    flex-wrap: wrap;
+  }
+
+  .modal-footer-spacer {
+    display: none;
+  }
+
+  .btn-danger {
+    width: 100%;
+    justify-content: center;
+  }
 }

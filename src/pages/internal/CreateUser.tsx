@@ -1,19 +1,13 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { UserPlus, Save, ArrowLeft, CheckCircle2, AlertCircle, Mail, User } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import { API_BASE_URL } from '../../config/api';
 import './Permissions.css';
-
-interface Area {
-  id: string;
-  name: string;
-}
+import PermissionSelector from '../../components/PermissionSelector';
+import { allPermissionIds } from '../../config/permissions';
 
 const CreateUser = () => {
   const navigate = useNavigate();
-  const [areas, setAreas] = useState<Area[]>([]);
-  const [loadingAreas, setLoadingAreas] = useState(true);
-
   const [email, setEmail] = useState('');
   const [username, setUsername] = useState('');
   const [role, setRole] = useState<'USER' | 'MASTER'>('USER');
@@ -21,22 +15,6 @@ const CreateUser = () => {
 
   const [submitting, setSubmitting] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
-
-  useEffect(() => {
-    const fetchAreas = async () => {
-      try {
-        setLoadingAreas(true);
-        const res = await fetch(`${API_BASE_URL}/areas`);
-        const data = await res.json();
-        setAreas(data);
-      } catch (err) {
-        console.error('Erro ao buscar áreas:', err);
-      } finally {
-        setLoadingAreas(false);
-      }
-    };
-    fetchAreas();
-  }, []);
 
   const handleEmailChange = (val: string) => {
     setEmail(val);
@@ -55,10 +33,10 @@ const CreateUser = () => {
   };
 
   const handleSelectAll = () => {
-    if (selectedPermissions.length === areas.length) {
+    if (selectedPermissions.length === allPermissionIds.length) {
       setSelectedPermissions([]);
     } else {
-      setSelectedPermissions(areas.map(a => a.id));
+      setSelectedPermissions(allPermissionIds);
     }
   };
 
@@ -102,7 +80,7 @@ const CreateUser = () => {
         email: trimmedEmail,
         password: '', // Usuário criará no "Primeiro Acesso"
         role,
-        permissions: role === 'MASTER' ? areas.map(a => a.id) : selectedPermissions
+        permissions: role === 'MASTER' ? allPermissionIds : selectedPermissions
       };
 
       const saveRes = await fetch(`${API_BASE_URL}/users`, {
@@ -235,26 +213,11 @@ const CreateUser = () => {
                   className="btn-link"
                   style={{ fontSize: '0.85rem' }}
                 >
-                  {selectedPermissions.length === areas.length ? 'Desmarcar todas' : 'Marcar todas'}
+                  {selectedPermissions.length === allPermissionIds.length ? 'Desmarcar todas' : 'Marcar todas'}
                 </button>
               </div>
 
-              {loadingAreas ? (
-                <p style={{ color: 'var(--text-muted)' }}>Carregando áreas existentes...</p>
-              ) : (
-                <div className="permissions-list" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: '0.75rem' }}>
-                  {areas.map(area => (
-                    <label key={area.id} className="permission-item">
-                      <input
-                        type="checkbox"
-                        checked={selectedPermissions.includes(area.id)}
-                        onChange={() => handleTogglePermission(area.id)}
-                      />
-                      <span style={{ fontWeight: 500 }}>{area.name}</span>
-                    </label>
-                  ))}
-                </div>
-              )}
+              <PermissionSelector selected={selectedPermissions} onToggle={handleTogglePermission} />
             </div>
           )}
 

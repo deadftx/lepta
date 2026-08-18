@@ -1,18 +1,14 @@
 import { useEffect, useState } from 'react';
 import type { User } from '../../contexts/AuthContext';
-import { Edit, Save, X, Users, UserPlus, Unlock } from 'lucide-react';
+import { Edit, Save, X, Users, UserPlus, Unlock, Trash2 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { API_BASE_URL } from '../../config/api';
 import './Permissions.css';
-
-interface Area {
-  id: string;
-  name: string;
-}
+import PermissionSelector from '../../components/PermissionSelector';
+import { normalizePermissions } from '../../config/permissions';
 
 const Permissions = () => {
   const [users, setUsers] = useState<User[]>([]);
-  const [areas, setAreas] = useState<Area[]>([]);
   const [loading, setLoading] = useState(true);
   const [editingUser, setEditingUser] = useState<User | null>(null);
   const [selectedPermissions, setSelectedPermissions] = useState<string[]>([]);
@@ -21,14 +17,9 @@ const Permissions = () => {
     try {
       setLoading(true);
       const authHeaders = { Authorization: `Bearer ${localStorage.getItem('lepta_auth_token')}` };
-      const [usersRes, areasRes] = await Promise.all([
-        fetch(`${API_BASE_URL}/users`, { headers: authHeaders }),
-        fetch(`${API_BASE_URL}/areas`)
-      ]);
+      const usersRes = await fetch(`${API_BASE_URL}/users`, { headers: authHeaders });
       const usersData = await usersRes.json();
-      const areasData = await areasRes.json();
       setUsers(usersData);
-      setAreas(areasData);
     } catch (error) {
       console.error("Erro ao buscar dados", error);
     } finally {
@@ -42,7 +33,7 @@ const Permissions = () => {
 
   const handleEditClick = (user: User) => {
     setEditingUser(user);
-    setSelectedPermissions(user.permissions || []);
+    setSelectedPermissions(normalizePermissions(user.permissions));
   };
 
   const handleTogglePermission = (areaId: string) => {
@@ -82,6 +73,23 @@ const Permissions = () => {
         ? { ...item, accessLocked: false, fullyLocked: false }
         : item));
     }
+  };
+
+  const handleDeleteUser = async () => {
+    if (!editingUser) return;
+    const confirmed = window.confirm(`Excluir definitivamente o usuário "${editingUser.username}"?`);
+    if (!confirmed) return;
+
+    const response = await fetch(`${API_BASE_URL}/users/${editingUser.id}`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${localStorage.getItem('lepta_auth_token')}` }
+    });
+    if (!response.ok) {
+      window.alert('Não foi possível excluir o usuário.');
+      return;
+    }
+    setUsers(current => current.filter(user => user.id !== editingUser.id));
+    setEditingUser(null);
   };
 
   return (
@@ -147,20 +155,13 @@ const Permissions = () => {
             </div>
             <div className="modal-body">
               <p>Selecione as áreas que este usuário pode acessar:</p>
-              <div className="permissions-list">
-                {areas.map(area => (
-                  <label key={area.id} className="permission-item">
-                    <input 
-                      type="checkbox" 
-                      checked={selectedPermissions.includes(area.id)}
-                      onChange={() => handleTogglePermission(area.id)}
-                    />
-                    <span>{area.name}</span>
-                  </label>
-                ))}
-              </div>
+              <PermissionSelector selected={selectedPermissions} onToggle={handleTogglePermission} />
             </div>
             <div className="modal-footer">
+              <button className="btn-danger" onClick={handleDeleteUser}>
+                <Trash2 size={18} /> Excluir usuário
+              </button>
+              <span className="modal-footer-spacer" />
               <button className="btn-outline" onClick={() => setEditingUser(null)}>Cancelar</button>
               <button className="btn-primary" onClick={handleSavePermissions}>
                 <Save size={18} /> Salvar Permissões

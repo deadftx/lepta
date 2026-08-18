@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, type ReactNode, useEffect } from 'react';
 import { API_BASE_URL } from '../config/api';
+import { KeyRound, LogOut, ShieldQuestion } from 'lucide-react';
 
 export interface User {
   id: string;
@@ -62,12 +63,24 @@ const SecuritySetup = ({ onComplete, onLogout }: { onComplete: (user: User) => v
           <p>Cadastre uma pergunta e uma palavra secreta para recuperar sua conta.</p>
         </div>
         {error && <div className="login-error">{error}</div>}
-        <form onSubmit={submit} className="login-form">
-          <input value={question} onChange={event => setQuestion(event.target.value)} placeholder="Ex.: Qual era o nome do meu primeiro animal?" minLength={5} required />
-          <input value={answer} onChange={event => setAnswer(event.target.value)} placeholder="Palavra secreta" autoComplete="off" required />
-          <small>A resposta deve conter somente uma palavra. Ela não poderá ser visualizada depois.</small>
+        <form onSubmit={submit} className="login-form security-setup-form">
+          <div className="security-field">
+            <label htmlFor="security-question">Pergunta secreta</label>
+            <div className="input-group">
+              <ShieldQuestion className="input-icon" size={18} />
+              <input id="security-question" className="input-field with-icon" value={question} onChange={event => setQuestion(event.target.value)} placeholder="Ex.: Nome do meu primeiro animal?" minLength={5} required />
+            </div>
+          </div>
+          <div className="security-field">
+            <label htmlFor="security-answer">Palavra secreta</label>
+            <div className="input-group">
+              <KeyRound className="input-icon" size={18} />
+              <input id="security-answer" className="input-field with-icon" value={answer} onChange={event => setAnswer(event.target.value)} placeholder="Digite uma única palavra" autoComplete="off" required />
+            </div>
+          </div>
+          <small className="security-hint">A resposta deve conter somente uma palavra e não poderá ser visualizada depois.</small>
           <button type="submit" className="btn-primary login-submit" disabled={saving}>{saving ? 'Salvando...' : 'Salvar e continuar'}</button>
-          <button type="button" className="btn-secondary" onClick={onLogout}>Sair</button>
+          <button type="button" className="btn-outline security-exit" onClick={onLogout}><LogOut size={17} /> Sair</button>
         </form>
       </div>
     </div>
@@ -81,11 +94,27 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
   useEffect(() => {
     const storedUser = localStorage.getItem('lepta_user');
-    if (storedUser) {
-      setUser(JSON.parse(storedUser));
-      setIsAuthenticated(true);
+    const token = localStorage.getItem('lepta_auth_token');
+    if (!storedUser || !token) {
+      setIsLoading(false);
+      return;
     }
-    setIsLoading(false);
+
+    fetch(`${API_BASE_URL}/api/auth/me`, {
+      headers: { Authorization: `Bearer ${token}` }
+    })
+      .then(async response => {
+        if (!response.ok) throw new Error('Sessão inválida');
+        const result = await response.json();
+        setUser(result.user);
+        setIsAuthenticated(true);
+        localStorage.setItem('lepta_user', JSON.stringify(result.user));
+      })
+      .catch(() => {
+        localStorage.removeItem('lepta_user');
+        localStorage.removeItem('lepta_auth_token');
+      })
+      .finally(() => setIsLoading(false));
   }, []);
 
   const login = async (loginId: string, pass: string): Promise<boolean> => {

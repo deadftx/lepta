@@ -3,11 +3,8 @@ import { Edit, Save, Plus, X, ArrowLeft } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { API_BASE_URL } from '../../config/api';
 import './Permissions.css';
-
-interface Area {
-  id: string;
-  name: string;
-}
+import PermissionSelector from '../../components/PermissionSelector';
+import { normalizePermissions } from '../../config/permissions';
 
 interface Group {
   id: string;
@@ -17,7 +14,6 @@ interface Group {
 
 const Groups = () => {
   const [groups, setGroups] = useState<Group[]>([]);
-  const [areas, setAreas] = useState<Area[]>([]);
   const [loading, setLoading] = useState(true);
   
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -28,14 +24,9 @@ const Groups = () => {
   const fetchData = async () => {
     try {
       setLoading(true);
-      const [groupsRes, areasRes] = await Promise.all([
-        fetch(`${API_BASE_URL}/groups`),
-        fetch(`${API_BASE_URL}/areas`)
-      ]);
+      const groupsRes = await fetch(`${API_BASE_URL}/groups`);
       const groupsData = await groupsRes.json();
-      const areasData = await areasRes.json();
       setGroups(groupsData);
-      setAreas(areasData);
     } catch (error) {
       console.error("Erro ao buscar dados", error);
     } finally {
@@ -57,7 +48,7 @@ const Groups = () => {
   const openEditModal = (group: Group) => {
     setEditingGroup(group);
     setGroupName(group.name);
-    setSelectedPermissions(group.permissions || []);
+    setSelectedPermissions(normalizePermissions(group.permissions));
     setIsModalOpen(true);
   };
 
@@ -170,18 +161,7 @@ const Groups = () => {
               </div>
 
               <p>Áreas com acesso padrão para este grupo:</p>
-              <div className="permissions-list">
-                {areas.map(area => (
-                  <label key={area.id} className="permission-item">
-                    <input 
-                      type="checkbox" 
-                      checked={selectedPermissions.includes(area.id)}
-                      onChange={() => handleTogglePermission(area.id)}
-                    />
-                    <span>{area.name}</span>
-                  </label>
-                ))}
-              </div>
+              <PermissionSelector selected={selectedPermissions} onToggle={handleTogglePermission} />
             </div>
             <div className="modal-footer">
               <button className="btn-outline" onClick={() => setIsModalOpen(false)}>Cancelar</button>

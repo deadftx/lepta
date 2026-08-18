@@ -1,6 +1,5 @@
-const isLocalEnvironment = typeof window !== 'undefined'
-  && ['localhost', '127.0.0.1'].includes(window.location.hostname);
+const developmentApiUrl = typeof window !== 'undefined'
+  ? `http://${window.location.hostname}:3004`
+  : 'http://localhost:3004';
 
-export const API_BASE_URL = isLocalEnvironment
-  ? 'http://localhost:3004'
-  : '';
+export const API_BASE_URL = import.meta.env.DEV ? developmentApiUrl : '';
