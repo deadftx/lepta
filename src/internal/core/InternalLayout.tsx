@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { LogOut, User, Bell, ShieldAlert, DollarSign, Shield, Scale, UserPlus, Users, ChevronDown, ChevronRight, LayoutDashboard, Sliders, Home, Calendar, Menu, X, Wallet, FileSpreadsheet, BrainCircuit, Database, ClipboardCheck, ContactRound } from 'lucide-react';
+import { LogOut, User, Bell, ShieldAlert, Shield, UserPlus, Users, ChevronDown, ChevronRight, LayoutDashboard, Sliders, Home, Calendar, Menu, X, Wallet, FileSpreadsheet, BrainCircuit, Database, ClipboardCheck, ContactRound, ShieldCheck } from 'lucide-react';
 import { useNavigate, Outlet, Link, useLocation } from 'react-router-dom';
 import { useAuth } from './AuthContext';
 import './styles/Dashboard.css';
@@ -87,21 +87,6 @@ const InternalLayout = () => {
           </Link>
           
           <p className="nav-group-title">GRUPOS</p>
-          {hasAccess('1') && (
-            <Link to="/creditos" className={navItemClass('/creditos')}>
-              <DollarSign size={20} /> Créditos
-            </Link>
-          )}
-          {hasAccess('2') && (
-            <Link to="/riscos" className={navItemClass('/riscos')}>
-              <Shield size={20} /> Análise de Riscos
-            </Link>
-          )}
-          {hasAccess('3') && (
-            <Link to="/comite" className={navItemClass('/comite')}>
-              <Scale size={20} /> Comitê de Crédito
-            </Link>
-          )}
           {hasAccess('6') && (
             <Link to="/marketing" className={navItemClass('/marketing')}>
               <Calendar size={20} /> Calendário
@@ -129,7 +114,7 @@ const InternalLayout = () => {
               )}
             </div>
           )}
-          {hasAnyPermission(user, ['8.1', '8.2']) && (
+          {hasAnyPermission(user, ['8.1', '8.2', '8.3']) && (
             <div className="nav-menu-group">
               <div 
                 className={`nav-item nav-item-parent ${isIntelligenceActive ? 'active' : ''}`}
@@ -152,6 +137,11 @@ const InternalLayout = () => {
                   {hasAccess('8.2') && (
                     <Link to="/intelligence/cadastro-clientes" className={navItemClass('/intelligence/cadastro-clientes')}>
                       <ContactRound size={18} /> Cadastro de Clientes
+                    </Link>
+                  )}
+                  {hasAccess('8.3') && (
+                    <Link to="/intelligence/analise-riscos" className={navItemClass('/intelligence/analise-riscos')}>
+                      <ShieldCheck size={18} /> Análise de Riscos
                     </Link>
                   )}
                 </div>

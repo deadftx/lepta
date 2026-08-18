@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Shield, AlertTriangle, CheckCircle, Search } from 'lucide-react';
 import '../../core/styles/Operations.css';
+import { API_BASE_URL, getAuthHeaders } from '../../../config/api';
 
 interface Risk {
   id: string;
@@ -24,7 +25,7 @@ const Risks = () => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetch('/risks')
+    fetch(`${API_BASE_URL}/risks`, { headers: getAuthHeaders() })
       .then(res => res.json())
       .then(data => {
         setRisks(data);

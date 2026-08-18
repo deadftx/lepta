@@ -550,18 +550,169 @@
 }
 
 @media (max-width: 767px) {
+  .customer-analysis-page {
+    gap: 1rem;
+  }
+
+  .analysis-results-card {
+    overflow: hidden;
+  }
+
+  .analysis-results-card > .card-header {
+    padding: 1.1rem 1rem 0.9rem;
+    align-items: flex-start !important;
+    gap: 0.75rem !important;
+  }
+
+  .analysis-results-card > .card-header h3 {
+    width: 100%;
+    margin: 0;
+    font-size: clamp(1.15rem, 6vw, 1.45rem);
+    line-height: 1.25;
+  }
+
+  .analysis-header-actions .data-source-badge,
+  .analysis-header-actions .intelligence-badge {
+    min-height: 34px;
+    padding: 0.35rem 0.65rem !important;
+    font-size: 0.68rem !important;
+    letter-spacing: 0.025em;
+    white-space: nowrap;
+  }
+
+  .analysis-filter-row {
+    gap: 0.75rem !important;
+    padding-bottom: 1rem !important;
+  }
+
+  .analysis-filter-row .search-input-wrapper {
+    min-height: 52px;
+  }
+
+  .analysis-filter-row .input-field {
+    min-width: 0;
+    min-height: 52px;
+    font-size: 1rem;
+  }
+
+  .customer-analysis-page .table-responsive {
+    overflow: hidden;
+    padding-bottom: 0.25rem;
+  }
+
+  .customer-analysis-page .data-table {
+    display: block;
+    table-layout: auto;
+  }
+
+  .customer-analysis-page .data-table thead {
+    display: block;
+    padding: 0 1rem 0.85rem;
+  }
+
+  .customer-analysis-page .data-table thead::before {
+    content: 'Ordenar por';
+    display: block;
+    margin-bottom: 0.5rem;
+    color: #64748b;
+    font-size: 0.66rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  .customer-analysis-page .data-table thead tr {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.45rem;
+  }
+
   .customer-analysis-page .data-table th,
-  .customer-analysis-page .data-table td {
-    padding: 0.8rem 0.55rem;
-  }
-
-  .customer-analysis-page .data-table th {
-    font-size: 0.68rem;
-  }
-
   .customer-analysis-page .data-table th:first-child,
-  .customer-analysis-page .data-table td:first-child {
-    width: 42%;
+  .customer-analysis-page .data-table th:nth-child(2) {
+    width: auto;
+    padding: 0.5rem 0.65rem;
+    border: 1px solid rgba(148, 163, 184, 0.16);
+    border-radius: 9px;
+    background: rgba(15, 23, 42, 0.52);
+    font-size: 0.64rem;
+    overflow-wrap: normal;
+  }
+
+  .customer-analysis-page .data-table th > div {
+    white-space: nowrap;
+  }
+
+  .customer-analysis-page .data-table tbody {
+    display: grid;
+    gap: 0.75rem;
+    padding: 0 1rem 1rem;
+  }
+
+  .customer-analysis-page .data-table tbody tr {
+    display: grid;
+    grid-template-columns: minmax(0, 0.65fr) minmax(0, 1.35fr);
+    gap: 0.2rem 0.85rem;
+    padding: 0.9rem;
+    border: 1px solid rgba(148, 163, 184, 0.14);
+    border-radius: 13px;
+    background: rgba(15, 23, 42, 0.38);
+  }
+
+  .customer-analysis-page .data-table td,
+  .customer-analysis-page .data-table td:first-child,
+  .customer-analysis-page .data-table td:nth-child(2) {
+    width: auto;
+    min-width: 0;
+    padding: 0.55rem 0;
+    border: 0;
+    overflow-wrap: normal;
+  }
+
+  .customer-analysis-page .data-table .analysis-client-cell {
+    grid-column: 1 / -1;
+    margin-bottom: 0.35rem;
+    padding-bottom: 0.85rem;
+    border-bottom: 1px solid rgba(148, 163, 184, 0.12);
+    font-size: 0.96rem;
+    line-height: 1.45;
+    overflow-wrap: anywhere;
+  }
+
+  .customer-analysis-page .data-table .analysis-value-cell {
+    display: flex;
+    min-height: 52px;
+    flex-direction: column;
+    justify-content: flex-end;
+    gap: 0.25rem;
+    font-size: clamp(0.76rem, 3.5vw, 0.9rem);
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.015em;
+    white-space: nowrap;
+  }
+
+  .customer-analysis-page .data-table .analysis-value-cell::before {
+    content: attr(data-label);
+    color: #64748b;
+    font-size: 0.63rem;
+    font-weight: 700;
+    letter-spacing: 0.055em;
+    text-transform: uppercase;
+  }
+
+  .customer-analysis-page .data-table .analysis-empty-row {
+    display: block;
+  }
+
+  .customer-analysis-page .data-table .analysis-empty-row td {
+    display: block;
+    width: 100%;
+    padding: 1.5rem 0.5rem !important;
+    white-space: normal;
+  }
+
+  .customer-analysis-page .data-table .analysis-empty-row td::before {
+    content: none;
   }
 
   .economic-group-members-button {

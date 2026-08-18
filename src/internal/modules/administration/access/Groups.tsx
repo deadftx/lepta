@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Edit, Save, Plus, X, ArrowLeft } from 'lucide-react';
 import { Link } from 'react-router-dom';
-import { API_BASE_URL } from '../../../../config/api';
+import { API_BASE_URL, getAuthHeaders } from '../../../../config/api';
 import '../../../core/styles/Permissions.css';
 import PermissionSelector from '../../../core/PermissionSelector';
 import { normalizePermissions } from '../../../core/permissions';
@@ -24,7 +24,7 @@ const Groups = () => {
   const fetchData = async () => {
     try {
       setLoading(true);
-      const groupsRes = await fetch(`${API_BASE_URL}/groups`);
+      const groupsRes = await fetch(`${API_BASE_URL}/groups`, { headers: getAuthHeaders() });
       const groupsData = await groupsRes.json();
       setGroups(groupsData);
     } catch (error) {
@@ -67,7 +67,7 @@ const Groups = () => {
         const updatedGroup = { ...editingGroup, name: groupName, permissions: selectedPermissions };
         await fetch(`${API_BASE_URL}/groups/${editingGroup.id}`, {
           method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
+          headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
           body: JSON.stringify(updatedGroup)
         });
         setGroups(groups.map(g => g.id === editingGroup.id ? updatedGroup : g));
@@ -80,7 +80,7 @@ const Groups = () => {
         };
         await fetch(`${API_BASE_URL}/groups`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
           body: JSON.stringify(newGroup)
         });
         setGroups([...groups, newGroup]);

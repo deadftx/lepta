@@ -9,8 +9,72 @@ import stringSimilarity from 'string-similarity';
 import { createCipheriv, createDecipheriv, createHash, randomBytes, scryptSync, timingSafeEqual } from 'crypto';
 
 const app = express();
-app.use(cors({ exposedHeaders: ['x-data-source'] }));
-app.use(express.json({ limit: '50mb' }));
+app.disable('x-powered-by');
+app.set('trust proxy', 1);
+
+const configuredOrigins = String(process.env.LEPTA_ALLOWED_ORIGINS || '')
+  .split(',')
+  .map(origin => origin.trim())
+  .filter(Boolean);
+const allowedOrigins = new Set([
+  'https://lepta.com.br',
+  'https://www.lepta.com.br',
+  ...configuredOrigins
+]);
+
+function isAllowedOrigin(origin) {
+  if (!origin || allowedOrigins.has(origin)) return true;
+  try {
+    const url = new URL(origin);
+    const isDevelopmentPort = url.port === '5173';
+    const isLocalHost = ['localhost', '127.0.0.1', '::1'].includes(url.hostname)
+      || /^192\.168\.\d{1,3}\.\d{1,3}$/.test(url.hostname)
+      || /^10\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(url.hostname)
+      || /^172\.(1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3}$/.test(url.hostname);
+    return isDevelopmentPort && isLocalHost;
+  } catch {
+    return false;
+  }
+}
+
+app.use(cors({
+  exposedHeaders: ['x-data-source'],
+  origin(origin, callback) {
+    callback(null, isAllowedOrigin(origin));
+  }
+}));
+app.use(express.json({ limit: '2mb', strict: true }));
+app.use((error, req, res, next) => {
+  if (error?.type === 'entity.too.large') {
+    return res.status(413).json({ error: 'Conteúdo enviado excede o limite permitido.' });
+  }
+  if (error instanceof SyntaxError && error.status === 400 && 'body' in error) {
+    return res.status(400).json({ error: 'JSON inválido.' });
+  }
+  next(error);
+});
+app.use((req, res, next) => {
+  res.setHeader('Content-Security-Policy', [
+    "default-src 'self'",
+    "base-uri 'self'",
+    "object-src 'none'",
+    "frame-ancestors 'self'",
+    "form-action 'self'",
+    "script-src 'self'",
+    "style-src 'self' 'unsafe-inline'",
+    "img-src 'self' data: blob:",
+    "font-src 'self' data:",
+    "connect-src 'self'",
+    "frame-src https://app.powerbi.com https://*.powerbi.com"
+  ].join('; '));
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'SAMEORIGIN');
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
+  if (req.secure) res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+  if (req.path.startsWith('/api/auth/')) res.setHeader('Cache-Control', 'no-store');
+  next();
+});
 
 // Load aliases globally
 let globalAliases = {};
@@ -45,6 +109,49 @@ const authEncryptionKey = createHash('sha256')
 
 const PASSWORD_PREFIX = 'scrypt';
 const authSessions = new Map();
+const SESSION_TTL_MS = 8 * 60 * 60 * 1000;
+const rateLimitBuckets = new Map();
+
+function createRateLimiter({ windowMs, max, keyPrefix, includeLoginId = false }) {
+  return (req, res, next) => {
+    const now = Date.now();
+    const loginId = String(req.body?.loginId || '').trim().toLowerCase();
+    const key = `${keyPrefix}:${req.ip}${includeLoginId ? `:${loginId}` : ''}`;
+    const current = rateLimitBuckets.get(key);
+    const bucket = !current || current.resetAt <= now
+      ? { count: 0, resetAt: now + windowMs }
+      : current;
+    bucket.count += 1;
+    rateLimitBuckets.set(key, bucket);
+
+    if (bucket.count > max) {
+      res.setHeader('Retry-After', Math.max(1, Math.ceil((bucket.resetAt - now) / 1000)));
+      return res.status(429).json({ error: 'Muitas tentativas. Aguarde alguns minutos e tente novamente.' });
+    }
+    next();
+  };
+}
+
+const authIpRateLimiter = createRateLimiter({ windowMs: 15 * 60 * 1000, max: 60, keyPrefix: 'auth-ip' });
+const loginRateLimiter = createRateLimiter({ windowMs: 15 * 60 * 1000, max: 10, keyPrefix: 'login', includeLoginId: true });
+const recoveryRateLimiter = createRateLimiter({ windowMs: 15 * 60 * 1000, max: 12, keyPrefix: 'recovery', includeLoginId: true });
+
+function revokeSessionsForUser(userId) {
+  for (const [token, session] of authSessions.entries()) {
+    if (session.userId === userId) authSessions.delete(token);
+  }
+}
+
+const sessionCleanupTimer = setInterval(() => {
+  const now = Date.now();
+  for (const [token, session] of authSessions.entries()) {
+    if (session.expiresAt < now) authSessions.delete(token);
+  }
+  for (const [key, bucket] of rateLimitBuckets.entries()) {
+    if (bucket.resetAt < now) rateLimitBuckets.delete(key);
+  }
+}, 15 * 60 * 1000);
+sessionCleanupTimer.unref();
 
 function ensureUserSecurityColumns() {
   try {
@@ -70,6 +177,7 @@ function ensureAccessAreas() {
     ['7.1', 'Financeiro > Processar Extrato'],
     ['8.1', 'Lepta Intelligence > Análise de Clientes'],
     ['8.2', 'Lepta Intelligence > Cadastro de Clientes'],
+    ['8.3', 'Lepta Intelligence > Análise de Riscos'],
     ['10', 'Confirmação']
   ];
   try {
@@ -149,6 +257,8 @@ function verifyPassword(password, storedValue) {
   return suppliedHash.length === expectedHash.length && timingSafeEqual(suppliedHash, expectedHash);
 }
 
+const DUMMY_PASSWORD_HASH = hashPassword('invalid-login-timing-padding');
+
 function encryptSecret(value) {
   const iv = randomBytes(12);
   const cipher = createCipheriv('aes-256-gcm', authEncryptionKey, iv);
@@ -181,25 +291,62 @@ function sanitizeUser(row) {
 }
 
 function createAuthSession(user, purpose = 'auth') {
+  const existingSessions = [...authSessions.entries()]
+    .filter(([, session]) => session.userId === user.id)
+    .sort((left, right) => left[1].createdAt - right[1].createdAt);
+  while (existingSessions.length >= 5) {
+    const [oldestToken] = existingSessions.shift();
+    authSessions.delete(oldestToken);
+  }
   const token = randomBytes(32).toString('hex');
-  authSessions.set(token, { userId: user.id, role: user.role, purpose, expiresAt: Date.now() + 12 * 60 * 60 * 1000 });
+  const createdAt = Date.now();
+  authSessions.set(token, { userId: user.id, purpose, createdAt, expiresAt: createdAt + SESSION_TTL_MS });
   return token;
 }
 
 function readSession(req) {
-  const token = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '');
+  const authorization = String(req.headers.authorization || '');
+  if (!/^Bearer\s+[a-f0-9]{64}$/i.test(authorization)) return null;
+  const token = authorization.replace(/^Bearer\s+/i, '');
   const session = authSessions.get(token);
   if (session && session.expiresAt >= Date.now()) return session;
   if (token) authSessions.delete(token);
   return null;
 }
 
-function requireSession(req, res, next) {
-  const session = readSession(req);
-  if (!session || session.expiresAt < Date.now()) {
-    return res.status(401).json({ error: 'Sessão inválida ou expirada.' });
+function requireSessionPurpose(allowedPurposes = ['auth']) {
+  return (req, res, next) => {
+    const session = readSession(req);
+    if (!session || !allowedPurposes.includes(session.purpose)) {
+      return res.status(401).json({ error: 'Sessão inválida ou expirada.' });
+    }
+    const user = db.prepare(`SELECT * FROM usuarios_lepta WHERE id = ?`).get(session.userId);
+    if (!user || user.fully_locked || user.access_locked) {
+      revokeSessionsForUser(session.userId);
+      return res.status(423).json({ error: 'Acesso bloqueado.' });
+    }
+    req.authSession = { ...session, role: user.role };
+    req.authUser = user;
+    next();
+  };
+}
+
+const requireSession = requireSessionPurpose(['auth']);
+const requireSecuritySetupSession = requireSessionPurpose(['auth', 'security-setup']);
+
+function requirePermission(permission) {
+  return (req, res, next) => {
+    if (!req.authUser || !hasPermission(req.authUser, permission)) {
+      return res.status(403).json({ error: 'Usuário sem permissão para acessar este recurso.' });
+    }
+    next();
+  };
+}
+
+function requireMaster(req, res, next) {
+  if (req.authSession?.role !== 'MASTER') {
+    return res.status(403).json({ error: 'Acesso restrito ao administrador.' });
   }
-  req.authSession = session;
   next();
 }
 
@@ -372,22 +519,39 @@ async function mapWithConcurrency(items, concurrency, mapper) {
 }
 
 async function fetchTitulosPeriod(period) {
-  const response = await fetch('https://lepta-backend.bit-unltd.com.br/recebiveis/titulos', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `UNLTD-BackEnd ${UNLTD_TOKEN}`
-    },
-    body: JSON.stringify({ tipoDeData: 'Vencimento', situacoes: UNLTD_SITUACOES, ...period })
-  });
+  let lastError;
+  for (let attempt = 1; attempt <= 4; attempt++) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 45000);
+    try {
+      const response = await fetch('https://lepta-backend.bit-unltd.com.br/recebiveis/titulos', {
+        method: 'POST',
+        signal: controller.signal,
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `UNLTD-BackEnd ${UNLTD_TOKEN}`
+        },
+        body: JSON.stringify({ tipoDeData: 'Vencimento', situacoes: UNLTD_SITUACOES, ...period })
+      });
 
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(`UNLTD respondeu ${response.status}: ${errorText}`);
+      if (response.ok) {
+        const titulos = await response.json();
+        return Array.isArray(titulos) ? titulos : [];
+      }
+
+      const errorText = await response.text();
+      lastError = new Error(`UNLTD respondeu ${response.status}: ${errorText}`);
+      if (response.status < 500 && response.status !== 429) throw lastError;
+    } catch (error) {
+      lastError = error;
+      if (attempt === 4) break;
+    } finally {
+      clearTimeout(timeout);
+    }
+
+    await new Promise(resolve => setTimeout(resolve, attempt * 750));
   }
-
-  const titulos = await response.json();
-  return Array.isArray(titulos) ? titulos : [];
+  throw lastError || new Error('A API UNLTD não respondeu à consulta de títulos.');
 }
 
 async function fetchLiquidacoesPeriod(period) {
@@ -797,8 +961,52 @@ app.delete('/api/clientes-cadastro/:documento', requireSession, requireClientReg
 // -------------------------------------------------------------
 // ROTA CUSTOMIZADA: IMPORTAÇÃO DE PLANILHA VIA STREAMING PARA SQLITE
 // -------------------------------------------------------------
-app.post('/api/sync-link', async (req, res) => {
-  const sourceUrl = req.body.url || req.body.sourceUrl;
+const MAX_SYNC_FILE_BYTES = 350 * 1024 * 1024;
+
+function quoteSqlIdentifier(value) {
+  return `"${String(value).replace(/"/g, '""')}"`;
+}
+
+const PROTECTED_DATABASE_TABLES = new Set([
+  'usuarios_lepta', 'groups', 'areas', 'calendarevents', 'databasetables',
+  'dashboards', 'power_bi_dashboards', 'clientes_cadastro', 'sqlite_sequence'
+]);
+
+function validateImportedSchema(tableName, headers) {
+  const normalizedTableName = String(tableName || '').trim().toLowerCase();
+  const hasControlCharacters = [...normalizedTableName].some(character => character.charCodeAt(0) < 32);
+  if (!normalizedTableName || normalizedTableName.length > 120 || hasControlCharacters) {
+    throw new Error('A planilha contém um nome de base inválido.');
+  }
+  if (PROTECTED_DATABASE_TABLES.has(normalizedTableName) || normalizedTableName.startsWith('sqlite_')) {
+    throw new Error(`A base "${tableName}" usa um nome reservado do sistema.`);
+  }
+  if (!headers.length || headers.length > 500 || headers.some(header => String(header).length > 200)) {
+    throw new Error(`A base "${tableName}" possui colunas fora dos limites permitidos.`);
+  }
+}
+
+function isLoopbackRequest(req) {
+  return ['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(req.ip);
+}
+
+function validateRemoteSpreadsheetUrl(value) {
+  const url = new URL(value);
+  if (url.username || url.password) throw new Error('Links com credenciais embutidas não são permitidos.');
+  if (url.protocol !== 'https:') throw new Error('Somente links HTTPS são permitidos.');
+  const hostname = url.hostname.toLowerCase();
+  const configuredHosts = String(process.env.LEPTA_SYNC_ALLOWED_HOSTS || '')
+    .split(',').map(host => host.trim().toLowerCase()).filter(Boolean);
+  const allowedHosts = ['sharepoint.com', 'onedrive.live.com', '1drv.ms', ...configuredHosts];
+  const isAllowed = allowedHosts.some(host => hostname === host || hostname.endsWith(`.${host}`));
+  if (!isAllowed) throw new Error('O domínio informado não está autorizado para importação.');
+  return url;
+}
+
+app.post('/api/sync-link', requireSession, requirePermission('9'), async (req, res) => {
+  const sourceUrl = typeof req.body?.url === 'string'
+    ? req.body.url
+    : (typeof req.body?.sourceUrl === 'string' ? req.body.sourceUrl : '');
 
   if (!sourceUrl) {
     return res.status(400).json({ success: false, message: 'URL da planilha não fornecida.' });
@@ -813,18 +1021,30 @@ app.post('/api/sync-link', async (req, res) => {
       cleanUrl = cleanUrl.slice(1, -1);
     }
 
-    if (cleanUrl.startsWith('file://')) {
-      cleanUrl = cleanUrl.replace(/^file:\/\/\//, '');
-    }
-
-    if (fs.existsSync(cleanUrl)) {
-      const stats = fs.statSync(cleanUrl);
+    const looksLikeRemoteUrl = /^https?:\/\//i.test(cleanUrl);
+    if (!looksLikeRemoteUrl) {
+      if (!isLoopbackRequest(req) && process.env.LEPTA_ALLOW_LOCAL_SYNC !== 'true') {
+        return res.status(403).json({ success: false, message: 'Leitura de arquivos locais não permitida neste servidor.' });
+      }
+      if (cleanUrl.startsWith('file://')) cleanUrl = cleanUrl.replace(/^file:\/\/\//, '');
+      tempFilePath = path.resolve(cleanUrl);
+      if (!['.xlsx', '.xlsm'].includes(path.extname(tempFilePath).toLowerCase())) {
+        return res.status(400).json({ success: false, message: 'Somente planilhas .xlsx ou .xlsm são permitidas.' });
+      }
+      if (!fs.existsSync(tempFilePath)) {
+        return res.status(404).json({ success: false, message: 'Arquivo local não encontrado.' });
+      }
+      const stats = fs.statSync(tempFilePath);
       if (stats.isDirectory()) {
          return res.status(400).json({ success: false, message: 'O caminho informado é de uma pasta, não de um arquivo Excel. Por favor, aponte para o arquivo .xlsx final.' });
       }
-      tempFilePath = cleanUrl;
+      if (stats.size > MAX_SYNC_FILE_BYTES) {
+        return res.status(413).json({ success: false, message: 'A planilha excede o limite seguro de 350 MB.' });
+      }
       console.log(`📂 Lendo arquivo local diretamente: ${tempFilePath}`);
     } else {
+      const remoteUrl = validateRemoteSpreadsheetUrl(cleanUrl);
+      cleanUrl = remoteUrl.toString();
       tempFilePath = path.join(process.cwd(), `temp_download_${Date.now()}.xlsx`);
       console.log(`📡 Baixando planilha do SharePoint/OneDrive no servidor Node: ${cleanUrl}`);
 
@@ -839,10 +1059,13 @@ app.post('/api/sync-link', async (req, res) => {
       });
 
       if (!resFetch.ok) {
-        throw new Error(`Falha ao baixar arquivo remoto (${resFetch.SITUACAO}).`);
+        throw new Error(`Falha ao baixar arquivo remoto (${resFetch.status}).`);
       }
 
+      const contentLength = Number(resFetch.headers.get('content-length') || 0);
+      if (contentLength > MAX_SYNC_FILE_BYTES) throw new Error('A planilha excede o limite seguro de 350 MB.');
       const arrayBuffer = await resFetch.arrayBuffer();
+      if (arrayBuffer.byteLength > MAX_SYNC_FILE_BYTES) throw new Error('A planilha excede o limite seguro de 350 MB.');
       fs.writeFileSync(tempFilePath, Buffer.from(arrayBuffer));
       console.log(`💾 Download concluído!`);
     }
@@ -929,13 +1152,15 @@ app.post('/api/sync-link', async (req, res) => {
         });
 
         if (headers.length > 0) {
-           const colsSql = headers.map(h => `"${h}" TEXT`).join(', ');
-           const createSql = `CREATE TABLE "${tableName}" (${colsSql})`;
+           validateImportedSchema(tableName, headers);
+           const quotedTableName = quoteSqlIdentifier(tableName);
+           const colsSql = headers.map(h => `${quoteSqlIdentifier(h)} TEXT`).join(', ');
+           const createSql = `CREATE TABLE ${quotedTableName} (${colsSql})`;
            try {
-             db.exec(`DROP TABLE IF EXISTS "${tableName}"`);
+             db.exec(`DROP TABLE IF EXISTS ${quotedTableName}`);
              db.exec(createSql);
              const placeholders = headers.map(() => '?').join(', ');
-             const insertSql = `INSERT INTO "${tableName}" (${headers.map(h => `"${h}"`).join(', ')}) VALUES (${placeholders})`;
+             const insertSql = `INSERT INTO ${quotedTableName} (${headers.map(quoteSqlIdentifier).join(', ')}) VALUES (${placeholders})`;
              insertStmt = db.prepare(insertSql);
            } catch (sqlErr) {
              console.error(`ERRO SQLITE NA ABA "${tableName}":`, sqlErr.message);
@@ -1016,7 +1241,7 @@ app.post('/api/sync-link', async (req, res) => {
 // -------------------------------------------------------------
 function normalizeStr(str) {
   if (!str) return '';
-  let s = str.normalize('NFD').replace(/[\u0300-\u036f]/g, "").toLowerCase();
+  let s = String(str).normalize('NFD').replace(/[\u0300-\u036f]/g, "").toLowerCase();
 
   // Replace anything that is not alphanumeric with space
   s = s.replace(/[^a-z0-9\s]/g, " ");
@@ -1044,7 +1269,402 @@ function normalizeStr(str) {
   return finalStr;
 }
 
-app.get('/api/analise-clientes', async (req, res) => {
+function toRiskDate(value) {
+  if (!value) return null;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function riskEntityFromTitle(title, type) {
+  return type === 'sacado'
+    ? title?.sacado?.entidade
+    : title?.contaOperacional?.cliente?.entidade;
+}
+
+function riskCounterpartyFromTitle(title, type) {
+  return type === 'sacado'
+    ? title?.contaOperacional?.cliente?.entidade
+    : title?.sacado?.entidade;
+}
+
+function riskTitleMatches(title, type, document, name) {
+  const entity = riskEntityFromTitle(title, type);
+  if (!entity) return false;
+  if (document) return normalizeEntityDocument(entity.documento) === document;
+  return normalizeStr(entity.nome) === normalizeStr(name);
+}
+
+function riskSituation(title) {
+  return String(title?.situacao || '').toLowerCase();
+}
+
+function isOpenRiskTitle(title) {
+  return riskSituation(title).includes('aberto');
+}
+
+function isLiquidatedRiskTitle(title) {
+  return riskSituation(title).includes('liquidado') || riskSituation(title).includes('liq.');
+}
+
+function daysBetweenRiskDates(later, earlier) {
+  if (!later || !earlier) return null;
+  return Math.floor((later.getTime() - earlier.getTime()) / 86400000);
+}
+
+function riskLevelFromScore(score) {
+  if (score >= 80) return 'Baixo';
+  if (score >= 60) return 'Moderado';
+  if (score >= 40) return 'Alto';
+  return 'Crítico';
+}
+
+function buildRiskList(titles, type, search) {
+  const searchNormalized = normalizeStr(search);
+  const searchDocument = normalizeEntityDocument(search);
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const entities = new Map();
+  let ignoredRecords = 0;
+
+  for (const title of titles) {
+    try {
+      const entity = riskEntityFromTitle(title, type);
+      if (!entity?.nome) continue;
+      const entityName = String(entity.nome).trim();
+      if (!entityName) continue;
+      const document = normalizeEntityDocument(entity.documento);
+      const key = document || normalizeStr(entityName);
+      if (!key) continue;
+      const matchesSearch = !search
+        || normalizeStr(entityName).includes(searchNormalized)
+        || (searchDocument && document.includes(searchDocument));
+      if (!matchesSearch) continue;
+
+      if (!entities.has(key)) {
+        entities.set(key, {
+          nome: entityName,
+          documento: document,
+          grupoEconomico: String(entity.grupoEconomico?.nome || ''),
+          qtdTitulos: 0,
+          valorGeral: 0,
+          valorAberto: 0,
+          valorVencido: 0
+        });
+      }
+      const current = entities.get(key);
+      const nominal = Number(title.valorNominal) || 0;
+      const dueDate = toRiskDate(title.dataDeVencimento);
+      const open = isOpenRiskTitle(title);
+      current.qtdTitulos += 1;
+      current.valorGeral += nominal;
+      if (open) current.valorAberto += nominal;
+      if (open && dueDate && dueDate < today) current.valorVencido += nominal;
+    } catch {
+      ignoredRecords += 1;
+    }
+  }
+
+  if (ignoredRecords) console.log(`Análise de riscos ignorou ${ignoredRecords} título(s) com estrutura inválida.`);
+
+  return Array.from(entities.values())
+    .map(entity => ({
+      ...entity,
+      percentualVencido: entity.valorAberto > 0 ? entity.valorVencido / entity.valorAberto : 0
+    }))
+    .sort((left, right) => right.valorAberto - left.valorAberto)
+    .slice(0, 30);
+}
+
+function buildRiskClientSuggestionsFromDatabase(search) {
+  if (!tableExists('BASE_NOVA')) return [];
+  const normalizedSearch = `%${String(search || '').trim().toLowerCase()}%`;
+  const rows = db.prepare(`
+    SELECT
+      CLIENTE AS nome,
+      DOCUMENTO AS documento,
+      COUNT(*) AS qtdTitulos,
+      COALESCE(SUM(CAST(VALOR_NOMINAL AS REAL)), 0) AS valorGeral,
+      COALESCE(SUM(CASE
+        WHEN lower(COALESCE(SITUACAO, '')) LIKE '%aberto%'
+        THEN CAST(VALOR_NOMINAL AS REAL) ELSE 0 END), 0) AS valorAberto,
+      COALESCE(SUM(CASE
+        WHEN lower(COALESCE(SITUACAO, '')) LIKE '%aberto%'
+          AND lower(COALESCE(VENCIDO, '')) IN ('sim', 'yes', 'true', '1')
+        THEN CAST(VALOR_NOMINAL AS REAL) ELSE 0 END), 0) AS valorVencido
+    FROM BASE_NOVA
+    WHERE CLIENTE IS NOT NULL
+      AND trim(CLIENTE) != ''
+      AND lower(CLIENTE) LIKE ?
+    GROUP BY CLIENTE, DOCUMENTO
+    ORDER BY valorAberto DESC, valorGeral DESC
+    LIMIT 30
+  `).all(normalizedSearch);
+
+  return rows.map(row => ({
+    nome: String(row.nome || '').trim(),
+    documento: normalizeEntityDocument(row.documento),
+    grupoEconomico: '',
+    qtdTitulos: Number(row.qtdTitulos) || 0,
+    valorGeral: Number(row.valorGeral) || 0,
+    valorAberto: Number(row.valorAberto) || 0,
+    valorVencido: Number(row.valorVencido) || 0,
+    percentualVencido: Number(row.valorAberto) > 0
+      ? (Number(row.valorVencido) || 0) / Number(row.valorAberto)
+      : 0,
+    indicePesquisa: 'BASE_NOVA',
+    fonteCalculos: 'API UNLTD'
+  }));
+}
+
+function buildLiquidationTitleDates(liquidations) {
+  const dates = new Map();
+  for (const liquidation of liquidations) {
+    const effectiveDate = toRiskDate(liquidation.dataDeEfetivacao || liquidation.dataDeCadastro);
+    if (!effectiveDate) continue;
+    const rawItems = liquidation?.itens;
+    const items = Array.isArray(rawItems)
+      ? rawItems
+      : (rawItems && typeof rawItems === 'object' ? Object.values(rawItems) : []);
+    for (const item of items) {
+      const titleId = item?.titulo?.id;
+      if (titleId !== undefined && titleId !== null) dates.set(String(titleId), effectiveDate);
+    }
+  }
+  return dates;
+}
+
+async function buildRiskDetails(titles, liquidations, type, document, name) {
+  const selected = titles.filter(title => riskTitleMatches(title, type, document, name));
+  if (!selected.length) return null;
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const entity = riskEntityFromTitle(selected[0], type);
+  const liquidationDates = buildLiquidationTitleDates(liquidations);
+  const aging = [
+    { chave: '1-7', rotulo: '1 a 7 dias', minimo: 1, maximo: 7, valor: 0, quantidade: 0 },
+    { chave: '8-15', rotulo: '8 a 15 dias', minimo: 8, maximo: 15, valor: 0, quantidade: 0 },
+    { chave: '16-30', rotulo: '16 a 30 dias', minimo: 16, maximo: 30, valor: 0, quantidade: 0 },
+    { chave: '31-60', rotulo: '31 a 60 dias', minimo: 31, maximo: 60, valor: 0, quantidade: 0 },
+    { chave: '61-90', rotulo: '61 a 90 dias', minimo: 61, maximo: 90, valor: 0, quantidade: 0 },
+    { chave: '90+', rotulo: 'Acima de 90 dias', minimo: 91, maximo: Infinity, valor: 0, quantidade: 0 }
+  ];
+  const future = [
+    { rotulo: 'Próximos 30 dias', minimo: 0, maximo: 30, valor: 0 },
+    { rotulo: '31 a 60 dias', minimo: 31, maximo: 60, valor: 0 },
+    { rotulo: '61 a 90 dias', minimo: 61, maximo: 90, valor: 0 },
+    { rotulo: 'Acima de 90 dias', minimo: 91, maximo: Infinity, valor: 0 }
+  ];
+  const counterparties = new Map();
+  const situations = new Map();
+  const monthly = new Map();
+  const limitValues = new Set();
+  const delays = [];
+  let onTime = 0;
+  let settledWithDate = 0;
+  let valorGeral = 0;
+  let valorAberto = 0;
+  let valorVencido = 0;
+  let valorLiquidado = 0;
+  let valorAdverso = 0;
+  let valorAcima60 = 0;
+  let documented = 0;
+
+  for (const title of selected) {
+    const nominal = Number(title.valorNominal) || 0;
+    const dueDate = toRiskDate(title.dataDeVencimento);
+    const open = isOpenRiskTitle(title);
+    const liquidated = isLiquidatedRiskTitle(title);
+    const situation = String(title.situacao || 'Sem situação');
+    const situationNormalized = riskSituation(title);
+    const counterparty = riskCounterpartyFromTitle(title, type);
+    const counterpartyKey = normalizeEntityDocument(counterparty?.documento) || normalizeStr(counterparty?.nome) || 'sem-contraparte';
+    const counterpartyCurrent = counterparties.get(counterpartyKey) || {
+      nome: counterparty?.nome || 'Não informado',
+      documento: normalizeEntityDocument(counterparty?.documento),
+      valorAberto: 0,
+      valorVencido: 0,
+      qtdTitulos: 0
+    };
+
+    valorGeral += nominal;
+    situations.set(situation, (situations.get(situation) || 0) + nominal);
+    counterpartyCurrent.qtdTitulos += 1;
+    if (open) {
+      valorAberto += nominal;
+      counterpartyCurrent.valorAberto += nominal;
+    }
+    if (open && dueDate && dueDate < today) {
+      const overdueDays = Math.max(1, -daysBetweenRiskDates(dueDate, today));
+      valorVencido += nominal;
+      counterpartyCurrent.valorVencido += nominal;
+      const bucket = aging.find(item => overdueDays >= item.minimo && overdueDays <= item.maximo);
+      if (bucket) {
+        bucket.valor += nominal;
+        bucket.quantidade += 1;
+      }
+      if (overdueDays > 60) valorAcima60 += nominal;
+    } else if (open && dueDate) {
+      const daysUntilDue = Math.max(0, daysBetweenRiskDates(dueDate, today));
+      const bucket = future.find(item => daysUntilDue >= item.minimo && daysUntilDue <= item.maximo);
+      if (bucket) bucket.valor += nominal;
+    }
+    if (liquidated) {
+      valorLiquidado += Number(title.valorLiquido ?? title.valorNominal) || 0;
+      const paidDate = liquidationDates.get(String(title.id)) || toRiskDate(title.dataDaSituacao);
+      const delay = daysBetweenRiskDates(paidDate, dueDate);
+      if (delay !== null) {
+        settledWithDate += 1;
+        delays.push(Math.max(0, delay));
+        if (delay <= 0) onTime += 1;
+      }
+    }
+    if (['recomprado', 'recuperação de crédito', 'recuperacao de credito', 'pró-solvendo', 'pro-solvendo', 'perda']
+      .some(status => situationNormalized.includes(status))) {
+      valorAdverso += nominal;
+    }
+    if (title.codigoDoLastro && title.manifesto && title.registradoNoCobrador !== false) documented += 1;
+    counterparties.set(counterpartyKey, counterpartyCurrent);
+
+    if (dueDate) {
+      const monthKey = dueDate.toISOString().slice(0, 7);
+      const row = monthly.get(monthKey) || { mes: monthKey, valorGeral: 0, valorAberto: 0, valorVencido: 0 };
+      row.valorGeral += nominal;
+      if (open) row.valorAberto += nominal;
+      if (open && dueDate < today) row.valorVencido += nominal;
+      monthly.set(monthKey, row);
+    }
+
+    const limit = Number(title.contaOperacional?.limite);
+    if (Number.isFinite(limit) && limit > 0) limitValues.add(limit);
+  }
+
+  const concentration = Array.from(counterparties.values())
+    .sort((left, right) => right.valorAberto - left.valorAberto);
+  const topConcentration = valorAberto > 0 ? (concentration[0]?.valorAberto || 0) / valorAberto : 0;
+  const limit = type === 'cliente' ? Array.from(limitValues).reduce((sum, value) => sum + value, 0) : 0;
+  const limitUsage = limit > 0 ? valorAberto / limit : null;
+  const overdueRate = valorAberto > 0 ? valorVencido / valorAberto : 0;
+  const severeRate = valorAberto > 0 ? valorAcima60 / valorAberto : 0;
+  const adverseRate = valorGeral > 0 ? valorAdverso / valorGeral : 0;
+  const documentationRate = selected.length ? documented / selected.length : 0;
+  const factors = [
+    { nome: 'Inadimplência da carteira', peso: 45, impacto: Math.min(45, overdueRate * 90), valor: overdueRate },
+    { nome: 'Atrasos acima de 60 dias', peso: 15, impacto: Math.min(15, severeRate * 30), valor: severeRate },
+    { nome: 'Ocorrências negativas', peso: 15, impacto: Math.min(15, adverseRate * 45), valor: adverseRate },
+    { nome: 'Concentração na maior contraparte', peso: 15, impacto: Math.min(15, topConcentration * 15), valor: topConcentration },
+    { nome: 'Qualidade documental', peso: 10, impacto: (1 - documentationRate) * 10, valor: documentationRate }
+  ];
+  if (limitUsage !== null) {
+    const excessUsage = Math.max(0, limitUsage - 0.75);
+    factors.push({ nome: 'Utilização do limite', peso: 10, impacto: Math.min(10, excessUsage * 20), valor: limitUsage });
+  }
+  const score = Math.max(0, Math.round(100 - factors.reduce((sum, factor) => sum + factor.impacto, 0)));
+  const entityDocument = normalizeEntityDocument(entity?.documento);
+  const economicGroup = entity?.grupoEconomico
+    || (entityDocument ? await fetchEconomicGroupByDocument(entityDocument) : null);
+
+  return {
+    tipo: type,
+    entidade: {
+      nome: entity?.nome || name,
+      documento: entityDocument,
+      email: entity?.email || '',
+      telefone: entity?.telefone || '',
+      grupoEconomico: economicGroup?.nome || ''
+    },
+    indicador: { score, nivel: riskLevelFromScore(score), fatores: factors },
+    metricas: {
+      qtdTitulos: selected.length,
+      valorGeral,
+      valorAberto,
+      valorVencido,
+      valorLiquidado,
+      percentualVencido: overdueRate,
+      atrasoMedio: delays.length ? delays.reduce((sum, value) => sum + value, 0) / delays.length : 0,
+      atrasoMaximo: delays.length ? Math.max(...delays) : 0,
+      percentualNoPrazo: settledWithDate ? onTime / settledWithDate : 0,
+      ocorrenciasNegativas: selected.filter(title => ['recomprado', 'recuperação', 'recuperacao', 'pró-solvendo', 'pro-solvendo', 'perda'].some(status => riskSituation(title).includes(status))).length,
+      valorOcorrenciasNegativas: valorAdverso,
+      limite: limit,
+      utilizacaoLimite: limitUsage,
+      qualidadeDocumental: documentationRate,
+      quantidadeContrapartes: concentration.length
+    },
+    aging: aging.map(bucket => ({
+      chave: bucket.chave,
+      rotulo: bucket.rotulo,
+      valor: bucket.valor,
+      quantidade: bucket.quantidade
+    })),
+    agendaVencimentos: future.map(bucket => ({ rotulo: bucket.rotulo, valor: bucket.valor })),
+    concentracao: concentration.slice(0, 10),
+    situacoes: Array.from(situations.entries())
+      .map(([situacao, valor]) => ({ situacao, valor }))
+      .sort((left, right) => right.valor - left.valor),
+    historico: Array.from(monthly.values()).sort((left, right) => left.mes.localeCompare(right.mes)).slice(-18),
+    titulos: selected
+      .map(title => ({
+        id: title.id,
+        numero: title.numero || '',
+        contraparte: riskCounterpartyFromTitle(title, type)?.nome || 'Não informado',
+        documentoContraparte: normalizeEntityDocument(riskCounterpartyFromTitle(title, type)?.documento),
+        vencimento: title.dataDeVencimento || null,
+        situacao: title.situacao || 'Sem situação',
+        valorNominal: Number(title.valorNominal) || 0,
+        valorLiquido: Number(title.valorLiquido) || 0,
+        manifesto: title.manifesto || '',
+        codigoDoLastro: title.codigoDoLastro || '',
+        registradoNoCobrador: title.registradoNoCobrador !== false
+      }))
+      .sort((left, right) => String(right.vencimento || '').localeCompare(String(left.vencimento || '')))
+      .slice(0, 500)
+  };
+}
+
+app.get('/api/analise-riscos', requireSession, requirePermission('8.3'), async (req, res) => {
+  try {
+    const type = req.query.tipo === 'sacado' ? 'sacado' : 'cliente';
+    const mode = req.query.modo === 'detalhe' ? 'detalhe' : 'lista';
+    res.setHeader('x-data-source', 'api');
+
+    if (mode === 'lista') {
+      const search = String(req.query.busca || '').trim();
+      if (type === 'cliente' && search.length >= 2) {
+        if (unltdFullHistoryCache.data) {
+          const apiResults = buildRiskList(unltdFullHistoryCache.data, type, search);
+          if (apiResults.length) return res.json(apiResults);
+        }
+        const indexedResults = buildRiskClientSuggestionsFromDatabase(search);
+        if (indexedResults.length) return res.json(indexedResults);
+      }
+      const titles = await fetchTitulosDaAPI(req);
+      return res.json(buildRiskList(titles, type, search));
+    }
+
+    const document = normalizeEntityDocument(req.query.documento);
+    const name = String(req.query.nome || '').trim();
+    if (!document && !name) return res.status(400).json({ error: 'Informe a entidade que deseja analisar.' });
+    const titles = await fetchTitulosDaAPI(req);
+    let liquidations = [];
+    let enrichmentWarning = '';
+    try {
+      liquidations = await fetchLiquidacoesDaAPI(req);
+    } catch (liquidationError) {
+      enrichmentWarning = 'O histórico detalhado de liquidações está temporariamente indisponível. Os demais indicadores foram calculados pelos títulos.';
+      console.log('Aviso: análise de riscos sem enriquecimento de liquidações:', liquidationError.message);
+    }
+    const details = await buildRiskDetails(titles, liquidations, type, document, name);
+    if (!details) return res.status(404).json({ error: 'Não foram encontrados títulos para esta entidade.' });
+    if (enrichmentWarning) details.aviso = enrichmentWarning;
+    return res.json(details);
+  } catch (error) {
+    console.error('Erro na análise de riscos:', error.message);
+    return res.status(500).json({ error: 'Não foi possível compor a análise de riscos.', message: error.message });
+  }
+});
+
+app.get('/api/analise-clientes', requireSession, requirePermission('8.1'), async (req, res) => {
   try {
     const groupByEconomic = req.query.groupBy === 'economicGroup';
     let rowsNova = [];
@@ -1234,7 +1854,7 @@ app.get('/api/analise-clientes', async (req, res) => {
   }
 });
 
-app.get('/api/analise-sacados/:cedente', async (req, res) => {
+app.get('/api/analise-sacados/:cedente', requireSession, requirePermission('8.1'), async (req, res) => {
   try {
     const cedenteParams = req.params.cedente;
     const normCedenteParams = normalizeStr(cedenteParams);
@@ -1308,7 +1928,7 @@ app.get('/api/analise-sacados/:cedente', async (req, res) => {
   }
 });
 
-app.get('/api/analise-ua/:cedente', async (req, res) => {
+app.get('/api/analise-ua/:cedente', requireSession, requirePermission('8.1'), async (req, res) => {
   try {
     const cedenteParams = req.params.cedente;
     const normCedenteParams = normalizeStr(cedenteParams);
@@ -1429,7 +2049,7 @@ app.get('/api/analise-ua/:cedente', async (req, res) => {
   }
 });
 
-app.get('/api/analise-un/:cedente', (req, res) => {
+app.get('/api/analise-un/:cedente', requireSession, requirePermission('8.1'), (req, res) => {
   try {
     const cedente = req.params.cedente;
     let rowsNpl = [];
@@ -1485,7 +2105,7 @@ app.get('/api/health', (req, res) => {
   }
 });
 
-app.post('/api/auth/login', (req, res) => {
+app.post('/api/auth/login', authIpRateLimiter, loginRateLimiter, (req, res) => {
   const loginId = String(req.body?.loginId || '').trim().toLowerCase();
   const password = String(req.body?.password || '');
   if (!loginId || !password) {
@@ -1506,6 +2126,7 @@ app.post('/api/auth/login', (req, res) => {
       return res.status(423).json({ error: 'Acesso bloqueado. Use sua palavra secreta para redefinir a senha.', recoveryRequired: true });
     }
     if (!user?.password || !verifyPassword(password, user.password)) {
+      if (!user) verifyPassword(password, DUMMY_PASSWORD_HASH);
       if (user) {
         const attempts = Number(user.login_attempts || 0) + 1;
         db.prepare(`UPDATE usuarios_lepta SET login_attempts = ?, access_locked = ? WHERE id = ?`)
@@ -1532,7 +2153,13 @@ app.get('/api/auth/me', requireSession, (req, res) => {
   return res.json({ user: sanitizeUser(user) });
 });
 
-app.post('/api/auth/first-access/check', (req, res) => {
+app.post('/api/auth/logout', requireSession, (req, res) => {
+  const token = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '');
+  authSessions.delete(token);
+  return res.status(204).end();
+});
+
+app.post('/api/auth/first-access/check', authIpRateLimiter, recoveryRateLimiter, (req, res) => {
   const loginId = String(req.body?.loginId || '').trim().toLowerCase();
   if (!loginId) return res.status(400).json({ error: 'Informe o e-mail ou usuário.' });
 
@@ -1551,7 +2178,7 @@ app.post('/api/auth/first-access/check', (req, res) => {
   }
 });
 
-app.post('/api/auth/first-access/password', (req, res) => {
+app.post('/api/auth/first-access/password', authIpRateLimiter, recoveryRateLimiter, (req, res) => {
   const id = String(req.body?.id || '');
   const password = String(req.body?.password || '');
   if (password.length < 10) {
@@ -1573,7 +2200,7 @@ app.post('/api/auth/first-access/password', (req, res) => {
   }
 });
 
-app.post('/api/auth/security-setup', requireSession, (req, res) => {
+app.post('/api/auth/security-setup', requireSecuritySetupSession, (req, res) => {
   const question = String(req.body?.question || '').trim();
   const answer = String(req.body?.answer || '').trim().toLowerCase();
   if (question.length < 5) return res.status(400).json({ error: 'Informe uma pergunta secreta válida.' });
@@ -1592,7 +2219,7 @@ app.post('/api/auth/security-setup', requireSession, (req, res) => {
   }
 });
 
-app.post('/api/auth/recovery/question', (req, res) => {
+app.post('/api/auth/recovery/question', authIpRateLimiter, recoveryRateLimiter, (req, res) => {
   const loginId = String(req.body?.loginId || '').trim().toLowerCase();
   const user = db.prepare(`SELECT * FROM usuarios_lepta WHERE lower(username) = ? OR lower(email) = ? LIMIT 1`).get(loginId, loginId);
   if (!user || !user.secret_question) return res.status(404).json({ error: 'Recuperação não disponível.' });
@@ -1600,7 +2227,7 @@ app.post('/api/auth/recovery/question', (req, res) => {
   return res.json({ question: decryptSecret(user.secret_question) });
 });
 
-app.post('/api/auth/recovery/reset', (req, res) => {
+app.post('/api/auth/recovery/reset', authIpRateLimiter, recoveryRateLimiter, (req, res) => {
   const loginId = String(req.body?.loginId || '').trim().toLowerCase();
   const answer = String(req.body?.answer || '').trim().toLowerCase();
   const password = String(req.body?.password || '');
@@ -1623,17 +2250,63 @@ app.post('/api/auth/recovery/reset', (req, res) => {
     SET password = ?, login_attempts = 0, secret_attempts = 0, access_locked = 0
     WHERE id = ?
   `).run(hashPassword(password), user.id);
+  revokeSessionsForUser(user.id);
   return res.json({ success: true });
 });
 
-app.post('/api/auth/admin/unlock/:id', requireSession, (req, res) => {
-  if (req.authSession.role !== 'MASTER') return res.status(403).json({ error: 'Somente um usuário MASTER pode desbloquear acessos.' });
+app.post('/api/auth/admin/unlock/:id', requireSession, requireMaster, (req, res) => {
   const result = db.prepare(`
     UPDATE usuarios_lepta SET login_attempts = 0, secret_attempts = 0, access_locked = 0, fully_locked = 0
     WHERE id = ?
   `).run(req.params.id);
   if (!result.changes) return res.status(404).json({ error: 'Usuário não encontrado.' });
+  revokeSessionsForUser(req.params.id);
   return res.json({ success: true });
+});
+
+const ASSIGNABLE_PERMISSION_IDS = new Set([
+  '4', '5', '6', '7.1', '8.1', '8.2', '8.3', '9', '10'
+]);
+
+function normalizeAssignablePermissions(value) {
+  if (!Array.isArray(value)) return null;
+  return Array.from(new Set(value.map(String)))
+    .filter(permission => ASSIGNABLE_PERMISSION_IDS.has(permission));
+}
+
+app.put('/api/admin/users/:id/permissions', requireSession, requireMaster, (req, res) => {
+  const permissions = normalizeAssignablePermissions(req.body?.permissions);
+  if (!permissions) return res.status(400).json({ error: 'Lista de permissões inválida.' });
+
+  try {
+    const target = db.prepare(`SELECT * FROM usuarios_lepta WHERE id = ?`).get(req.params.id);
+    if (!target) return res.status(404).json({ error: 'Usuário não encontrado.' });
+    if (target.role === 'MASTER') {
+      return res.status(400).json({ error: 'Usuários MASTER possuem acesso integral e não precisam de permissões individuais.' });
+    }
+
+    const serializedPermissions = JSON.stringify(permissions);
+    const result = db.prepare(`
+      UPDATE usuarios_lepta
+      SET permissions = ?
+      WHERE id = ?
+    `).run(serializedPermissions, req.params.id);
+    if (result.changes !== 1) return res.status(500).json({ error: 'O banco não confirmou a alteração.' });
+
+    const persisted = db.prepare(`SELECT * FROM usuarios_lepta WHERE id = ?`).get(req.params.id);
+    if (!persisted || persisted.permissions !== serializedPermissions) {
+      return res.status(500).json({ error: 'Não foi possível confirmar as permissões gravadas no banco.' });
+    }
+
+    return res.json({
+      success: true,
+      user: sanitizeUser(persisted),
+      permissions: parseStringArray(persisted.permissions)
+    });
+  } catch (error) {
+    console.error('Erro ao persistir permissões do usuário:', error.message);
+    return res.status(500).json({ error: 'Não foi possível salvar as permissões no banco de dados.' });
+  }
 });
 
 function parseStringArray(value) {
@@ -1643,6 +2316,16 @@ function parseStringArray(value) {
     return Array.isArray(parsed) ? parsed.map(String) : [];
   } catch {
     return [];
+  }
+}
+
+function isAllowedPowerBiUrl(value) {
+  try {
+    const url = new URL(String(value || '').trim());
+    const hostname = url.hostname.toLowerCase();
+    return url.protocol === 'https:' && (hostname === 'app.powerbi.com' || hostname.endsWith('.powerbi.com'));
+  } catch {
+    return false;
   }
 }
 
@@ -1733,6 +2416,10 @@ app.get('/api/power-bi-dashboards', requireSession, (req, res) => {
 app.post('/api/power-bi-dashboards', requireSession, requirePowerBiManager, (req, res) => {
   const title = String(req.body?.title || '').trim();
   const url = String(req.body?.url || '').trim();
+  const embedUrl = String(req.body?.embedUrl || url).trim();
+  if ((url && !isAllowedPowerBiUrl(url)) || (embedUrl && !isAllowedPowerBiUrl(embedUrl))) {
+    return res.status(400).json({ error: 'Informe um link HTTPS válido do Power BI.' });
+  }
   if (!title || !url) return res.status(400).json({ error: 'Nome e link do Power BI são obrigatórios.' });
 
   try {
@@ -1749,7 +2436,7 @@ app.post('/api/power-bi-dashboards', requireSession, requirePowerBiManager, (req
       id,
       title,
       url,
-      String(req.body?.embedUrl || url),
+      embedUrl,
       String(req.body?.description || '').trim(),
       accessType,
       JSON.stringify(parseStringArray(req.body?.allowedGroups)),
@@ -1769,6 +2456,10 @@ app.post('/api/power-bi-dashboards', requireSession, requirePowerBiManager, (req
 app.put('/api/power-bi-dashboards/:id', requireSession, requirePowerBiManager, (req, res) => {
   const title = String(req.body?.title || '').trim();
   const url = String(req.body?.url || '').trim();
+  const embedUrl = String(req.body?.embedUrl || url).trim();
+  if ((url && !isAllowedPowerBiUrl(url)) || (embedUrl && !isAllowedPowerBiUrl(embedUrl))) {
+    return res.status(400).json({ error: 'Informe um link HTTPS válido do Power BI.' });
+  }
   if (!title || !url) return res.status(400).json({ error: 'Nome e link do Power BI são obrigatórios.' });
 
   try {
@@ -1782,7 +2473,7 @@ app.put('/api/power-bi-dashboards/:id', requireSession, requirePowerBiManager, (
     `).run(
       title,
       url,
-      String(req.body?.embedUrl || url),
+      embedUrl,
       String(req.body?.description || '').trim(),
       accessType,
       JSON.stringify(parseStringArray(req.body?.allowedGroups)),
@@ -1815,18 +2506,72 @@ function isReservedPowerBiTable(table) {
   return table === 'dashboards' || table === 'power_bi_dashboards';
 }
 
-app.get('/:table', (req, res, next) => {
+const genericTablePolicies = {
+  usuarios_lepta: { read: 'MASTER', write: 'MASTER' },
+  groups: { read: 'AUTHENTICATED', write: 'MASTER' },
+  calendarEvents: { read: 'AUTHENTICATED', write: '6' },
+  databaseTables: { read: '9', write: '9' }
+};
+
+function resolveGenericTable(req, res, next) {
   const table = getActualTableName(req.params.table);
-  if (isReservedPowerBiTable(table)) return next();
-  if (table === 'usuarios_lepta') {
-    const session = readSession(req);
-    if (!session) return res.status(401).json({ error: 'Sessão inválida.' });
-    if (session.role !== 'MASTER') return res.status(403).json({ error: 'Acesso restrito ao administrador.' });
+  const policy = genericTablePolicies[table];
+  if (!policy) {
+    if (['GET', 'HEAD'].includes(req.method)) return next('route');
+    return res.status(404).json({ error: 'Recurso não encontrado.' });
   }
+  req.genericTable = table;
+  next();
+}
+
+function authorizeGenericTable(req, res, next) {
+  const policy = genericTablePolicies[req.genericTable];
+  const requiredAccess = ['GET', 'HEAD'].includes(req.method) ? policy.read : policy.write;
+  if (requiredAccess === 'MASTER' && req.authSession.role !== 'MASTER') {
+    return res.status(403).json({ error: 'Acesso restrito ao administrador.' });
+  }
+  if (!['MASTER', 'AUTHENTICATED'].includes(requiredAccess) && !hasPermission(req.authUser, requiredAccess)) {
+    return res.status(403).json({ error: 'Usuário sem permissão para acessar este recurso.' });
+  }
+  next();
+}
+
+function validateGenericData(data) {
+  const keys = Object.keys(data);
+  if (!keys.length || keys.length > 50 || keys.some(key => !/^[A-Za-z_][A-Za-z0-9_]*$/.test(key))) {
+    throw new Error('Estrutura de dados inválida.');
+  }
+  return keys;
+}
+
+function restrictUserWriteFields(data) {
+  const allowedFields = new Set(['id', 'username', 'email', 'role', 'permissions']);
+  for (const key of Object.keys(data)) {
+    if (!allowedFields.has(key)) delete data[key];
+  }
+}
+
+function usesJsonContentStorage(table) {
+  if (!['databaseTables', 'groups'].includes(table) || !tableExists(table)) return false;
+  return db.prepare(`SELECT 1 FROM pragma_table_info(?) WHERE name = 'json_content'`).get(table) !== undefined;
+}
+
+function parseJsonContentRow(row) {
+  if (!row) return null;
+  try {
+    return { id: row.id, ...JSON.parse(row.json_content || '{}') };
+  } catch {
+    return { id: row.id };
+  }
+}
+
+app.get('/:table', resolveGenericTable, requireSession, authorizeGenericTable, (req, res, next) => {
+  const table = req.genericTable;
+  if (isReservedPowerBiTable(table)) return next();
   try {
     const rows = db.prepare(`SELECT * FROM "${table}"`).all();
-    if (table === 'databaseTables') {
-       res.json(rows.map(r => JSON.parse(r.json_content)));
+    if (usesJsonContentStorage(table)) {
+       res.json(rows.map(parseJsonContentRow));
     } else if (table === 'usuarios_lepta') {
        res.json(rows.map(sanitizeUser));
     } else {
@@ -1840,22 +2585,15 @@ app.get('/:table', (req, res, next) => {
   }
 });
 
-app.get('/:table/:id', (req, res, next) => {
-  const table = getActualTableName(req.params.table);
+app.get('/:table/:id', resolveGenericTable, requireSession, authorizeGenericTable, (req, res, next) => {
+  const table = req.genericTable;
   if (isReservedPowerBiTable(table)) return next();
-  if (table === 'usuarios_lepta') {
-    const session = readSession(req);
-    if (!session) return res.status(401).json({ error: 'Sessão inválida.' });
-    if (session.role !== 'MASTER' && session.userId !== req.params.id) {
-      return res.status(403).json({ error: 'Acesso não autorizado.' });
-    }
-  }
   try {
     const row = db.prepare(`SELECT * FROM "${table}" WHERE id = ?`).get(req.params.id);
     if (!row) return res.status(404).json({});
 
-    if (table === 'databaseTables') {
-       res.json(JSON.parse(row.json_content));
+    if (usesJsonContentStorage(table)) {
+       res.json(parseJsonContentRow(row));
     } else if (table === 'usuarios_lepta') {
        res.json(sanitizeUser(row));
     } else {
@@ -1869,17 +2607,23 @@ app.get('/:table/:id', (req, res, next) => {
   }
 });
 
-app.post('/:table', (req, res) => {
-  const table = getActualTableName(req.params.table);
+app.post('/:table', resolveGenericTable, requireSession, authorizeGenericTable, (req, res) => {
+  const table = req.genericTable;
   if (isReservedPowerBiTable(table)) return res.status(410).json({ error: 'Use a API dedicada de dashboards do Power BI.' });
-  const session = table === 'usuarios_lepta' ? readSession(req) : null;
-  if (table === 'usuarios_lepta' && session?.role !== 'MASTER') return res.status(403).json({ error: 'Somente MASTER pode criar usuários.' });
   const data = { ...req.body };
-  if (table === 'usuarios_lepta') data.password = '';
+  if (table === 'usuarios_lepta') {
+    restrictUserWriteFields(data);
+    data.password = '';
+  }
   if (!data.id) data.id = Date.now().toString();
 
   try {
-    const keys = Object.keys(data);
+    if (usesJsonContentStorage(table)) {
+      db.prepare(`INSERT INTO "${table}" (id, json_content) VALUES (?, ?)`)
+        .run(data.id, JSON.stringify(data));
+      return res.status(201).json(data);
+    }
+    const keys = validateGenericData(data);
     const colsSql = keys.map(k => `"${k}"`).join(', ');
     const placeholders = keys.map(() => '?').join(', ');
     const values = keys.map(k => typeof data[k] === 'object' ? JSON.stringify(data[k]) : data[k]);
@@ -1891,22 +2635,26 @@ app.post('/:table', (req, res) => {
     db.prepare(`INSERT INTO "${table}" (${colsSql}) VALUES (${placeholders})`).run(values);
     res.status(201).json(table === 'usuarios_lepta' ? sanitizeUser(data) : data);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error('Erro ao criar registro:', err.message);
+    res.status(500).json({ error: 'Não foi possível criar o registro.' });
   }
 });
 
-app.put('/:table/:id', (req, res) => {
-  const table = getActualTableName(req.params.table);
+app.put('/:table/:id', resolveGenericTable, requireSession, authorizeGenericTable, (req, res) => {
+  const table = req.genericTable;
   if (isReservedPowerBiTable(table)) return res.status(410).json({ error: 'Use a API dedicada de dashboards do Power BI.' });
-  const session = table === 'usuarios_lepta' ? readSession(req) : null;
-  if (table === 'usuarios_lepta' && session?.role !== 'MASTER') return res.status(403).json({ error: 'Somente MASTER pode alterar usuários.' });
   const id = req.params.id;
   const data = { ...req.body };
-  if (table === 'usuarios_lepta') delete data.password;
+  if (table === 'usuarios_lepta') restrictUserWriteFields(data);
   if (!data.id) data.id = id;
 
   try {
-    const keys = Object.keys(data);
+    if (usesJsonContentStorage(table)) {
+      db.prepare(`INSERT OR REPLACE INTO "${table}" (id, json_content) VALUES (?, ?)`)
+        .run(id, JSON.stringify(data));
+      return res.json(data);
+    }
+    const keys = validateGenericData(data);
     const colsSql = keys.map(k => `"${k}"`).join(', ');
     const placeholders = keys.map(() => '?').join(', ');
     const values = keys.map(k => typeof data[k] === 'object' ? JSON.stringify(data[k]) : data[k]);
@@ -1922,21 +2670,27 @@ app.put('/:table/:id', (req, res) => {
     db.prepare(`REPLACE INTO "${table}" (${colsSql}) VALUES (${placeholders})`).run(values);
     res.json(data);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error('Erro ao atualizar registro:', err.message);
+    res.status(500).json({ error: 'Não foi possível atualizar o registro.' });
   }
 });
 
-app.patch('/:table/:id', (req, res) => {
-  const table = getActualTableName(req.params.table);
+app.patch('/:table/:id', resolveGenericTable, requireSession, authorizeGenericTable, (req, res) => {
+  const table = req.genericTable;
   if (isReservedPowerBiTable(table)) return res.status(410).json({ error: 'Use a API dedicada de dashboards do Power BI.' });
-  const session = table === 'usuarios_lepta' ? readSession(req) : null;
-  if (table === 'usuarios_lepta' && session?.role !== 'MASTER') return res.status(403).json({ error: 'Somente MASTER pode alterar usuários.' });
   const id = req.params.id;
   const data = { ...req.body };
-  if (table === 'usuarios_lepta') delete data.password;
+  if (table === 'usuarios_lepta') restrictUserWriteFields(data);
 
   try {
-    const keys = Object.keys(data);
+    if (usesJsonContentStorage(table)) {
+      const existing = parseJsonContentRow(db.prepare(`SELECT * FROM "${table}" WHERE id = ?`).get(id));
+      if (!existing) return res.status(404).json({ error: 'Registro não encontrado.' });
+      const updated = { ...existing, ...data, id };
+      db.prepare(`UPDATE "${table}" SET json_content = ? WHERE id = ?`).run(JSON.stringify(updated), id);
+      return res.json(updated);
+    }
+    const keys = validateGenericData(data);
     const setSql = keys.map(k => `"${k}" = ?`).join(', ');
     const values = keys.map(k => typeof data[k] === 'object' ? JSON.stringify(data[k]) : data[k]);
     values.push(id);
@@ -1945,32 +2699,34 @@ app.patch('/:table/:id', (req, res) => {
     const row = db.prepare(`SELECT * FROM "${table}" WHERE id = ?`).get(id);
     res.json(table === 'usuarios_lepta' ? sanitizeUser(row) : parseRow(row));
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error('Erro ao alterar registro:', err.message);
+    res.status(500).json({ error: 'Não foi possível alterar o registro.' });
   }
 });
 
-app.delete('/:table/:id', (req, res) => {
-  const table = getActualTableName(req.params.table);
+app.delete('/:table/:id', resolveGenericTable, requireSession, authorizeGenericTable, (req, res) => {
+  const table = req.genericTable;
   if (isReservedPowerBiTable(table)) return res.status(410).json({ error: 'Use a API dedicada de dashboards do Power BI.' });
-  const session = table === 'usuarios_lepta' ? readSession(req) : null;
-  if (table === 'usuarios_lepta' && session?.role !== 'MASTER') return res.status(403).json({ error: 'Somente MASTER pode excluir usuários.' });
   try {
     if (table === 'usuarios_lepta') {
       const target = db.prepare(`SELECT role FROM usuarios_lepta WHERE id = ?`).get(req.params.id);
       if (!target) return res.status(404).json({ error: 'Usuário não encontrado.' });
+      if (req.authSession.userId === req.params.id) return res.status(400).json({ error: 'Você não pode excluir o próprio usuário.' });
       if (target.role === 'MASTER') return res.status(400).json({ error: 'Usuários MASTER não podem ser excluídos por esta tela.' });
     }
     db.prepare(`DELETE FROM "${table}" WHERE id = ?`).run(req.params.id);
+    if (table === 'usuarios_lepta') revokeSessionsForUser(req.params.id);
     res.json({});
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error('Erro ao excluir registro:', err.message);
+    res.status(500).json({ error: 'Não foi possível excluir o registro.' });
   }
 });
 
 // -------------------------------------------------------------
 // ROTA FALLBACK PARA O REACT ROUTER (DEVE SER A ÚLTIMA ANTES DO LISTEN)
 // -------------------------------------------------------------
-app.use((req, res, next) => {
+app.use((req, res) => {
   if (req.path.startsWith('/api/') || req.path.startsWith('/table/')) {
     return res.status(404).json({ error: 'Endpoint not found' });
   }

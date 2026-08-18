@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Scale, ThumbsUp, ThumbsDown, MessageSquare } from 'lucide-react';
 import '../../core/styles/Operations.css';
+import { API_BASE_URL, getAuthHeaders } from '../../../config/api';
 
 interface CommitteeDecision {
   id: string;
@@ -29,7 +30,7 @@ const Committee = () => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetch('/committees')
+    fetch(`${API_BASE_URL}/committees`, { headers: getAuthHeaders() })
       .then(res => res.json())
       .then(data => {
         setDecisions(data);
