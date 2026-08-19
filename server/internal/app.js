@@ -1355,20 +1355,33 @@ function isCobrancaSimplesTitle(title) {
     title?.tipoCobranca,
     title?.carteira,
     title?.modalidade,
+    title?.produto,
+    title?.PRODUTO,
     title?.operacao?.tipo,
     title?.operacao?.produto,
+    title?.operacao?.produto?.sigla,
     title?.operacao?.nome
   ];
   return candidates.some(val => {
     if (!val) return false;
-    const str = typeof val === 'object' ? JSON.stringify(val).toLowerCase() : String(val).toLowerCase().trim();
+    const str = typeof val === 'object' ? JSON.stringify(val).toUpperCase() : String(val).toUpperCase().trim();
     return (
-      str === 'cs' ||
-      str.includes('cobranca simples') ||
-      str.includes('cobrança simples') ||
-      str.includes('cob. simples') ||
-      str.includes('cobr. simples') ||
-      /\bcs\b/.test(str)
+      str === 'CS' ||
+      str === 'CBS' ||
+      str === 'CMS' ||
+      str === 'CBV' ||
+      str === 'CUS' ||
+      str === 'DMS' ||
+      str.includes('COBRANCA SIMPLES') ||
+      str.includes('COBRANÇA SIMPLES') ||
+      str.includes('COB. SIMPLES') ||
+      str.includes('COBR. SIMPLES') ||
+      /\bCS\b/.test(str) ||
+      /\bCBS\b/.test(str) ||
+      /\bCMS\b/.test(str) ||
+      /\bCBV\b/.test(str) ||
+      /\bCUS\b/.test(str) ||
+      /\bDMS\b/.test(str)
     );
   });
 }
@@ -1455,10 +1468,14 @@ function buildRiskClientSuggestionsFromDatabase(search) {
       COALESCE(SUM(CAST(VALOR_NOMINAL AS REAL)), 0) AS valorGeral,
       COALESCE(SUM(CASE
         WHEN lower(COALESCE(SITUACAO, '')) LIKE '%aberto%'
+          AND upper(COALESCE(PRODUTO, '')) NOT IN ('CBS', 'CMS', 'CBV', 'CUS', 'DMS')
+          AND lower(COALESCE(TIPO, '')) NOT LIKE '%cobran%simples%'
         THEN CAST(VALOR_NOMINAL AS REAL) ELSE 0 END), 0) AS valorAberto,
       COALESCE(SUM(CASE
         WHEN lower(COALESCE(SITUACAO, '')) LIKE '%aberto%'
           AND lower(COALESCE(VENCIDO, '')) IN ('sim', 'yes', 'true', '1')
+          AND upper(COALESCE(PRODUTO, '')) NOT IN ('CBS', 'CMS', 'CBV', 'CUS', 'DMS')
+          AND lower(COALESCE(TIPO, '')) NOT LIKE '%cobran%simples%'
         THEN CAST(VALOR_NOMINAL AS REAL) ELSE 0 END), 0) AS valorVencido
     FROM BASE_NOVA
     WHERE CLIENTE IS NOT NULL
