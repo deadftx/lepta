@@ -1335,11 +1335,17 @@ function riskTitleMatches(title, type, document, name) {
 }
 
 function riskSituation(title) {
-  return String(title?.situacao || '').toLowerCase();
+  if (!title) return '';
+  if (typeof title.situacao === 'string') return title.situacao.toLowerCase();
+  if (typeof title.situacao === 'object' && title.situacao) {
+    return String(title.situacao.descricao || title.situacao.nome || JSON.stringify(title.situacao)).toLowerCase();
+  }
+  return String(title.situacao || '').toLowerCase();
 }
 
 function isOpenRiskTitle(title) {
-  return riskSituation(title).includes('aberto');
+  const sit = riskSituation(title);
+  return sit.includes('aberto') || sit === '' || !sit;
 }
 
 function isLiquidatedRiskTitle(title) {
@@ -1348,42 +1354,67 @@ function isLiquidatedRiskTitle(title) {
 
 function isCobrancaSimplesTitle(title) {
   if (!title) return false;
-  const candidates = [
-    title?.situacao,
-    title?.tipo,
-    title?.subtipo,
-    title?.tipoCobranca,
-    title?.carteira,
-    title?.modalidade,
-    title?.produto,
-    title?.PRODUTO,
-    title?.operacao?.tipo,
-    title?.operacao?.produto,
-    title?.operacao?.produto?.sigla,
-    title?.operacao?.nome
-  ];
-  return candidates.some(val => {
+
+  const targetTokens = new Set([
+    'CS', 'CBS', 'CMS', 'CBV', 'CUS', 'DMS',
+    'COBRANCA SIMPLES', 'COBRANÇA SIMPLES', 'COB. SIMPLES', 'COBR. SIMPLES'
+  ]);
+
+  function matchesValue(val) {
     if (!val) return false;
-    const str = typeof val === 'object' ? JSON.stringify(val).toUpperCase() : String(val).toUpperCase().trim();
-    return (
-      str === 'CS' ||
-      str === 'CBS' ||
-      str === 'CMS' ||
-      str === 'CBV' ||
-      str === 'CUS' ||
-      str === 'DMS' ||
+    if (typeof val === 'number') return false;
+    if (typeof val === 'object') {
+      for (const k of Object.keys(val)) {
+        if (matchesValue(val[k])) return true;
+      }
+      return false;
+    }
+    const str = String(val).toUpperCase().trim();
+    if (targetTokens.has(str)) return true;
+    if (
       str.includes('COBRANCA SIMPLES') ||
       str.includes('COBRANÇA SIMPLES') ||
       str.includes('COB. SIMPLES') ||
-      str.includes('COBR. SIMPLES') ||
-      /\bCS\b/.test(str) ||
-      /\bCBS\b/.test(str) ||
-      /\bCMS\b/.test(str) ||
-      /\bCBV\b/.test(str) ||
-      /\bCUS\b/.test(str) ||
-      /\bDMS\b/.test(str)
-    );
-  });
+      str.includes('COBR. SIMPLES')
+    ) return true;
+    if (/\b(CS|CBS|CMS|CBV|CUS|DMS)\b/.test(str)) return true;
+    return false;
+  }
+
+  const specificFields = [
+    title.produto,
+    title.PRODUTO,
+    title.produtoSigla,
+    title.produtoNome,
+    title.sigla,
+    title.SIGLA,
+    title.tipo,
+    title.TIPO,
+    title.tipoDeTitulo,
+    title.tipoDoTitulo,
+    title.tipoCobranca,
+    title.tipoDeCobranca,
+    title.carteira,
+    title.tipoDeCarteira,
+    title.modalidade,
+    title.modalidadeDeCobranca,
+    title.subtipo,
+    title.natureza,
+    title.especie,
+    title.situacao,
+    title.operacao,
+    title.contaOperacional
+  ];
+
+  for (const field of specificFields) {
+    if (matchesValue(field)) return true;
+  }
+
+  for (const key of Object.keys(title)) {
+    if (matchesValue(title[key])) return true;
+  }
+
+  return false;
 }
 
 
