@@ -24,6 +24,8 @@ dist-ssr
 *.sln
 *.sw?
 .env
+.local-logs/
+.local-secrets/
 # Logs
 logs
 *.log
