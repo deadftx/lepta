@@ -1469,13 +1469,13 @@ function buildRiskClientSuggestionsFromDatabase(search) {
       COALESCE(SUM(CASE
         WHEN lower(COALESCE(SITUACAO, '')) LIKE '%aberto%'
           AND upper(COALESCE(PRODUTO, '')) NOT IN ('CBS', 'CMS', 'CBV', 'CUS', 'DMS')
-          AND lower(COALESCE(TIPO, '')) NOT LIKE '%cobran%simples%'
+          AND lower(COALESCE(SITUACAO, '')) NOT LIKE '%cobran%simples%'
         THEN CAST(VALOR_NOMINAL AS REAL) ELSE 0 END), 0) AS valorAberto,
       COALESCE(SUM(CASE
         WHEN lower(COALESCE(SITUACAO, '')) LIKE '%aberto%'
           AND lower(COALESCE(VENCIDO, '')) IN ('sim', 'yes', 'true', '1')
           AND upper(COALESCE(PRODUTO, '')) NOT IN ('CBS', 'CMS', 'CBV', 'CUS', 'DMS')
-          AND lower(COALESCE(TIPO, '')) NOT LIKE '%cobran%simples%'
+          AND lower(COALESCE(SITUACAO, '')) NOT LIKE '%cobran%simples%'
         THEN CAST(VALOR_NOMINAL AS REAL) ELSE 0 END), 0) AS valorVencido
     FROM BASE_NOVA
     WHERE CLIENTE IS NOT NULL
