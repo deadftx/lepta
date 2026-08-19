@@ -308,7 +308,7 @@ const RiskAnalysis = () => {
         <article className="risk-kpi success"><CheckCircle2 /><span>Liquidações no prazo</span><strong>{percent(details.metricas.percentualNoPrazo)}</strong><small>{currency(details.metricas.valorLiquidado)} liquidado</small></article>
         <article className="risk-kpi"><UsersRound /><span>Contrapartes</span><strong>{details.metricas.quantidadeContrapartes}</strong><small>{details.tipo === 'cliente' ? 'sacados na carteira' : 'cedentes relacionados'}</small></article>
         <article className="risk-kpi warning"><AlertTriangle /><span>Ocorrências negativas</span><strong>{details.metricas.ocorrenciasNegativas}</strong><small>{currency(details.metricas.valorOcorrenciasNegativas)}</small></article>
-        <article className="risk-kpi serasa-kpi"><ShieldCheck /><span>SERASA (Cadastro)</span><strong>{details.serasa?.status || 'Regular'}</strong><small>{details.serasa?.score ? `Score Interno: ${details.serasa.score} pts` : 'Sem restrições cadastradas'}</small></article>
+        <article className="risk-kpi serasa-kpi"><ShieldCheck /><span>SERASA (Cadastro)</span><strong>{details.serasa?.score ? details.serasa.score : '-'}</strong><small>{details.serasa?.status || 'Regular'}</small></article>
         <article className="risk-kpi"><FileCheck2 /><span>Qualidade documental</span><strong>{percent(details.metricas.qualidadeDocumental)}</strong><small>Lastro, manifesto e registro</small></article>
       </section>
 
