@@ -4,10 +4,8 @@ import { API_BASE_URL } from '../../../config/api';
 import {
   PieChart,
   Maximize2,
-  ExternalLink,
   ChevronDown,
   LayoutDashboard,
-  LogIn,
   X
 } from 'lucide-react';
 import '../../core/styles/Operations.css';
@@ -109,31 +107,6 @@ const DashboardsView = () => {
     }
   };
 
-  const [iframeKey, setIframeKey] = useState(0);
-
-  const handlePowerBiLogin = () => {
-    const loginUrl = 'https://app.powerbi.com/singleSignOn?experience=power-bi';
-    const width = 640;
-    const height = 720;
-    const left = window.screen.width / 2 - width / 2;
-    const top = window.screen.height / 2 - height / 2;
-    const popup = window.open(
-      loginUrl,
-      'PowerBiLoginWindow',
-      `width=${width},height=${height},top=${top},left=${left},scrollbars=yes,status=yes`
-    );
-
-    if (popup) {
-      const timer = setInterval(() => {
-        if (popup.closed) {
-          clearInterval(timer);
-          // Força o recarregamento do iframe após fechar o login
-          setIframeKey(prev => prev + 1);
-        }
-      }, 500);
-    }
-  };
-
   const getEffectiveEmbedUrl = (dash: Dashboard) => {
     let url = dash.embedUrl || dash.url;
     if (!url) return '';
@@ -202,51 +175,15 @@ const DashboardsView = () => {
           </div>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
-            <button
-              type="button"
-              onClick={handlePowerBiLogin}
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '0.5rem',
-                background: 'linear-gradient(135deg, #f2c811 0%, #e2a200 100%)',
-                color: '#000',
-                fontWeight: 600,
-                padding: '0.6rem 1.1rem',
-                borderRadius: '8px',
-                border: 'none',
-                cursor: 'pointer',
-                fontSize: '0.9rem',
-                boxShadow: '0 2px 8px rgba(242, 200, 17, 0.25)',
-                transition: 'transform 0.2s, opacity 0.2s'
-              }}
-              title="Fazer login na sua conta do Power BI / Microsoft 365 para manter todos os relatórios autorizados"
-            >
-              <LogIn size={18} /> Login Power BI
-            </button>
-
             {currentDashboard && (
-              <>
-                <button
-                  className="btn-icon"
-                  onClick={handleFullscreen}
-                  title="Modo Tela Cheia"
-                  style={{ padding: '0.6rem 1rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}
-                >
-                  <Maximize2 size={16} /> Tela Cheia
-                </button>
-
-                <a
-                  href={currentDashboard.url}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="btn-icon"
-                  title="Abrir no Power BI"
-                  style={{ padding: '0.6rem 1rem', display: 'flex', alignItems: 'center', gap: '0.4rem', textDecoration: 'none' }}
-                >
-                  <ExternalLink size={16} /> Power BI
-                </a>
-              </>
+              <button
+                className="btn-icon"
+                onClick={handleFullscreen}
+                title="Modo Tela Cheia"
+                style={{ padding: '0.6rem 1rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}
+              >
+                <Maximize2 size={16} /> Tela Cheia
+              </button>
             )}
           </div>
         </div>
@@ -261,16 +198,8 @@ const DashboardsView = () => {
       {/* Main Content Area */}
       {selectedDashboardId && currentDashboard ? (
         <div>
-          <div style={{ padding: '10px 16px', background: 'rgba(255, 153, 0, 0.1)', border: '1px solid rgba(255, 153, 0, 0.25)', borderRadius: '8px', marginBottom: '12px', fontSize: '0.85rem', color: '#ffaa33', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '1rem', flexWrap: 'wrap' }}>
-            <span>💡 <strong>Dica Power BI:</strong> Caso a tela continue no carregamento do logotipo do Power BI, sua organização exige sessão ativa na conta Microsoft.</span>
-            <a href={currentDashboard.url} target="_blank" rel="noreferrer" style={{ color: '#fff', background: 'rgba(255,255,255,0.15)', padding: '4px 12px', borderRadius: '4px', textDecoration: 'none', fontWeight: 600, fontSize: '0.8rem' }}>
-              Entrar na Conta Microsoft / Power BI ↗
-            </a>
-          </div>
-
           <div className="internal-card glass" style={{ padding: '8px', minHeight: '700px' }}>
             <iframe
-              key={iframeKey}
               id="viewer-powerbi-frame"
               title={currentDashboard.title}
               src={getEffectiveEmbedUrl(currentDashboard)}
