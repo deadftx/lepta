@@ -405,20 +405,22 @@ function cleanupOrphanedStagingTables(db) {
   for (const table of tables) db.exec(`DROP TABLE IF EXISTS ${quoteIdentifier(table.name)}`);
 }
 
-function buildMonthlyWindows(initialIso, finalIso) {
+function buildDateWindows(initialIso, finalIso, maxDays = 25) {
   const start = new Date(initialIso);
   const finish = new Date(finalIso);
   const windows = [];
-  let cursor = new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth(), 1));
+  const chunkSizeMs = maxDays * 24 * 60 * 60 * 1000;
+  let cursor = new Date(start);
   while (cursor <= finish) {
-    const nextMonth = new Date(Date.UTC(cursor.getUTCFullYear(), cursor.getUTCMonth() + 1, 1));
-    const windowStart = cursor < start ? start : cursor;
-    const windowEnd = new Date(Math.min(nextMonth.getTime() - 1, finish.getTime()));
+    const nextCursor = new Date(cursor.getTime() + chunkSizeMs);
+    const windowStart = cursor;
+    const windowEnd = new Date(Math.min(nextCursor.getTime() - 1, finish.getTime()));
     windows.push({ dataInicial: windowStart.toISOString(), dataFinal: windowEnd.toISOString() });
-    cursor = nextMonth;
+    cursor = nextCursor;
   }
   return windows;
 }
+
 
 async function fetchJson(url, options, attempt = 1) {
   const controller = new AbortController();
@@ -578,7 +580,7 @@ export async function runUnltdSync({ db, token, projectRoot, source = 'AGENDADO'
   const entities = new Map();
   const clients = new Map();
   const finalDate = isoNow();
-  const windows = buildMonthlyWindows(INITIAL_DATE, finalDate);
+  const windows = buildDateWindows(INITIAL_DATE, finalDate, 25);
 
   try {
     lockDescriptor = acquireProcessLock(lockPath, id);
@@ -600,7 +602,7 @@ export async function runUnltdSync({ db, token, projectRoot, source = 'AGENDADO'
       updateResource(db, id, resource.name, {
         status: 'EXECUTANDO',
         janelasTotal: windows.length,
-        mensagem: 'Consultando períodos mensais.'
+        mensagem: 'Consultando períodos de 25 dias.'
       });
       updateExecution(db, id, {
         etapa: `Consultando ${resource.name}`,
