@@ -20,6 +20,13 @@ test -f "$CERTIFICATE_DIR/privkey.pem" || {
   exit 1
 }
 
+test -f /etc/nginx/.htpasswd-lepta-dev || {
+  echo "Arquivo de autenticacao do DEV nao encontrado."
+  exit 1
+}
+chown root:www-data /etc/nginx/.htpasswd-lepta-dev
+chmod 640 /etc/nginx/.htpasswd-lepta-dev
+
 if [ -f "$NGINX_CONFIG" ]; then
   cp -p "$NGINX_CONFIG" "$BACKUP_CONFIG"
 fi

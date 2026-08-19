@@ -32,7 +32,8 @@ fi
 
 PASSWORD_HASH="$(printf '%s' "$DEV_PASSWORD" | openssl passwd -apr1 -stdin)"
 printf '%s:%s\n' "$DEV_USER" "$PASSWORD_HASH" > "$AUTH_FILE"
-chmod 600 "$AUTH_FILE"
+chown root:www-data "$AUTH_FILE"
+chmod 640 "$AUTH_FILE"
 unset DEV_PASSWORD DEV_PASSWORD_CONFIRM PASSWORD_HASH
 
 cat > "$NGINX_AVAILABLE" <<'NGINX'
