@@ -6,6 +6,7 @@ HOMOLOG_DIR="/var/www/lepta"
 REPOSITORY_URL="https://github.com/deadftx/lepta.git"
 DEV_PORT="3005"
 LOCK_FILE="/var/lock/lepta-dev-deploy.lock"
+NGINX_CONFIG="/etc/nginx/sites-available/lepta-dev"
 
 if [ "${EUID}" -ne 0 ]; then
   echo "Execute este script como root."
@@ -22,6 +23,32 @@ test -f "$HOMOLOG_DIR/database.sqlite" || {
   echo "ERRO: database.sqlite do homolog nao encontrado."
   exit 1
 }
+
+ensure_dev_auth_forwarding() {
+  local forwarding_line='        proxy_set_header Authorization $http_x_lepta_authorization;'
+  local backup_config="${NGINX_CONFIG}.auth-backup"
+
+  if [ ! -f "$NGINX_CONFIG" ] || grep -Fq "$forwarding_line" "$NGINX_CONFIG"; then
+    return
+  fi
+
+  cp -p "$NGINX_CONFIG" "$backup_config"
+  sed -i "/proxy_http_version 1.1;/a\\$forwarding_line" "$NGINX_CONFIG"
+
+  if nginx -t; then
+    systemctl reload nginx
+    rm -f -- "$backup_config"
+    echo "Encaminhamento de autenticacao do DEV atualizado."
+    return
+  fi
+
+  cp -p "$backup_config" "$NGINX_CONFIG"
+  rm -f -- "$backup_config"
+  echo "ERRO: nao foi possivel atualizar a autenticacao do Nginx do DEV."
+  exit 1
+}
+
+ensure_dev_auth_forwarding
 
 if [ ! -d "$DEV_DIR/.git" ]; then
   test ! -e "$DEV_DIR" || {
