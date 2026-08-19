@@ -403,8 +403,7 @@
   font-weight: 700;
   text-transform: uppercase;
 }
-.add-contact-button,
-.contact-empty button {
+.add-contact-button {
   display: inline-flex;
   align-items: center;
   justify-content: center;

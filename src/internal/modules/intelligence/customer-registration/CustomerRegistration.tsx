@@ -141,6 +141,21 @@ const formatCurrency = (value?: number | null) => value === null || value === un
   ? '—'
   : new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value);
 
+const formatPhone = (value?: string | null) => {
+  let digits = String(value || '').replace(/\D/g, '');
+  if (digits.length > 11 && digits.startsWith('55')) digits = digits.slice(2);
+  digits = digits.slice(0, 11);
+
+  if (!digits) return '';
+  if (digits.length <= 2) return `(${digits}`;
+
+  const areaCode = digits.slice(0, 2);
+  const localNumber = digits.slice(2);
+  if (localNumber.length <= 4) return `(${areaCode}) ${localNumber}`;
+  if (digits.length <= 10) return `(${areaCode}) ${localNumber.slice(0, 4)}-${localNumber.slice(4)}`;
+  return `(${areaCode}) ${localNumber.slice(0, 5)}-${localNumber.slice(5)}`;
+};
+
 const phoneHref = (value?: string | null) => {
   const match = String(value || '').trim().match(/\+?\d[\d\s().-]{6,}\d/);
   if (!match) return '';
@@ -522,7 +537,7 @@ const CustomerRegistration = () => {
                 </div>
                 <div className="contact-list">
                   {contacts.map((contact, index) => (
-                    <div className="contact-row" key={`${contact.telefone || 'novo'}-${index}`}>
+                    <div className="contact-row" key={`contact-${index}`}>
                       {editing ? (
                         <>
                           <input
@@ -532,9 +547,11 @@ const CustomerRegistration = () => {
                             aria-label={`Nome do contato ${index + 1}`}
                           />
                           <input
-                            value={contact.telefone || ''}
-                            onChange={event => updateContact(index, 'telefone', event.target.value)}
+                            value={formatPhone(contact.telefone)}
+                            onChange={event => updateContact(index, 'telefone', formatPhone(event.target.value))}
                             placeholder="Telefone"
+                            inputMode="tel"
+                            maxLength={15}
                             aria-label={`Telefone do contato ${index + 1}`}
                           />
                           <button type="button" className="remove-contact-button" onClick={() => removeContact(index)} aria-label={`Remover contato ${index + 1}`}>
@@ -546,7 +563,7 @@ const CustomerRegistration = () => {
                           <strong>{contact.nome || 'Contato não informado'}</strong>
                           {contact.telefone && phoneHref(contact.telefone) ? (
                             <a className="phone-call-link" href={phoneHref(contact.telefone)} aria-label={`Ligar para ${contact.telefone}`} title="Ligar pelo aplicativo padrão">
-                              <Phone size={15} />{contact.telefone}
+                              <Phone size={15} />{formatPhone(contact.telefone)}
                             </a>
                           ) : (
                             <span>Telefone não informado</span>
@@ -558,7 +575,6 @@ const CustomerRegistration = () => {
                   {!contacts.length && (
                     <div className="contact-empty">
                       Nenhum contato cadastrado.
-                      {editing && <button type="button" onClick={addContact}><Plus size={15} /> Adicionar o primeiro</button>}
                     </div>
                   )}
                 </div>
@@ -749,7 +765,7 @@ const CustomerRegistration = () => {
                         aria-label={`Ligar para ${client.telefone}`}
                         title="Ligar pelo aplicativo padrão"
                       >
-                        <Phone size={15} />{client.telefone}
+                        <Phone size={15} />{formatPhone(client.telefone)}
                       </a>
                     ) : (
                       <span><Phone size={15} />Não informado</span>
