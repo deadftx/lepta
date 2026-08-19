@@ -7,6 +7,7 @@ import ExcelJS from 'exceljs';
 import Database from 'better-sqlite3';
 import stringSimilarity from 'string-similarity';
 import { createCipheriv, createDecipheriv, createHash, randomBytes, scryptSync, timingSafeEqual } from 'crypto';
+import { registerDatabaseSyncRoutes } from './modules/database/routes.js';
 
 const app = express();
 app.disable('x-powered-by');
@@ -98,6 +99,7 @@ const configuredDbPath = String(process.env.LEPTA_DATABASE_PATH || '').trim();
 const dbPath = configuredDbPath ? path.resolve(configuredDbPath) : path.join(projectRoot, 'database.sqlite');
 const db = new Database(dbPath, { fileMustExist: false });
 db.pragma('journal_mode = WAL');
+db.pragma('busy_timeout = 30000');
 
 const authSecretPath = path.join(projectRoot, '.auth-secret');
 if (!process.env.AUTH_ENCRYPTION_KEY && !fs.existsSync(authSecretPath)) {
@@ -2538,6 +2540,15 @@ app.delete('/api/power-bi-dashboards/:id', requireSession, requirePowerBiManager
     console.error('Erro ao excluir dashboard do Power BI:', error.message);
     return res.status(500).json({ error: 'Não foi possível excluir o dashboard.' });
   }
+});
+
+registerDatabaseSyncRoutes(app, {
+  db,
+  databasePath: dbPath,
+  projectRoot,
+  requireSession,
+  requirePermission,
+  requireMaster
 });
 
 function isReservedPowerBiTable(table) {
