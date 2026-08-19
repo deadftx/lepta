@@ -76,6 +76,8 @@ certbot --nginx \
   --register-unsafely-without-email \
   --redirect
 
+bash /var/www/lepta-dev/scripts/configurar-dev-cloudflare-flexible.sh
+
 nginx -t
 systemctl reload nginx
 
