@@ -43,6 +43,8 @@ interface RiskDetails {
     valorGeral: number;
     valorAberto: number;
     valorVencido: number;
+    valorCobrancaSimples?: number;
+    qtdCobrancaSimples?: number;
     valorLiquidado: number;
     percentualVencido: number;
     atrasoMedio: number;
@@ -54,6 +56,14 @@ interface RiskDetails {
     utilizacaoLimite: number | null;
     qualidadeDocumental: number;
     quantidadeContrapartes: number;
+  };
+  serasa?: {
+    status: string;
+    score: number;
+    apontamentos: number;
+    protestos: number;
+    pefinRefin: number;
+    origem: string;
   };
   aging: Array<{ chave: string; rotulo: string; valor: number; quantidade: number }>;
   agendaVencimentos: Array<{ rotulo: string; valor: number }>;
@@ -293,13 +303,12 @@ const RiskAnalysis = () => {
       <section className="risk-kpi-grid">
         <article className="risk-kpi"><CircleDollarSign /><span>Exposição em aberto</span><strong>{currency(details.metricas.valorAberto)}</strong><small>{details.metricas.qtdTitulos} títulos analisados</small></article>
         <article className="risk-kpi danger"><TrendingDown /><span>Total vencido</span><strong>{currency(details.metricas.valorVencido)}</strong><small>{percent(details.metricas.percentualVencido)} da exposição</small></article>
+        <article className="risk-kpi cs-kpi"><Landmark /><span>Cobrança Simples</span><strong>{currency(details.metricas.valorCobrancaSimples || 0)}</strong><small>{details.metricas.qtdCobrancaSimples || 0} títulos em CS</small></article>
         <article className="risk-kpi"><CalendarClock /><span>Atraso médio</span><strong>{Math.round(details.metricas.atrasoMedio)} dias</strong><small>Máximo de {Math.round(details.metricas.atrasoMaximo)} dias</small></article>
         <article className="risk-kpi success"><CheckCircle2 /><span>Liquidações no prazo</span><strong>{percent(details.metricas.percentualNoPrazo)}</strong><small>{currency(details.metricas.valorLiquidado)} liquidado</small></article>
         <article className="risk-kpi"><UsersRound /><span>Contrapartes</span><strong>{details.metricas.quantidadeContrapartes}</strong><small>{details.tipo === 'cliente' ? 'sacados na carteira' : 'cedentes relacionados'}</small></article>
         <article className="risk-kpi warning"><AlertTriangle /><span>Ocorrências negativas</span><strong>{details.metricas.ocorrenciasNegativas}</strong><small>{currency(details.metricas.valorOcorrenciasNegativas)}</small></article>
-        {details.tipo === 'cliente' && (
-          <article className="risk-kpi"><Landmark /><span>Utilização do limite</span><strong>{details.metricas.utilizacaoLimite === null ? 'Não informado' : percent(details.metricas.utilizacaoLimite)}</strong><small>{details.metricas.limite ? `Limite: ${currency(details.metricas.limite)}` : 'Sem limite disponível na API'}</small></article>
-        )}
+        <article className="risk-kpi serasa-kpi"><ShieldCheck /><span>SERASA (Cadastro)</span><strong>{details.serasa?.status || 'Regular'}</strong><small>{details.serasa?.score ? `Score Interno: ${details.serasa.score} pts` : 'Sem restrições cadastradas'}</small></article>
         <article className="risk-kpi"><FileCheck2 /><span>Qualidade documental</span><strong>{percent(details.metricas.qualidadeDocumental)}</strong><small>Lastro, manifesto e registro</small></article>
       </section>
 
