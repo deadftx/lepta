@@ -38,6 +38,12 @@ interface EconomicGroup {
   nome?: string | null;
 }
 
+interface Contact {
+  nome?: string | null;
+  telefone?: string | null;
+  fonte?: 'local' | 'api';
+}
+
 interface Entity {
   id?: number;
   valido?: boolean;
@@ -45,6 +51,7 @@ interface Entity {
   nome?: string | null;
   email?: string | null;
   telefone?: string | null;
+  contatos?: Contact[] | null;
   tipo?: string | null;
   endereco?: Address | null;
   grupoEconomico?: EconomicGroup | null;
@@ -108,6 +115,7 @@ const emptyClient = (): ClientData => ({
     nome: '',
     email: '',
     telefone: '',
+    contatos: [{ nome: '', telefone: '', fonte: 'local' }],
     tipo: 'PJ',
     valido: true,
     endereco: {
@@ -132,6 +140,29 @@ const formatDocument = (value?: string | null) => {
 const formatCurrency = (value?: number | null) => value === null || value === undefined
   ? '—'
   : new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value);
+
+const formatPhone = (value?: string | null) => {
+  let digits = String(value || '').replace(/\D/g, '');
+  if (digits.length > 11 && digits.startsWith('55')) digits = digits.slice(2);
+  digits = digits.slice(0, 11);
+
+  if (!digits) return '';
+  if (digits.length <= 2) return `(${digits}`;
+
+  const areaCode = digits.slice(0, 2);
+  const localNumber = digits.slice(2);
+  if (localNumber.length <= 4) return `(${areaCode}) ${localNumber}`;
+  if (digits.length <= 10) return `(${areaCode}) ${localNumber.slice(0, 4)}-${localNumber.slice(4)}`;
+  return `(${areaCode}) ${localNumber.slice(0, 5)}-${localNumber.slice(5)}`;
+};
+
+const phoneHref = (value?: string | null) => {
+  const match = String(value || '').trim().match(/\+?\d[\d\s().-]{6,}\d/);
+  if (!match) return '';
+  const hasCountryPrefix = match[0].trim().startsWith('+');
+  const digits = match[0].replace(/\D/g, '');
+  return digits ? `tel:${hasCountryPrefix ? '+' : ''}${digits}` : '';
+};
 
 const sourceLabel = (source: ComposedClient['source']) => {
   if (source === 'api+local') return 'API + Banco Interno';
@@ -277,6 +308,47 @@ const CustomerRegistration = () => {
     } : current);
   };
 
+  const updateContact = (index: number, field: 'nome' | 'telefone', value: string) => {
+    setEditData(current => {
+      if (!current) return current;
+      const contacts = [...(current.entidade.contatos || [])];
+      contacts[index] = { ...(contacts[index] || {}), [field]: value, fonte: 'local' };
+      return {
+        ...current,
+        entidade: {
+          ...current.entidade,
+          contatos: contacts,
+          telefone: contacts[0]?.telefone || ''
+        }
+      };
+    });
+  };
+
+  const addContact = () => {
+    setEditData(current => current ? {
+      ...current,
+      entidade: {
+        ...current.entidade,
+        contatos: [...(current.entidade.contatos || []), { nome: '', telefone: '', fonte: 'local' }]
+      }
+    } : current);
+  };
+
+  const removeContact = (index: number) => {
+    setEditData(current => {
+      if (!current) return current;
+      const contacts = (current.entidade.contatos || []).filter((_, contactIndex) => contactIndex !== index);
+      return {
+        ...current,
+        entidade: {
+          ...current.entidade,
+          contatos: contacts,
+          telefone: contacts[0]?.telefone || ''
+        }
+      };
+    });
+  };
+
   const updateAddress = (field: keyof Address, value: string) => {
     setEditData(current => current ? {
       ...current,
@@ -384,6 +456,7 @@ const CustomerRegistration = () => {
     const address = entity.endereco || {};
     const operationalAccounts = data.contasOperacionais || [];
     const graphicAccounts = data.contasGraficas || [];
+    const contacts = entity.contatos || [];
 
     return (
       <div className="customer-registration-page customer-detail-page">
@@ -453,7 +526,59 @@ const CustomerRegistration = () => {
             <div className="detail-section-title"><UserRound size={20} /><h3>Dados cadastrais</h3></div>
             <div className="detail-fields-grid">
               <DetailField icon={<Mail size={17} />} label="E-mail" value={entity.email} editing={editing} onChange={value => updateEntity('email', value)} />
-              <DetailField icon={<Phone size={17} />} label="Telefone" value={entity.telefone} editing={editing} onChange={value => updateEntity('telefone', value)} />
+              <div className="contact-field wide">
+                <div className="contact-field-header">
+                  <span><Phone size={17} /> Contatos e telefones</span>
+                  {editing && (
+                    <button type="button" className="add-contact-button" onClick={addContact}>
+                      <Plus size={16} /> Adicionar contato
+                    </button>
+                  )}
+                </div>
+                <div className="contact-list">
+                  {contacts.map((contact, index) => (
+                    <div className="contact-row" key={`contact-${index}`}>
+                      {editing ? (
+                        <>
+                          <input
+                            value={contact.nome || ''}
+                            onChange={event => updateContact(index, 'nome', event.target.value)}
+                            placeholder="Nome do contato"
+                            aria-label={`Nome do contato ${index + 1}`}
+                          />
+                          <input
+                            value={formatPhone(contact.telefone)}
+                            onChange={event => updateContact(index, 'telefone', formatPhone(event.target.value))}
+                            placeholder="Telefone"
+                            inputMode="tel"
+                            maxLength={15}
+                            aria-label={`Telefone do contato ${index + 1}`}
+                          />
+                          <button type="button" className="remove-contact-button" onClick={() => removeContact(index)} aria-label={`Remover contato ${index + 1}`}>
+                            <Trash2 size={16} />
+                          </button>
+                        </>
+                      ) : (
+                        <>
+                          <strong>{contact.nome || 'Contato não informado'}</strong>
+                          {contact.telefone && phoneHref(contact.telefone) ? (
+                            <a className="phone-call-link" href={phoneHref(contact.telefone)} aria-label={`Ligar para ${contact.telefone}`} title="Ligar pelo aplicativo padrão">
+                              <Phone size={15} />{formatPhone(contact.telefone)}
+                            </a>
+                          ) : (
+                            <span>Telefone não informado</span>
+                          )}
+                        </>
+                      )}
+                    </div>
+                  ))}
+                  {!contacts.length && (
+                    <div className="contact-empty">
+                      Nenhum contato cadastrado.
+                    </div>
+                  )}
+                </div>
+              </div>
               <DetailField label="Tipo" value={entity.tipo} editing={editing} onChange={value => updateEntity('tipo', value)} />
               <DetailField label="ID na UNLTD" value={entity.id?.toString()} />
               <DetailField label="ID do cliente" value={data.id?.toString()} />
@@ -618,11 +743,37 @@ const CustomerRegistration = () => {
           ) : (
             <div className="registration-result-list">
               {results.map(client => (
-                <button type="button" className="registration-result-row" key={client.documento} onClick={() => openClient(client.documento)}>
+                <div
+                  className="registration-result-row"
+                  key={client.documento}
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => openClient(client.documento)}
+                  onKeyDown={event => {
+                    if (event.target !== event.currentTarget || !['Enter', ' '].includes(event.key)) return;
+                    event.preventDefault();
+                    openClient(client.documento);
+                  }}
+                >
                   <div className="result-client-main"><span className="result-avatar"><Building2 size={20} /></span><div><strong>{client.nome}</strong><small>{formatDocument(client.documento)}</small></div></div>
-                  <div className="result-contact"><span><Phone size={15} />{client.telefone || 'Não informado'}</span><span><Mail size={15} />{client.email || 'Não informado'}</span></div>
+                  <div className="result-contact">
+                    {client.telefone && phoneHref(client.telefone) ? (
+                      <a
+                        className="phone-call-link"
+                        href={phoneHref(client.telefone)}
+                        onClick={event => event.stopPropagation()}
+                        aria-label={`Ligar para ${client.telefone}`}
+                        title="Ligar pelo aplicativo padrão"
+                      >
+                        <Phone size={15} />{formatPhone(client.telefone)}
+                      </a>
+                    ) : (
+                      <span><Phone size={15} />Não informado</span>
+                    )}
+                    <span><Mail size={15} />{client.email || 'Não informado'}</span>
+                  </div>
                   <div className="result-source"><span className={`source-pill ${client.source}`}>{sourceLabel(client.source)}</span><span>Ver detalhes</span></div>
-                </button>
+                </div>
               ))}
             </div>
           )}
@@ -638,7 +789,8 @@ const DetailField = ({
   value,
   editing = false,
   onChange,
-  wide = false
+  wide = false,
+  linkHref = ''
 }: {
   icon?: React.ReactNode;
   label: string;
@@ -646,11 +798,20 @@ const DetailField = ({
   editing?: boolean;
   onChange?: (value: string) => void;
   wide?: boolean;
+  linkHref?: string;
 }) => (
-  <label className={`detail-field ${wide ? 'wide' : ''}`}>
+  <div className={`detail-field ${wide ? 'wide' : ''}`}>
     <span>{icon}{label}</span>
-    {editing && onChange ? <input value={value || ''} onChange={event => onChange(event.target.value)} /> : <strong>{value || 'Não informado'}</strong>}
-  </label>
+    {editing && onChange ? (
+      <input value={value || ''} onChange={event => onChange(event.target.value)} />
+    ) : value && linkHref ? (
+      <a className="detail-field-link phone-call-link" href={linkHref} aria-label={`Ligar para ${value}`} title="Ligar pelo aplicativo padrão">
+        <Phone size={15} />{value}
+      </a>
+    ) : (
+      <strong>{value || 'Não informado'}</strong>
+    )}
+  </div>
 );
 
 export default CustomerRegistration;

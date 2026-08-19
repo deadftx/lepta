@@ -7,6 +7,7 @@ import ExcelJS from 'exceljs';
 import Database from 'better-sqlite3';
 import stringSimilarity from 'string-similarity';
 import { createCipheriv, createDecipheriv, createHash, randomBytes, scryptSync, timingSafeEqual } from 'crypto';
+import { registerDatabaseSyncRoutes } from './modules/database/routes.js';
 
 const app = express();
 app.disable('x-powered-by');
@@ -98,6 +99,7 @@ const configuredDbPath = String(process.env.LEPTA_DATABASE_PATH || '').trim();
 const dbPath = configuredDbPath ? path.resolve(configuredDbPath) : path.join(projectRoot, 'database.sqlite');
 const db = new Database(dbPath, { fileMustExist: false });
 db.pragma('journal_mode = WAL');
+db.pragma('busy_timeout = 30000');
 
 const authSecretPath = path.join(projectRoot, '.auth-secret');
 if (!process.env.AUTH_ENCRYPTION_KEY && !fs.existsSync(authSecretPath)) {
@@ -751,6 +753,38 @@ function deepDifference(base, edited) {
   return Object.is(base, edited) ? undefined : edited;
 }
 
+function normalizeClientContacts(entity, source) {
+  if (!entity || typeof entity !== 'object') return [];
+  const rawContacts = Array.isArray(entity.contatos) ? entity.contatos : [];
+  const contacts = rawContacts.map(contact => ({
+    nome: String(contact?.nome || contact?.nomeContato || contact?.contato || '').trim(),
+    telefone: String(contact?.telefone || contact?.celular || contact?.fone || '').trim(),
+    fonte: source === 'api' ? 'api' : (contact?.fonte === 'api' ? 'api' : 'local')
+  }));
+  const primaryPhone = String(entity.telefone || '').trim();
+  if (primaryPhone) {
+    contacts.push({
+      nome: String(entity.nomeContato || entity.contato?.nome || '').trim(),
+      telefone: primaryPhone,
+      fonte: source
+    });
+  }
+  return contacts.filter(contact => contact.nome || contact.telefone);
+}
+
+function mergeClientContacts(localContacts, apiContacts) {
+  const contacts = [];
+  const seen = new Set();
+  for (const contact of [...localContacts, ...apiContacts]) {
+    const phoneKey = normalizeEntityDocument(contact.telefone);
+    const key = phoneKey || `${normalizeStr(contact.nome)}|${normalizeStr(contact.telefone)}`;
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    contacts.push(contact);
+  }
+  return contacts;
+}
+
 function getLocalClientRow(document) {
   if (!tableExists('clientes_cadastro')) return null;
   return db.prepare(`SELECT * FROM clientes_cadastro WHERE documento = ?`).get(normalizeEntityDocument(document)) || null;
@@ -766,11 +800,17 @@ function composeClientRegistration(apiData, localRow) {
   const override = parseJsonObject(localRow?.override_json, {});
   const base = apiData || snapshot || {};
   const mergedData = deepMerge(base, override);
+  const localContacts = normalizeClientContacts(override?.entidade, 'local')
+    .filter(contact => contact.fonte === 'local');
+  const apiContacts = normalizeClientContacts(base?.entidade, 'api');
+  const contacts = mergeClientContacts(localContacts, apiContacts);
   const data = mergedData?.entidade ? {
     ...mergedData,
     entidade: {
       ...mergedData.entidade,
-      documento: normalizeEntityDocument(mergedData.entidade.documento || localRow?.documento)
+      documento: normalizeEntityDocument(mergedData.entidade.documento || localRow?.documento),
+      telefone: contacts[0]?.telefone || mergedData.entidade.telefone || '',
+      contatos: contacts
     }
   } : mergedData;
   return {
@@ -2500,6 +2540,15 @@ app.delete('/api/power-bi-dashboards/:id', requireSession, requirePowerBiManager
     console.error('Erro ao excluir dashboard do Power BI:', error.message);
     return res.status(500).json({ error: 'Não foi possível excluir o dashboard.' });
   }
+});
+
+registerDatabaseSyncRoutes(app, {
+  db,
+  databasePath: dbPath,
+  projectRoot,
+  requireSession,
+  requirePermission,
+  requireMaster
 });
 
 function isReservedPowerBiTable(table) {

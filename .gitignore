@@ -24,6 +24,9 @@ dist-ssr
 *.sln
 *.sw?
 .env
+.local-logs/
+.local-secrets/
+.unltd-sync.lock
 # Logs
 logs
 *.log

@@ -34,6 +34,9 @@ jobs:
             # Instala dependências e gera o build
             npm install
             npm run build
+
+            # Mantém instalado o backup diário da API UNLTD às 07:30 (São Paulo).
+            bash scripts/install-unltd-sync-timer.sh
             
             # Reinicia o servidor
             pm2 restart lepta-homolog

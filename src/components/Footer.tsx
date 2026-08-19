@@ -16,7 +16,7 @@ const Footer = () => {
         <div className="footer-contact">
           <h3>Contato</h3>
           <p>Av. Sagitário, 138</p>
-          <p>Cj. 2106 - Torre City - Alphaville</p>
+          <p>21º andar - Torre City - Alphaville</p>
           <p>Barueri/SP | CEP 06473-073</p>
           <a href="mailto:contato@lepta.com.br" className="contact-link">contato@lepta.com.br</a>
           <p className="phone">+55 11 4326-3875</p>
