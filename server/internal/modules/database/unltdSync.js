@@ -372,19 +372,24 @@ function mergeStagingTable(db, stagingTable, targetTable, metadata, executionId,
 
 function commitStagedTables(db, stagingTables, executionId, synchronizedAt) {
   let total = 0;
-  const merge = db.transaction(() => {
-    for (const [targetTable, stagingTable] of stagingTables.entries()) {
-      total += mergeStagingTable(
-        db,
-        stagingTable,
-        targetTable,
-        stagingTables.metadata.get(targetTable),
-        executionId,
-        synchronizedAt
-      );
+  // Faz o merge tabela a tabela para não travar o SQLite em uma única transação gigante
+  for (const [targetTable, stagingTable] of stagingTables.entries()) {
+    try {
+      const merge = db.transaction(() => {
+        return mergeStagingTable(
+          db,
+          stagingTable,
+          targetTable,
+          stagingTables.metadata.get(targetTable),
+          executionId,
+          synchronizedAt
+        );
+      });
+      total += merge();
+    } catch (err) {
+      console.error(`Erro ao mesclar tabela ${targetTable}:`, err.message);
     }
-  });
-  merge();
+  }
   return total;
 }
 
@@ -471,14 +476,20 @@ function collectRelatedData(value, entities, clients, seen = new Set()) {
     return;
   }
   for (const [key, child] of Object.entries(value)) {
-    if (key === 'entidade' && child && typeof child === 'object' && child.documento) {
-      entities.set(normalizeDocument(child.documento), child);
+    if (child && typeof child === 'object') {
+      const doc = normalizeDocument(child.documento || child.entidade?.documento || child.cpfCnpj || child.cnpj || child.cpf);
+      if ([11, 14].includes(doc.length)) {
+        const lowerKey = key.toLowerCase();
+        if (lowerKey.includes('cliente') || lowerKey.includes('cedente') || lowerKey.includes('contaoperacional')) {
+          clients.set(doc, child.cliente || child);
+          if (child.entidade) entities.set(doc, child.entidade);
+          else entities.set(doc, child);
+        } else if (lowerKey.includes('entidade') || lowerKey.includes('sacado')) {
+          entities.set(doc, child.entidade || child);
+        }
+      }
+      collectRelatedData(child, entities, clients, seen);
     }
-    if (key === 'cliente' && child && typeof child === 'object' && child.entidade?.documento) {
-      clients.set(normalizeDocument(child.entidade.documento), child);
-      entities.set(normalizeDocument(child.entidade.documento), child.entidade);
-    }
-    collectRelatedData(child, entities, clients, seen);
   }
 }
 
@@ -774,7 +785,7 @@ export function getSyncDashboard(db, { databasePath, projectRoot } = {}) {
   };
 }
 
-export function consolidateCedentesTable(db, clientsMap = new Map(), entitiesMap = new Map(), synchronizedAt = isoNow()) {
+export function ensureCedentesTableSchema(db) {
   db.exec(`
     CREATE TABLE IF NOT EXISTS CEDENTES (
       documento TEXT PRIMARY KEY,
@@ -838,6 +849,10 @@ export function consolidateCedentesTable(db, clientsMap = new Map(), entitiesMap
       ultima_atualizacao TEXT NOT NULL
     )
   `);
+}
+
+export function consolidateCedentesTable(db, clientsMap = new Map(), entitiesMap = new Map(), synchronizedAt = isoNow()) {
+  ensureCedentesTableSchema(db);
 
   const hasTable = (tableName) => Boolean(
     db.prepare("SELECT 1 FROM sqlite_master WHERE type IN ('table', 'view') AND name = ?").get(tableName)
@@ -987,163 +1002,167 @@ export function consolidateCedentesTable(db, clientsMap = new Map(), entitiesMap
       ultima_atualizacao = excluded.ultima_atualizacao
   `);
 
-  const runConsolidation = db.transaction(() => {
-    for (const doc of allDocs) {
-      if (!doc) continue;
-      const clientObj = clientsMap.get(doc) || {};
-      const entityFromMap = entitiesMap.get(doc);
-      const entityObj = clientObj.entidade || entityFromMap || {};
+  const docList = Array.from(allDocs);
+  const CHUNK_SIZE = 100;
+  for (let i = 0; i < docList.length; i += CHUNK_SIZE) {
+    const chunk = docList.slice(i, i + CHUNK_SIZE);
+    const runChunk = db.transaction(() => {
+      for (const doc of chunk) {
+        if (!doc) continue;
+        const clientObj = clientsMap.get(doc) || {};
+        const entityFromMap = entitiesMap.get(doc);
+        const entityObj = clientObj.entidade || entityFromMap || {};
 
-      // Verifica se há edição local em clientes_cadastro
-      const localRow = getLocalRow(doc);
-      let localOverride = {};
-      let localSnapshot = {};
-      if (localRow) {
-        try { localOverride = JSON.parse(localRow.override_json || '{}'); } catch {}
-        try { localSnapshot = JSON.parse(localRow.api_snapshot_json || '{}'); } catch {}
+        // Verifica se há edição local em clientes_cadastro
+        const localRow = getLocalRow(doc);
+        let localOverride = {};
+        let localSnapshot = {};
+        if (localRow) {
+          try { localOverride = JSON.parse(localRow.override_json || '{}'); } catch {}
+          try { localSnapshot = JSON.parse(localRow.api_snapshot_json || '{}'); } catch {}
+        }
+        const hasLocalData = Boolean(localRow);
+        const localEntity = localOverride.entidade || {};
+        const baseEntity = entityObj.nome ? entityObj : (localSnapshot.entidade || {});
+
+        // 1. Identificação
+        const razaoSocial = String(localEntity.nome || baseEntity.nome || clientObj.nome || 'Cliente sem nome').trim();
+        const nomeFantasia = String(localEntity.nomeFantasia || baseEntity.nomeFantasia || clientObj.nomeFantasia || '').trim();
+        const tipoPessoa = String(localEntity.tipo || baseEntity.tipo || (doc.length === 11 ? 'PF' : 'PJ')).toUpperCase();
+        const cadastroValido = baseEntity.valido !== false ? 1 : 0;
+
+        // Formata Documento
+        let docFormatado = doc;
+        if (doc.length === 14) docFormatado = doc.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, '$1.$2.$3/$4-$5');
+        else if (doc.length === 11) docFormatado = doc.replace(/^(\d{3})(\d{3})(\d{3})(\d{2})$/, '$1.$2.$3-$4');
+
+        // 2. Endereço Completo
+        const endObj = localEntity.endereco
+          || (baseEntity.endereco && typeof baseEntity.endereco === 'object' ? baseEntity.endereco : null)
+          || (Array.isArray(baseEntity.enderecos) ? baseEntity.enderecos[0] : null)
+          || (clientObj.endereco && typeof clientObj.endereco === 'object' ? clientObj.endereco : null)
+          || {};
+
+        const logradouro = String(endObj.logradouro || endObj.rua || endObj.endereco || '').trim();
+        const numero = String(endObj.numero || '').trim();
+        const complemento = String(endObj.complemento || '').trim();
+        const bairro = String(endObj.bairro || '').trim();
+        const cidade = String(endObj.localidade || endObj.cidade || endObj.municipio || '').trim();
+        const uf = String(endObj.estado || endObj.uf || '').trim();
+        const rawCep = String(endObj.cep || '').replace(/\D/g, '');
+        const cepFormatado = rawCep.length === 8 ? `${rawCep.slice(0, 5)}-${rawCep.slice(5)}` : rawCep;
+
+        const addressParts = [
+          logradouro ? `${logradouro}${numero ? `, ${numero}` : ''}${complemento ? ` (${complemento})` : ''}` : '',
+          bairro ? `Bairro ${bairro}` : '',
+          cidade ? `${cidade}${uf ? `/${uf}` : ''}` : '',
+          cepFormatado ? `CEP: ${cepFormatado}` : ''
+        ].filter(Boolean);
+        const enderecoCompleto = addressParts.join(' - ');
+
+        // 3. Contatos e Telefones
+        const rawContacts = Array.isArray(localEntity.contatos) && localEntity.contatos.length
+          ? localEntity.contatos
+          : (Array.isArray(baseEntity.contatos) ? baseEntity.contatos : (Array.isArray(clientObj.contatos) ? clientObj.contatos : []));
+
+        const primaryPhoneRaw = String(localEntity.telefone || baseEntity.telefone || clientObj.telefone || rawContacts[0]?.telefone || '').trim();
+        const primaryEmail = String(localEntity.email || baseEntity.email || clientObj.email || rawContacts[0]?.email || '').trim();
+
+        // Formata Telefone
+        const cleanPhone = primaryPhoneRaw.replace(/\D/g, '');
+        let phoneFormatado = primaryPhoneRaw;
+        if (cleanPhone.length === 11) phoneFormatado = `(${cleanPhone.slice(0, 2)}) ${cleanPhone.slice(2, 7)}-${cleanPhone.slice(7)}`;
+        else if (cleanPhone.length === 10) phoneFormatado = `(${cleanPhone.slice(0, 2)}) ${cleanPhone.slice(2, 6)}-${cleanPhone.slice(6)}`;
+
+        const contatosNomes = [...new Set(rawContacts.map(c => String(c.nome || '').trim()).filter(Boolean))].join(', ');
+        const contatosTelefones = [...new Set(rawContacts.map(c => String(c.telefone || '').trim()).filter(Boolean))].join(', ');
+        const contatosResumo = rawContacts
+          .map(c => `${c.nome || 'Contato'}: ${c.telefone || 'Sem telefone'}${c.email ? ` (${c.email})` : ''}`)
+          .filter(Boolean)
+          .join(' | ');
+
+        // 4. Grupo Econômico
+        const grupoObj = localEntity.grupoEconomico || baseEntity.grupoEconomico || clientObj.grupoEconomico || {};
+        const grupoId = typeof grupoObj === 'object' ? grupoObj.id || null : null;
+        const grupoNome = typeof grupoObj === 'object' ? String(grupoObj.nome || '').trim() : String(grupoObj || '').trim();
+
+        // 5. Contas Operacionais
+        const contasOperacionais = Array.isArray(clientObj.contasOperacionais) ? clientObj.contasOperacionais : [];
+        const qtdContasOperacionais = contasOperacionais.length;
+        const limiteOperacionalTotal = contasOperacionais.reduce((sum, c) => sum + Number(c.limite || 0), 0);
+        const trancheTotal = contasOperacionais.reduce((sum, c) => sum + Number(c.tranche || 0), 0);
+        const produtosOperacionais = [...new Set(contasOperacionais.map(c => c.produto?.descricao || c.sigla).filter(Boolean))].join(', ');
+        const unidadesAdministrativas = [...new Set(contasOperacionais.map(c => c.unidadeAdministrativa?.alias || c.unidadeAdministrativa?.empresa?.nome).filter(Boolean))].join(', ');
+        const contasOperacionaisResumo = contasOperacionais
+          .map(c => `${c.sigla || 'Conta'} (${c.unidadeAdministrativa?.alias || 'UA'} - Limite: R$ ${Number(c.limite || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })})`)
+          .join(' | ');
+
+        // 6. Contas Gráficas
+        const contasGraficas = Array.isArray(clientObj.contasGraficas) ? clientObj.contasGraficas : [];
+        const qtdContasGraficas = contasGraficas.length;
+        const saldoContasGraficasTotal = contasGraficas.reduce((sum, c) => sum + Number(c.saldo || 0), 0);
+        const contasGraficasResumo = contasGraficas
+          .map(c => `${c.descricao || 'Gráfica'} (${c.unidadeAdministrativa?.alias || ''} - Saldo: R$ ${Number(c.saldo || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })})`)
+          .join(' | ');
+
+        // 7. Estatísticas Operacionais de Títulos
+        const stats = operationalStats.get(doc) || { qtd: 0, totalOperado: 0, emAberto: 0, vencido: 0, liquidado: 0 };
+
+        // 8. Origem e Estruturas JSON
+        const origemDados = (clientObj.entidade || entityFromMap) ? (hasLocalData ? 'API + Banco Interno' : 'API UNLTD') : 'Banco Interno';
+        const socios = Array.isArray(baseEntity.socios) ? baseEntity.socios : (Array.isArray(clientObj.socios) ? clientObj.socios : []);
+
+        upsertStmt.run(
+          doc,
+          docFormatado,
+          razaoSocial,
+          nomeFantasia,
+          tipoPessoa,
+          cadastroValido,
+          primaryPhoneRaw,
+          phoneFormatado,
+          primaryEmail,
+          contatosResumo,
+          contatosNomes,
+          contatosTelefones,
+          logradouro,
+          numero,
+          complemento,
+          bairro,
+          cidade,
+          uf,
+          rawCep,
+          cepFormatado,
+          enderecoCompleto,
+          grupoId,
+          grupoNome,
+          qtdContasOperacionais,
+          limiteOperacionalTotal,
+          trancheTotal,
+          produtosOperacionais,
+          unidadesAdministrativas,
+          contasOperacionaisResumo,
+          qtdContasGraficas,
+          saldoContasGraficasTotal,
+          contasGraficasResumo,
+          stats.qtd,
+          stats.totalOperado,
+          stats.emAberto,
+          stats.vencido,
+          stats.liquidado,
+          origemDados,
+          hasLocalData ? 1 : 0,
+          JSON.stringify(socios),
+          JSON.stringify(rawContacts),
+          JSON.stringify(contasOperacionais),
+          JSON.stringify(contasGraficas),
+          JSON.stringify({ client: clientObj, entity: baseEntity, localOverride }),
+          synchronizedAt
+        );
       }
-      const hasLocalData = Boolean(localRow);
-      const localEntity = localOverride.entidade || {};
-      const baseEntity = entityObj.nome ? entityObj : (localSnapshot.entidade || {});
-
-      // 1. Identificação
-      const razaoSocial = String(localEntity.nome || baseEntity.nome || clientObj.nome || 'Cliente sem nome').trim();
-      const nomeFantasia = String(localEntity.nomeFantasia || baseEntity.nomeFantasia || clientObj.nomeFantasia || '').trim();
-      const tipoPessoa = String(localEntity.tipo || baseEntity.tipo || (doc.length === 11 ? 'PF' : 'PJ')).toUpperCase();
-      const cadastroValido = baseEntity.valido !== false ? 1 : 0;
-
-      // Formata Documento
-      let docFormatado = doc;
-      if (doc.length === 14) docFormatado = doc.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, '$1.$2.$3/$4-$5');
-      else if (doc.length === 11) docFormatado = doc.replace(/^(\d{3})(\d{3})(\d{3})(\d{2})$/, '$1.$2.$3-$4');
-
-      // 2. Endereço Completo
-      const endObj = localEntity.endereco
-        || (baseEntity.endereco && typeof baseEntity.endereco === 'object' ? baseEntity.endereco : null)
-        || (Array.isArray(baseEntity.enderecos) ? baseEntity.enderecos[0] : null)
-        || (clientObj.endereco && typeof clientObj.endereco === 'object' ? clientObj.endereco : null)
-        || {};
-
-      const logradouro = String(endObj.logradouro || endObj.rua || endObj.endereco || '').trim();
-      const numero = String(endObj.numero || '').trim();
-      const complemento = String(endObj.complemento || '').trim();
-      const bairro = String(endObj.bairro || '').trim();
-      const cidade = String(endObj.localidade || endObj.cidade || endObj.municipio || '').trim();
-      const uf = String(endObj.estado || endObj.uf || '').trim();
-      const rawCep = String(endObj.cep || '').replace(/\D/g, '');
-      const cepFormatado = rawCep.length === 8 ? `${rawCep.slice(0, 5)}-${rawCep.slice(5)}` : rawCep;
-
-      const addressParts = [
-        logradouro ? `${logradouro}${numero ? `, ${numero}` : ''}${complemento ? ` (${complemento})` : ''}` : '',
-        bairro ? `Bairro ${bairro}` : '',
-        cidade ? `${cidade}${uf ? `/${uf}` : ''}` : '',
-        cepFormatado ? `CEP: ${cepFormatado}` : ''
-      ].filter(Boolean);
-      const enderecoCompleto = addressParts.join(' - ');
-
-      // 3. Contatos e Telefones
-      const rawContacts = Array.isArray(localEntity.contatos) && localEntity.contatos.length
-        ? localEntity.contatos
-        : (Array.isArray(baseEntity.contatos) ? baseEntity.contatos : (Array.isArray(clientObj.contatos) ? clientObj.contatos : []));
-
-      const primaryPhoneRaw = String(localEntity.telefone || baseEntity.telefone || clientObj.telefone || rawContacts[0]?.telefone || '').trim();
-      const primaryEmail = String(localEntity.email || baseEntity.email || clientObj.email || rawContacts[0]?.email || '').trim();
-
-      // Formata Telefone
-      const cleanPhone = primaryPhoneRaw.replace(/\D/g, '');
-      let phoneFormatado = primaryPhoneRaw;
-      if (cleanPhone.length === 11) phoneFormatado = `(${cleanPhone.slice(0, 2)}) ${cleanPhone.slice(2, 7)}-${cleanPhone.slice(7)}`;
-      else if (cleanPhone.length === 10) phoneFormatado = `(${cleanPhone.slice(0, 2)}) ${cleanPhone.slice(2, 6)}-${cleanPhone.slice(6)}`;
-
-      const contatosNomes = [...new Set(rawContacts.map(c => String(c.nome || '').trim()).filter(Boolean))].join(', ');
-      const contatosTelefones = [...new Set(rawContacts.map(c => String(c.telefone || '').trim()).filter(Boolean))].join(', ');
-      const contatosResumo = rawContacts
-        .map(c => `${c.nome || 'Contato'}: ${c.telefone || 'Sem telefone'}${c.email ? ` (${c.email})` : ''}`)
-        .filter(Boolean)
-        .join(' | ');
-
-      // 4. Grupo Econômico
-      const grupoObj = localEntity.grupoEconomico || baseEntity.grupoEconomico || clientObj.grupoEconomico || {};
-      const grupoId = typeof grupoObj === 'object' ? grupoObj.id || null : null;
-      const grupoNome = typeof grupoObj === 'object' ? String(grupoObj.nome || '').trim() : String(grupoObj || '').trim();
-
-      // 5. Contas Operacionais
-      const contasOperacionais = Array.isArray(clientObj.contasOperacionais) ? clientObj.contasOperacionais : [];
-      const qtdContasOperacionais = contasOperacionais.length;
-      const limiteOperacionalTotal = contasOperacionais.reduce((sum, c) => sum + Number(c.limite || 0), 0);
-      const trancheTotal = contasOperacionais.reduce((sum, c) => sum + Number(c.tranche || 0), 0);
-      const produtosOperacionais = [...new Set(contasOperacionais.map(c => c.produto?.descricao || c.sigla).filter(Boolean))].join(', ');
-      const unidadesAdministrativas = [...new Set(contasOperacionais.map(c => c.unidadeAdministrativa?.alias || c.unidadeAdministrativa?.empresa?.nome).filter(Boolean))].join(', ');
-      const contasOperacionaisResumo = contasOperacionais
-        .map(c => `${c.sigla || 'Conta'} (${c.unidadeAdministrativa?.alias || 'UA'} - Limite: R$ ${Number(c.limite || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })})`)
-        .join(' | ');
-
-      // 6. Contas Gráficas
-      const contasGraficas = Array.isArray(clientObj.contasGraficas) ? clientObj.contasGraficas : [];
-      const qtdContasGraficas = contasGraficas.length;
-      const saldoContasGraficasTotal = contasGraficas.reduce((sum, c) => sum + Number(c.saldo || 0), 0);
-      const contasGraficasResumo = contasGraficas
-        .map(c => `${c.descricao || 'Gráfica'} (${c.unidadeAdministrativa?.alias || ''} - Saldo: R$ ${Number(c.saldo || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })})`)
-        .join(' | ');
-
-      // 7. Estatísticas Operacionais de Títulos
-      const stats = operationalStats.get(doc) || { qtd: 0, totalOperado: 0, emAberto: 0, vencido: 0, liquidado: 0 };
-
-      // 8. Origem e Estruturas JSON
-      const origemDados = (clientObj.entidade || entityFromMap) ? (hasLocalData ? 'API + Banco Interno' : 'API UNLTD') : 'Banco Interno';
-      const socios = Array.isArray(baseEntity.socios) ? baseEntity.socios : (Array.isArray(clientObj.socios) ? clientObj.socios : []);
-
-      upsertStmt.run(
-        doc,
-        docFormatado,
-        razaoSocial,
-        nomeFantasia,
-        tipoPessoa,
-        cadastroValido,
-        primaryPhoneRaw,
-        phoneFormatado,
-        primaryEmail,
-        contatosResumo,
-        contatosNomes,
-        contatosTelefones,
-        logradouro,
-        numero,
-        complemento,
-        bairro,
-        cidade,
-        uf,
-        rawCep,
-        cepFormatado,
-        enderecoCompleto,
-        grupoId,
-        grupoNome,
-        qtdContasOperacionais,
-        limiteOperacionalTotal,
-        trancheTotal,
-        produtosOperacionais,
-        unidadesAdministrativas,
-        contasOperacionaisResumo,
-        qtdContasGraficas,
-        saldoContasGraficasTotal,
-        contasGraficasResumo,
-        stats.qtd,
-        stats.totalOperado,
-        stats.emAberto,
-        stats.vencido,
-        stats.liquidado,
-        origemDados,
-        hasLocalData ? 1 : 0,
-        JSON.stringify(socios),
-        JSON.stringify(rawContacts),
-        JSON.stringify(contasOperacionais),
-        JSON.stringify(contasGraficas),
-        JSON.stringify({ client: clientObj, entity: baseEntity, localOverride }),
-        synchronizedAt
-      );
-    }
-  });
-
-  runConsolidation();
+    });
+    runChunk();
+  }
   return allDocs.size;
 }
 
