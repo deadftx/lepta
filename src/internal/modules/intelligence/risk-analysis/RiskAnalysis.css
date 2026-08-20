@@ -65,6 +65,8 @@
 .risk-kpi.danger > svg { color: #f87171; background: rgba(239,68,68,.12); }
 .risk-kpi.success > svg { color: #34d399; background: rgba(16,185,129,.12); }
 .risk-kpi.warning > svg { color: #fbbf24; background: rgba(245,158,11,.12); }
+.risk-kpi.cs-kpi > svg { color: #c084fc; background: rgba(192,132,252,.12); }
+.risk-kpi.serasa-kpi > svg { color: #38bdf8; background: rgba(56,189,248,.12); }
 .risk-dashboard-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 1rem; }
 .risk-panel { min-width: 0; overflow: hidden; }
 .risk-panel-title > svg { color: #64748b; }

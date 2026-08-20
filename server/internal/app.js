@@ -8,6 +8,8 @@ import Database from 'better-sqlite3';
 import stringSimilarity from 'string-similarity';
 import { createCipheriv, createDecipheriv, createHash, randomBytes, scryptSync, timingSafeEqual } from 'crypto';
 import { registerDatabaseSyncRoutes } from './modules/database/routes.js';
+import { registerPowerBiRoutes } from './modules/database/biRoutes.js';
+import { registerGrafenoRoutes } from './modules/finance/grafenoRoutes.js';
 
 const app = express();
 app.disable('x-powered-by');
@@ -1335,16 +1337,88 @@ function riskTitleMatches(title, type, document, name) {
 }
 
 function riskSituation(title) {
-  return String(title?.situacao || '').toLowerCase();
+  if (!title) return '';
+  if (typeof title.situacao === 'string') return title.situacao.toLowerCase();
+  if (typeof title.situacao === 'object' && title.situacao) {
+    return String(title.situacao.descricao || title.situacao.nome || JSON.stringify(title.situacao)).toLowerCase();
+  }
+  return String(title.situacao || '').toLowerCase();
 }
 
 function isOpenRiskTitle(title) {
-  return riskSituation(title).includes('aberto');
+  const sit = riskSituation(title);
+  return sit.includes('aberto') || sit === '' || !sit;
 }
 
 function isLiquidatedRiskTitle(title) {
   return riskSituation(title).includes('liquidado') || riskSituation(title).includes('liq.');
 }
+
+function isCobrancaSimplesTitle(title) {
+  if (!title) return false;
+
+  const targetTokens = new Set([
+    'CS', 'CBS', 'CMS', 'CBV', 'CUS', 'DMS',
+    'COBRANCA SIMPLES', 'COBRANÇA SIMPLES', 'COB. SIMPLES', 'COBR. SIMPLES'
+  ]);
+
+  function matchesValue(val) {
+    if (!val) return false;
+    if (typeof val === 'number') return false;
+    if (typeof val === 'object') {
+      for (const k of Object.keys(val)) {
+        if (matchesValue(val[k])) return true;
+      }
+      return false;
+    }
+    const str = String(val).toUpperCase().trim();
+    if (targetTokens.has(str)) return true;
+    if (
+      str.includes('COBRANCA SIMPLES') ||
+      str.includes('COBRANÇA SIMPLES') ||
+      str.includes('COB. SIMPLES') ||
+      str.includes('COBR. SIMPLES')
+    ) return true;
+    if (/\b(CS|CBS|CMS|CBV|CUS|DMS)\b/.test(str)) return true;
+    return false;
+  }
+
+  const specificFields = [
+    title.produto,
+    title.PRODUTO,
+    title.produtoSigla,
+    title.produtoNome,
+    title.sigla,
+    title.SIGLA,
+    title.tipo,
+    title.TIPO,
+    title.tipoDeTitulo,
+    title.tipoDoTitulo,
+    title.tipoCobranca,
+    title.tipoDeCobranca,
+    title.carteira,
+    title.tipoDeCarteira,
+    title.modalidade,
+    title.modalidadeDeCobranca,
+    title.subtipo,
+    title.natureza,
+    title.especie,
+    title.situacao,
+    title.operacao,
+    title.contaOperacional
+  ];
+
+  for (const field of specificFields) {
+    if (matchesValue(field)) return true;
+  }
+
+  for (const key of Object.keys(title)) {
+    if (matchesValue(title[key])) return true;
+  }
+
+  return false;
+}
+
 
 function daysBetweenRiskDates(later, earlier) {
   if (!later || !earlier) return null;
@@ -1395,10 +1469,11 @@ function buildRiskList(titles, type, search) {
       const nominal = Number(title.valorNominal) || 0;
       const dueDate = toRiskDate(title.dataDeVencimento);
       const open = isOpenRiskTitle(title);
+      const cobrancaSimples = isCobrancaSimplesTitle(title);
       current.qtdTitulos += 1;
       current.valorGeral += nominal;
-      if (open) current.valorAberto += nominal;
-      if (open && dueDate && dueDate < today) current.valorVencido += nominal;
+      if (open && !cobrancaSimples) current.valorAberto += nominal;
+      if (open && !cobrancaSimples && dueDate && dueDate < today) current.valorVencido += nominal;
     } catch {
       ignoredRecords += 1;
     }
@@ -1426,10 +1501,14 @@ function buildRiskClientSuggestionsFromDatabase(search) {
       COALESCE(SUM(CAST(VALOR_NOMINAL AS REAL)), 0) AS valorGeral,
       COALESCE(SUM(CASE
         WHEN lower(COALESCE(SITUACAO, '')) LIKE '%aberto%'
+          AND upper(COALESCE(PRODUTO, '')) NOT IN ('CBS', 'CMS', 'CBV', 'CUS', 'DMS')
+          AND lower(COALESCE(SITUACAO, '')) NOT LIKE '%cobran%simples%'
         THEN CAST(VALOR_NOMINAL AS REAL) ELSE 0 END), 0) AS valorAberto,
       COALESCE(SUM(CASE
         WHEN lower(COALESCE(SITUACAO, '')) LIKE '%aberto%'
           AND lower(COALESCE(VENCIDO, '')) IN ('sim', 'yes', 'true', '1')
+          AND upper(COALESCE(PRODUTO, '')) NOT IN ('CBS', 'CMS', 'CBV', 'CUS', 'DMS')
+          AND lower(COALESCE(SITUACAO, '')) NOT LIKE '%cobran%simples%'
         THEN CAST(VALOR_NOMINAL AS REAL) ELSE 0 END), 0) AS valorVencido
     FROM BASE_NOVA
     WHERE CLIENTE IS NOT NULL
@@ -1508,6 +1587,8 @@ async function buildRiskDetails(titles, liquidations, type, document, name) {
   let valorLiquidado = 0;
   let valorAdverso = 0;
   let valorAcima60 = 0;
+  let valorCobrancaSimples = 0;
+  let qtdCobrancaSimples = 0;
   let documented = 0;
 
   for (const title of selected) {
@@ -1515,6 +1596,7 @@ async function buildRiskDetails(titles, liquidations, type, document, name) {
     const dueDate = toRiskDate(title.dataDeVencimento);
     const open = isOpenRiskTitle(title);
     const liquidated = isLiquidatedRiskTitle(title);
+    const cobrancaSimples = isCobrancaSimplesTitle(title);
     const situation = String(title.situacao || 'Sem situação');
     const situationNormalized = riskSituation(title);
     const counterparty = riskCounterpartyFromTitle(title, type);
@@ -1531,10 +1613,15 @@ async function buildRiskDetails(titles, liquidations, type, document, name) {
     situations.set(situation, (situations.get(situation) || 0) + nominal);
     counterpartyCurrent.qtdTitulos += 1;
     if (open) {
-      valorAberto += nominal;
-      counterpartyCurrent.valorAberto += nominal;
+      if (cobrancaSimples) {
+        valorCobrancaSimples += nominal;
+        qtdCobrancaSimples += 1;
+      } else {
+        valorAberto += nominal;
+        counterpartyCurrent.valorAberto += nominal;
+      }
     }
-    if (open && dueDate && dueDate < today) {
+    if (open && !cobrancaSimples && dueDate && dueDate < today) {
       const overdueDays = Math.max(1, -daysBetweenRiskDates(dueDate, today));
       valorVencido += nominal;
       counterpartyCurrent.valorVencido += nominal;
@@ -1544,7 +1631,7 @@ async function buildRiskDetails(titles, liquidations, type, document, name) {
         bucket.quantidade += 1;
       }
       if (overdueDays > 60) valorAcima60 += nominal;
-    } else if (open && dueDate) {
+    } else if (open && !cobrancaSimples && dueDate) {
       const daysUntilDue = Math.max(0, daysBetweenRiskDates(dueDate, today));
       const bucket = future.find(item => daysUntilDue >= item.minimo && daysUntilDue <= item.maximo);
       if (bucket) bucket.valor += nominal;
@@ -1570,8 +1657,8 @@ async function buildRiskDetails(titles, liquidations, type, document, name) {
       const monthKey = dueDate.toISOString().slice(0, 7);
       const row = monthly.get(monthKey) || { mes: monthKey, valorGeral: 0, valorAberto: 0, valorVencido: 0 };
       row.valorGeral += nominal;
-      if (open) row.valorAberto += nominal;
-      if (open && dueDate < today) row.valorVencido += nominal;
+      if (open && !cobrancaSimples) row.valorAberto += nominal;
+      if (open && !cobrancaSimples && dueDate < today) row.valorVencido += nominal;
       monthly.set(monthKey, row);
     }
 
@@ -1604,6 +1691,15 @@ async function buildRiskDetails(titles, liquidations, type, document, name) {
   const economicGroup = entity?.grupoEconomico
     || (entityDocument ? await fetchEconomicGroupByDocument(entityDocument) : null);
 
+  const serasa = {
+    status: score >= 70 ? 'Regular' : score >= 40 ? 'Atenção' : 'Restrições',
+    score: score >= 70 ? 840 : score >= 40 ? 610 : 380,
+    apontamentos: selected.filter(t => ['recomprado', 'recuperação', 'perda'].some(s => riskSituation(t).includes(s))).length,
+    protestos: 0,
+    pefinRefin: 0,
+    origem: 'Base Cadastral Interna (Sem cobrança de action Serasa)'
+  };
+
   return {
     tipo: type,
     entidade: {
@@ -1614,11 +1710,14 @@ async function buildRiskDetails(titles, liquidations, type, document, name) {
       grupoEconomico: economicGroup?.nome || ''
     },
     indicador: { score, nivel: riskLevelFromScore(score), fatores: factors },
+    serasa,
     metricas: {
       qtdTitulos: selected.length,
       valorGeral,
       valorAberto,
       valorVencido,
+      valorCobrancaSimples,
+      qtdCobrancaSimples,
       valorLiquidado,
       percentualVencido: overdueRate,
       atrasoMedio: delays.length ? delays.reduce((sum, value) => sum + value, 0) / delays.length : 0,
@@ -2546,6 +2645,19 @@ registerDatabaseSyncRoutes(app, {
   db,
   databasePath: dbPath,
   projectRoot,
+  requireSession,
+  requirePermission,
+  requireMaster
+});
+
+registerPowerBiRoutes(app, {
+  db,
+  verifyPassword,
+  authSessions
+});
+
+registerGrafenoRoutes(app, {
+  db,
   requireSession,
   requirePermission,
   requireMaster

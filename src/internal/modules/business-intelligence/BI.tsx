@@ -15,8 +15,10 @@ import {
   X,
   Save,
   Sliders,
-  ExternalLink
+  ExternalLink,
+  Database
 } from 'lucide-react';
+import { PowerBiModal } from '../database/PowerBiModal';
 import '../../core/styles/Operations.css';
 import '../../core/styles/Permissions.css';
 
@@ -96,6 +98,7 @@ const BI = () => {
   const [formAllowedUsers, setFormAllowedUsers] = useState<string[]>([]);
 
   const [saving, setSaving] = useState(false);
+  const [pbiModalOpen, setPbiModalOpen] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   const fetchData = async () => {
@@ -267,13 +270,24 @@ const BI = () => {
           <p>Ferramenta de gestão, cadastro e atribuição de permissões dos dashboards do Power BI.</p>
         </div>
 
-        <button
-          className="btn-primary"
-          onClick={handleOpenImportModal}
-          style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}
-        >
-          <Plus size={18} /> Importar Dashboard
-        </button>
+        <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
+          <button
+            type="button"
+            className="btn-secondary"
+            onClick={() => setPbiModalOpen(true)}
+            style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', background: 'rgba(245, 158, 11, 0.15)', border: '1px solid rgba(245, 158, 11, 0.4)', color: '#fbbf24', cursor: 'pointer' }}
+          >
+            <Database size={18} /> Conectar Banco no Power BI
+          </button>
+          <button
+            type="button"
+            className="btn-primary"
+            onClick={handleOpenImportModal}
+            style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}
+          >
+            <Plus size={18} /> Importar Dashboard
+          </button>
+        </div>
       </div>
 
       {/* Main Table / Management View */}
@@ -577,6 +591,11 @@ const BI = () => {
           </div>
         </div>
       )}
+      {/* Power BI Connection Modal */}
+      <PowerBiModal
+        isOpen={pbiModalOpen}
+        onClose={() => setPbiModalOpen(false)}
+      />
     </div>
   );
 };
