@@ -1,4 +1,5 @@
 import { randomUUID } from 'crypto';
+import { createNotification, notifyUsers } from '../notifications/routes.js';
 
 export function registerPurchaseRoutes(app, {
   db,
@@ -59,6 +60,40 @@ export function registerPurchaseRoutes(app, {
     const row = db.prepare(`SELECT papel FROM compras_papeis_usuarios WHERE user_id = ?`).get(userId);
     return row?.papel || 'REQUISITANTE';
   }
+
+  function getAllApproverUserIds() {
+    try {
+      const rows = db.prepare(`
+        SELECT user_id FROM compras_papeis_usuarios WHERE papel = 'APROVADOR'
+        UNION
+        SELECT id as user_id FROM usuarios_lepta WHERE role = 'MASTER'
+      `).all();
+      return rows.map(r => r.user_id);
+    } catch {
+      return [];
+    }
+  }
+
+  function getInteractingApproversForRequest(requisicaoId) {
+    try {
+      const rows = db.prepare(`
+        SELECT DISTINCT autor_id as user_id 
+        FROM compras_mensagens 
+        WHERE requisicao_id = ? AND autor_role = 'APROVADOR'
+      `).all(requisicaoId);
+      
+      const req = db.prepare(`SELECT aprovador_id FROM compras_requisicoes WHERE id = ?`).get(requisicaoId);
+      const list = rows.map(r => r.user_id);
+      if (req?.aprovador_id && !list.includes(req.aprovador_id)) {
+        list.push(req.aprovador_id);
+      }
+      return list;
+    } catch {
+      return [];
+    }
+  }
+
+  const formatBrl = (val) => Number(val || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 
   // --- ROTA: MEU PAPEL NA ESTEIRA DE COMPRAS ---
   app.get('/api/compras/meu-papel', requireSession, requirePermission('11.1'), (req, res) => {
@@ -170,6 +205,7 @@ export function registerPurchaseRoutes(app, {
       const now = new Date().toISOString();
       const count = db.prepare(`SELECT COUNT(*) as total FROM compras_requisicoes`).get().total + 1;
       const id = `REQ-${new Date().getFullYear()}-${String(count).padStart(4, '0')}`;
+      const solicitanteNome = req.authUser.username || req.authUser.id;
 
       db.prepare(`
         INSERT INTO compras_requisicoes (
@@ -185,11 +221,21 @@ export function registerPurchaseRoutes(app, {
         quantidade,
         observacoes,
         req.authUser.id,
-        req.authUser.username || req.authUser.id,
+        solicitanteNome,
         req.authUser.email || '',
         now,
         now
       );
+
+      // Dispara notificação para todos os APROVADORES
+      const approverIds = getAllApproverUserIds().filter(uid => uid !== req.authUser.id);
+      const totalFormatado = formatBrl(valor * quantidade);
+      notifyUsers(db, approverIds, {
+        titulo: `🛍️ Nova Requisição de Compra (${id})`,
+        mensagem: `${solicitanteNome} solicitou ${quantidade}x ${produto_servico} (${totalFormatado})`,
+        tipo: 'COMPRAS_NOVA_REQUISICAO',
+        link: '/administrativo/compras'
+      });
 
       const nova = db.prepare(`SELECT * FROM compras_requisicoes WHERE id = ?`).get(id);
       return res.status(201).json(nova);
@@ -310,7 +356,7 @@ export function registerPurchaseRoutes(app, {
     }
   });
 
-  // --- ROTA: APROVAR REQUISIÇÃO (MOVE PARA ARQUIVADA) ---
+  // --- ROTA: APROVAR REQUISIÇÃO (MOVE PARA ARQUIVADA E NOTIFICA SOLICITANTE) ---
   app.post('/api/compras/requisicoes/:id/aprovar', requireSession, requirePermission('11.1'), (req, res) => {
     try {
       const userRole = getUserRoleInPurchases(req.authUser.id, req.authUser.role);
@@ -355,6 +401,15 @@ export function registerPurchaseRoutes(app, {
         );
       }
 
+      // Notifica o SOLICITANTE
+      createNotification(db, {
+        userId: requisicao.solicitante_id,
+        titulo: `✅ Requisição Aprovada (${requisicao.id})`,
+        mensagem: `Sua solicitação de compra (${requisicao.produto_servico}) foi aprovada por ${aprovadorNome}.`,
+        tipo: 'COMPRAS_APROVADO',
+        link: '/administrativo/compras'
+      });
+
       const atualizado = db.prepare(`SELECT * FROM compras_requisicoes WHERE id = ?`).get(req.params.id);
       return res.json({ success: true, requisicao: atualizado });
     } catch (error) {
@@ -363,7 +418,7 @@ export function registerPurchaseRoutes(app, {
     }
   });
 
-  // --- ROTA: NEGAR REQUISIÇÃO (MOVE PARA ARQUIVADA) ---
+  // --- ROTA: NEGAR REQUISIÇÃO (MOVE PARA ARQUIVADA E NOTIFICA SOLICITANTE) ---
   app.post('/api/compras/requisicoes/:id/negar', requireSession, requirePermission('11.1'), (req, res) => {
     try {
       const userRole = getUserRoleInPurchases(req.authUser.id, req.authUser.role);
@@ -407,6 +462,15 @@ export function registerPurchaseRoutes(app, {
         now
       );
 
+      // Notifica o SOLICITANTE
+      createNotification(db, {
+        userId: requisicao.solicitante_id,
+        titulo: `❌ Requisição Negada (${requisicao.id})`,
+        mensagem: `Sua solicitação de compra (${requisicao.produto_servico}) foi negada por ${aprovadorNome}.${observacao ? ` Motivo: "${observacao}"` : ''}`,
+        tipo: 'COMPRAS_NEGADO',
+        link: '/administrativo/compras'
+      });
+
       const atualizado = db.prepare(`SELECT * FROM compras_requisicoes WHERE id = ?`).get(req.params.id);
       return res.json({ success: true, requisicao: atualizado });
     } catch (error) {
@@ -415,7 +479,7 @@ export function registerPurchaseRoutes(app, {
     }
   });
 
-  // --- ROTA: REABRIR REQUISIÇÃO NEGADA (DESARQUIVA E ATUALIZA DADOS/MENSAGEM) ---
+  // --- ROTA: REABRIR REQUISIÇÃO NEGADA (NOTIFICA APROVADORES QUE INTERAGIRAM) ---
   app.post('/api/compras/requisicoes/:id/reabrir', requireSession, requirePermission('11.1'), (req, res) => {
     try {
       const requisicao = db.prepare(`SELECT * FROM compras_requisicoes WHERE id = ?`).get(req.params.id);
@@ -468,6 +532,19 @@ export function registerPurchaseRoutes(app, {
         now
       );
 
+      // Notifica os aprovadores que interagiram (ou todos os aprovadores se nenhum interagiu)
+      let targetApprovers = getInteractingApproversForRequest(req.params.id).filter(uid => uid !== req.authUser.id);
+      if (!targetApprovers.length) {
+        targetApprovers = getAllApproverUserIds().filter(uid => uid !== req.authUser.id);
+      }
+
+      notifyUsers(db, targetApprovers, {
+        titulo: `🔄 Solicitação Reaberta (${requisicao.id})`,
+        mensagem: `${userName} reabriu a solicitação de ${produto_servico}: "${mensagem || 'Para nova análise'}"`,
+        tipo: 'COMPRAS_REABERTO',
+        link: '/administrativo/compras'
+      });
+
       const atualizado = db.prepare(`SELECT * FROM compras_requisicoes WHERE id = ?`).get(req.params.id);
       return res.json({ success: true, requisicao: atualizado });
     } catch (error) {
@@ -476,7 +553,7 @@ export function registerPurchaseRoutes(app, {
     }
   });
 
-  // --- ROTA: ENVIAR MENSAGEM NA REQUISIÇÃO (ATUALIZA STATUS DINAMICAMENTE) ---
+  // --- ROTA: ENVIAR MENSAGEM NA REQUISIÇÃO (NOTIFICAÇÃO DIRECIONADA) ---
   app.post('/api/compras/requisicoes/:id/mensagens', requireSession, requirePermission('11.1'), (req, res) => {
     const mensagem = String(req.body?.mensagem || '').trim();
     if (!mensagem) return res.status(400).json({ error: 'O texto da mensagem é obrigatório.' });
@@ -519,6 +596,35 @@ export function registerPurchaseRoutes(app, {
             updated_at = ?
         WHERE id = ?
       `).run(novoStatus, now, req.params.id);
+
+      // --- DISPARO DE NOTIFICAÇÕES DIRECIONADAS ---
+      if (isApprover) {
+        // Se aprovador mandou mensagem -> notifica o SOLICITANTE
+        if (requisicao.solicitante_id !== req.authUser.id) {
+          createNotification(db, {
+            userId: requisicao.solicitante_id,
+            titulo: `💬 Mensagem do Aprovador (${requisicao.id})`,
+            mensagem: `${autorNome}: "${mensagem}"`,
+            tipo: 'COMPRAS_MENSAGEM',
+            link: '/administrativo/compras'
+          });
+        }
+      } else {
+        // Se o solicitante mandou mensagem -> notifica APENAS os aprovadores que já interagiram nessa requisição
+        let interactingApprovers = getInteractingApproversForRequest(req.params.id).filter(uid => uid !== req.authUser.id);
+        
+        // Se nenhum aprovador interagiu ainda, notifica todos os aprovadores da esteira
+        if (!interactingApprovers.length) {
+          interactingApprovers = getAllApproverUserIds().filter(uid => uid !== req.authUser.id);
+        }
+
+        notifyUsers(db, interactingApprovers, {
+          titulo: `💬 Resposta do Solicitante (${requisicao.id})`,
+          mensagem: `${autorNome}: "${mensagem}"`,
+          tipo: 'COMPRAS_MENSAGEM',
+          link: '/administrativo/compras'
+        });
+      }
 
       const novaMsg = db.prepare(`SELECT * FROM compras_mensagens WHERE id = ?`).get(msgId);
       return res.status(201).json({
