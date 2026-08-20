@@ -1589,11 +1589,13 @@ async function buildRiskDetails(titles, liquidations, type, document, name) {
   const counterparties = new Map();
   const situations = new Map();
   const monthly = new Map();
+  const operationsMap = new Map();
   const limitValues = new Set();
   const delays = [];
   let onTime = 0;
   let settledWithDate = 0;
   let valorGeral = 0;
+  let valorTotalLiquido = 0;
   let valorAberto = 0;
   let valorVencido = 0;
   let valorLiquidado = 0;
@@ -1605,6 +1607,7 @@ async function buildRiskDetails(titles, liquidations, type, document, name) {
 
   for (const title of selected) {
     const nominal = Number(title.valorNominal) || 0;
+    const liquido = Number(title.valorLiquido ?? title.valorNominal) || 0;
     const dueDate = toRiskDate(title.dataDeVencimento);
     const open = isOpenRiskTitle(title);
     const liquidated = isLiquidatedRiskTitle(title);
@@ -1622,6 +1625,7 @@ async function buildRiskDetails(titles, liquidations, type, document, name) {
     };
 
     valorGeral += nominal;
+    valorTotalLiquido += liquido;
     situations.set(situation, (situations.get(situation) || 0) + nominal);
     counterpartyCurrent.qtdTitulos += 1;
     if (open) {
@@ -1674,9 +1678,57 @@ async function buildRiskDetails(titles, liquidations, type, document, name) {
       monthly.set(monthKey, row);
     }
 
+    // Agrupamento de Operações
+    const opId = title.operacao?.id ?? title.operacaoId ?? title.operacao?.numero ?? title.numeroOperacao;
+    const opNumero = title.operacao?.numero ?? title.numeroOperacao ?? (opId ? `OP-${opId}` : null);
+    const opData = title.dataDeOperacao || title.operacao?.data || title.dataDeEmissao || title.dataDeCadastro || title.dataDeVencimento || null;
+    const opKey = opId ? `id:${opId}` : (opNumero ? `num:${opNumero}` : `date:${String(opData || '').slice(0, 10)}:${title.contaOperacional?.id || title.id || 'op'}`);
+
+    if (!operationsMap.has(opKey)) {
+      operationsMap.set(opKey, {
+        id: opId ? String(opId) : (opNumero ? String(opNumero) : `OP-${operationsMap.size + 1}`),
+        numero: opNumero ? String(opNumero) : (opId ? `OP-${opId}` : `OP-${operationsMap.size + 1}`),
+        data: opData,
+        qtdTitulos: 0,
+        vop: 0,
+        valorLiquido: 0,
+        receita: 0,
+        percentualDesagio: 0,
+        situacao: title.situacao || 'Em aberto',
+        contrapartes: new Set(),
+        titulos: []
+      });
+    }
+
+    const op = operationsMap.get(opKey);
+    op.qtdTitulos += 1;
+    op.vop += nominal;
+    op.valorLiquido += liquido;
+    op.receita += Math.max(0, nominal - liquido);
+    if (title.situacao) op.situacao = title.situacao;
+    if (counterparty?.nome) op.contrapartes.add(counterparty.nome);
+    op.titulos.push({
+      id: title.id,
+      numero: title.numero || '',
+      contraparte: counterparty?.nome || 'Não informado',
+      valorNominal: nominal,
+      valorLiquido: liquido,
+      vencimento: title.dataDeVencimento || null,
+      situacao: title.situacao || 'Sem situação'
+    });
+
     const limit = Number(title.contaOperacional?.limite);
     if (Number.isFinite(limit) && limit > 0) limitValues.add(limit);
   }
+
+  const receitaGeral = Math.max(0, valorGeral - valorTotalLiquido);
+  const percentualReceita = valorGeral > 0 ? (receitaGeral / valorGeral) : 0;
+
+  const operacoes = Array.from(operationsMap.values()).map(op => ({
+    ...op,
+    contrapartes: Array.from(op.contrapartes),
+    percentualDesagio: op.vop > 0 ? op.receita / op.vop : 0
+  })).sort((a, b) => String(b.data || '').localeCompare(String(a.data || '')));
 
   const concentration = Array.from(counterparties.values())
     .sort((left, right) => right.valorAberto - left.valorAberto);
@@ -1724,6 +1776,9 @@ async function buildRiskDetails(titles, liquidations, type, document, name) {
     indicador: { score, nivel: riskLevelFromScore(score), fatores: factors },
     serasa,
     metricas: {
+      vop: valorGeral,
+      receita: receitaGeral,
+      percentualReceita,
       qtdTitulos: selected.length,
       valorGeral,
       valorAberto,
@@ -1754,6 +1809,7 @@ async function buildRiskDetails(titles, liquidations, type, document, name) {
       .map(([situacao, valor]) => ({ situacao, valor }))
       .sort((left, right) => right.valor - left.valor),
     historico: Array.from(monthly.values()).sort((left, right) => left.mes.localeCompare(right.mes)).slice(-18),
+    operacoes,
     titulos: selected
       .map(title => ({
         id: title.id,
@@ -1761,9 +1817,10 @@ async function buildRiskDetails(titles, liquidations, type, document, name) {
         contraparte: riskCounterpartyFromTitle(title, type)?.nome || 'Não informado',
         documentoContraparte: normalizeEntityDocument(riskCounterpartyFromTitle(title, type)?.documento),
         vencimento: title.dataDeVencimento || null,
+        dataOperacao: title.dataDeOperacao || title.operacao?.data || title.dataDeEmissao || title.dataDeCadastro || title.dataDeVencimento || null,
         situacao: title.situacao || 'Sem situação',
         valorNominal: Number(title.valorNominal) || 0,
-        valorLiquido: Number(title.valorLiquido) || 0,
+        valorLiquido: Number(title.valorLiquido ?? title.valorNominal) || 0,
         manifesto: title.manifesto || '',
         codigoDoLastro: title.codigoDoLastro || '',
         registradoNoCobrador: title.registradoNoCobrador !== false
@@ -1772,6 +1829,7 @@ async function buildRiskDetails(titles, liquidations, type, document, name) {
       .slice(0, 500)
   };
 }
+
 
 app.get('/api/analise-riscos', requireSession, requirePermission('8.3'), async (req, res) => {
   try {
