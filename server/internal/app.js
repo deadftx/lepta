@@ -9,6 +9,7 @@ import stringSimilarity from 'string-similarity';
 import { createCipheriv, createDecipheriv, createHash, randomBytes, scryptSync, timingSafeEqual } from 'crypto';
 import { registerDatabaseSyncRoutes } from './modules/database/routes.js';
 import { registerPowerBiRoutes } from './modules/database/biRoutes.js';
+import { registerGrafenoRoutes } from './modules/finance/grafenoRoutes.js';
 
 const app = express();
 app.disable('x-powered-by');
@@ -2653,6 +2654,13 @@ registerPowerBiRoutes(app, {
   db,
   verifyPassword,
   authSessions
+});
+
+registerGrafenoRoutes(app, {
+  db,
+  requireSession,
+  requirePermission,
+  requireMaster
 });
 
 function isReservedPowerBiTable(table) {

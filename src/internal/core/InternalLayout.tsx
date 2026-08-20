@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { LogOut, User, Bell, ShieldAlert, Shield, UserPlus, Users, ChevronDown, ChevronRight, LayoutDashboard, Sliders, Home, Calendar, Menu, X, Wallet, FileSpreadsheet, BrainCircuit, Database, ClipboardCheck, ContactRound, ShieldCheck } from 'lucide-react';
+import { LogOut, User, Bell, ShieldAlert, Shield, UserPlus, Users, ChevronDown, ChevronRight, LayoutDashboard, Sliders, Home, Calendar, Menu, X, Wallet, FileSpreadsheet, BrainCircuit, Database, ClipboardCheck, ContactRound, ShieldCheck, Landmark } from 'lucide-react';
 import { useNavigate, Outlet, Link, useLocation } from 'react-router-dom';
 import { useAuth } from './AuthContext';
 import './styles/Dashboard.css';
@@ -92,7 +92,7 @@ const InternalLayout = () => {
               <Calendar size={20} /> Calendário
             </Link>
           )}
-          {hasAccess('7.1') && (
+          {hasAnyPermission(user, ['7.1', '7.2']) && (
             <div className="nav-menu-group">
               <div 
                 className={`nav-item nav-item-parent ${isFinanceActive ? 'active' : ''}`}
@@ -107,9 +107,16 @@ const InternalLayout = () => {
 
               {isFinanceOpen && (
                 <div className="nav-submenu" style={{ paddingLeft: '1rem' }}>
-                  <Link to="/financeiro/extratos" className={navItemClass('/financeiro/extratos')}>
-                    <FileSpreadsheet size={18} /> Processar Extrato
-                  </Link>
+                  {hasAccess('7.1') && (
+                    <Link to="/financeiro/extratos" className={navItemClass('/financeiro/extratos')}>
+                      <FileSpreadsheet size={18} /> Processar Extrato
+                    </Link>
+                  )}
+                  {hasAccess('7.2') && (
+                    <Link to="/financeiro/grafeno" className={navItemClass('/financeiro/grafeno')}>
+                      <Landmark size={18} /> LEPTA x GRAFENO
+                    </Link>
+                  )}
                 </div>
               )}
             </div>
