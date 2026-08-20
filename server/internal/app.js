@@ -8,6 +8,7 @@ import Database from 'better-sqlite3';
 import stringSimilarity from 'string-similarity';
 import { createCipheriv, createDecipheriv, createHash, randomBytes, scryptSync, timingSafeEqual } from 'crypto';
 import { registerDatabaseSyncRoutes } from './modules/database/routes.js';
+import { registerPowerBiRoutes } from './modules/database/biRoutes.js';
 
 const app = express();
 app.disable('x-powered-by');
@@ -2646,6 +2647,12 @@ registerDatabaseSyncRoutes(app, {
   requireSession,
   requirePermission,
   requireMaster
+});
+
+registerPowerBiRoutes(app, {
+  db,
+  verifyPassword,
+  authSessions
 });
 
 function isReservedPowerBiTable(table) {

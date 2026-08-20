@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  AlertTriangle, CalendarClock, CheckCircle2, ChevronDown, ChevronUp,
+  AlertTriangle, BarChart3, CalendarClock, CheckCircle2, ChevronDown, ChevronUp,
   Clock3, Database, HardDrive, Layers3, Play, RefreshCw, Server,
   ShieldCheck, Table2, XCircle
 } from 'lucide-react';
 import { API_BASE_URL, getAuthHeaders } from '../../../config/api';
 import { useAuth } from '../../core/AuthContext';
+import { PowerBiModal } from './PowerBiModal';
 import './DatabaseManagement.css';
 
 interface SyncResource {
@@ -96,6 +97,8 @@ const DatabaseManagement = () => {
   const [starting, setStarting] = useState(false);
   const [notice, setNotice] = useState<Notice | null>(null);
   const [expandedTable, setExpandedTable] = useState<string | null>(null);
+  const [pbiModalOpen, setPbiModalOpen] = useState(false);
+  const [pbiSelectedTable, setPbiSelectedTable] = useState<string | undefined>(undefined);
 
   const loadDashboard = useCallback(async (showLoading = false) => {
     if (showLoading) setLoading(true);
@@ -156,6 +159,16 @@ const DatabaseManagement = () => {
           <p>Backup e espelhamento das bases da API UNLTD no SQLite da LEPTA.</p>
         </div>
         <div className="database-header-actions">
+          <button
+            type="button"
+            className="db-pbi-button"
+            onClick={() => {
+              setPbiSelectedTable(undefined);
+              setPbiModalOpen(true);
+            }}
+          >
+            <BarChart3 size={18} /> Conectar ao Power BI
+          </button>
           <button type="button" className="db-refresh-button" onClick={() => loadDashboard(true)} disabled={loading}>
             <RefreshCw size={18} className={loading ? 'spin' : ''} /> Atualizar status
           </button>
@@ -241,6 +254,17 @@ const DatabaseManagement = () => {
                       <div><span>Última atualização</span><strong>{formatDateTime(table.ultimaSincronizacao)}</strong></div>
                       <div><span>Colunas da API</span><strong>{table.columns.length}</strong></div>
                       <div className="db-column-list">{table.columns.map(column => <code key={column}>{column}</code>)}</div>
+                      <button
+                        type="button"
+                        className="db-table-pbi-btn"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setPbiSelectedTable(table.nome);
+                          setPbiModalOpen(true);
+                        }}
+                      >
+                        <BarChart3 size={14} /> Conectar base ao Power BI
+                      </button>
                     </div>
                   )}
                 </article>
@@ -270,6 +294,13 @@ const DatabaseManagement = () => {
       </section>
 
       <footer className="db-security-note"><Server size={20} /><div><strong>Execução protegida na VPS</strong><p>O navegador apenas solicita a tarefa. Token, consultas e gravações permanecem no servidor; duas sincronizações nunca são executadas ao mesmo tempo.</p></div></footer>
+
+      <PowerBiModal
+        isOpen={pbiModalOpen}
+        onClose={() => setPbiModalOpen(false)}
+        initialTable={pbiSelectedTable}
+        fallbackTables={dashboard?.tables}
+      />
     </div>
   );
 };
