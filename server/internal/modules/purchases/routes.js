@@ -22,7 +22,8 @@ export function registerPurchaseRoutes(app, {
       valor REAL NOT NULL,
       quantidade INTEGER NOT NULL DEFAULT 1,
       observacoes TEXT,
-      status TEXT NOT NULL DEFAULT 'PENDENTE', -- 'PENDENTE', 'APROVADO', 'NEGADO'
+      status TEXT NOT NULL DEFAULT 'PENDENTE', -- 'PENDENTE', 'REABERTO', 'AGUARDANDO_RESPOSTA_SOLICITANTE', 'AGUARDANDO_RESPOSTA_APROVADOR', 'APROVADO', 'NEGADO'
+      arquivado INTEGER DEFAULT 0,
       solicitante_id TEXT NOT NULL,
       solicitante_nome TEXT NOT NULL,
       solicitante_email TEXT,
@@ -44,6 +45,14 @@ export function registerPurchaseRoutes(app, {
       created_at TEXT NOT NULL
     );
   `);
+
+  // Migration automática para garantir a coluna arquivado
+  try {
+    const cols = db.prepare("PRAGMA table_info(compras_requisicoes)").all().map(c => c.name.toLowerCase());
+    if (!cols.includes('arquivado')) {
+      db.exec("ALTER TABLE compras_requisicoes ADD COLUMN arquivado INTEGER DEFAULT 0");
+    }
+  } catch {}
 
   function getUserRoleInPurchases(userId, userGlobalRole) {
     if (userGlobalRole === 'MASTER') return 'APROVADOR';
@@ -165,9 +174,9 @@ export function registerPurchaseRoutes(app, {
       db.prepare(`
         INSERT INTO compras_requisicoes (
           id, numero, produto_servico, valor, quantidade, observacoes,
-          status, solicitante_id, solicitante_nome, solicitante_email,
+          status, arquivado, solicitante_id, solicitante_nome, solicitante_email,
           created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, 'PENDENTE', ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, 'PENDENTE', 0, ?, ?, ?, ?, ?)
       `).run(
         id,
         count,
@@ -190,14 +199,14 @@ export function registerPurchaseRoutes(app, {
     }
   });
 
-  // --- ROTA: MINHAS REQUISIÇÕES (PARA REQUISITANTES / HISTÓRICO PRÓPRIO) ---
+  // --- ROTA: MINHAS REQUISIÇÕES ATIVAS (PARA REQUISITANTES) ---
   app.get('/api/compras/minhas-requisicoes', requireSession, requirePermission('11.1'), (req, res) => {
     try {
       const rows = db.prepare(`
         SELECT r.*,
           (SELECT COUNT(*) FROM compras_mensagens m WHERE m.requisicao_id = r.id) as total_mensagens
         FROM compras_requisicoes r
-        WHERE r.solicitante_id = ?
+        WHERE r.solicitante_id = ? AND r.arquivado = 0
         ORDER BY r.created_at DESC
       `).all(req.authUser.id);
 
@@ -208,7 +217,7 @@ export function registerPurchaseRoutes(app, {
     }
   });
 
-  // --- ROTA: FILA DE APROVAÇÃO (PARA APROVADORES E MASTER) ---
+  // --- ROTA: FILA DE APROVAÇÃO ATIVA (PARA APROVADORES E MASTER) ---
   app.get('/api/compras/fila-aprovacao', requireSession, requirePermission('11.1'), (req, res) => {
     try {
       const userRole = getUserRoleInPurchases(req.authUser.id, req.authUser.role);
@@ -220,15 +229,54 @@ export function registerPurchaseRoutes(app, {
         SELECT r.*,
           (SELECT COUNT(*) FROM compras_mensagens m WHERE m.requisicao_id = r.id) as total_mensagens
         FROM compras_requisicoes r
+        WHERE r.arquivado = 0
         ORDER BY 
-          CASE WHEN r.status = 'PENDENTE' THEN 0 ELSE 1 END,
-          r.created_at DESC
+          CASE 
+            WHEN r.status = 'REABERTO' THEN 0
+            WHEN r.status = 'PENDENTE' THEN 1
+            WHEN r.status = 'AGUARDANDO_RESPOSTA_APROVADOR' THEN 2
+            WHEN r.status = 'AGUARDANDO_RESPOSTA_SOLICITANTE' THEN 3
+            ELSE 4
+          END,
+          r.updated_at DESC
       `).all();
 
       return res.json(rows);
     } catch (error) {
       console.error('Erro ao carregar fila de aprovação:', error.message);
       return res.status(500).json({ error: 'Erro ao carregar fila de aprovação.' });
+    }
+  });
+
+  // --- ROTA: SOLICITAÇÕES ARQUIVADAS (APROVADAS E NEGADAS) ---
+  app.get('/api/compras/arquivadas', requireSession, requirePermission('11.1'), (req, res) => {
+    try {
+      const userRole = getUserRoleInPurchases(req.authUser.id, req.authUser.role);
+      const isApprover = userRole === 'APROVADOR' || req.authUser.role === 'MASTER';
+
+      let rows;
+      if (isApprover) {
+        rows = db.prepare(`
+          SELECT r.*,
+            (SELECT COUNT(*) FROM compras_mensagens m WHERE m.requisicao_id = r.id) as total_mensagens
+          FROM compras_requisicoes r
+          WHERE r.arquivado = 1
+          ORDER BY r.decidido_em DESC, r.updated_at DESC
+        `).all();
+      } else {
+        rows = db.prepare(`
+          SELECT r.*,
+            (SELECT COUNT(*) FROM compras_mensagens m WHERE m.requisicao_id = r.id) as total_mensagens
+          FROM compras_requisicoes r
+          WHERE r.solicitante_id = ? AND r.arquivado = 1
+          ORDER BY r.decidido_em DESC, r.updated_at DESC
+        `).all(req.authUser.id);
+      }
+
+      return res.json(rows);
+    } catch (error) {
+      console.error('Erro ao carregar solicitações arquivadas:', error.message);
+      return res.status(500).json({ error: 'Erro ao carregar solicitações arquivadas.' });
     }
   });
 
@@ -262,7 +310,7 @@ export function registerPurchaseRoutes(app, {
     }
   });
 
-  // --- ROTA: APROVAR REQUISIÇÃO ---
+  // --- ROTA: APROVAR REQUISIÇÃO (MOVE PARA ARQUIVADA) ---
   app.post('/api/compras/requisicoes/:id/aprovar', requireSession, requirePermission('11.1'), (req, res) => {
     try {
       const userRole = getUserRoleInPurchases(req.authUser.id, req.authUser.role);
@@ -272,8 +320,8 @@ export function registerPurchaseRoutes(app, {
 
       const requisicao = db.prepare(`SELECT * FROM compras_requisicoes WHERE id = ?`).get(req.params.id);
       if (!requisicao) return res.status(404).json({ error: 'Requisição não encontrada.' });
-      if (requisicao.status !== 'PENDENTE') {
-        return res.status(400).json({ error: `Esta requisição já foi ${requisicao.status.toLowerCase()}.` });
+      if (requisicao.status === 'APROVADO') {
+        return res.status(400).json({ error: 'Esta requisição já foi aprovada.' });
       }
 
       const observacao = String(req.body?.observacoes || req.body?.motivo || '').trim();
@@ -283,6 +331,7 @@ export function registerPurchaseRoutes(app, {
       db.prepare(`
         UPDATE compras_requisicoes
         SET status = 'APROVADO',
+            arquivado = 1,
             aprovador_id = ?,
             aprovador_nome = ?,
             motivo_decisao = ?,
@@ -291,7 +340,6 @@ export function registerPurchaseRoutes(app, {
         WHERE id = ?
       `).run(req.authUser.id, aprovadorNome, observacao, now, now, req.params.id);
 
-      // Se houver observação, registra como mensagem no histórico
       if (observacao) {
         db.prepare(`
           INSERT INTO compras_mensagens (id, requisicao_id, autor_id, autor_nome, autor_role, mensagem, created_at)
@@ -315,7 +363,7 @@ export function registerPurchaseRoutes(app, {
     }
   });
 
-  // --- ROTA: NEGAR REQUISIÇÃO ---
+  // --- ROTA: NEGAR REQUISIÇÃO (MOVE PARA ARQUIVADA) ---
   app.post('/api/compras/requisicoes/:id/negar', requireSession, requirePermission('11.1'), (req, res) => {
     try {
       const userRole = getUserRoleInPurchases(req.authUser.id, req.authUser.role);
@@ -325,8 +373,8 @@ export function registerPurchaseRoutes(app, {
 
       const requisicao = db.prepare(`SELECT * FROM compras_requisicoes WHERE id = ?`).get(req.params.id);
       if (!requisicao) return res.status(404).json({ error: 'Requisição não encontrada.' });
-      if (requisicao.status !== 'PENDENTE') {
-        return res.status(400).json({ error: `Esta requisição já foi ${requisicao.status.toLowerCase()}.` });
+      if (requisicao.status === 'NEGADO') {
+        return res.status(400).json({ error: 'Esta requisição já foi negada.' });
       }
 
       const observacao = String(req.body?.observacoes || req.body?.motivo || '').trim();
@@ -336,6 +384,7 @@ export function registerPurchaseRoutes(app, {
       db.prepare(`
         UPDATE compras_requisicoes
         SET status = 'NEGADO',
+            arquivado = 1,
             aprovador_id = ?,
             aprovador_nome = ?,
             motivo_decisao = ?,
@@ -344,7 +393,6 @@ export function registerPurchaseRoutes(app, {
         WHERE id = ?
       `).run(req.authUser.id, aprovadorNome, observacao, now, now, req.params.id);
 
-      // Registra mensagem no histórico
       const msgTexto = observacao ? `Requisição Negada: ${observacao}` : 'Requisição Negada pelo aprovador.';
       db.prepare(`
         INSERT INTO compras_mensagens (id, requisicao_id, autor_id, autor_nome, autor_role, mensagem, created_at)
@@ -367,7 +415,68 @@ export function registerPurchaseRoutes(app, {
     }
   });
 
-  // --- ROTA: ENVIAR MENSAGEM NA REQUISIÇÃO ---
+  // --- ROTA: REABRIR REQUISIÇÃO NEGADA (DESARQUIVA E ATUALIZA DADOS/MENSAGEM) ---
+  app.post('/api/compras/requisicoes/:id/reabrir', requireSession, requirePermission('11.1'), (req, res) => {
+    try {
+      const requisicao = db.prepare(`SELECT * FROM compras_requisicoes WHERE id = ?`).get(req.params.id);
+      if (!requisicao) return res.status(404).json({ error: 'Requisição não encontrada.' });
+
+      const isOwner = requisicao.solicitante_id === req.authUser.id;
+      const isMaster = req.authUser.role === 'MASTER';
+
+      if (!isOwner && !isMaster) {
+        return res.status(403).json({ error: 'Apenas o solicitante pode reabrir esta requisição.' });
+      }
+
+      const mensagem = String(req.body?.mensagem || '').trim();
+      const produto_servico = req.body?.produto_servico ? String(req.body.produto_servico).trim() : requisicao.produto_servico;
+      const valor = req.body?.valor !== undefined ? Number(req.body.valor) : requisicao.valor;
+      const quantidade = req.body?.quantidade !== undefined ? Number(req.body.quantidade) : requisicao.quantidade;
+      const observacoes = req.body?.observacoes !== undefined ? String(req.body.observacoes).trim() : requisicao.observacoes;
+
+      const now = new Date().toISOString();
+      const userName = req.authUser.username || req.authUser.id;
+
+      db.prepare(`
+        UPDATE compras_requisicoes
+        SET status = 'REABERTO',
+            arquivado = 0,
+            produto_servico = ?,
+            valor = ?,
+            quantidade = ?,
+            observacoes = ?,
+            motivo_decisao = NULL,
+            decidido_em = NULL,
+            updated_at = ?
+        WHERE id = ?
+      `).run(produto_servico, valor, quantidade, observacoes, now, req.params.id);
+
+      const msgTexto = mensagem
+        ? `Solicitação Reaberta pelo solicitante: ${mensagem}`
+        : 'Solicitação Reaberta pelo solicitante para nova análise.';
+
+      db.prepare(`
+        INSERT INTO compras_mensagens (id, requisicao_id, autor_id, autor_nome, autor_role, mensagem, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        randomUUID(),
+        req.params.id,
+        req.authUser.id,
+        userName,
+        'REQUISITANTE',
+        msgTexto,
+        now
+      );
+
+      const atualizado = db.prepare(`SELECT * FROM compras_requisicoes WHERE id = ?`).get(req.params.id);
+      return res.json({ success: true, requisicao: atualizado });
+    } catch (error) {
+      console.error('Erro ao reabrir requisição:', error.message);
+      return res.status(500).json({ error: 'Não foi possível reabrir a requisição.' });
+    }
+  });
+
+  // --- ROTA: ENVIAR MENSAGEM NA REQUISIÇÃO (ATUALIZA STATUS DINAMICAMENTE) ---
   app.post('/api/compras/requisicoes/:id/mensagens', requireSession, requirePermission('11.1'), (req, res) => {
     const mensagem = String(req.body?.mensagem || '').trim();
     if (!mensagem) return res.status(400).json({ error: 'O texto da mensagem é obrigatório.' });
@@ -389,15 +498,33 @@ export function registerPurchaseRoutes(app, {
       const autorNome = req.authUser.username || req.authUser.id;
       const autorRole = isApprover ? 'APROVADOR' : 'REQUISITANTE';
 
+      // Atualiza o status da requisição quando mensagem for enviada
+      let novoStatus = requisicao.status;
+      if (requisicao.arquivado === 0) {
+        if (isApprover) {
+          novoStatus = 'AGUARDANDO_RESPOSTA_SOLICITANTE';
+        } else {
+          novoStatus = 'AGUARDANDO_RESPOSTA_APROVADOR';
+        }
+      }
+
       db.prepare(`
         INSERT INTO compras_mensagens (id, requisicao_id, autor_id, autor_nome, autor_role, mensagem, created_at)
         VALUES (?, ?, ?, ?, ?, ?, ?)
       `).run(msgId, req.params.id, req.authUser.id, autorNome, autorRole, mensagem, now);
 
-      db.prepare(`UPDATE compras_requisicoes SET updated_at = ? WHERE id = ?`).run(now, req.params.id);
+      db.prepare(`
+        UPDATE compras_requisicoes
+        SET status = ?,
+            updated_at = ?
+        WHERE id = ?
+      `).run(novoStatus, now, req.params.id);
 
       const novaMsg = db.prepare(`SELECT * FROM compras_mensagens WHERE id = ?`).get(msgId);
-      return res.status(201).json(novaMsg);
+      return res.status(201).json({
+        mensagem: novaMsg,
+        novoStatus
+      });
     } catch (error) {
       console.error('Erro ao postar mensagem na requisição:', error.message);
       return res.status(500).json({ error: 'Não foi possível enviar a mensagem.' });
