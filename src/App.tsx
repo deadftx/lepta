@@ -17,6 +17,8 @@ import CustomerAnalysis from './internal/modules/intelligence/customer-analysis/
 import CustomerRegistration from './internal/modules/intelligence/customer-registration/CustomerRegistration';
 import RiskAnalysis from './internal/modules/intelligence/risk-analysis/RiskAnalysis';
 import DatabaseManagement from './internal/modules/database/DatabaseManagement';
+import PurchaseApproval from './internal/modules/administrative/purchases/PurchaseApproval';
+import PurchaseWorkflowConfig from './internal/modules/administrative/purchases/PurchaseWorkflowConfig';
 import ProtectedRoute from './internal/core/ProtectedRoute';
 import InternalLayout from './internal/core/InternalLayout';
 import AccessRoute from './internal/core/AccessRoute';
@@ -59,6 +61,8 @@ function App() {
               <Route path="/intelligence/analise-clientes" element={<AccessRoute permission="8.1"><CustomerAnalysis /></AccessRoute>} />
               <Route path="/intelligence/cadastro-clientes" element={<AccessRoute permission="8.2"><CustomerRegistration /></AccessRoute>} />
               <Route path="/intelligence/analise-riscos" element={<AccessRoute permission="8.3"><RiskAnalysis /></AccessRoute>} />
+              <Route path="/administrativo/compras" element={<AccessRoute permission="11.1"><PurchaseApproval /></AccessRoute>} />
+              <Route path="/administrativo/configuracao-compras" element={<AccessRoute permission="11.2"><PurchaseWorkflowConfig /></AccessRoute>} />
               <Route path="/banco-de-dados" element={<AccessRoute permission="9"><DatabaseManagement /></AccessRoute>} />
               <Route path="/permissions" element={<AccessRoute masterOnly><Permissions /></AccessRoute>} />
               <Route path="/permissions/create-user" element={<AccessRoute masterOnly><CreateUser /></AccessRoute>} />

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { LogOut, User, Bell, ShieldAlert, Shield, UserPlus, Users, ChevronDown, ChevronRight, LayoutDashboard, Sliders, Home, Calendar, Menu, X, Wallet, FileSpreadsheet, BrainCircuit, Database, ClipboardCheck, ContactRound, ShieldCheck, Landmark } from 'lucide-react';
+import { LogOut, User, Bell, ShieldAlert, Shield, UserPlus, Users, ChevronDown, ChevronRight, LayoutDashboard, Sliders, Home, Calendar, Menu, X, Wallet, FileSpreadsheet, BrainCircuit, Database, ClipboardCheck, ContactRound, ShieldCheck, Landmark, Briefcase, ShoppingCart, SlidersHorizontal } from 'lucide-react';
 import { useNavigate, Outlet, Link, useLocation } from 'react-router-dom';
 import { useAuth } from './AuthContext';
 import './styles/Dashboard.css';
@@ -18,6 +18,9 @@ const InternalLayout = () => {
 
   const isIntelligenceActive = location.pathname.startsWith('/intelligence');
   const [isIntelligenceOpen, setIsIntelligenceOpen] = useState(true);
+
+  const isAdministrativeActive = location.pathname.startsWith('/administrativo');
+  const [isAdministrativeOpen, setIsAdministrativeOpen] = useState(true);
   
   // Mobile sidebar state
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
@@ -149,6 +152,35 @@ const InternalLayout = () => {
                   {hasAccess('8.3') && (
                     <Link to="/intelligence/analise-riscos" className={navItemClass('/intelligence/analise-riscos')}>
                       <ShieldCheck size={18} /> Análise de Riscos
+                    </Link>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+          {hasAnyPermission(user, ['11.1', '11.2']) && (
+            <div className="nav-menu-group">
+              <div 
+                className={`nav-item nav-item-parent ${isAdministrativeActive ? 'active' : ''}`}
+                onClick={() => setIsAdministrativeOpen(!isAdministrativeOpen)}
+                style={{ cursor: 'pointer', justifyContent: 'space-between' }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                  <Briefcase size={20} /> Administrativo
+                </div>
+                {isAdministrativeOpen ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+              </div>
+
+              {isAdministrativeOpen && (
+                <div className="nav-submenu" style={{ paddingLeft: '1rem' }}>
+                  {hasAccess('11.1') && (
+                    <Link to="/administrativo/compras" className={navItemClass('/administrativo/compras')}>
+                      <ShoppingCart size={18} /> Aprovação de Compras
+                    </Link>
+                  )}
+                  {hasAccess('11.2') && (
+                    <Link to="/administrativo/configuracao-compras" className={navItemClass('/administrativo/configuracao-compras')}>
+                      <SlidersHorizontal size={18} /> Configuração de Esteira de Compras
                     </Link>
                   )}
                 </div>

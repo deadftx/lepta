@@ -10,6 +10,7 @@ import { createCipheriv, createDecipheriv, createHash, randomBytes, scryptSync, 
 import { registerDatabaseSyncRoutes } from './modules/database/routes.js';
 import { registerPowerBiRoutes } from './modules/database/biRoutes.js';
 import { registerGrafenoRoutes } from './modules/finance/grafenoRoutes.js';
+import { registerPurchaseRoutes } from './modules/purchases/routes.js';
 import { ensureCedentesTableSchema, consolidateCedentesTable, syncAllCedentesFromUnltdApi } from './modules/database/unltdSync.js';
 
 const app = express();
@@ -182,10 +183,14 @@ function ensureUserSecurityColumns() {
 function ensureAccessAreas() {
   const areas = [
     ['7.1', 'Financeiro > Processar Extrato'],
+    ['7.2', 'Financeiro > LEPTA x GRAFENO'],
     ['8.1', 'Lepta Intelligence > Análise de Clientes'],
     ['8.2', 'Lepta Intelligence > Cadastro de Clientes'],
     ['8.3', 'Lepta Intelligence > Análise de Riscos'],
-    ['10', 'Confirmação']
+    ['10', 'Confirmação'],
+    ['11', 'Administrativo'],
+    ['11.1', 'Administrativo > Aprovação de Compras'],
+    ['11.2', 'Administrativo > Configuração de Esteira de Compras']
   ];
   try {
     const insert = db.prepare(`INSERT OR IGNORE INTO areas (id, name) VALUES (?, ?)`);
@@ -2401,7 +2406,7 @@ app.post('/api/auth/admin/unlock/:id', requireSession, requireMaster, (req, res)
 });
 
 const ASSIGNABLE_PERMISSION_IDS = new Set([
-  '4', '5', '6', '7.1', '8.1', '8.2', '8.3', '9', '10'
+  '4', '5', '6', '7.1', '7.2', '8.1', '8.2', '8.3', '9', '10', '11', '11.1', '11.2'
 ]);
 
 function normalizeAssignablePermissions(value) {
@@ -2654,6 +2659,13 @@ registerPowerBiRoutes(app, {
 });
 
 registerGrafenoRoutes(app, {
+  db,
+  requireSession,
+  requirePermission,
+  requireMaster
+});
+
+registerPurchaseRoutes(app, {
   db,
   requireSession,
   requirePermission,
