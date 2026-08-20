@@ -285,10 +285,15 @@ function upsertRows(db, tableName, rows, columnTypes) {
     VALUES (${columns.map(() => '?').join(', ')})
     ON CONFLICT(${quoteIdentifier('_syncKey')}) DO UPDATE SET ${updates}
   `);
-  const write = db.transaction(batch => {
-    for (const row of batch) statement.run(...columns.map(column => row[column] ?? null));
-  });
-  write(rows);
+
+  const CHUNK_SIZE = 200;
+  for (let i = 0; i < rows.length; i += CHUNK_SIZE) {
+    const chunk = rows.slice(i, i + CHUNK_SIZE);
+    const writeChunk = db.transaction(batch => {
+      for (const row of batch) statement.run(...columns.map(column => row[column] ?? null));
+    });
+    writeChunk(chunk);
+  }
   return rows.length;
 }
 

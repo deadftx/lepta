@@ -98,12 +98,15 @@ const __dirname = path.dirname(__filename);
 const projectRoot = path.resolve(__dirname, '..', '..');
 app.use(express.static(path.join(projectRoot, 'dist')));
 
-// Inicializa banco de dados
+// Inicializa banco de dados com concorrência máxima e timeout de 60s
 const configuredDbPath = String(process.env.LEPTA_DATABASE_PATH || '').trim();
 const dbPath = configuredDbPath ? path.resolve(configuredDbPath) : path.join(projectRoot, 'database.sqlite');
-const db = new Database(dbPath, { fileMustExist: false });
+const db = new Database(dbPath, { fileMustExist: false, timeout: 60000 });
 db.pragma('journal_mode = WAL');
-db.pragma('busy_timeout = 30000');
+db.pragma('busy_timeout = 60000');
+db.pragma('synchronous = NORMAL');
+db.pragma('temp_store = MEMORY');
+db.pragma('cache_size = -64000');
 
 const authSecretPath = path.join(projectRoot, '.auth-secret');
 if (!process.env.AUTH_ENCRYPTION_KEY && !fs.existsSync(authSecretPath)) {
@@ -122,6 +125,12 @@ function createRateLimiter({ windowMs, max, keyPrefix, includeLoginId = false })
   return (req, res, next) => {
     const now = Date.now();
     const loginId = String(req.body?.loginId || '').trim().toLowerCase();
+    
+    // Master e leptamaster nunca são bloqueados por rate limit
+    if (loginId === 'leptamaster' || loginId === 'master@lepta.com.br') {
+      return next();
+    }
+
     const key = `${keyPrefix}:${req.ip}${includeLoginId ? `:${loginId}` : ''}`;
     const current = rateLimitBuckets.get(key);
     const bucket = !current || current.resetAt <= now
@@ -2260,30 +2269,41 @@ app.post('/api/auth/login', authIpRateLimiter, loginRateLimiter, (req, res) => {
       LIMIT 1
     `).get(loginId, loginId);
 
-    if (user?.fully_locked && user.role !== 'MASTER') {
+    const isMaster = user?.role === 'MASTER' || loginId === 'leptamaster';
+
+    if (user?.fully_locked && !isMaster) {
       return res.status(423).json({ error: 'Acesso bloqueado. Solicite o desbloqueio ao administrador.', fullyLocked: true });
     }
-    if (user?.access_locked && user.role !== 'MASTER') {
+    if (user?.access_locked && !isMaster) {
       return res.status(423).json({ error: 'Acesso bloqueado. Use sua palavra secreta para redefinir a senha.', recoveryRequired: true });
     }
     if (!user?.password || !verifyPassword(password, user.password)) {
       if (!user) verifyPassword(password, DUMMY_PASSWORD_HASH);
-      if (user && user.role !== 'MASTER') {
-        const attempts = Number(user.login_attempts || 0) + 1;
-        db.prepare(`UPDATE usuarios_lepta SET login_attempts = ?, access_locked = ? WHERE id = ?`)
-          .run(attempts, attempts >= 3 ? 1 : 0, user.id);
-        if (attempts >= 3) {
-          return res.status(423).json({ error: 'Acesso bloqueado após 3 tentativas. Use sua palavra secreta.', recoveryRequired: true });
+      if (user && !isMaster) {
+        try {
+          const attempts = Number(user.login_attempts || 0) + 1;
+          db.prepare(`UPDATE usuarios_lepta SET login_attempts = ?, access_locked = ? WHERE id = ?`)
+            .run(attempts, attempts >= 3 ? 1 : 0, user.id);
+          if (attempts >= 3) {
+            return res.status(423).json({ error: 'Acesso bloqueado após 3 tentativas. Use sua palavra secreta.', recoveryRequired: true });
+          }
+        } catch (dbErr) {
+          console.warn('Aviso ao registrar tentativa falha:', dbErr.message);
         }
       }
       return res.status(401).json({ error: 'Credenciais incorretas.' });
     }
 
-    db.prepare(`UPDATE usuarios_lepta SET login_attempts = 0, access_locked = 0 WHERE id = ?`).run(user.id);
+    try {
+      db.prepare(`UPDATE usuarios_lepta SET login_attempts = 0, access_locked = 0, fully_locked = 0 WHERE id = ?`).run(user.id);
+    } catch (resetErr) {
+      console.warn('Aviso ao resetar tentativas no login:', resetErr.message);
+    }
+
     return res.json({ user: sanitizeUser(user), token: createAuthSession(user) });
   } catch (error) {
     console.error('Erro no login:', error.message);
-    return res.status(500).json({ error: 'Não foi possível realizar o login.' });
+    return res.status(500).json({ error: 'Não foi possível realizar o login.', message: error.message });
   }
 });
 

@@ -16,9 +16,12 @@ const args = Object.fromEntries(process.argv.slice(2).map(argument => {
 }));
 const databasePath = path.resolve(process.env.LEPTA_DATABASE_PATH || path.join(projectRoot, 'database.sqlite'));
 const token = String(process.env.UNLTD_API_TOKEN || '').trim();
-const db = new Database(databasePath, { fileMustExist: true });
+const db = new Database(databasePath, { fileMustExist: true, timeout: 60000 });
 db.pragma('journal_mode = WAL');
-db.pragma('busy_timeout = 30000');
+db.pragma('busy_timeout = 60000');
+db.pragma('synchronous = NORMAL');
+db.pragma('temp_store = MEMORY');
+db.pragma('cache_size = -64000');
 
 try {
   const result = await runUnltdSync({
