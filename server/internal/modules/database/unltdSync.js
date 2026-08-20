@@ -690,6 +690,21 @@ export async function runUnltdSync({ db, token, projectRoot, source = 'AGENDADO'
       });
     }
 
+    // Consolidação da tabela plana e completa de CEDENTES com endereços, telefones e agregados operacionais
+    const cedentesCount = consolidateCedentesTable(db, clients, entities, isoNow());
+    db.prepare(`
+      INSERT INTO API_SYNC_TABELAS (
+        nome, recurso, tipo, registros, colunas, ultimaSincronizacao, ultimaExecucaoId
+      ) VALUES ('CEDENTES', 'CLIENTES', 'CONSOLIDADO', ?, 29, ?, ?)
+      ON CONFLICT(nome) DO UPDATE SET
+        recurso = excluded.recurso,
+        tipo = excluded.tipo,
+        registros = excluded.registros,
+        colunas = excluded.colunas,
+        ultimaSincronizacao = excluded.ultimaSincronizacao,
+        ultimaExecucaoId = excluded.ultimaExecucaoId
+    `).run(cedentesCount, isoNow(), id);
+
     updateExecution(db, id, {
       status: 'SUCESSO',
       etapa: 'Concluído',
@@ -757,4 +772,245 @@ export function getSyncDashboard(db, { databasePath, projectRoot } = {}) {
     tables,
     totalRecords: tables.reduce((total, table) => total + Number(table.registros || 0), 0)
   };
+}
+
+export function consolidateCedentesTable(db, clientsMap = new Map(), entitiesMap = new Map(), synchronizedAt = isoNow()) {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS CEDENTES (
+      documento TEXT PRIMARY KEY,
+      razao_social TEXT NOT NULL,
+      nome_fantasia TEXT,
+      tipo_pessoa TEXT,
+      telefone_principal TEXT,
+      telefones_adicionais TEXT,
+      email_principal TEXT,
+      emails_adicionais TEXT,
+      logradouro TEXT,
+      numero TEXT,
+      complemento TEXT,
+      bairro TEXT,
+      cidade TEXT,
+      uf TEXT,
+      cep TEXT,
+      endereco_completo TEXT,
+      grupo_economico TEXT,
+      ramo_atividade TEXT,
+      cnae TEXT,
+      data_cadastro TEXT,
+      limite_credito REAL DEFAULT 0,
+      qtd_titulos_operados INTEGER DEFAULT 0,
+      valor_total_operado REAL DEFAULT 0,
+      valor_em_aberto REAL DEFAULT 0,
+      valor_vencido REAL DEFAULT 0,
+      valor_liquidado REAL DEFAULT 0,
+      socios_json TEXT,
+      contatos_json TEXT,
+      contas_bancarias_json TEXT,
+      ultima_atualizacao TEXT NOT NULL
+    )
+  `);
+
+  const hasTable = (tableName) => Boolean(
+    db.prepare("SELECT 1 FROM sqlite_master WHERE type IN ('table', 'view') AND name = ?").get(tableName)
+  );
+
+  const allDocs = new Set([...clientsMap.keys(), ...entitiesMap.keys()]);
+
+  // Se o mapa estiver vazio, consulta a tabela ENTIDADES
+  if (hasTable('ENTIDADES')) {
+    try {
+      const dbEntities = db.prepare(`SELECT * FROM ENTIDADES`).all();
+      for (const row of dbEntities) {
+        if (row.documento) allDocs.add(normalizeDocument(row.documento));
+      }
+    } catch {}
+  }
+
+  // Agrega métricas operacionais se TITULOS existir
+  const operationalStats = new Map();
+  if (hasTable('TITULOS')) {
+    try {
+      const pragma = db.prepare(`PRAGMA table_info("TITULOS")`).all().map(c => c.name);
+      let docCol = pragma.find(c => /documento.*cedente|contaOperacional.*cliente.*documento/i.test(c)) || 'documento';
+      let valNominalCol = pragma.find(c => /valornominal|valor_nominal|valor/i.test(c)) || 'valorNominal';
+      let situacaoCol = pragma.find(c => /situacao/i.test(c)) || 'situacao';
+      let vencCol = pragma.find(c => /vencimento/i.test(c)) || 'dataDeVencimento';
+
+      if (pragma.includes(docCol)) {
+        const rows = db.prepare(`
+          SELECT 
+            ${quoteIdentifier(docCol)} AS doc,
+            COUNT(*) AS qtd,
+            SUM(COALESCE(CAST(${quoteIdentifier(valNominalCol)} AS REAL), 0)) AS totalOperado,
+            SUM(CASE WHEN lower(COALESCE(${quoteIdentifier(situacaoCol)}, '')) LIKE '%aberto%' THEN COALESCE(CAST(${quoteIdentifier(valNominalCol)} AS REAL), 0) ELSE 0 END) AS emAberto,
+            SUM(CASE WHEN lower(COALESCE(${quoteIdentifier(situacaoCol)}, '')) LIKE '%vencido%' OR (lower(COALESCE(${quoteIdentifier(situacaoCol)}, '')) LIKE '%aberto%' AND ${quoteIdentifier(vencCol)} < date('now')) THEN COALESCE(CAST(${quoteIdentifier(valNominalCol)} AS REAL), 0) ELSE 0 END) AS vencido,
+            SUM(CASE WHEN lower(COALESCE(${quoteIdentifier(situacaoCol)}, '')) LIKE '%liquidado%' THEN COALESCE(CAST(${quoteIdentifier(valNominalCol)} AS REAL), 0) ELSE 0 END) AS liquidado
+          FROM "TITULOS"
+          WHERE ${quoteIdentifier(docCol)} IS NOT NULL AND trim(${quoteIdentifier(docCol)}) != ''
+          GROUP BY ${quoteIdentifier(docCol)}
+        `).all();
+
+        for (const r of rows) {
+          const d = normalizeDocument(r.doc);
+          if (d) {
+            operationalStats.set(d, {
+              qtd: r.qtd || 0,
+              totalOperado: r.totalOperado || 0,
+              emAberto: r.emAberto || 0,
+              vencido: r.vencido || 0,
+              liquidado: r.liquidado || 0
+            });
+            allDocs.add(d);
+          }
+        }
+      }
+    } catch (err) {
+      console.log('Aviso ao agregar TITULOS para CEDENTES:', err.message);
+    }
+  }
+
+  const upsertStmt = db.prepare(`
+    INSERT INTO CEDENTES (
+      documento, razao_social, nome_fantasia, tipo_pessoa,
+      telefone_principal, telefones_adicionais, email_principal, emails_adicionais,
+      logradouro, numero, complemento, bairro, cidade, uf, cep, endereco_completo,
+      grupo_economico, ramo_atividade, cnae, data_cadastro, limite_credito,
+      qtd_titulos_operados, valor_total_operado, valor_em_aberto, valor_vencido, valor_liquidado,
+      socios_json, contatos_json, contas_bancarias_json, ultima_atualizacao
+    ) VALUES (
+      ?, ?, ?, ?,
+      ?, ?, ?, ?,
+      ?, ?, ?, ?, ?, ?, ?, ?,
+      ?, ?, ?, ?, ?,
+      ?, ?, ?, ?, ?,
+      ?, ?, ?, ?
+    )
+    ON CONFLICT(documento) DO UPDATE SET
+      razao_social = excluded.razao_social,
+      nome_fantasia = excluded.nome_fantasia,
+      tipo_pessoa = excluded.tipo_pessoa,
+      telefone_principal = excluded.telefone_principal,
+      telefones_adicionais = excluded.telefones_adicionais,
+      email_principal = excluded.email_principal,
+      emails_adicionais = excluded.emails_adicionais,
+      logradouro = excluded.logradouro,
+      numero = excluded.numero,
+      complemento = excluded.complemento,
+      bairro = excluded.bairro,
+      cidade = excluded.cidade,
+      uf = excluded.uf,
+      cep = excluded.cep,
+      endereco_completo = excluded.endereco_completo,
+      grupo_economico = excluded.grupo_economico,
+      ramo_atividade = excluded.ramo_atividade,
+      cnae = excluded.cnae,
+      data_cadastro = excluded.data_cadastro,
+      limite_credito = excluded.limite_credito,
+      qtd_titulos_operados = excluded.qtd_titulos_operados,
+      valor_total_operado = excluded.valor_total_operado,
+      valor_em_aberto = excluded.valor_em_aberto,
+      valor_vencido = excluded.valor_vencido,
+      valor_liquidado = excluded.valor_liquidado,
+      socios_json = excluded.socios_json,
+      contatos_json = excluded.contatos_json,
+      contas_bancarias_json = excluded.contas_bancarias_json,
+      ultima_atualizacao = excluded.ultima_atualizacao
+  `);
+
+  const runConsolidation = db.transaction(() => {
+    for (const doc of allDocs) {
+      if (!doc) continue;
+      const clientObj = clientsMap.get(doc) || {};
+      const entityObj = entitiesMap.get(doc) || clientObj.entidade || {};
+
+      const razaoSocial = entityObj.nome || clientObj.nome || entityObj.razaoSocial || 'Cliente sem nome';
+      const nomeFantasia = entityObj.nomeFantasia || clientObj.nomeFantasia || '';
+      const tipoPessoa = (entityObj.tipo || (doc.length === 11 ? 'FISICA' : 'JURIDICA')).toUpperCase();
+
+      // Endereços
+      const enderecos = Array.isArray(entityObj.enderecos) ? entityObj.enderecos : (Array.isArray(clientObj.enderecos) ? clientObj.enderecos : []);
+      const primaryAddress = enderecos[0] || {};
+      const logradouro = primaryAddress.logradouro || primaryAddress.rua || primaryAddress.endereco || '';
+      const numero = primaryAddress.numero || '';
+      const complemento = primaryAddress.complemento || '';
+      const bairro = primaryAddress.bairro || '';
+      const cidade = primaryAddress.cidade || primaryAddress.municipio || '';
+      const uf = primaryAddress.uf || primaryAddress.estado || '';
+      const cep = primaryAddress.cep || '';
+
+      const addressParts = [
+        logradouro ? `${logradouro}${numero ? `, ${numero}` : ''}${complemento ? ` - ${complemento}` : ''}` : '',
+        bairro ? `Bairro ${bairro}` : '',
+        cidade ? `${cidade}${uf ? `/${uf}` : ''}` : '',
+        cep ? `CEP: ${cep}` : ''
+      ].filter(Boolean);
+      const enderecoCompleto = addressParts.join(' - ');
+
+      // Contatos e Telefones
+      const contatos = Array.isArray(entityObj.contatos) ? entityObj.contatos : (Array.isArray(clientObj.contatos) ? clientObj.contatos : []);
+      const primaryPhone = entityObj.telefone || entityObj.celular || clientObj.telefone || (contatos[0]?.telefone || contatos[0]?.celular) || '';
+      const allPhones = [...new Set([
+        primaryPhone,
+        ...(contatos.map(c => c.telefone || c.celular).filter(Boolean)),
+        ...(Array.isArray(entityObj.telefones) ? entityObj.telefones.map(t => typeof t === 'object' ? t.numero || t.telefone : t) : [])
+      ])].filter(Boolean);
+
+      const primaryEmail = entityObj.email || clientObj.email || contatos[0]?.email || '';
+      const allEmails = [...new Set([
+        primaryEmail,
+        ...(contatos.map(c => c.email).filter(Boolean)),
+        ...(Array.isArray(entityObj.emails) ? entityObj.emails.map(e => typeof e === 'object' ? e.email || e.endereco : e) : [])
+      ])].filter(Boolean);
+
+      // Grupo Econômico, CNAE, Ramo
+      const grupoEconomico = typeof entityObj.grupoEconomico === 'object' ? entityObj.grupoEconomico?.nome || '' : String(entityObj.grupoEconomico || '');
+      const ramoAtividade = entityObj.ramoDeAtividade || entityObj.ramoAtividade || entityObj.atividadePrincipal || '';
+      const cnae = entityObj.cnae || entityObj.codigoCnae || '';
+      const dataCadastro = entityObj.dataCadastro || entityObj.dataDeCadastro || clientObj.dataCadastro || '';
+      const limiteCredito = Number(clientObj.limiteCredito || clientObj.limite || entityObj.limiteCredito || 0);
+
+      // Estatísticas operacionais
+      const stats = operationalStats.get(doc) || { qtd: 0, totalOperado: 0, emAberto: 0, vencido: 0, liquidado: 0 };
+
+      // Sócios e Contas
+      const socios = Array.isArray(entityObj.socios) ? entityObj.socios : (Array.isArray(clientObj.socios) ? clientObj.socios : []);
+      const contas = Array.isArray(clientObj.contasOperacionais) ? clientObj.contasOperacionais : (Array.isArray(clientObj.contasBancarias) ? clientObj.contasBancarias : []);
+
+      upsertStmt.run(
+        doc,
+        razaoSocial,
+        nomeFantasia,
+        tipoPessoa,
+        primaryPhone,
+        allPhones.join(', '),
+        primaryEmail,
+        allEmails.join(', '),
+        logradouro,
+        numero,
+        complemento,
+        bairro,
+        cidade,
+        uf,
+        cep,
+        enderecoCompleto,
+        grupoEconomico,
+        ramoAtividade,
+        cnae,
+        dataCadastro,
+        limiteCredito,
+        stats.qtd,
+        stats.totalOperado,
+        stats.emAberto,
+        stats.vencido,
+        stats.liquidado,
+        JSON.stringify(socios),
+        JSON.stringify(contatos),
+        JSON.stringify(contas),
+        synchronizedAt
+      );
+    }
+  });
+
+  runConsolidation();
+  return allDocs.size;
 }
