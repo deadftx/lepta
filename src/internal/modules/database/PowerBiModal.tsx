@@ -89,7 +89,7 @@ export const PowerBiModal: React.FC<PowerBiModalProps> = ({
     }));
   }, [tables, fallbackTables]);
 
-  const activeTableName = selectedTable || effectiveTables[0]?.name || 'BASE_NOVA';
+  const activeTableName = selectedTable || effectiveTables[0]?.name || 'CEDENTES';
 
   // Constrói a URL completa pública/baseada no servidor atual
   const generatedUrl = useMemo(() => {

@@ -10,6 +10,7 @@ import { createCipheriv, createDecipheriv, createHash, randomBytes, scryptSync, 
 import { registerDatabaseSyncRoutes } from './modules/database/routes.js';
 import { registerPowerBiRoutes } from './modules/database/biRoutes.js';
 import { registerGrafenoRoutes } from './modules/finance/grafenoRoutes.js';
+import { consolidateCedentesTable } from './modules/database/unltdSync.js';
 
 const app = express();
 app.disable('x-powered-by');
@@ -1491,48 +1492,42 @@ function buildRiskList(titles, type, search) {
 }
 
 function buildRiskClientSuggestionsFromDatabase(search) {
-  if (!tableExists('BASE_NOVA')) return [];
-  const normalizedSearch = `%${String(search || '').trim().toLowerCase()}%`;
-  const rows = db.prepare(`
-    SELECT
-      CLIENTE AS nome,
-      DOCUMENTO AS documento,
-      COUNT(*) AS qtdTitulos,
-      COALESCE(SUM(CAST(VALOR_NOMINAL AS REAL)), 0) AS valorGeral,
-      COALESCE(SUM(CASE
-        WHEN lower(COALESCE(SITUACAO, '')) LIKE '%aberto%'
-          AND upper(COALESCE(PRODUTO, '')) NOT IN ('CBS', 'CMS', 'CBV', 'CUS', 'DMS')
-          AND lower(COALESCE(SITUACAO, '')) NOT LIKE '%cobran%simples%'
-        THEN CAST(VALOR_NOMINAL AS REAL) ELSE 0 END), 0) AS valorAberto,
-      COALESCE(SUM(CASE
-        WHEN lower(COALESCE(SITUACAO, '')) LIKE '%aberto%'
-          AND lower(COALESCE(VENCIDO, '')) IN ('sim', 'yes', 'true', '1')
-          AND upper(COALESCE(PRODUTO, '')) NOT IN ('CBS', 'CMS', 'CBV', 'CUS', 'DMS')
-          AND lower(COALESCE(SITUACAO, '')) NOT LIKE '%cobran%simples%'
-        THEN CAST(VALOR_NOMINAL AS REAL) ELSE 0 END), 0) AS valorVencido
-    FROM BASE_NOVA
-    WHERE CLIENTE IS NOT NULL
-      AND trim(CLIENTE) != ''
-      AND lower(CLIENTE) LIKE ?
-    GROUP BY CLIENTE, DOCUMENTO
-    ORDER BY valorAberto DESC, valorGeral DESC
-    LIMIT 30
-  `).all(normalizedSearch);
+  if (tableExists('CEDENTES')) {
+    const normalizedSearch = `%${String(search || '').trim().toLowerCase()}%`;
+    const rows = db.prepare(`
+      SELECT
+        razao_social AS nome,
+        documento,
+        grupo_economico AS grupoEconomico,
+        qtd_titulos_operados AS qtdTitulos,
+        valor_total_operado AS valorGeral,
+        valor_em_aberto AS valorAberto,
+        valor_vencido AS valorVencido
+      FROM CEDENTES
+      WHERE razao_social IS NOT NULL
+        AND (lower(razao_social) LIKE ? OR lower(documento) LIKE ?)
+      ORDER BY valor_em_aberto DESC, valor_total_operado DESC
+      LIMIT 30
+    `).all(normalizedSearch, normalizedSearch);
 
-  return rows.map(row => ({
-    nome: String(row.nome || '').trim(),
-    documento: normalizeEntityDocument(row.documento),
-    grupoEconomico: '',
-    qtdTitulos: Number(row.qtdTitulos) || 0,
-    valorGeral: Number(row.valorGeral) || 0,
-    valorAberto: Number(row.valorAberto) || 0,
-    valorVencido: Number(row.valorVencido) || 0,
-    percentualVencido: Number(row.valorAberto) > 0
-      ? (Number(row.valorVencido) || 0) / Number(row.valorAberto)
-      : 0,
-    indicePesquisa: 'BASE_NOVA',
-    fonteCalculos: 'API UNLTD'
-  }));
+    if (rows.length > 0) {
+      return rows.map(row => ({
+        nome: String(row.nome || '').trim(),
+        documento: normalizeEntityDocument(row.documento),
+        grupoEconomico: String(row.grupoEconomico || ''),
+        qtdTitulos: Number(row.qtdTitulos) || 0,
+        valorGeral: Number(row.valorGeral) || 0,
+        valorAberto: Number(row.valorAberto) || 0,
+        valorVencido: Number(row.valorVencido) || 0,
+        percentualVencido: Number(row.valorAberto) > 0
+          ? (Number(row.valorVencido) || 0) / Number(row.valorAberto)
+          : 0,
+        indicePesquisa: 'CEDENTES',
+        fonteCalculos: 'API UNLTD'
+      }));
+    }
+  }
+  return [];
 }
 
 function buildLiquidationTitleDates(liquidations) {
@@ -2662,6 +2657,21 @@ registerGrafenoRoutes(app, {
   requirePermission,
   requireMaster
 });
+
+function dropLegacyBases() {
+  try {
+    db.exec('DROP TABLE IF EXISTS "BASE_NOVA"');
+    db.exec('DROP TABLE IF EXISTS "BASE"');
+  } catch (err) {
+    console.error('Aviso ao limpar tabelas legadas:', err.message);
+  }
+}
+dropLegacyBases();
+try {
+  consolidateCedentesTable(db);
+} catch (err) {
+  console.error('Aviso ao inicializar tabela CEDENTES:', err.message);
+}
 
 function isReservedPowerBiTable(table) {
   return table === 'dashboards' || table === 'power_bi_dashboards';
