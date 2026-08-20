@@ -10,7 +10,7 @@ import { createCipheriv, createDecipheriv, createHash, randomBytes, scryptSync, 
 import { registerDatabaseSyncRoutes } from './modules/database/routes.js';
 import { registerPowerBiRoutes } from './modules/database/biRoutes.js';
 import { registerGrafenoRoutes } from './modules/finance/grafenoRoutes.js';
-import { consolidateCedentesTable } from './modules/database/unltdSync.js';
+import { consolidateCedentesTable, syncAllCedentesFromUnltdApi } from './modules/database/unltdSync.js';
 
 const app = express();
 app.disable('x-powered-by');
@@ -2672,6 +2672,18 @@ try {
 } catch (err) {
   console.error('Aviso ao inicializar tabela CEDENTES:', err.message);
 }
+
+app.post('/api/database/sync-cedentes', requireSession, requirePermission('9'), async (req, res) => {
+  try {
+    const token = UNLTD_TOKEN;
+    if (!token) return res.status(400).json({ error: 'UNLTD_API_TOKEN não configurado.' });
+    const result = await syncAllCedentesFromUnltdApi(db, token);
+    return res.json({ success: true, ...result, message: 'Tabela CEDENTES sincronizada com sucesso com todos os dados cadastrais da API UNLTD.' });
+  } catch (error) {
+    console.error('Erro ao sincronizar CEDENTES:', error.message);
+    return res.status(500).json({ error: 'Erro ao sincronizar CEDENTES.', message: error.message });
+  }
+});
 
 function isReservedPowerBiTable(table) {
   return table === 'dashboards' || table === 'power_bi_dashboards';

@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   X, Copy, Check, Database, ShieldCheck, FileJson,
-  FileSpreadsheet, Terminal, BookOpen
+  FileSpreadsheet, Terminal, BookOpen, ExternalLink
 } from 'lucide-react';
 import { API_BASE_URL, getAuthHeaders } from '../../../config/api';
 import './PowerBiModal.css';
@@ -37,7 +37,7 @@ export const PowerBiModal: React.FC<PowerBiModalProps> = ({
   const [tables, setTables] = useState<BiCatalogTable[]>([]);
   const [loading, setLoading] = useState(false);
   const [selectedTable, setSelectedTable] = useState<string>('');
-  const [format, setFormat] = useState<'json' | 'csv'>('json');
+  const [format, setFormat] = useState<'json' | 'csv' | 'html'>('json');
   const [copiedUrl, setCopiedUrl] = useState(false);
   const [copiedM, setCopiedM] = useState(false);
 
@@ -201,7 +201,14 @@ in
                   className={`pbi-format-tab ${format === 'csv' ? 'active' : ''}`}
                   onClick={() => setFormat('csv')}
                 >
-                  <FileSpreadsheet size={16} /> CSV (Rápido)
+                  <FileSpreadsheet size={16} /> CSV (Planilha)
+                </button>
+                <button
+                  type="button"
+                  className={`pbi-format-tab ${format === 'html' ? 'active' : ''}`}
+                  onClick={() => setFormat('html')}
+                >
+                  <ExternalLink size={16} /> Tabela Web (Navegador)
                 </button>
               </div>
             </div>
@@ -210,7 +217,7 @@ in
           {/* URL Gerada */}
           <div className="pbi-url-box">
             <div className="pbi-url-label-row">
-              <span className="pbi-url-label">Link para Fonte Web do Power BI</span>
+              <span className="pbi-url-label">Link para Fonte Web do Power BI / Navegador</span>
               {copiedUrl && (
                 <span className="pbi-copy-pill">
                   <Check size={13} /> Link copiado!
@@ -233,6 +240,17 @@ in
                 {copiedUrl ? <Check size={16} /> : <Copy size={16} />}
                 {copiedUrl ? 'Copiado' : 'Copiar Link'}
               </button>
+              {format === 'html' && (
+                <a
+                  href={generatedUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="pbi-copy-btn"
+                  style={{ background: '#2563eb', color: '#fff', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+                >
+                  <ExternalLink size={16} /> Abrir no Navegador
+                </a>
+              )}
             </div>
           </div>
 

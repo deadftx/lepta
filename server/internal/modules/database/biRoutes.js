@@ -296,6 +296,92 @@ export function registerPowerBiRoutes(app, {
       const stmt = db.prepare(sql);
       const iterator = stmt.iterate(...params);
 
+      // --- FORMATO HTML (Visualizador de Tabela Web Limpo no Navegador) ---
+      if (format === 'html' || format === 'web') {
+        const columnsInfo = db.prepare(`PRAGMA table_info(${quoteIdentifier(tableName)})`).all();
+        const columnNames = columnsInfo.map(c => c.name);
+        const rows = stmt.all(...params);
+
+        res.setHeader('Content-Type', 'text/html; charset=utf-8');
+        const html = `<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>LEPTA BI - Tabela ${tableName}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #0b0f19;
+      --card: #111827;
+      --border: #1e293b;
+      --text: #f8fafc;
+      --muted: #94a3b8;
+      --accent: #3b82f6;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Plus Jakarta Sans', sans-serif; background: var(--bg); color: var(--text); padding: 24px; }
+    .header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; flex-wrap: wrap; gap: 12px; }
+    h1 { font-size: 20px; font-weight: 700; display: flex; align-items: center; gap: 10px; }
+    .badge { background: #1e3a8a; color: #93c5fd; font-size: 12px; font-weight: 600; padding: 4px 10px; border-radius: 9999px; }
+    .controls { display: flex; gap: 10px; align-items: center; }
+    input[type="text"] { background: var(--card); border: 1px solid var(--border); color: var(--text); padding: 8px 14px; border-radius: 8px; font-size: 13px; outline: none; width: 280px; }
+    input[type="text"]:focus { border-color: var(--accent); }
+    .btn { background: #1e293b; border: 1px solid var(--border); color: #e2e8f0; padding: 8px 14px; border-radius: 8px; text-decoration: none; font-size: 12px; font-weight: 600; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; }
+    .btn:hover { background: #334155; }
+    .table-container { background: var(--card); border: 1px solid var(--border); border-radius: 12px; overflow-x: auto; max-height: calc(100vh - 120px); box-shadow: 0 4px 20px rgba(0,0,0,0.3); }
+    table { width: 100%; border-collapse: collapse; text-align: left; font-size: 13px; white-space: nowrap; }
+    thead th { background: #0b111e; color: #94a3b8; font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; padding: 12px 16px; position: sticky; top: 0; border-bottom: 1px solid var(--border); }
+    tbody td { padding: 12px 16px; border-bottom: 1px solid rgba(255,255,255,0.04); color: #e2e8f0; max-width: 400px; overflow: hidden; text-overflow: ellipsis; }
+    tbody tr:hover { background: rgba(255,255,255,0.02); }
+    .empty { padding: 40px; text-align: center; color: var(--muted); }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div>
+      <h1>Tabela: <code>${tableName}</code> <span class="badge">${rows.length} registros</span></h1>
+    </div>
+    <div class="controls">
+      <input type="text" id="filter" placeholder="Buscar / Filtrar na tabela..." onkeyup="filterTable()">
+      <a href="?format=csv" class="btn" download>Exportar CSV</a>
+      <a href="?format=json" class="btn">Ver JSON</a>
+    </div>
+  </div>
+  <div class="table-container">
+    <table id="dataTable">
+      <thead>
+        <tr>
+          ${columnNames.map(c => `<th>${c}</th>`).join('')}
+        </tr>
+      </thead>
+      <tbody>
+        ${rows.length === 0 ? `<tr><td colspan="${columnNames.length}" class="empty">Nenhum registro encontrado nesta tabela.</td></tr>` : ''}
+        ${rows.map(r => `<tr>${columnNames.map(c => {
+          let v = r[c];
+          if (v === null || v === undefined) return '<td style="color:#64748b">—</td>';
+          if (typeof v === 'object') v = JSON.stringify(v);
+          return `<td>${String(v).replace(/</g, '&lt;').replace(/>/g, '&gt;')}</td>`;
+        }).join('')}</tr>`).join('')}
+      </tbody>
+    </table>
+  </div>
+  <script>
+    function filterTable() {
+      const q = document.getElementById('filter').value.toLowerCase();
+      const rows = document.querySelectorAll('#dataTable tbody tr');
+      rows.forEach(tr => {
+        tr.style.display = tr.textContent.toLowerCase().includes(q) ? '' : 'none';
+      });
+    }
+  </script>
+</body>
+</html>`;
+        return res.send(html);
+      }
+
       // --- FORMATO CSV (Streaming com UTF-8 BOM) ---
       if (format === 'csv') {
         const columnsInfo = db.prepare(`PRAGMA table_info(${quoteIdentifier(tableName)})`).all();
