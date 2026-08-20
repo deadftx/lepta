@@ -794,16 +794,12 @@ export function ensureCedentesTableSchema(db) {
       nome_fantasia TEXT,
       tipo_pessoa TEXT,
       cadastro_valido INTEGER DEFAULT 1,
-      
-      -- Contatos e Telefones
       telefone_principal TEXT,
       telefone_formatado TEXT,
       email_principal TEXT,
       contatos_resumo TEXT,
       contatos_nomes TEXT,
       contatos_telefones TEXT,
-      
-      -- Endereço Completo
       logradouro TEXT,
       numero TEXT,
       complemento TEXT,
@@ -813,32 +809,22 @@ export function ensureCedentesTableSchema(db) {
       cep TEXT,
       cep_formatado TEXT,
       endereco_completo TEXT,
-      
-      -- Grupo Econômico
       grupo_economico_id INTEGER,
       grupo_economico_nome TEXT,
-      
-      -- Contas Operacionais (Agregados & Resumos)
       qtd_contas_operacionais INTEGER DEFAULT 0,
       limite_operacional_total REAL DEFAULT 0,
       tranche_total REAL DEFAULT 0,
       produtos_operacionais TEXT,
       unidades_administrativas TEXT,
       contas_operacionais_resumo TEXT,
-      
-      -- Contas Gráficas (Agregados & Resumos)
       qtd_contas_graficas INTEGER DEFAULT 0,
       saldo_contas_graficas_total REAL DEFAULT 0,
       contas_graficas_resumo TEXT,
-      
-      -- Métricas de Operações / Títulos
       qtd_titulos_operados INTEGER DEFAULT 0,
       valor_total_operado REAL DEFAULT 0,
       valor_em_aberto REAL DEFAULT 0,
       valor_vencido REAL DEFAULT 0,
       valor_liquidado REAL DEFAULT 0,
-      
-      -- Metadados & JSONs Originais
       origem_dados TEXT,
       possui_edicao_local INTEGER DEFAULT 0,
       socios_json TEXT,
@@ -846,9 +832,74 @@ export function ensureCedentesTableSchema(db) {
       contas_operacionais_json TEXT,
       contas_graficas_json TEXT,
       payload_completo_json TEXT,
-      ultima_atualizacao TEXT NOT NULL
+      ultima_atualizacao TEXT NOT NULL DEFAULT ''
     )
   `);
+
+  // Migration automática para bases SQLite existentes que já tinham a tabela criada anteriormente
+  const expectedColumns = [
+    ['documento_formatado', 'TEXT'],
+    ['razao_social', 'TEXT'],
+    ['nome_fantasia', 'TEXT'],
+    ['tipo_pessoa', 'TEXT'],
+    ['cadastro_valido', 'INTEGER DEFAULT 1'],
+    ['telefone_principal', 'TEXT'],
+    ['telefone_formatado', 'TEXT'],
+    ['email_principal', 'TEXT'],
+    ['contatos_resumo', 'TEXT'],
+    ['contatos_nomes', 'TEXT'],
+    ['contatos_telefones', 'TEXT'],
+    ['logradouro', 'TEXT'],
+    ['numero', 'TEXT'],
+    ['complemento', 'TEXT'],
+    ['bairro', 'TEXT'],
+    ['cidade', 'TEXT'],
+    ['uf', 'TEXT'],
+    ['cep', 'TEXT'],
+    ['cep_formatado', 'TEXT'],
+    ['endereco_completo', 'TEXT'],
+    ['grupo_economico_id', 'INTEGER'],
+    ['grupo_economico_nome', 'TEXT'],
+    ['qtd_contas_operacionais', 'INTEGER DEFAULT 0'],
+    ['limite_operacional_total', 'REAL DEFAULT 0'],
+    ['tranche_total', 'REAL DEFAULT 0'],
+    ['produtos_operacionais', 'TEXT'],
+    ['unidades_administrativas', 'TEXT'],
+    ['contas_operacionais_resumo', 'TEXT'],
+    ['qtd_contas_graficas', 'INTEGER DEFAULT 0'],
+    ['saldo_contas_graficas_total', 'REAL DEFAULT 0'],
+    ['contas_graficas_resumo', 'TEXT'],
+    ['qtd_titulos_operados', 'INTEGER DEFAULT 0'],
+    ['valor_total_operado', 'REAL DEFAULT 0'],
+    ['valor_em_aberto', 'REAL DEFAULT 0'],
+    ['valor_vencido', 'REAL DEFAULT 0'],
+    ['valor_liquidado', 'REAL DEFAULT 0'],
+    ['origem_dados', 'TEXT'],
+    ['possui_edicao_local', 'INTEGER DEFAULT 0'],
+    ['socios_json', 'TEXT'],
+    ['contatos_json', 'TEXT'],
+    ['contas_operacionais_json', 'TEXT'],
+    ['contas_graficas_json', 'TEXT'],
+    ['payload_completo_json', 'TEXT'],
+    ['ultima_atualizacao', 'TEXT NOT NULL DEFAULT \'\'']
+  ];
+
+  try {
+    const existingCols = new Set(
+      db.prepare(`PRAGMA table_info(CEDENTES)`).all().map(c => c.name.toLowerCase())
+    );
+    for (const [colName, colDef] of expectedColumns) {
+      if (!existingCols.has(colName.toLowerCase())) {
+        try {
+          db.exec(`ALTER TABLE CEDENTES ADD COLUMN ${quoteIdentifier(colName)} ${colDef}`);
+        } catch (alterErr) {
+          console.warn(`Aviso ao adicionar coluna ${colName} em CEDENTES:`, alterErr.message);
+        }
+      }
+    }
+  } catch (err) {
+    console.error('Erro ao verificar colunas de CEDENTES:', err.message);
+  }
 }
 
 export function consolidateCedentesTable(db, clientsMap = new Map(), entitiesMap = new Map(), synchronizedAt = isoNow()) {
