@@ -10,7 +10,7 @@ import { createCipheriv, createDecipheriv, createHash, randomBytes, scryptSync, 
 import { registerDatabaseSyncRoutes } from './modules/database/routes.js';
 import { registerPowerBiRoutes } from './modules/database/biRoutes.js';
 import { registerGrafenoRoutes } from './modules/finance/grafenoRoutes.js';
-import { consolidateCedentesTable, syncAllCedentesFromUnltdApi } from './modules/database/unltdSync.js';
+import { ensureCedentesTableSchema, consolidateCedentesTable, syncAllCedentesFromUnltdApi } from './modules/database/unltdSync.js';
 
 const app = express();
 app.disable('x-powered-by');
@@ -172,6 +172,8 @@ function ensureUserSecurityColumns() {
     for (const [name, definition] of additions) {
       if (!columns.has(name)) db.exec(`ALTER TABLE usuarios_lepta ADD COLUMN ${name} ${definition}`);
     }
+    // Garante que o administrador Master nunca fique bloqueado por tentativas anteriores
+    db.prepare(`UPDATE usuarios_lepta SET access_locked = 0, fully_locked = 0, login_attempts = 0 WHERE role = 'MASTER'`).run();
   } catch (error) {
     if (!String(error.message).includes('no such table')) throw error;
   }
@@ -2253,15 +2255,15 @@ app.post('/api/auth/login', authIpRateLimiter, loginRateLimiter, (req, res) => {
       LIMIT 1
     `).get(loginId, loginId);
 
-    if (user?.fully_locked) {
+    if (user?.fully_locked && user.role !== 'MASTER') {
       return res.status(423).json({ error: 'Acesso bloqueado. Solicite o desbloqueio ao administrador.', fullyLocked: true });
     }
-    if (user?.access_locked) {
+    if (user?.access_locked && user.role !== 'MASTER') {
       return res.status(423).json({ error: 'Acesso bloqueado. Use sua palavra secreta para redefinir a senha.', recoveryRequired: true });
     }
     if (!user?.password || !verifyPassword(password, user.password)) {
       if (!user) verifyPassword(password, DUMMY_PASSWORD_HASH);
-      if (user) {
+      if (user && user.role !== 'MASTER') {
         const attempts = Number(user.login_attempts || 0) + 1;
         db.prepare(`UPDATE usuarios_lepta SET login_attempts = ?, access_locked = ? WHERE id = ?`)
           .run(attempts, attempts >= 3 ? 1 : 0, user.id);
@@ -2272,7 +2274,7 @@ app.post('/api/auth/login', authIpRateLimiter, loginRateLimiter, (req, res) => {
       return res.status(401).json({ error: 'Credenciais incorretas.' });
     }
 
-    db.prepare(`UPDATE usuarios_lepta SET login_attempts = 0 WHERE id = ?`).run(user.id);
+    db.prepare(`UPDATE usuarios_lepta SET login_attempts = 0, access_locked = 0 WHERE id = ?`).run(user.id);
     return res.json({ user: sanitizeUser(user), token: createAuthSession(user) });
   } catch (error) {
     console.error('Erro no login:', error.message);
@@ -2668,9 +2670,9 @@ function dropLegacyBases() {
 }
 dropLegacyBases();
 try {
-  consolidateCedentesTable(db);
+  ensureCedentesTableSchema(db);
 } catch (err) {
-  console.error('Aviso ao inicializar tabela CEDENTES:', err.message);
+  console.error('Aviso ao inicializar schema da tabela CEDENTES:', err.message);
 }
 
 app.post('/api/database/sync-cedentes', requireSession, requirePermission('9'), async (req, res) => {
