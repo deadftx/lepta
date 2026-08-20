@@ -411,7 +411,7 @@ function getActualTableName(reqTable) {
 // -------------------------------------------------------------
 const UNLTD_TOKEN = String(process.env.UNLTD_API_TOKEN || '').trim();
 if (!UNLTD_TOKEN) {
-  throw new Error('UNLTD_API_TOKEN não configurado no ambiente do servidor.');
+  console.warn('Aviso: UNLTD_API_TOKEN não configurado no ambiente do servidor.');
 }
 const UNLTD_INITIAL_YEAR = 2021;
 const UNLTD_FINAL_YEAR_LIMIT = 2099;
