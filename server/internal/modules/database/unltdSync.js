@@ -778,13 +778,21 @@ export function consolidateCedentesTable(db, clientsMap = new Map(), entitiesMap
   db.exec(`
     CREATE TABLE IF NOT EXISTS CEDENTES (
       documento TEXT PRIMARY KEY,
+      documento_formatado TEXT,
       razao_social TEXT NOT NULL,
       nome_fantasia TEXT,
       tipo_pessoa TEXT,
+      cadastro_valido INTEGER DEFAULT 1,
+      
+      -- Contatos e Telefones
       telefone_principal TEXT,
-      telefones_adicionais TEXT,
+      telefone_formatado TEXT,
       email_principal TEXT,
-      emails_adicionais TEXT,
+      contatos_resumo TEXT,
+      contatos_nomes TEXT,
+      contatos_telefones TEXT,
+      
+      -- Endereço Completo
       logradouro TEXT,
       numero TEXT,
       complemento TEXT,
@@ -792,20 +800,41 @@ export function consolidateCedentesTable(db, clientsMap = new Map(), entitiesMap
       cidade TEXT,
       uf TEXT,
       cep TEXT,
+      cep_formatado TEXT,
       endereco_completo TEXT,
-      grupo_economico TEXT,
-      ramo_atividade TEXT,
-      cnae TEXT,
-      data_cadastro TEXT,
-      limite_credito REAL DEFAULT 0,
+      
+      -- Grupo Econômico
+      grupo_economico_id INTEGER,
+      grupo_economico_nome TEXT,
+      
+      -- Contas Operacionais (Agregados & Resumos)
+      qtd_contas_operacionais INTEGER DEFAULT 0,
+      limite_operacional_total REAL DEFAULT 0,
+      tranche_total REAL DEFAULT 0,
+      produtos_operacionais TEXT,
+      unidades_administrativas TEXT,
+      contas_operacionais_resumo TEXT,
+      
+      -- Contas Gráficas (Agregados & Resumos)
+      qtd_contas_graficas INTEGER DEFAULT 0,
+      saldo_contas_graficas_total REAL DEFAULT 0,
+      contas_graficas_resumo TEXT,
+      
+      -- Métricas de Operações / Títulos
       qtd_titulos_operados INTEGER DEFAULT 0,
       valor_total_operado REAL DEFAULT 0,
       valor_em_aberto REAL DEFAULT 0,
       valor_vencido REAL DEFAULT 0,
       valor_liquidado REAL DEFAULT 0,
+      
+      -- Metadados & JSONs Originais
+      origem_dados TEXT,
+      possui_edicao_local INTEGER DEFAULT 0,
       socios_json TEXT,
       contatos_json TEXT,
-      contas_bancarias_json TEXT,
+      contas_operacionais_json TEXT,
+      contas_graficas_json TEXT,
+      payload_completo_json TEXT,
       ultima_atualizacao TEXT NOT NULL
     )
   `);
@@ -816,11 +845,20 @@ export function consolidateCedentesTable(db, clientsMap = new Map(), entitiesMap
 
   const allDocs = new Set([...clientsMap.keys(), ...entitiesMap.keys()]);
 
-  // Se o mapa estiver vazio, consulta a tabela ENTIDADES
+  // Se o mapa estiver vazio, consulta a tabela ENTIDADES e CLIENTES
   if (hasTable('ENTIDADES')) {
     try {
       const dbEntities = db.prepare(`SELECT * FROM ENTIDADES`).all();
       for (const row of dbEntities) {
+        if (row.documento) allDocs.add(normalizeDocument(row.documento));
+      }
+    } catch {}
+  }
+
+  if (hasTable('clientes_cadastro')) {
+    try {
+      const localRows = db.prepare(`SELECT documento FROM clientes_cadastro`).all();
+      for (const row of localRows) {
         if (row.documento) allDocs.add(normalizeDocument(row.documento));
       }
     } catch {}
@@ -869,30 +907,51 @@ export function consolidateCedentesTable(db, clientsMap = new Map(), entitiesMap
     }
   }
 
+  // Prepara busca de edições locais em clientes_cadastro
+  let getLocalRow = () => null;
+  if (hasTable('clientes_cadastro')) {
+    try {
+      const stmt = db.prepare(`SELECT * FROM clientes_cadastro WHERE documento = ?`);
+      getLocalRow = (doc) => stmt.get(doc) || null;
+    } catch {}
+  }
+
   const upsertStmt = db.prepare(`
     INSERT INTO CEDENTES (
-      documento, razao_social, nome_fantasia, tipo_pessoa,
-      telefone_principal, telefones_adicionais, email_principal, emails_adicionais,
-      logradouro, numero, complemento, bairro, cidade, uf, cep, endereco_completo,
-      grupo_economico, ramo_atividade, cnae, data_cadastro, limite_credito,
+      documento, documento_formatado, razao_social, nome_fantasia, tipo_pessoa, cadastro_valido,
+      telefone_principal, telefone_formatado, email_principal, contatos_resumo, contatos_nomes, contatos_telefones,
+      logradouro, numero, complemento, bairro, cidade, uf, cep, cep_formatado, endereco_completo,
+      grupo_economico_id, grupo_economico_nome,
+      qtd_contas_operacionais, limite_operacional_total, tranche_total, produtos_operacionais, unidades_administrativas, contas_operacionais_resumo,
+      qtd_contas_graficas, saldo_contas_graficas_total, contas_graficas_resumo,
       qtd_titulos_operados, valor_total_operado, valor_em_aberto, valor_vencido, valor_liquidado,
-      socios_json, contatos_json, contas_bancarias_json, ultima_atualizacao
+      origem_dados, possui_edicao_local,
+      socios_json, contatos_json, contas_operacionais_json, contas_graficas_json, payload_completo_json,
+      ultima_atualizacao
     ) VALUES (
-      ?, ?, ?, ?,
-      ?, ?, ?, ?,
-      ?, ?, ?, ?, ?, ?, ?, ?,
+      ?, ?, ?, ?, ?, ?,
+      ?, ?, ?, ?, ?, ?,
+      ?, ?, ?, ?, ?, ?, ?, ?, ?,
+      ?, ?,
+      ?, ?, ?, ?, ?, ?,
+      ?, ?, ?,
       ?, ?, ?, ?, ?,
+      ?, ?,
       ?, ?, ?, ?, ?,
-      ?, ?, ?, ?
+      ?
     )
     ON CONFLICT(documento) DO UPDATE SET
+      documento_formatado = excluded.documento_formatado,
       razao_social = excluded.razao_social,
       nome_fantasia = excluded.nome_fantasia,
       tipo_pessoa = excluded.tipo_pessoa,
+      cadastro_valido = excluded.cadastro_valido,
       telefone_principal = excluded.telefone_principal,
-      telefones_adicionais = excluded.telefones_adicionais,
+      telefone_formatado = excluded.telefone_formatado,
       email_principal = excluded.email_principal,
-      emails_adicionais = excluded.emails_adicionais,
+      contatos_resumo = excluded.contatos_resumo,
+      contatos_nomes = excluded.contatos_nomes,
+      contatos_telefones = excluded.contatos_telefones,
       logradouro = excluded.logradouro,
       numero = excluded.numero,
       complemento = excluded.complemento,
@@ -900,20 +959,31 @@ export function consolidateCedentesTable(db, clientsMap = new Map(), entitiesMap
       cidade = excluded.cidade,
       uf = excluded.uf,
       cep = excluded.cep,
+      cep_formatado = excluded.cep_formatado,
       endereco_completo = excluded.endereco_completo,
-      grupo_economico = excluded.grupo_economico,
-      ramo_atividade = excluded.ramo_atividade,
-      cnae = excluded.cnae,
-      data_cadastro = excluded.data_cadastro,
-      limite_credito = excluded.limite_credito,
+      grupo_economico_id = excluded.grupo_economico_id,
+      grupo_economico_nome = excluded.grupo_economico_nome,
+      qtd_contas_operacionais = excluded.qtd_contas_operacionais,
+      limite_operacional_total = excluded.limite_operacional_total,
+      tranche_total = excluded.tranche_total,
+      produtos_operacionais = excluded.produtos_operacionais,
+      unidades_administrativas = excluded.unidades_administrativas,
+      contas_operacionais_resumo = excluded.contas_operacionais_resumo,
+      qtd_contas_graficas = excluded.qtd_contas_graficas,
+      saldo_contas_graficas_total = excluded.saldo_contas_graficas_total,
+      contas_graficas_resumo = excluded.contas_graficas_resumo,
       qtd_titulos_operados = excluded.qtd_titulos_operados,
       valor_total_operado = excluded.valor_total_operado,
       valor_em_aberto = excluded.valor_em_aberto,
       valor_vencido = excluded.valor_vencido,
       valor_liquidado = excluded.valor_liquidado,
+      origem_dados = excluded.origem_dados,
+      possui_edicao_local = excluded.possui_edicao_local,
       socios_json = excluded.socios_json,
       contatos_json = excluded.contatos_json,
-      contas_bancarias_json = excluded.contas_bancarias_json,
+      contas_operacionais_json = excluded.contas_operacionais_json,
+      contas_graficas_json = excluded.contas_graficas_json,
+      payload_completo_json = excluded.payload_completo_json,
       ultima_atualizacao = excluded.ultima_atualizacao
   `);
 
@@ -921,91 +991,153 @@ export function consolidateCedentesTable(db, clientsMap = new Map(), entitiesMap
     for (const doc of allDocs) {
       if (!doc) continue;
       const clientObj = clientsMap.get(doc) || {};
-      const entityObj = entitiesMap.get(doc) || clientObj.entidade || {};
+      const entityFromMap = entitiesMap.get(doc);
+      const entityObj = clientObj.entidade || entityFromMap || {};
 
-      const razaoSocial = entityObj.nome || clientObj.nome || entityObj.razaoSocial || 'Cliente sem nome';
-      const nomeFantasia = entityObj.nomeFantasia || clientObj.nomeFantasia || '';
-      const tipoPessoa = (entityObj.tipo || (doc.length === 11 ? 'FISICA' : 'JURIDICA')).toUpperCase();
+      // Verifica se há edição local em clientes_cadastro
+      const localRow = getLocalRow(doc);
+      let localOverride = {};
+      let localSnapshot = {};
+      if (localRow) {
+        try { localOverride = JSON.parse(localRow.override_json || '{}'); } catch {}
+        try { localSnapshot = JSON.parse(localRow.api_snapshot_json || '{}'); } catch {}
+      }
+      const hasLocalData = Boolean(localRow);
+      const localEntity = localOverride.entidade || {};
+      const baseEntity = entityObj.nome ? entityObj : (localSnapshot.entidade || {});
 
-      // Endereços
-      const enderecos = Array.isArray(entityObj.enderecos) ? entityObj.enderecos : (Array.isArray(clientObj.enderecos) ? clientObj.enderecos : []);
-      const primaryAddress = enderecos[0] || {};
-      const logradouro = primaryAddress.logradouro || primaryAddress.rua || primaryAddress.endereco || '';
-      const numero = primaryAddress.numero || '';
-      const complemento = primaryAddress.complemento || '';
-      const bairro = primaryAddress.bairro || '';
-      const cidade = primaryAddress.cidade || primaryAddress.municipio || '';
-      const uf = primaryAddress.uf || primaryAddress.estado || '';
-      const cep = primaryAddress.cep || '';
+      // 1. Identificação
+      const razaoSocial = String(localEntity.nome || baseEntity.nome || clientObj.nome || 'Cliente sem nome').trim();
+      const nomeFantasia = String(localEntity.nomeFantasia || baseEntity.nomeFantasia || clientObj.nomeFantasia || '').trim();
+      const tipoPessoa = String(localEntity.tipo || baseEntity.tipo || (doc.length === 11 ? 'PF' : 'PJ')).toUpperCase();
+      const cadastroValido = baseEntity.valido !== false ? 1 : 0;
+
+      // Formata Documento
+      let docFormatado = doc;
+      if (doc.length === 14) docFormatado = doc.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, '$1.$2.$3/$4-$5');
+      else if (doc.length === 11) docFormatado = doc.replace(/^(\d{3})(\d{3})(\d{3})(\d{2})$/, '$1.$2.$3-$4');
+
+      // 2. Endereço Completo
+      const endObj = localEntity.endereco
+        || (baseEntity.endereco && typeof baseEntity.endereco === 'object' ? baseEntity.endereco : null)
+        || (Array.isArray(baseEntity.enderecos) ? baseEntity.enderecos[0] : null)
+        || (clientObj.endereco && typeof clientObj.endereco === 'object' ? clientObj.endereco : null)
+        || {};
+
+      const logradouro = String(endObj.logradouro || endObj.rua || endObj.endereco || '').trim();
+      const numero = String(endObj.numero || '').trim();
+      const complemento = String(endObj.complemento || '').trim();
+      const bairro = String(endObj.bairro || '').trim();
+      const cidade = String(endObj.localidade || endObj.cidade || endObj.municipio || '').trim();
+      const uf = String(endObj.estado || endObj.uf || '').trim();
+      const rawCep = String(endObj.cep || '').replace(/\D/g, '');
+      const cepFormatado = rawCep.length === 8 ? `${rawCep.slice(0, 5)}-${rawCep.slice(5)}` : rawCep;
 
       const addressParts = [
-        logradouro ? `${logradouro}${numero ? `, ${numero}` : ''}${complemento ? ` - ${complemento}` : ''}` : '',
+        logradouro ? `${logradouro}${numero ? `, ${numero}` : ''}${complemento ? ` (${complemento})` : ''}` : '',
         bairro ? `Bairro ${bairro}` : '',
         cidade ? `${cidade}${uf ? `/${uf}` : ''}` : '',
-        cep ? `CEP: ${cep}` : ''
+        cepFormatado ? `CEP: ${cepFormatado}` : ''
       ].filter(Boolean);
       const enderecoCompleto = addressParts.join(' - ');
 
-      // Contatos e Telefones
-      const contatos = Array.isArray(entityObj.contatos) ? entityObj.contatos : (Array.isArray(clientObj.contatos) ? clientObj.contatos : []);
-      const primaryPhone = entityObj.telefone || entityObj.celular || clientObj.telefone || (contatos[0]?.telefone || contatos[0]?.celular) || '';
-      const allPhones = [...new Set([
-        primaryPhone,
-        ...(contatos.map(c => c.telefone || c.celular).filter(Boolean)),
-        ...(Array.isArray(entityObj.telefones) ? entityObj.telefones.map(t => typeof t === 'object' ? t.numero || t.telefone : t) : [])
-      ])].filter(Boolean);
+      // 3. Contatos e Telefones
+      const rawContacts = Array.isArray(localEntity.contatos) && localEntity.contatos.length
+        ? localEntity.contatos
+        : (Array.isArray(baseEntity.contatos) ? baseEntity.contatos : (Array.isArray(clientObj.contatos) ? clientObj.contatos : []));
 
-      const primaryEmail = entityObj.email || clientObj.email || contatos[0]?.email || '';
-      const allEmails = [...new Set([
-        primaryEmail,
-        ...(contatos.map(c => c.email).filter(Boolean)),
-        ...(Array.isArray(entityObj.emails) ? entityObj.emails.map(e => typeof e === 'object' ? e.email || e.endereco : e) : [])
-      ])].filter(Boolean);
+      const primaryPhoneRaw = String(localEntity.telefone || baseEntity.telefone || clientObj.telefone || rawContacts[0]?.telefone || '').trim();
+      const primaryEmail = String(localEntity.email || baseEntity.email || clientObj.email || rawContacts[0]?.email || '').trim();
 
-      // Grupo Econômico, CNAE, Ramo
-      const grupoEconomico = typeof entityObj.grupoEconomico === 'object' ? entityObj.grupoEconomico?.nome || '' : String(entityObj.grupoEconomico || '');
-      const ramoAtividade = entityObj.ramoDeAtividade || entityObj.ramoAtividade || entityObj.atividadePrincipal || '';
-      const cnae = entityObj.cnae || entityObj.codigoCnae || '';
-      const dataCadastro = entityObj.dataCadastro || entityObj.dataDeCadastro || clientObj.dataCadastro || '';
-      const limiteCredito = Number(clientObj.limiteCredito || clientObj.limite || entityObj.limiteCredito || 0);
+      // Formata Telefone
+      const cleanPhone = primaryPhoneRaw.replace(/\D/g, '');
+      let phoneFormatado = primaryPhoneRaw;
+      if (cleanPhone.length === 11) phoneFormatado = `(${cleanPhone.slice(0, 2)}) ${cleanPhone.slice(2, 7)}-${cleanPhone.slice(7)}`;
+      else if (cleanPhone.length === 10) phoneFormatado = `(${cleanPhone.slice(0, 2)}) ${cleanPhone.slice(2, 6)}-${cleanPhone.slice(6)}`;
 
-      // Estatísticas operacionais
+      const contatosNomes = [...new Set(rawContacts.map(c => String(c.nome || '').trim()).filter(Boolean))].join(', ');
+      const contatosTelefones = [...new Set(rawContacts.map(c => String(c.telefone || '').trim()).filter(Boolean))].join(', ');
+      const contatosResumo = rawContacts
+        .map(c => `${c.nome || 'Contato'}: ${c.telefone || 'Sem telefone'}${c.email ? ` (${c.email})` : ''}`)
+        .filter(Boolean)
+        .join(' | ');
+
+      // 4. Grupo Econômico
+      const grupoObj = localEntity.grupoEconomico || baseEntity.grupoEconomico || clientObj.grupoEconomico || {};
+      const grupoId = typeof grupoObj === 'object' ? grupoObj.id || null : null;
+      const grupoNome = typeof grupoObj === 'object' ? String(grupoObj.nome || '').trim() : String(grupoObj || '').trim();
+
+      // 5. Contas Operacionais
+      const contasOperacionais = Array.isArray(clientObj.contasOperacionais) ? clientObj.contasOperacionais : [];
+      const qtdContasOperacionais = contasOperacionais.length;
+      const limiteOperacionalTotal = contasOperacionais.reduce((sum, c) => sum + Number(c.limite || 0), 0);
+      const trancheTotal = contasOperacionais.reduce((sum, c) => sum + Number(c.tranche || 0), 0);
+      const produtosOperacionais = [...new Set(contasOperacionais.map(c => c.produto?.descricao || c.sigla).filter(Boolean))].join(', ');
+      const unidadesAdministrativas = [...new Set(contasOperacionais.map(c => c.unidadeAdministrativa?.alias || c.unidadeAdministrativa?.empresa?.nome).filter(Boolean))].join(', ');
+      const contasOperacionaisResumo = contasOperacionais
+        .map(c => `${c.sigla || 'Conta'} (${c.unidadeAdministrativa?.alias || 'UA'} - Limite: R$ ${Number(c.limite || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })})`)
+        .join(' | ');
+
+      // 6. Contas Gráficas
+      const contasGraficas = Array.isArray(clientObj.contasGraficas) ? clientObj.contasGraficas : [];
+      const qtdContasGraficas = contasGraficas.length;
+      const saldoContasGraficasTotal = contasGraficas.reduce((sum, c) => sum + Number(c.saldo || 0), 0);
+      const contasGraficasResumo = contasGraficas
+        .map(c => `${c.descricao || 'Gráfica'} (${c.unidadeAdministrativa?.alias || ''} - Saldo: R$ ${Number(c.saldo || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })})`)
+        .join(' | ');
+
+      // 7. Estatísticas Operacionais de Títulos
       const stats = operationalStats.get(doc) || { qtd: 0, totalOperado: 0, emAberto: 0, vencido: 0, liquidado: 0 };
 
-      // Sócios e Contas
-      const socios = Array.isArray(entityObj.socios) ? entityObj.socios : (Array.isArray(clientObj.socios) ? clientObj.socios : []);
-      const contas = Array.isArray(clientObj.contasOperacionais) ? clientObj.contasOperacionais : (Array.isArray(clientObj.contasBancarias) ? clientObj.contasBancarias : []);
+      // 8. Origem e Estruturas JSON
+      const origemDados = (clientObj.entidade || entityFromMap) ? (hasLocalData ? 'API + Banco Interno' : 'API UNLTD') : 'Banco Interno';
+      const socios = Array.isArray(baseEntity.socios) ? baseEntity.socios : (Array.isArray(clientObj.socios) ? clientObj.socios : []);
 
       upsertStmt.run(
         doc,
+        docFormatado,
         razaoSocial,
         nomeFantasia,
         tipoPessoa,
-        primaryPhone,
-        allPhones.join(', '),
+        cadastroValido,
+        primaryPhoneRaw,
+        phoneFormatado,
         primaryEmail,
-        allEmails.join(', '),
+        contatosResumo,
+        contatosNomes,
+        contatosTelefones,
         logradouro,
         numero,
         complemento,
         bairro,
         cidade,
         uf,
-        cep,
+        rawCep,
+        cepFormatado,
         enderecoCompleto,
-        grupoEconomico,
-        ramoAtividade,
-        cnae,
-        dataCadastro,
-        limiteCredito,
+        grupoId,
+        grupoNome,
+        qtdContasOperacionais,
+        limiteOperacionalTotal,
+        trancheTotal,
+        produtosOperacionais,
+        unidadesAdministrativas,
+        contasOperacionaisResumo,
+        qtdContasGraficas,
+        saldoContasGraficasTotal,
+        contasGraficasResumo,
         stats.qtd,
         stats.totalOperado,
         stats.emAberto,
         stats.vencido,
         stats.liquidado,
+        origemDados,
+        hasLocalData ? 1 : 0,
         JSON.stringify(socios),
-        JSON.stringify(contatos),
-        JSON.stringify(contas),
+        JSON.stringify(rawContacts),
+        JSON.stringify(contasOperacionais),
+        JSON.stringify(contasGraficas),
+        JSON.stringify({ client: clientObj, entity: baseEntity, localOverride }),
         synchronizedAt
       );
     }
@@ -1013,4 +1145,63 @@ export function consolidateCedentesTable(db, clientsMap = new Map(), entitiesMap
 
   runConsolidation();
   return allDocs.size;
+}
+
+export async function syncAllCedentesFromUnltdApi(db, token, onProgress) {
+  if (!token) throw new Error('UNLTD_API_TOKEN não configurado.');
+  
+  // Coleta todos os documentos conhecidos
+  const documents = new Set();
+  try {
+    if (db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='TITULOS'").get()) {
+      const pragma = db.prepare('PRAGMA table_info("TITULOS")').all().map(c => c.name);
+      let docCol = pragma.find(c => /documento.*cedente|contaOperacional.*cliente.*documento/i.test(c)) || 'documento';
+      if (pragma.includes(docCol)) {
+        const rows = db.prepare(`SELECT DISTINCT ${quoteIdentifier(docCol)} as doc FROM "TITULOS" WHERE ${quoteIdentifier(docCol)} IS NOT NULL`).all();
+        for (const r of rows) {
+          const d = normalizeDocument(r.doc);
+          if ([11, 14].includes(d.length)) documents.add(d);
+        }
+      }
+    }
+  } catch {}
+
+  try {
+    if (db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='clientes_cadastro'").get()) {
+      const rows = db.prepare(`SELECT documento FROM clientes_cadastro`).all();
+      for (const r of rows) {
+        const d = normalizeDocument(r.documento);
+        if ([11, 14].includes(d.length)) documents.add(d);
+      }
+    }
+  } catch {}
+
+  const docList = [...documents];
+  const clientsMap = new Map();
+  const entitiesMap = new Map();
+  let completed = 0;
+
+  await mapConcurrent(docList, 4, async doc => {
+    const headers = { Authorization: `UNLTD-BackEnd ${token}` };
+    try {
+      const [entityRes, clientRes] = await Promise.allSettled([
+        fetchJson(`${API_BASE_URL}/entidades/${doc}`, { headers }),
+        fetchJson(`${API_BASE_URL}/entidades/cliente/${doc}`, { headers })
+      ]);
+      if (clientRes.status === 'fulfilled' && clientRes.value) {
+        const client = normalizeApiObject(clientRes.value);
+        if (client) clientsMap.set(doc, client);
+      }
+      if (entityRes.status === 'fulfilled' && entityRes.value) {
+        const entity = normalizeApiObject(entityRes.value);
+        if (entity) entitiesMap.set(doc, entity);
+      }
+    } finally {
+      completed += 1;
+      if (onProgress) onProgress(completed, docList.length);
+    }
+  });
+
+  const total = consolidateCedentesTable(db, clientsMap, entitiesMap, isoNow());
+  return { totalDocuments: docList.length, enriched: clientsMap.size, totalInTable: total };
 }
