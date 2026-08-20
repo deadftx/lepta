@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
-import { LogOut, User, Bell, ShieldAlert, Shield, UserPlus, Users, ChevronDown, ChevronRight, LayoutDashboard, Sliders, Home, Calendar, Menu, X, Wallet, FileSpreadsheet, BrainCircuit, Database, ClipboardCheck, ContactRound, ShieldCheck, Landmark, Briefcase, ShoppingCart, SlidersHorizontal } from 'lucide-react';
+import { LogOut, User, ShieldAlert, Shield, UserPlus, Users, ChevronDown, ChevronRight, LayoutDashboard, Sliders, Home, Calendar, Menu, X, Wallet, FileSpreadsheet, BrainCircuit, Database, ClipboardCheck, ContactRound, ShieldCheck, Landmark, Briefcase, ShoppingCart, SlidersHorizontal } from 'lucide-react';
 import { useNavigate, Outlet, Link, useLocation } from 'react-router-dom';
 import { useAuth } from './AuthContext';
+import NotificationBell from './NotificationBell';
 import './styles/Dashboard.css';
 import { hasAnyPermission, hasPermission } from './permissions';
 
@@ -256,9 +257,7 @@ const InternalLayout = () => {
             </button>
           </div>
           <div className="header-actions">
-            <button className="icon-btn">
-              <Bell size={20} />
-            </button>
+            <NotificationBell />
           </div>
         </header>
 
