@@ -650,6 +650,7 @@ export const PurchaseApproval: React.FC = () => {
             <CreditCard size={28} />
           </div>
           <div>
+            <div className="pa-kicker">Financeiro • Gestão de Pagamentos & Compras</div>
             <h1>Solicitações Financeiras</h1>
             <p className="pa-subtitle">
               Esteira corporativa para solicitação de pagamentos, fornecedores, centro de custo e esteira de aprovação.
@@ -682,9 +683,11 @@ export const PurchaseApproval: React.FC = () => {
         <div className="pa-kpi-card">
           <div className="pa-kpi-header">
             <span>Fila Pendente</span>
-            <Clock size={18} color="#f59e0b" />
+            <div className="pa-kpi-icon-box" style={{ background: 'rgba(245, 158, 11, 0.15)', color: '#fbbf24' }}>
+              <Clock size={18} />
+            </div>
           </div>
-          <div className="pa-kpi-val" style={{ color: '#f59e0b' }}>
+          <div className="pa-kpi-val" style={{ color: '#fbbf24' }}>
             {metrics.pendingCount}
           </div>
           <p className="pa-kpi-sub">Aguardando primeira decisão</p>
@@ -693,7 +696,9 @@ export const PurchaseApproval: React.FC = () => {
         <div className="pa-kpi-card">
           <div className="pa-kpi-header">
             <span>Reabertos</span>
-            <RotateCcw size={18} color="#c084fc" />
+            <div className="pa-kpi-icon-box" style={{ background: 'rgba(192, 132, 252, 0.15)', color: '#c084fc' }}>
+              <RotateCcw size={18} />
+            </div>
           </div>
           <div className="pa-kpi-val" style={{ color: '#c084fc' }}>
             {metrics.reopenedCount}
@@ -704,7 +709,9 @@ export const PurchaseApproval: React.FC = () => {
         <div className="pa-kpi-card">
           <div className="pa-kpi-header">
             <span>Em Discussão</span>
-            <MessageSquare size={18} color="#38bdf8" />
+            <div className="pa-kpi-icon-box" style={{ background: 'rgba(56, 189, 248, 0.15)', color: '#38bdf8' }}>
+              <MessageSquare size={18} />
+            </div>
           </div>
           <div className="pa-kpi-val" style={{ color: '#38bdf8' }}>
             {metrics.waitingCount}
@@ -715,9 +722,11 @@ export const PurchaseApproval: React.FC = () => {
         <div className="pa-kpi-card">
           <div className="pa-kpi-header">
             <span>Total em Fila</span>
-            <DollarSign size={18} color="#34d399" />
+            <div className="pa-kpi-icon-box" style={{ background: 'rgba(52, 211, 153, 0.15)', color: '#34d399' }}>
+              <DollarSign size={18} />
+            </div>
           </div>
-          <div className="pa-kpi-val" style={{ color: '#34d399', fontSize: '1.4rem' }}>
+          <div className="pa-kpi-val" style={{ color: '#34d399' }}>
             {formatBrl(metrics.pendingValue)}
           </div>
           <p className="pa-kpi-sub">Volume total sob análise</p>
