@@ -55,6 +55,8 @@ export function registerPurchaseRoutes(app, {
     CREATE TABLE IF NOT EXISTS compras_requisicoes (
       id TEXT PRIMARY KEY,
       numero INTEGER,
+      tipo_destino TEXT DEFAULT 'DEPARTAMENTO',
+      categoria TEXT,
       fornecedor_nome TEXT,
       fornecedor_contato TEXT,
       forma_pagamento TEXT, -- 'DINHEIRO', 'PIX', 'DEBITO', 'CREDITO'
@@ -70,6 +72,7 @@ export function registerPurchaseRoutes(app, {
       arquivado_por TEXT,
       arquivado_em TEXT,
       motivo_arquivamento TEXT,
+      data_pagamento TEXT,
       solicitante_id TEXT NOT NULL,
       solicitante_nome TEXT NOT NULL,
       solicitante_email TEXT,
@@ -79,6 +82,24 @@ export function registerPurchaseRoutes(app, {
       decidido_em TEXT,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS compras_requisicoes_itens (
+      id TEXT PRIMARY KEY,
+      requisicao_id TEXT NOT NULL,
+      numero_item INTEGER DEFAULT 1,
+      tipo_destino TEXT,
+      departamento_centro_custo TEXT,
+      categoria TEXT NOT NULL,
+      fornecedor_nome TEXT,
+      fornecedor_contato TEXT,
+      forma_pagamento TEXT,
+      quantidade_parcelas INTEGER DEFAULT 1,
+      produto_servico TEXT NOT NULL,
+      valor REAL NOT NULL,
+      quantidade INTEGER NOT NULL DEFAULT 1,
+      observacoes TEXT,
+      created_at TEXT NOT NULL
     );
 
     CREATE TABLE IF NOT EXISTS compras_mensagens (
@@ -108,6 +129,8 @@ export function registerPurchaseRoutes(app, {
     const cols = db.prepare("PRAGMA table_info(compras_requisicoes)").all().map(c => c.name.toLowerCase());
     const requiredCols = [
       { name: 'arquivado', sql: 'ALTER TABLE compras_requisicoes ADD COLUMN arquivado INTEGER DEFAULT 0' },
+      { name: 'tipo_destino', sql: "ALTER TABLE compras_requisicoes ADD COLUMN tipo_destino TEXT DEFAULT 'DEPARTAMENTO'" },
+      { name: 'categoria', sql: 'ALTER TABLE compras_requisicoes ADD COLUMN categoria TEXT' },
       { name: 'fornecedor_nome', sql: 'ALTER TABLE compras_requisicoes ADD COLUMN fornecedor_nome TEXT' },
       { name: 'fornecedor_contato', sql: 'ALTER TABLE compras_requisicoes ADD COLUMN fornecedor_contato TEXT' },
       { name: 'forma_pagamento', sql: 'ALTER TABLE compras_requisicoes ADD COLUMN forma_pagamento TEXT' },
@@ -260,35 +283,51 @@ export function registerPurchaseRoutes(app, {
     }
   });
 
-  // --- ROTA: CRIAR SOLICITAÇÃO FINANCEIRA / REQUISIÇÃO ---
+  // --- ROTA: CRIAR SOLICITAÇÃO FINANCEIRA / REQUISIÇÃO (COM SUPORTE A 1 OU MÚLTIPLOS ITENS) ---
   app.post('/api/compras/requisicoes', requireSession, requireAccess, (req, res) => {
-    const fornecedor_nome = String(req.body?.fornecedor_nome || '').trim();
-    const fornecedor_contato = String(req.body?.fornecedor_contato || '').trim();
-    const forma_pagamento = String(req.body?.forma_pagamento || '').trim().toUpperCase();
-    const quantidade_parcelas = Math.max(1, Number(req.body?.quantidade_parcelas) || 1);
-    const departamento_centro_custo = String(req.body?.departamento_centro_custo || '').trim();
-    const produto_servico = String(req.body?.produto_servico || '').trim();
-    const valor = Number(req.body?.valor);
-    const quantidade = Math.max(1, Number(req.body?.quantidade || 1));
-    const observacoes = String(req.body?.observacoes || '').trim();
+    let itens = req.body?.itens;
+    if (!Array.isArray(itens) || itens.length === 0) {
+      itens = [req.body];
+    }
 
-    if (!fornecedor_nome) {
-      return res.status(400).json({ error: 'O Nome do Fornecedor / Prestador de serviço é obrigatório.' });
-    }
-    if (!fornecedor_contato) {
-      return res.status(400).json({ error: 'O Contato do Fornecedor / Prestador de serviço é obrigatório.' });
-    }
-    if (!forma_pagamento || !['DINHEIRO', 'PIX', 'DEBITO', 'CREDITO'].includes(forma_pagamento)) {
-      return res.status(400).json({ error: 'Selecione uma Forma de Pagamento válida: Dinheiro, PIX, Débito ou Crédito.' });
-    }
-    if (!departamento_centro_custo) {
-      return res.status(400).json({ error: 'O Departamento / Centro de Custo / Empresa / Cliente é obrigatório.' });
-    }
-    if (!produto_servico) {
-      return res.status(400).json({ error: 'O campo Descrição / Produto / Serviço é obrigatório.' });
-    }
-    if (isNaN(valor) || valor <= 0) {
-      return res.status(400).json({ error: 'Informe um valor válido e maior que zero.' });
+    // Valida cada um dos itens
+    for (let i = 0; i < itens.length; i++) {
+      const it = itens[i];
+      const prefix = itens.length > 1 ? `Item ${i + 1}: ` : '';
+
+      const categoria = String(it?.categoria || '').trim();
+      const tipo_destino = String(it?.tipo_destino || 'DEPARTAMENTO').trim().toUpperCase();
+      const departamento_centro_custo = String(it?.departamento_centro_custo || '').trim();
+      const fornecedor_nome = String(it?.fornecedor_nome || '').trim();
+      const fornecedor_contato = String(it?.fornecedor_contato || '').trim();
+      const forma_pagamento = String(it?.forma_pagamento || '').trim().toUpperCase();
+      const produto_servico = String(it?.produto_servico || '').trim();
+      const valor = Number(it?.valor);
+
+      if (!categoria) {
+        return res.status(400).json({ error: `${prefix}A Categoria é obrigatória (Insumos, Visita, Reembolso, Festas, Aniversários, Eventos, Outros).` });
+      }
+      if (!tipo_destino || !['DEPARTAMENTO', 'CENTRO_DE_CUSTO', 'EMPRESA', 'CLIENTE'].includes(tipo_destino)) {
+        return res.status(400).json({ error: `${prefix}Selecione o Tipo de Destino (Departamento, Centro de Custo, Empresa ou Cliente).` });
+      }
+      if (!departamento_centro_custo) {
+        return res.status(400).json({ error: `${prefix}O preenchimento do ${tipo_destino === 'EMPRESA' ? 'Nome da Empresa' : tipo_destino === 'CLIENTE' ? 'Nome do Cliente' : tipo_destino === 'CENTRO_DE_CUSTO' ? 'Centro de Custo' : 'Departamento'} é obrigatório.` });
+      }
+      if (!fornecedor_nome) {
+        return res.status(400).json({ error: `${prefix}O Nome do Fornecedor / Prestador é obrigatório.` });
+      }
+      if (!fornecedor_contato) {
+        return res.status(400).json({ error: `${prefix}O Contato do Fornecedor / Prestador é obrigatório.` });
+      }
+      if (!forma_pagamento || !['DINHEIRO', 'PIX', 'DEBITO', 'CREDITO'].includes(forma_pagamento)) {
+        return res.status(400).json({ error: `${prefix}Selecione uma Forma de Pagamento válida: Dinheiro, PIX, Débito ou Crédito.` });
+      }
+      if (!produto_servico) {
+        return res.status(400).json({ error: `${prefix}A Descrição do Produto / Serviço é obrigatória.` });
+      }
+      if (isNaN(valor) || valor <= 0) {
+        return res.status(400).json({ error: `${prefix}Informe um valor válido e maior que zero.` });
+      }
     }
 
     try {
@@ -297,26 +336,97 @@ export function registerPurchaseRoutes(app, {
       const id = `SOL-${new Date().getFullYear()}-${String(count).padStart(4, '0')}`;
       const solicitanteNome = req.authUser.username || req.authUser.id;
 
+      let totalValor = 0;
+      let totalQtd = 0;
+      const firstItem = itens[0];
+
+      const insertItemStmt = db.prepare(`
+        INSERT INTO compras_requisicoes_itens (
+          id, requisicao_id, numero_item, tipo_destino, departamento_centro_custo,
+          categoria, fornecedor_nome, fornecedor_contato, forma_pagamento,
+          quantidade_parcelas, produto_servico, valor, quantidade, observacoes, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `);
+
+      const createdItems = [];
+      for (let i = 0; i < itens.length; i++) {
+        const it = itens[i];
+        const itemId = randomUUID();
+        const numItem = i + 1;
+        const itQtd = Math.max(1, Number(it.quantidade || 1));
+        const itVal = Number(it.valor);
+        const itParcelas = Math.max(1, Number(it.quantidade_parcelas) || 1);
+
+        totalValor += (itVal * itQtd);
+        totalQtd += itQtd;
+
+        insertItemStmt.run(
+          itemId,
+          id,
+          numItem,
+          String(it.tipo_destino || 'DEPARTAMENTO').trim().toUpperCase(),
+          String(it.departamento_centro_custo || '').trim(),
+          String(it.categoria || 'Outros').trim(),
+          String(it.fornecedor_nome || '').trim(),
+          String(it.fornecedor_contato || '').trim(),
+          String(it.forma_pagamento || 'PIX').trim().toUpperCase(),
+          itParcelas,
+          String(it.produto_servico || '').trim(),
+          itVal,
+          itQtd,
+          String(it.observacoes || '').trim(),
+          now
+        );
+
+        createdItems.push({
+          id: itemId,
+          requisicao_id: id,
+          numero_item: numItem,
+          tipo_destino: it.tipo_destino,
+          departamento_centro_custo: it.departamento_centro_custo,
+          categoria: it.categoria,
+          fornecedor_nome: it.fornecedor_nome,
+          fornecedor_contato: it.fornecedor_contato,
+          forma_pagamento: it.forma_pagamento,
+          quantidade_parcelas: itParcelas,
+          produto_servico: it.produto_servico,
+          valor: itVal,
+          quantidade: itQtd,
+          observacoes: it.observacoes || '',
+          created_at: now
+        });
+      }
+
+      const mainProdutoServico = itens.length === 1 
+        ? firstItem.produto_servico 
+        : `${firstItem.produto_servico} (+${itens.length - 1} ${itens.length - 1 === 1 ? 'item adicional' : 'itens adicionais'})`;
+      
+      const mainCategoria = itens.length === 1
+        ? firstItem.categoria
+        : 'Múltiplas';
+
       db.prepare(`
         INSERT INTO compras_requisicoes (
-          id, numero, fornecedor_nome, fornecedor_contato, forma_pagamento,
+          id, numero, tipo_destino, categoria, fornecedor_nome, fornecedor_contato, forma_pagamento,
           quantidade_parcelas, departamento_centro_custo, produto_servico,
           valor, quantidade, observacoes, status, arquivado, arquivado_manualmente,
           solicitante_id, solicitante_nome, solicitante_email,
           created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'PENDENTE', 0, 0, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'PENDENTE', 0, 0, ?, ?, ?, ?, ?)
       `).run(
         id,
         count,
-        fornecedor_nome,
-        fornecedor_contato,
-        forma_pagamento,
-        quantidade_parcelas,
-        departamento_centro_custo,
-        produto_servico,
-        valor,
-        quantidade,
-        observacoes,
+        firstItem.tipo_destino || 'DEPARTAMENTO',
+        mainCategoria,
+        firstItem.fornecedor_nome,
+        firstItem.fornecedor_contato,
+        firstItem.forma_pagamento,
+        firstItem.quantidade_parcelas || 1,
+        firstItem.departamento_centro_custo,
+        mainProdutoServico,
+        totalValor,
+        totalQtd,
+        firstItem.observacoes || '',
         req.authUser.id,
         solicitanteNome,
         req.authUser.email || '',
@@ -326,17 +436,16 @@ export function registerPurchaseRoutes(app, {
 
       // Dispara notificação para todos os APROVADORES
       const approverIds = getAllApproverUserIds().filter(uid => uid !== req.authUser.id);
-      const totalFormatado = formatBrl(valor * quantidade);
-      const parcelasTexto = quantidade_parcelas > 1 ? ` (${quantidade_parcelas}x)` : '';
+      const totalFormatado = formatBrl(totalValor);
       notifyUsers(db, approverIds, {
         titulo: `💳 Nova Solicitação Financeira (${id})`,
-        mensagem: `${solicitanteNome} solicitou ${produto_servico} - ${fornecedor_nome} (${totalFormatado}${parcelasTexto} via ${forma_pagamento})`,
+        mensagem: `${solicitanteNome} solicitou ${mainProdutoServico} (${totalFormatado} - ${itens.length} ${itens.length === 1 ? 'item' : 'itens'})`,
         tipo: 'COMPRAS_NOVA_REQUISICAO',
-        link: '/financeiro/solicitacoes'
+        link: '/administrativo/compras'
       });
 
       const nova = db.prepare(`SELECT * FROM compras_requisicoes WHERE id = ?`).get(id);
-      return res.status(201).json(nova);
+      return res.status(201).json({ ...nova, itens: createdItems });
     } catch (error) {
       console.error('Erro ao criar solicitação financeira no SQLite:', error.message);
       return res.status(500).json({ error: 'Não foi possível registrar a solicitação no banco SQLite.' });
@@ -348,7 +457,8 @@ export function registerPurchaseRoutes(app, {
     try {
       const rows = db.prepare(`
         SELECT r.*,
-          (SELECT COUNT(*) FROM compras_mensagens m WHERE m.requisicao_id = r.id) as total_mensagens
+          (SELECT COUNT(*) FROM compras_mensagens m WHERE m.requisicao_id = r.id) as total_mensagens,
+          COALESCE((SELECT COUNT(*) FROM compras_requisicoes_itens i WHERE i.requisicao_id = r.id), 1) as total_itens
         FROM compras_requisicoes r
         WHERE r.solicitante_id = ?
         ORDER BY r.created_at DESC
@@ -371,7 +481,8 @@ export function registerPurchaseRoutes(app, {
 
       const rows = db.prepare(`
         SELECT r.*,
-          (SELECT COUNT(*) FROM compras_mensagens m WHERE m.requisicao_id = r.id) as total_mensagens
+          (SELECT COUNT(*) FROM compras_mensagens m WHERE m.requisicao_id = r.id) as total_mensagens,
+          COALESCE((SELECT COUNT(*) FROM compras_requisicoes_itens i WHERE i.requisicao_id = r.id), 1) as total_itens
         FROM compras_requisicoes r
         WHERE r.arquivado = 0 AND r.status IN ('PENDENTE', 'REABERTO', 'REVISAO', 'AGUARDANDO_RESPOSTA_APROVADOR', 'AGUARDANDO_RESPOSTA_SOLICITANTE')
         ORDER BY 
@@ -406,7 +517,8 @@ export function registerPurchaseRoutes(app, {
 
       const rows = db.prepare(`
         SELECT r.*,
-          (SELECT COUNT(*) FROM compras_mensagens m WHERE m.requisicao_id = r.id) as total_mensagens
+          (SELECT COUNT(*) FROM compras_mensagens m WHERE m.requisicao_id = r.id) as total_mensagens,
+          COALESCE((SELECT COUNT(*) FROM compras_requisicoes_itens i WHERE i.requisicao_id = r.id), 1) as total_itens
         FROM compras_requisicoes r
         WHERE r.arquivado = 1
         ORDER BY COALESCE(r.arquivado_em, r.decidido_em, r.updated_at) DESC
@@ -419,7 +531,7 @@ export function registerPurchaseRoutes(app, {
     }
   });
 
-  // --- ROTA: DETALHES DA REQUISIÇÃO + MENSAGENS ---
+  // --- ROTA: DETALHES DA REQUISIÇÃO + ITENS + MENSAGENS ---
   app.get('/api/compras/requisicoes/:id', requireSession, requireAccess, (req, res) => {
     try {
       const requisicao = db.prepare(`SELECT * FROM compras_requisicoes WHERE id = ?`).get(req.params.id);
@@ -434,6 +546,33 @@ export function registerPurchaseRoutes(app, {
         return res.status(403).json({ error: 'Sem permissão para visualizar esta solicitação.' });
       }
 
+      let itens = db.prepare(`
+        SELECT * FROM compras_requisicoes_itens
+        WHERE requisicao_id = ?
+        ORDER BY numero_item ASC
+      `).all(req.params.id);
+
+      // Compatibilidade com solicitações antigas gravadas antes da tabela de itens
+      if (!itens || itens.length === 0) {
+        itens = [{
+          id: requisicao.id,
+          requisicao_id: requisicao.id,
+          numero_item: 1,
+          tipo_destino: requisicao.tipo_destino || 'DEPARTAMENTO',
+          departamento_centro_custo: requisicao.departamento_centro_custo || '',
+          categoria: requisicao.categoria || 'Outros',
+          fornecedor_nome: requisicao.fornecedor_nome || '',
+          fornecedor_contato: requisicao.fornecedor_contato || '',
+          forma_pagamento: requisicao.forma_pagamento || 'PIX',
+          quantidade_parcelas: requisicao.quantidade_parcelas || 1,
+          produto_servico: requisicao.produto_servico,
+          valor: requisicao.valor,
+          quantidade: requisicao.quantidade,
+          observacoes: requisicao.observacoes || '',
+          created_at: requisicao.created_at
+        }];
+      }
+
       const mensagens = db.prepare(`
         SELECT * FROM compras_mensagens
         WHERE requisicao_id = ?
@@ -442,6 +581,7 @@ export function registerPurchaseRoutes(app, {
 
       return res.json({
         ...requisicao,
+        itens,
         mensagens
       });
     } catch (error) {
@@ -510,7 +650,7 @@ export function registerPurchaseRoutes(app, {
           titulo: arquivar ? `📦 Solicitação Arquivada (${requisicao.id})` : `📂 Solicitação Desarquivada (${requisicao.id})`,
           mensagem: `${masterName} ${arquivar ? 'arquivou' : 'desarquivou'} manualmente sua solicitação (${requisicao.produto_servico}).`,
           tipo: 'COMPRAS_MENSAGEM',
-          link: '/financeiro/solicitacoes'
+          link: '/administrativo/compras'
         });
       }
 
@@ -554,7 +694,7 @@ export function registerPurchaseRoutes(app, {
       db.prepare(`
         UPDATE compras_requisicoes
         SET status = 'APROVADO',
-            arquivado = 1,
+            arquivado = 0,
             aprovador_id = ?,
             aprovador_nome = ?,
             motivo_decisao = ?,
@@ -615,7 +755,7 @@ export function registerPurchaseRoutes(app, {
         titulo: `✅ Solicitação Aprovada (${requisicao.id})`,
         mensagem: `Sua solicitação (${produto_servico} - ${fornecedor_nome || ''}) foi aprovada por ${aprovadorNome}.`,
         tipo: 'COMPRAS_APROVADO',
-        link: '/financeiro/solicitacoes'
+        link: '/administrativo/compras'
       });
 
       // Se foi reaprovada a partir da REVISAO, notifica o Financeiro também
@@ -681,7 +821,7 @@ export function registerPurchaseRoutes(app, {
         titulo: `❌ Solicitação Negada (${requisicao.id})`,
         mensagem: `Sua solicitação (${requisicao.produto_servico}) foi negada por ${aprovadorNome}.${observacao ? ` Motivo: "${observacao}"` : ''}`,
         tipo: 'COMPRAS_NEGADO',
-        link: '/financeiro/solicitacoes'
+        link: '/administrativo/compras'
       });
 
       const atualizado = db.prepare(`SELECT * FROM compras_requisicoes WHERE id = ?`).get(req.params.id);
@@ -778,7 +918,7 @@ export function registerPurchaseRoutes(app, {
         titulo: `🔄 Solicitação Reaberta (${requisicao.id})`,
         mensagem: `${userName} reabriu a solicitação de ${produto_servico}: "${mensagem || 'Para nova análise'}"`,
         tipo: 'COMPRAS_REABERTO',
-        link: '/financeiro/solicitacoes'
+        link: '/administrativo/compras'
       });
 
       const atualizado = db.prepare(`SELECT * FROM compras_requisicoes WHERE id = ?`).get(req.params.id);
@@ -842,7 +982,7 @@ export function registerPurchaseRoutes(app, {
             titulo: `💬 Mensagem do Aprovador (${requisicao.id})`,
             mensagem: `${autorNome}: "${mensagem}"`,
             tipo: 'COMPRAS_MENSAGEM',
-            link: '/financeiro/solicitacoes'
+            link: '/administrativo/compras'
           });
         }
       } else {
@@ -858,7 +998,7 @@ export function registerPurchaseRoutes(app, {
           titulo: `💬 Resposta do Solicitante (${requisicao.id})`,
           mensagem: `${autorNome}: "${mensagem}"`,
           tipo: 'COMPRAS_MENSAGEM',
-          link: '/financeiro/solicitacoes'
+          link: '/administrativo/compras'
         });
       }
 
@@ -937,7 +1077,7 @@ export function registerPurchaseRoutes(app, {
         titulo: `💳 Solicitação Concluída (${requisicao.id})`,
         mensagem: `Sua solicitação (${requisicao.produto_servico}) foi marcada como Concluída pelo Financeiro.`,
         tipo: 'COMPRAS_APROVADO',
-        link: '/financeiro/solicitacoes'
+        link: '/administrativo/compras'
       });
 
       const atualizado = db.prepare(`SELECT * FROM compras_requisicoes WHERE id = ?`).get(id);

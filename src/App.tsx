@@ -60,8 +60,6 @@ function App() {
               <Route path="/financeiro" element={<AccessRoute permission="7"><FinanceDashboard /></AccessRoute>} />
               <Route path="/financeiro/extratos" element={<AccessRoute permission="7.1"><Finance /></AccessRoute>} />
               <Route path="/financeiro/grafeno" element={<AccessRoute permission="7.2"><GrafenoIntegration /></AccessRoute>} />
-              <Route path="/financeiro/solicitacoes" element={<AccessRoute permission="7.3"><PurchaseApproval /></AccessRoute>} />
-              <Route path="/financeiro/solicitacao" element={<AccessRoute permission="7.3"><PurchaseApproval /></AccessRoute>} />
               <Route path="/financeiro/reembolsos-despesas" element={<AccessRoute permission="7.4"><FinanceRefundsExpenses /></AccessRoute>} />
               <Route path="/financeiro/calendario-pagamentos" element={<AccessRoute permission="7.5"><FinancePaymentCalendar /></AccessRoute>} />
               <Route path="/intelligence/analise-clientes" element={<AccessRoute permission="8.1"><CustomerAnalysis /></AccessRoute>} />

@@ -1,15 +1,36 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import {
   Calendar as CalendarIcon, ChevronLeft, ChevronRight, Plus, Trash2,
-  CheckSquare, X, Eye, Download, Paperclip, RefreshCw, CreditCard
+  CheckSquare, X, Eye, Download, Paperclip, RefreshCw, CreditCard, CheckCircle2, CalendarCheck
 } from 'lucide-react';
 import { API_BASE_URL, getAuthHeaders } from '../../../config/api';
 import { useAuth } from '../../core/AuthContext';
 import '../administrative/purchases/PurchaseApproval.css';
+import './FinancePaymentCalendar.css';
+
+export interface PurchaseItem {
+  id?: string;
+  requisicao_id?: string;
+  numero_item?: number;
+  tipo_destino?: string;
+  departamento_centro_custo?: string;
+  categoria?: string;
+  fornecedor_nome?: string;
+  fornecedor_contato?: string;
+  forma_pagamento?: string;
+  quantidade_parcelas?: number;
+  produto_servico: string;
+  valor: number;
+  quantidade: number;
+  observacoes?: string;
+  created_at?: string;
+}
 
 interface PurchaseRequest {
   id: string;
   numero: number;
+  tipo_destino?: string;
+  categoria?: string;
   fornecedor_nome: string;
   fornecedor_contato: string;
   forma_pagamento: string;
@@ -30,6 +51,7 @@ interface PurchaseRequest {
   decidido_em: string | null;
   created_at: string;
   updated_at: string;
+  itens?: PurchaseItem[];
 }
 
 interface Attachment {
@@ -41,7 +63,7 @@ interface Attachment {
   created_at: string;
 }
 
-const FinancePaymentCalendar: React.FC = () => {
+export const FinancePaymentCalendar: React.FC = () => {
   const { user } = useAuth();
   const isMaster = user?.role === 'MASTER';
 
@@ -54,10 +76,9 @@ const FinancePaymentCalendar: React.FC = () => {
 
   // Selected Day Details Modal
   const [selectedDayStr, setSelectedDayStr] = useState<string | null>(null);
-  const [modalPosition, setModalPosition] = useState<{ x: number; y: number } | null>(null);
 
   // Action states
-  const [selectedRequestDetails, setSelectedRequestDetails] = useState<any | null>(null);
+  const [selectedRequestDetails, setSelectedRequestDetails] = useState<PurchaseRequest | null>(null);
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState('');
@@ -71,12 +92,16 @@ const FinancePaymentCalendar: React.FC = () => {
   // Batch Selection for conclusion
   const [selectedReqIds, setSelectedReqIds] = useState<Record<string, boolean>>({});
 
+  // Toast
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+
   const showToast = (msg: string) => {
-    alert(msg); // simple browser feedback
+    setToastMessage(msg);
+    setTimeout(() => setToastMessage(null), 4000);
   };
 
-  const fetchData = useCallback(async () => {
-    setLoading(true);
+  const fetchData = useCallback(async (isSilent = false) => {
+    if (!isSilent) setLoading(true);
     try {
       const res = await fetch(`${API_BASE_URL}/api/compras/financeiro-fila`, {
         headers: getAuthHeaders()
@@ -88,7 +113,7 @@ const FinancePaymentCalendar: React.FC = () => {
     } catch (err) {
       console.error('Erro ao buscar dados do calendário:', err);
     } finally {
-      setLoading(false);
+      if (!isSilent) setLoading(false);
     }
   }, []);
 
@@ -116,6 +141,24 @@ const FinancePaymentCalendar: React.FC = () => {
     setCurrentDate(new Date(year, month + 1, 1));
   };
 
+  const handleToday = () => {
+    setCurrentDate(new Date());
+  };
+
+  const formatBrl = (val: number) => {
+    return Number(val || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+  };
+
+  const formatDate = (dateStr: string) => {
+    if (!dateStr) return '-';
+    try {
+      const d = new Date(dateStr);
+      return d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+    } catch {
+      return dateStr;
+    }
+  };
+
   // Group requests by scheduled date: YYYY-MM-DD
   const requestsByDate = useMemo(() => {
     const map: Record<string, PurchaseRequest[]> = {};
@@ -129,12 +172,30 @@ const FinancePaymentCalendar: React.FC = () => {
     return map;
   }, [requests]);
 
+  // Monthly KPIs
+  const monthlyScheduledStats = useMemo(() => {
+    const formattedMonth = String(month + 1).padStart(2, '0');
+    const prefix = `${year}-${formattedMonth}`;
+    
+    let totalValue = 0;
+    let totalCount = 0;
+
+    requests.forEach(req => {
+      if (req.data_pagamento && req.data_pagamento.startsWith(prefix)) {
+        totalValue += (req.valor * req.quantidade);
+        totalCount++;
+      }
+    });
+
+    return { totalValue, totalCount };
+  }, [requests, year, month]);
+
   // Approved requests available for scheduling
   const unscheduledApprovedRequests = useMemo(() => {
     return requests.filter(req => req.status === 'APROVADO' && !req.data_pagamento);
   }, [requests]);
 
-  const handleDayClick = (day: number, e: React.MouseEvent) => {
+  const handleDayClick = (day: number) => {
     const formattedDay = String(day).padStart(2, '0');
     const formattedMonth = String(month + 1).padStart(2, '0');
     const dayStr = `${year}-${formattedMonth}-${formattedDay}`;
@@ -142,18 +203,6 @@ const FinancePaymentCalendar: React.FC = () => {
     setSelectedDayStr(dayStr);
     setSelectedReqIds({});
     setShowAddDropdown(false);
-
-    // Calculate click coordinates for dynamic positioning close to pointer
-    const rect = e.currentTarget.getBoundingClientRect();
-    const x = rect.left + window.scrollX;
-    const y = rect.top + window.scrollY;
-
-    // Respect screen boundaries (keeps modal in viewport)
-    const modalWidth = 460;
-    const posX = x + modalWidth > window.innerWidth ? window.innerWidth - modalWidth - 20 : x;
-    const posY = y + 300 > window.innerHeight + window.scrollY ? window.innerHeight + window.scrollY - 320 : y;
-
-    setModalPosition({ x: Math.max(10, posX), y: Math.max(10, posY) });
   };
 
   // Schedule a request to the active date
@@ -171,7 +220,7 @@ const FinancePaymentCalendar: React.FC = () => {
       if (res.ok) {
         showToast('Pagamento agendado com sucesso!');
         setShowAddDropdown(false);
-        await fetchData();
+        await fetchData(true);
       } else {
         const err = await res.json();
         alert(err.error || 'Erro ao agendar.');
@@ -195,7 +244,7 @@ const FinancePaymentCalendar: React.FC = () => {
       });
       if (res.ok) {
         showToast('Agendamento excluído.');
-        await fetchData();
+        await fetchData(true);
       } else {
         alert('Erro ao excluir agendamento.');
       }
@@ -220,7 +269,7 @@ const FinancePaymentCalendar: React.FC = () => {
             ...getAuthHeaders(),
             'Content-Type': 'application/json'
           },
-          body: JSON.stringify({ observacoes: 'Conclusão em lote via Calendário' })
+          body: JSON.stringify({ observacoes: 'Conclusão em lote via Calendário Financeiro' })
         });
         if (res.ok) {
           successCount++;
@@ -228,7 +277,7 @@ const FinancePaymentCalendar: React.FC = () => {
       }
       showToast(`${successCount} de ${idsToConclude.length} solicitações concluídas com sucesso!`);
       setSelectedReqIds({});
-      await fetchData();
+      await fetchData(true);
     } catch (err) {
       console.error(err);
       alert('Erro no processo de conclusão.');
@@ -297,7 +346,7 @@ const FinancePaymentCalendar: React.FC = () => {
         throw new Error(err.error || 'Erro ao enviar anexo.');
       }
 
-      showToast('Anexo adicionado!');
+      showToast('Anexo adicionado com sucesso!');
       await fetchAttachments(selectedRequestDetails.id);
     } catch (err: any) {
       setUploadError(err.message || 'Falha ao subir arquivo.');
@@ -360,7 +409,7 @@ const FinancePaymentCalendar: React.FC = () => {
       if (res.ok) {
         showToast('Solicitação concluída com sucesso!');
         setSelectedRequestDetails(null);
-        await fetchData();
+        await fetchData(true);
       } else {
         const err = await res.json();
         alert(err.error || 'Erro ao concluir.');
@@ -372,7 +421,6 @@ const FinancePaymentCalendar: React.FC = () => {
     }
   };
 
-  // Toggle selection for conclusion
   const toggleSelectReq = (reqId: string) => {
     setSelectedReqIds(prev => ({
       ...prev,
@@ -382,12 +430,10 @@ const FinancePaymentCalendar: React.FC = () => {
 
   // Render elements in calendar
   const calendarCells = [];
-  // Empty spaces for previous month alignment
   for (let i = 0; i < firstDayIndex; i++) {
     calendarCells.push(<div key={`empty-${i}`} className="calendar-day empty"></div>);
   }
 
-  // Days in current month
   for (let day = 1; day <= daysInMonth; day++) {
     const formattedDay = String(day).padStart(2, '0');
     const formattedMonth = String(month + 1).padStart(2, '0');
@@ -395,29 +441,50 @@ const FinancePaymentCalendar: React.FC = () => {
     const dayReqs = requestsByDate[dateStr] || [];
 
     const isToday = new Date().toDateString() === new Date(year, month, day).toDateString();
-
     const totalValue = dayReqs.reduce((sum, r) => sum + (r.valor * r.quantidade), 0);
 
     calendarCells.push(
       <div
         key={`day-${day}`}
         className={`calendar-day ${isToday ? 'today' : ''} ${dayReqs.length > 0 ? 'has-events' : ''}`}
-        onClick={(e) => handleDayClick(day, e)}
+        onClick={() => handleDayClick(day)}
       >
-        <span className="day-number">{day}</span>
-        {dayReqs.length > 0 && (
-          <div className="day-events">
-            <span className="event-count">{dayReqs.length} agendado(s)</span>
-            <span className="event-total">
-              {totalValue.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 })}
+        <div className="day-header">
+          <span className="day-number">{day}</span>
+          {dayReqs.length > 0 && (
+            <span className="day-count-badge">
+              {dayReqs.length} {dayReqs.length === 1 ? 'pgto' : 'pgtos'}
             </span>
+          )}
+        </div>
+
+        {dayReqs.length > 0 && (
+          <div className="day-events-list">
+            {dayReqs.slice(0, 2).map(req => (
+              <div key={req.id} className="event-chip" title={`${req.fornecedor_nome} - ${formatBrl(req.valor * req.quantidade)}`}>
+                <span className="event-chip-title">{req.fornecedor_nome || req.produto_servico}</span>
+                <span className="event-chip-val">{formatBrl(req.valor * req.quantidade)}</span>
+              </div>
+            ))}
+            {dayReqs.length > 2 && (
+              <span style={{ fontSize: '0.68rem', color: '#94a3b8', paddingLeft: '4px' }}>
+                +{dayReqs.length - 2} outro(s)...
+              </span>
+            )}
+          </div>
+        )}
+
+        {dayReqs.length > 0 && (
+          <div className="day-footer-total">
+            <span>Total Dia:</span>
+            <span>{formatBrl(totalValue)}</span>
           </div>
         )}
       </div>
     );
   }
 
-  if (loading) {
+  if (loading && requests.length === 0) {
     return (
       <div className="pa-container" style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '60vh' }}>
         <RefreshCw className="animate-spin" size={32} style={{ color: '#38bdf8' }} />
@@ -426,108 +493,163 @@ const FinancePaymentCalendar: React.FC = () => {
   }
 
   return (
-    <div className="pa-container">
+    <div className="pa-container calendar-wrapper">
+      {toastMessage && (
+        <div className="pa-toast">
+          <CheckCircle2 size={18} color="#34d399" />
+          <span>{toastMessage}</span>
+        </div>
+      )}
+
+      {/* HEADER */}
       <header className="pa-header">
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-          <div className="pa-header-icon" style={{ background: 'rgba(56, 189, 248, 0.15)', color: '#38bdf8' }}>
-            <CalendarIcon size={24} />
+        <div className="pa-header-left">
+          <div className="pa-icon-badge" style={{ background: 'linear-gradient(135deg, #a855f7 0%, #7e22ce 100%)', boxShadow: '0 6px 20px rgba(168, 85, 247, 0.35)' }}>
+            <CalendarIcon size={28} />
           </div>
           <div>
-            <h1 className="pa-title">Calendário de Pagamentos</h1>
-            <p className="pa-subtitle">Agende, remova e conclua solicitações de reembolsos e despesas de forma visual</p>
+            <div className="pa-kicker" style={{ color: '#c084fc' }}>
+              <CalendarCheck size={14} /> Gestão Financeira
+            </div>
+            <h1>Calendário de Pagamentos</h1>
+            <p className="pa-subtitle">Planejamento visual, agendamento de liquidações e conclusão de despesas</p>
           </div>
+        </div>
+
+        <div className="pa-header-badges">
+          <button
+            type="button"
+            className="pa-btn-reopen"
+            onClick={() => fetchData(false)}
+            title="Atualizar dados"
+          >
+            <RefreshCw size={14} /> Atualizar
+          </button>
         </div>
       </header>
 
-      {/* Control Header */}
-      <div className="pa-card" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', padding: '16px 24px' }}>
-        <button className="pa-btn-action-view" onClick={handlePrevMonth} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <ChevronLeft size={16} /> Anterior
-        </button>
-        <h2 style={{ fontSize: '1.25rem', fontWeight: 600, color: '#f8fafc', margin: 0 }}>
+      {/* BARRA DE CONTROLE DO MÊS E KPIS */}
+      <div className="calendar-controls-card">
+        <div className="calendar-nav-group">
+          <button className="calendar-nav-btn" onClick={handlePrevMonth}>
+            <ChevronLeft size={16} /> Mês Anterior
+          </button>
+          <button className="calendar-today-btn" onClick={handleToday}>
+            Hoje
+          </button>
+          <button className="calendar-nav-btn" onClick={handleNextMonth}>
+            Próximo Mês <ChevronRight size={16} />
+          </button>
+        </div>
+
+        <h2 className="calendar-title-heading">
           {monthNames[month]} {year}
         </h2>
-        <button className="pa-btn-action-view" onClick={handleNextMonth} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          Próximo <ChevronRight size={16} />
-        </button>
+
+        <div className="calendar-kpi-group">
+          <div className="calendar-kpi-item">
+            <span className="calendar-kpi-label">Total Agendado no Mês</span>
+            <span className="calendar-kpi-val">{formatBrl(monthlyScheduledStats.totalValue)}</span>
+          </div>
+          <div className="calendar-kpi-item">
+            <span className="calendar-kpi-label">Qtd. Pagamentos</span>
+            <span className="calendar-kpi-val" style={{ color: '#38bdf8' }}>{monthlyScheduledStats.totalCount}</span>
+          </div>
+        </div>
       </div>
 
-      {/* Calendar Grid Container */}
-      <div className="pa-card" style={{ padding: '20px' }}>
+      {/* GRID DO CALENDÁRIO */}
+      <div className="calendar-card">
         <div className="calendar-grid">
-          {/* Weekday headers */}
-          {['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'].map(w => (
+          {['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'].map(w => (
             <div key={w} className="calendar-weekday">{w}</div>
           ))}
           {calendarCells}
         </div>
       </div>
 
-      {/* Floating Day Actions Modal */}
-      {selectedDayStr && modalPosition && (
+      {/* MODAL / POPOVER DO DIA SELECIONADO */}
+      {selectedDayStr && (
         <>
-          <div className="pa-modal-backdrop" onClick={() => setSelectedDayStr(null)} style={{ background: 'rgba(0,0,0,0.2)' }} />
-          <div
-            className="pa-card popover-day-modal"
-            style={{
-              position: 'absolute',
-              top: `${modalPosition.y}px`,
-              left: `${modalPosition.x}px`,
-              width: '440px',
-              zIndex: 999,
-              border: '1px solid rgba(56, 189, 248, 0.3)',
-              boxShadow: '0 10px 25px -5px rgba(0,0,0,0.5), 0 8px 10px -6px rgba(0,0,0,0.5)'
-            }}
-          >
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid rgba(255,255,255,0.08)', paddingBottom: '12px', marginBottom: '12px' }}>
-              <h3 style={{ margin: 0, fontSize: '0.95rem', color: '#f8fafc' }}>
-                Agendamentos em {selectedDayStr.split('-').reverse().join('/')}
+          <div className="popover-backdrop" onClick={() => setSelectedDayStr(null)} />
+          <div className="popover-day-modal pa-modal-card" style={{ maxWidth: '520px', margin: 'auto', position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', zIndex: 1001 }}>
+            <div className="popover-header">
+              <h3>
+                <CalendarIcon size={18} color="#38bdf8" />
+                Agendamentos para {selectedDayStr.split('-').reverse().join('/')}
               </h3>
-              <button onClick={() => setSelectedDayStr(null)} style={{ background: 'none', border: 'none', color: '#64748b', cursor: 'pointer' }}>
+              <button
+                type="button"
+                className="pa-modal-close"
+                onClick={() => setSelectedDayStr(null)}
+              >
                 <X size={18} />
               </button>
             </div>
 
-            {/* List of payments scheduled on this date */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '200px', overflowY: 'auto', marginBottom: '12px' }}>
+            {/* Lista de pagamentos do dia */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '280px', overflowY: 'auto' }}>
               {(requestsByDate[selectedDayStr] || []).length === 0 ? (
-                <p style={{ color: '#64748b', fontStyle: 'italic', fontSize: '0.8rem', margin: '8px 0' }}>Nenhum pagamento agendado para esta data.</p>
+                <div style={{ padding: '1.5rem 1rem', textAlign: 'center', color: '#94a3b8', fontStyle: 'italic', fontSize: '0.88rem' }}>
+                  Nenhum pagamento agendado para esta data.
+                </div>
               ) : (
                 (requestsByDate[selectedDayStr] || []).map(req => {
                   const isChecked = !!selectedReqIds[req.id];
                   return (
-                    <div key={req.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 10px', background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '8px' }}>
-                      {req.status !== 'SOLICITACAO_CONCLUIDA' && (
-                        <input
-                          type="checkbox"
-                          checked={isChecked}
-                          onChange={() => toggleSelectReq(req.id)}
-                          style={{ cursor: 'pointer' }}
-                        />
-                      )}
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                          <span style={{ fontSize: '0.75rem', fontWeight: 600, color: '#e2e8f0', textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>
-                            {req.fornecedor_nome}
-                          </span>
-                          <span style={{ fontSize: '0.75rem', fontWeight: 700, color: req.status === 'SOLICITACAO_CONCLUIDA' ? '#34d399' : '#f8fafc' }}>
-                            {(req.valor * req.quantidade).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
-                          </span>
+                    <div
+                      key={req.id}
+                      className={`popover-item ${isChecked ? 'selected' : ''}`}
+                    >
+                      <div className="popover-item-header">
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                          {req.status !== 'SOLICITACAO_CONCLUIDA' && (
+                            <input
+                              type="checkbox"
+                              checked={isChecked}
+                              onChange={() => toggleSelectReq(req.id)}
+                              style={{ width: '16px', height: '16px', cursor: 'pointer' }}
+                            />
+                          )}
+                          <div>
+                            <span style={{ fontSize: '0.9rem', fontWeight: 700, color: '#f8fafc' }}>
+                              {req.fornecedor_nome || req.produto_servico}
+                            </span>
+                            <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>
+                              {req.produto_servico} • {req.departamento_centro_custo}
+                            </div>
+                          </div>
                         </div>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '2px' }}>
-                          <span style={{ fontSize: '0.7rem', color: '#64748b' }}>{req.produto_servico}</span>
-                          <span className={`pa-status-badge ${req.status === 'SOLICITACAO_CONCLUIDA' ? 'approved' : 'pending'}`} style={{ fontSize: '0.6rem', padding: '1px 4px' }}>
-                            {req.status === 'SOLICITACAO_CONCLUIDA' ? 'Concluída' : 'Aprovada'}
+
+                        <div style={{ textAlign: 'right' }}>
+                          <span style={{ fontSize: '0.95rem', fontWeight: 800, color: req.status === 'SOLICITACAO_CONCLUIDA' ? '#34d399' : '#38bdf8' }}>
+                            {formatBrl(req.valor * req.quantidade)}
                           </span>
+                          <div>
+                            <span className={`pa-status-badge ${req.status === 'SOLICITACAO_CONCLUIDA' ? 'approved' : 'pending'}`} style={{ fontSize: '0.68rem', padding: '2px 6px' }}>
+                              {req.status === 'SOLICITACAO_CONCLUIDA' ? 'Concluída' : 'Aprovada'}
+                            </span>
+                          </div>
                         </div>
                       </div>
-                      <div style={{ display: 'flex', gap: '2px' }}>
-                        <button onClick={() => handleOpenDetailModal(req.id)} style={{ background: 'none', border: 'none', color: '#38bdf8', padding: '4px', cursor: 'pointer' }} title="Detalhar pagamento">
-                          <Eye size={14} />
+
+                      <div className="popover-actions">
+                        <button
+                          type="button"
+                          className="pa-btn-detail"
+                          style={{ padding: '4px 8px', fontSize: '0.75rem' }}
+                          onClick={() => handleOpenDetailModal(req.id)}
+                        >
+                          <Eye size={13} /> Detalhes
                         </button>
                         {req.status !== 'SOLICITACAO_CONCLUIDA' && (
-                          <button onClick={() => handleUnscheduleRequest(req.id)} style={{ background: 'none', border: 'none', color: '#ef4444', padding: '4px', cursor: 'pointer' }} title="Excluir agendamento">
-                            <Trash2 size={14} />
+                          <button
+                            type="button"
+                            className="pa-btn-archive-master"
+                            style={{ padding: '4px 8px', fontSize: '0.75rem' }}
+                            onClick={() => handleUnscheduleRequest(req.id)}
+                          >
+                            <Trash2 size={13} /> Remover Data
                           </button>
                         )}
                       </div>
@@ -537,34 +659,60 @@ const FinancePaymentCalendar: React.FC = () => {
               )}
             </div>
 
-            {/* Actions for this day */}
-            <div style={{ display: 'flex', gap: '8px', borderTop: '1px solid rgba(255,255,255,0.08)', paddingTop: '12px' }}>
+            {/* Ações do Dia */}
+            <div style={{ display: 'flex', gap: '10px', borderTop: '1px solid #1e293b', paddingTop: '14px', position: 'relative' }}>
               <div style={{ position: 'relative', flex: 1 }}>
                 <button
                   type="button"
-                  className="pa-btn-action-view"
-                  style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px', padding: '8px 12px' }}
+                  className="pa-btn-detail"
+                  style={{ width: '100%', justifyContent: 'center', padding: '10px 14px', fontSize: '0.88rem' }}
                   onClick={() => setShowAddDropdown(!showAddDropdown)}
                 >
-                  <Plus size={14} /> Agendar Novo
+                  <Plus size={16} /> Agendar Nova Conta
                 </button>
 
                 {showAddDropdown && (
-                  <div className="dropdown-payment-select" style={{ position: 'absolute', bottom: '105%', left: 0, width: '100%', background: '#0f172a', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px', maxHeight: '180px', overflowY: 'auto', zIndex: 1001, boxShadow: '0 8px 16px rgba(0,0,0,0.5)' }}>
+                  <div
+                    style={{
+                      position: 'absolute',
+                      bottom: '110%',
+                      left: 0,
+                      width: '100%',
+                      background: '#0f172a',
+                      border: '1px solid #334155',
+                      borderRadius: '12px',
+                      maxHeight: '220px',
+                      overflowY: 'auto',
+                      zIndex: 1002,
+                      boxShadow: '0 15px 30px rgba(0,0,0,0.6)'
+                    }}
+                  >
                     {unscheduledApprovedRequests.length === 0 ? (
-                      <p style={{ padding: '12px', fontSize: '0.75rem', color: '#64748b', fontStyle: 'italic', margin: 0 }}>Nenhuma requisição aprovada pendente de agendamento.</p>
+                      <p style={{ padding: '14px', fontSize: '0.8rem', color: '#94a3b8', fontStyle: 'italic', margin: 0, textAlign: 'center' }}>
+                        Nenhuma requisição aprovada pendente de agendamento.
+                      </p>
                     ) : (
                       unscheduledApprovedRequests.map(req => (
                         <div
                           key={req.id}
-                          className="dropdown-item-req"
                           onClick={() => handleScheduleRequest(req.id)}
-                          style={{ padding: '8px 12px', borderBottom: '1px solid rgba(255,255,255,0.05)', cursor: 'pointer' }}
+                          style={{
+                            padding: '10px 14px',
+                            borderBottom: '1px solid #1e293b',
+                            cursor: 'pointer',
+                            transition: 'background 0.2s'
+                          }}
+                          onMouseEnter={e => e.currentTarget.style.background = 'rgba(56, 189, 248, 0.1)'}
+                          onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
                         >
-                          <div style={{ fontSize: '0.75rem', fontWeight: 600, color: '#f8fafc' }}>{req.fornecedor_nome}</div>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.7rem', color: '#64748b' }}>
+                          <div style={{ fontSize: '0.82rem', fontWeight: 700, color: '#f8fafc' }}>
+                            {req.fornecedor_nome || req.produto_servico}
+                          </div>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', color: '#94a3b8', marginTop: '2px' }}>
                             <span>{req.produto_servico}</span>
-                            <span style={{ color: '#38bdf8' }}>{(req.valor * req.quantidade).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</span>
+                            <span style={{ color: '#34d399', fontWeight: 700 }}>
+                              {formatBrl(req.valor * req.quantidade)}
+                            </span>
                           </div>
                         </div>
                       ))
@@ -576,12 +724,12 @@ const FinancePaymentCalendar: React.FC = () => {
               {Object.keys(selectedReqIds).some(id => selectedReqIds[id]) && (
                 <button
                   type="button"
-                  className="pa-btn-action-approve"
-                  style={{ display: 'flex', alignItems: 'center', gap: '4px', padding: '8px 12px' }}
+                  className="pa-btn-approve"
                   onClick={handleBatchConclude}
                   disabled={actionLoading}
+                  style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '10px 16px' }}
                 >
-                  <CheckSquare size={14} /> Concluir
+                  <CheckSquare size={16} /> Concluir ({Object.keys(selectedReqIds).filter(id => selectedReqIds[id]).length})
                 </button>
               )}
             </div>
@@ -589,98 +737,230 @@ const FinancePaymentCalendar: React.FC = () => {
         </>
       )}
 
-      {/* detailed view modal */}
+      {/* MODAL DE DETALHES COMPLETOS (AO CLICAR NO OLHO) */}
       {selectedRequestDetails && (
-        <div className="pa-modal-overlay">
-          <div className="pa-modal-card" style={{ maxWidth: '680px' }}>
+        <div className="pa-modal-overlay" onClick={() => setSelectedRequestDetails(null)}>
+          <div className="pa-modal-card" style={{ maxWidth: '780px' }} onClick={e => e.stopPropagation()}>
             <div className="pa-modal-header">
               <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                <CreditCard size={18} style={{ color: '#38bdf8' }} />
-                <h3 className="pa-modal-title">Solicitação Nº {selectedRequestDetails.numero}</h3>
+                <CreditCard size={20} color="#38bdf8" />
+                <h3 style={{ margin: 0 }}>Detalhes da Solicitação: {selectedRequestDetails.id}</h3>
+                <span className="pa-status-badge approved">
+                  {selectedRequestDetails.status === 'SOLICITACAO_CONCLUIDA' ? 'Concluída' : 'Aprovada'}
+                </span>
               </div>
-              <button className="pa-modal-close" onClick={() => setSelectedRequestDetails(null)}>
+              <button
+                type="button"
+                className="pa-modal-close"
+                onClick={() => setSelectedRequestDetails(null)}
+              >
                 <X size={20} />
               </button>
             </div>
 
-            <div className="pa-modal-body" style={{ maxHeight: '80vh', overflowY: 'auto' }}>
+            <div className="pa-modal-body">
               <div className="pa-req-details-grid">
                 <div className="pa-detail-item">
-                  <span className="pa-detail-label">Fornecedor / Prestador</span>
-                  <span className="pa-detail-val">{selectedRequestDetails.fornecedor_nome || '-'}</span>
+                  <span className="pa-detail-label">Solicitante</span>
+                  <span className="pa-detail-val">{selectedRequestDetails.solicitante_nome} ({selectedRequestDetails.solicitante_email || 'Sem e-mail'})</span>
                 </div>
-                <div className="pa-detail-item">
-                  <span className="pa-detail-label">Contato</span>
-                  <span className="pa-detail-val">{selectedRequestDetails.fornecedor_contato || '-'}</span>
-                </div>
-                <div className="pa-detail-item">
-                  <span className="pa-detail-label">Forma de Pagamento</span>
-                  <span className="pa-detail-val">{selectedRequestDetails.forma_pagamento} ({selectedRequestDetails.quantidade_parcelas}x)</span>
-                </div>
+
                 <div className="pa-detail-item">
                   <span className="pa-detail-label">Centro de Custo</span>
-                  <span className="pa-detail-val">{selectedRequestDetails.departamento_centro_custo || '-'}</span>
+                  <span className="pa-detail-val">{selectedRequestDetails.departamento_centro_custo || 'Não informado'}</span>
                 </div>
+
                 <div className="pa-detail-item">
-                  <span className="pa-detail-label">Produto / Serviço</span>
+                  <span className="pa-detail-label">Fornecedor / Prestador</span>
+                  <span className="pa-detail-val">{selectedRequestDetails.fornecedor_nome || 'Não informado'}</span>
+                </div>
+
+                <div className="pa-detail-item">
+                  <span className="pa-detail-label">Contato</span>
+                  <span className="pa-detail-val">{selectedRequestDetails.fornecedor_contato || 'Não informado'}</span>
+                </div>
+
+                <div className="pa-detail-item">
+                  <span className="pa-detail-label">Descrição / Produto</span>
                   <span className="pa-detail-val">{selectedRequestDetails.produto_servico}</span>
                 </div>
+
                 <div className="pa-detail-item">
-                  <span className="pa-detail-label">Valor Total</span>
-                  <span className="pa-detail-val" style={{ color: '#34d399', fontWeight: 700 }}>
-                    {(selectedRequestDetails.valor * selectedRequestDetails.quantidade).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                  <span className="pa-detail-label">Quantidade & Valor Unitário</span>
+                  <span className="pa-detail-val">{selectedRequestDetails.quantidade}x • {formatBrl(selectedRequestDetails.valor)}</span>
+                </div>
+
+                <div className="pa-detail-item">
+                  <span className="pa-detail-label">Forma de Pagamento</span>
+                  <span className="pa-detail-val" style={{ color: '#60a5fa' }}>
+                    {selectedRequestDetails.forma_pagamento}
+                    {selectedRequestDetails.quantidade_parcelas > 1 ? ` (${selectedRequestDetails.quantidade_parcelas}x)` : ' (À vista)'}
                   </span>
                 </div>
-                <div className="pa-detail-item" style={{ gridColumn: 'span 2' }}>
-                  <span className="pa-detail-label">Observações</span>
-                  <span className="pa-detail-val" style={{ fontWeight: 400 }}>{selectedRequestDetails.observacoes || 'Nenhuma.'}</span>
+
+                <div className="pa-detail-item">
+                  <span className="pa-detail-label">Valor Total</span>
+                  <span className="pa-detail-val" style={{ color: '#34d399', fontWeight: 800, fontSize: '1.1rem' }}>
+                    {formatBrl(selectedRequestDetails.valor * selectedRequestDetails.quantidade)}
+                  </span>
                 </div>
+
+                <div className="pa-detail-item">
+                  <span className="pa-detail-label">Data de Criação</span>
+                  <span className="pa-detail-val">{formatDate(selectedRequestDetails.created_at)}</span>
+                </div>
+
+                <div className="pa-detail-item">
+                  <span className="pa-detail-label">Data Agendada de Pagamento</span>
+                  <span className="pa-detail-val" style={{ color: '#fbbf24', fontWeight: 700 }}>
+                    {selectedRequestDetails.data_pagamento 
+                      ? selectedRequestDetails.data_pagamento.substring(0, 10).split('-').reverse().join('/')
+                      : 'Não programada'}
+                  </span>
+                </div>
+
+                {selectedRequestDetails.observacoes && (
+                  <div className="pa-detail-item" style={{ gridColumn: 'span 2' }}>
+                    <span className="pa-detail-label">Observações</span>
+                    <span className="pa-detail-val" style={{ fontSize: '0.88rem', color: '#cbd5e1', whiteSpace: 'pre-wrap' }}>
+                      {selectedRequestDetails.observacoes}
+                    </span>
+                  </div>
+                )}
               </div>
 
-              {/* Anexos */}
-              <div style={{ marginTop: '20px', borderTop: '1px solid rgba(255,255,255,0.08)', paddingTop: '15px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                  <h4 style={{ margin: 0, fontSize: '0.85rem', color: '#38bdf8', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    <Paperclip size={14} /> Documentos Anexos
+              {/* --- ITENS DISCRIMINADOS DA SOLICITAÇÃO --- */}
+              {selectedRequestDetails.itens && selectedRequestDetails.itens.length > 0 && (
+                <div style={{ marginTop: '1.25rem', borderTop: '1px solid rgba(255, 255, 255, 0.08)', paddingTop: '1.25rem' }}>
+                  <h4 style={{ margin: '0 0 10px 0', fontSize: '0.95rem', color: '#38bdf8', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    📦 Itens da Solicitação ({selectedRequestDetails.itens.length})
                   </h4>
-                  <label className="pa-btn-action-view" style={{ cursor: 'pointer', margin: 0, padding: '2px 6px', fontSize: '0.7rem' }}>
-                    Anexar Arquivo
+                  <div className="pa-multi-items-modal-list">
+                    {selectedRequestDetails.itens.map((it, idx) => (
+                      <div key={it.id || idx} className="pa-modal-item-box">
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <span className="pa-code-badge">Item #{it.numero_item || idx + 1}</span>
+                            <span className="pa-category-badge">🏷️ {it.categoria || 'Outros'}</span>
+                            <span style={{ fontSize: '0.8rem', color: '#94a3b8' }}>
+                              📍 {it.tipo_destino === 'EMPRESA' ? 'Empresa' : it.tipo_destino === 'CLIENTE' ? 'Cliente' : it.tipo_destino === 'CENTRO_DE_CUSTO' ? 'Centro de Custo' : 'Departamento'}: <strong style={{ color: '#cbd5e1' }}>{it.departamento_centro_custo || '-'}</strong>
+                            </span>
+                          </div>
+                          <div style={{ fontSize: '1rem', fontWeight: 750, color: '#34d399' }}>
+                            {formatBrl((it.valor || 0) * (it.quantidade || 1))}
+                          </div>
+                        </div>
+
+                        <div style={{ fontSize: '0.95rem', fontWeight: 600, color: '#f8fafc' }}>
+                          {it.produto_servico}
+                        </div>
+
+                        <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap', fontSize: '0.82rem', color: '#94a3b8' }}>
+                          <span>🏢 Fornecedor: <strong style={{ color: '#cbd5e1' }}>{it.fornecedor_nome || '-'}</strong> ({it.fornecedor_contato || '-'})</span>
+                          <span>💳 Pagamento: <strong style={{ color: '#60a5fa' }}>{it.forma_pagamento || '-'}{(it.quantidade_parcelas && it.quantidade_parcelas > 1) ? ` (${it.quantidade_parcelas}x)` : ''}</strong></span>
+                          <span>🔢 Qtd: <strong style={{ color: '#cbd5e1' }}>{it.quantidade || 1} un</strong> x {formatBrl(it.valor)}</span>
+                        </div>
+
+                        {it.observacoes && (
+                          <div style={{ fontSize: '0.8rem', color: '#94a3b8', background: 'rgba(0,0,0,0.2)', padding: '6px 10px', borderRadius: '6px' }}>
+                            📝 {it.observacoes}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Anexos */}
+              <div className="pa-attachments-section">
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                  <h4 style={{ margin: 0, fontSize: '0.95rem', color: '#f8fafc', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <Paperclip size={16} color="#38bdf8" /> Documentos Anexos ({attachments.length})
+                  </h4>
+                  <label className="pa-btn-detail" style={{ cursor: 'pointer', margin: 0, fontSize: '0.8rem' }}>
+                    <Paperclip size={14} /> Anexar Arquivo
                     <input type="file" ref={fileInputRef} style={{ display: 'none' }} onChange={handleFileUpload} disabled={uploading} />
                   </label>
                 </div>
-                {uploadError && <div style={{ color: '#ef4444', fontSize: '0.7rem', marginBottom: '6px' }}>{uploadError}</div>}
-                {uploading && <div style={{ color: '#38bdf8', fontSize: '0.7rem', marginBottom: '6px' }}>Enviando...</div>}
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                  {attachments.length === 0 ? (
-                    <span style={{ fontSize: '0.75rem', color: '#64748b', fontStyle: 'italic' }}>Nenhum anexo disponível.</span>
-                  ) : (
-                    attachments.map(att => (
-                      <div key={att.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 10px', background: 'rgba(255,255,255,0.02)', borderRadius: '6px', border: '1px solid rgba(255,255,255,0.05)' }}>
-                        <span style={{ fontSize: '0.75rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '80%' }}>{att.nome_arquivo}</span>
-                        <div style={{ display: 'flex', gap: '4px' }}>
-                          <button onClick={() => handleDownloadAttachment(att.id, att.nome_arquivo)} style={{ background: 'none', border: 'none', color: '#38bdf8', cursor: 'pointer' }}><Download size={12} /></button>
+
+                {uploadError && <div style={{ color: '#ef4444', fontSize: '0.82rem', marginBottom: '8px' }}>{uploadError}</div>}
+                {uploading && <div style={{ color: '#38bdf8', fontSize: '0.82rem', marginBottom: '8px' }}>Enviando...</div>}
+
+                {attachments.length === 0 ? (
+                  <div style={{ color: '#94a3b8', fontSize: '0.85rem', fontStyle: 'italic', padding: '8px 0' }}>
+                    Nenhum documento anexado.
+                  </div>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    {attachments.map(att => (
+                      <div
+                        key={att.id}
+                        style={{
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          alignItems: 'center',
+                          padding: '10px 14px',
+                          background: 'rgba(15, 23, 42, 0.6)',
+                          border: '1px solid #1e293b',
+                          borderRadius: '10px'
+                        }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                          <Paperclip size={14} color="#38bdf8" />
+                          <div>
+                            <span style={{ fontSize: '0.88rem', fontWeight: 600, color: '#f8fafc' }}>{att.nome_arquivo}</span>
+                            <div style={{ fontSize: '0.74rem', color: '#94a3b8' }}>
+                              {(att.tamanho_bytes / 1024).toFixed(1)} KB • Enviado por {att.enviado_por_nome}
+                            </div>
+                          </div>
+                        </div>
+                        <div style={{ display: 'flex', gap: '8px' }}>
+                          <button
+                            type="button"
+                            className="pa-btn-detail"
+                            onClick={() => handleDownloadAttachment(att.id, att.nome_arquivo)}
+                          >
+                            <Download size={14} /> Baixar
+                          </button>
                           {(att.enviado_por_id === user?.id || isMaster) && (
-                            <button onClick={() => handleDeleteAttachment(att.id)} style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer' }}><Trash2 size={12} /></button>
+                            <button
+                              type="button"
+                              className="pa-btn-archive-master"
+                              style={{ padding: '6px 10px', fontSize: '0.75rem' }}
+                              onClick={() => handleDeleteAttachment(att.id)}
+                            >
+                              <Trash2 size={13} />
+                            </button>
                           )}
                         </div>
                       </div>
-                    ))
-                  )}
-                </div>
+                    ))}
+                  </div>
+                )}
               </div>
 
+              {/* Conclusão Individual */}
               {selectedRequestDetails.status !== 'SOLICITACAO_CONCLUIDA' && (
-                <div style={{ marginTop: '20px', borderTop: '1px solid rgba(255,255,255,0.08)', paddingTop: '15px' }}>
-                  <textarea
-                    className="pa-textarea"
-                    placeholder="Adicione observações de pagamento (opcional)..."
-                    value={actionObservation}
-                    onChange={e => setActionObservation(e.target.value)}
-                    style={{ fontSize: '0.8rem', minHeight: '50px' }}
-                  />
-                  <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '10px' }}>
-                    <button className="pa-btn-action-approve" onClick={handleConcludeSingle} disabled={actionLoading} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                      <CheckSquare size={14} /> Concluir Solicitação
+                <div className="pa-actions-bar">
+                  <div className="pa-form-group">
+                    <label>Observações da Conclusão (Opcional)</label>
+                    <textarea
+                      className="pa-textarea"
+                      placeholder="Adicione observações sobre a liquidação deste pagamento..."
+                      value={actionObservation}
+                      onChange={e => setActionObservation(e.target.value)}
+                      rows={2}
+                    />
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '10px' }}>
+                    <button
+                      type="button"
+                      className="pa-btn-approve"
+                      onClick={handleConcludeSingle}
+                      disabled={actionLoading}
+                    >
+                      <CheckSquare size={16} /> Marcar como Concluída
                     </button>
                   </div>
                 </div>

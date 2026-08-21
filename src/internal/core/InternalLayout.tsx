@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { LogOut, User, ShieldAlert, Shield, UserPlus, Users, ChevronDown, ChevronRight, LayoutDashboard, Sliders, Home, Calendar, Menu, X, Wallet, FileSpreadsheet, BrainCircuit, Database, ClipboardCheck, ContactRound, ShieldCheck, Landmark, Briefcase, ShoppingCart, SlidersHorizontal, CreditCard, DollarSign } from 'lucide-react';
+import { LogOut, User, ShieldAlert, Shield, UserPlus, Users, ChevronDown, ChevronRight, LayoutDashboard, Sliders, Home, Calendar, Menu, X, Wallet, FileSpreadsheet, BrainCircuit, Database, ClipboardCheck, ContactRound, ShieldCheck, Landmark, Briefcase, ShoppingCart, SlidersHorizontal, DollarSign } from 'lucide-react';
 import { useNavigate, Outlet, Link, useLocation } from 'react-router-dom';
 import { useAuth } from './AuthContext';
 import NotificationBell from './NotificationBell';
@@ -121,11 +121,6 @@ const InternalLayout = () => {
                       <Landmark size={18} /> LEPTA x GRAFENO
                     </Link>
                   )}
-                  {hasAccess('7.3') && (
-                    <Link to="/financeiro/solicitacoes" className={navItemClass('/financeiro/solicitacoes')}>
-                      <CreditCard size={18} /> Solicitações
-                    </Link>
-                  )}
                   {hasAccess('7.4') && (
                     <Link to="/financeiro/reembolsos-despesas" className={navItemClass('/financeiro/reembolsos-despesas')}>
                       <DollarSign size={18} /> Reembolsos e Despesas
@@ -191,7 +186,7 @@ const InternalLayout = () => {
                 <div className="nav-submenu" style={{ paddingLeft: '1rem' }}>
                   {hasAccess('11.1') && (
                     <Link to="/administrativo/compras" className={navItemClass('/administrativo/compras')}>
-                      <ShoppingCart size={18} /> Aprovação de Compras
+                      <ShoppingCart size={18} /> Solicitações Financeiras
                     </Link>
                   )}
                   {hasAccess('11.2') && (

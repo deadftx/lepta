@@ -10,9 +10,71 @@ import { API_BASE_URL, getAuthHeaders } from '../../../../config/api';
 import { useAuth } from '../../../core/AuthContext';
 import './PurchaseApproval.css';
 
+export type TipoDestino = 'DEPARTAMENTO' | 'CENTRO_DE_CUSTO' | 'EMPRESA' | 'CLIENTE';
+
+export type CategoriaSolicitacao = 'Insumos' | 'Visita' | 'Reembolso' | 'Festas' | 'Aniversários' | 'Eventos' | 'Outros';
+
+export const DEPARTAMENTOS_PADRAO = [
+  'Tecnologia',
+  'Administrativo',
+  'Marketing',
+  'Financeiro',
+  'Cobrança',
+  'Mesa de Operações',
+  'Jurídico',
+  'Comercial',
+  'Limpeza'
+] as const;
+
+export const CATEGORIAS_PADRAO: CategoriaSolicitacao[] = [
+  'Insumos',
+  'Visita',
+  'Reembolso',
+  'Festas',
+  'Aniversários',
+  'Eventos',
+  'Outros'
+];
+
+export interface PurchaseItemForm {
+  id?: string;
+  categoria: CategoriaSolicitacao;
+  tipo_destino: TipoDestino;
+  departamento_centro_custo: string;
+  fornecedor_nome: string;
+  fornecedor_contato: string;
+  forma_pagamento: 'PIX' | 'DINHEIRO' | 'DEBITO' | 'CREDITO';
+  quantidade_parcelas: number;
+  produto_servico: string;
+  valor: number;
+  valorDisplay: string;
+  quantidade: number;
+  observacoes?: string;
+}
+
+export interface PurchaseItem {
+  id?: string;
+  requisicao_id?: string;
+  numero_item?: number;
+  tipo_destino: TipoDestino;
+  departamento_centro_custo: string;
+  categoria: CategoriaSolicitacao;
+  fornecedor_nome: string;
+  fornecedor_contato: string;
+  forma_pagamento: 'PIX' | 'DINHEIRO' | 'DEBITO' | 'CREDITO';
+  quantidade_parcelas: number;
+  produto_servico: string;
+  valor: number;
+  quantidade: number;
+  observacoes?: string;
+  created_at?: string;
+}
+
 interface PurchaseRequest {
   id: string;
   numero: number;
+  tipo_destino?: TipoDestino;
+  categoria?: string;
   fornecedor_nome: string;
   fornecedor_contato: string;
   forma_pagamento: string;
@@ -39,6 +101,8 @@ interface PurchaseRequest {
   created_at: string;
   updated_at: string;
   total_mensagens?: number;
+  total_itens?: number;
+  itens?: PurchaseItem[];
   mensagens?: PurchaseMessage[];
 }
 
@@ -60,12 +124,18 @@ export const PurchaseApproval: React.FC = () => {
   const [isApprover, setIsApprover] = useState<boolean>(false);
   const [loadingRole, setLoadingRole] = useState(true);
 
-  // Form State
+  // Multi-item form state
+  const [addedItems, setAddedItems] = useState<PurchaseItemForm[]>([]);
+
+  // Current Item Form State
+  const [categoria, setCategoria] = useState<CategoriaSolicitacao>('Insumos');
+  const [tipoDestino, setTipoDestino] = useState<TipoDestino>('DEPARTAMENTO');
+  const [departamentoOuCentro, setDepartamentoOuCentro] = useState<string>('Tecnologia');
+  const [empresaOuCliente, setEmpresaOuCliente] = useState<string>('');
   const [fornecedorNome, setFornecedorNome] = useState('');
   const [fornecedorContato, setFornecedorContato] = useState('');
   const [formaPagamento, setFormaPagamento] = useState<'PIX' | 'DINHEIRO' | 'DEBITO' | 'CREDITO'>('PIX');
   const [quantidadeParcelas, setQuantidadeParcelas] = useState<number>(1);
-  const [departamentoCentroCusto, setDepartamentoCentroCusto] = useState('');
   const [produtoServico, setProdutoServico] = useState('');
   const [valorDisplay, setValorDisplay] = useState('');
   const [valorNumeric, setValorNumeric] = useState<number>(0);
@@ -374,37 +444,100 @@ export const PurchaseApproval: React.FC = () => {
     setReopenValorDisplay(num.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }));
   };
 
-  // Enviar Nova Solicitação
+  const getCurrentDestinationValue = () => {
+    if (tipoDestino === 'EMPRESA' || tipoDestino === 'CLIENTE') {
+      return empresaOuCliente.trim();
+    }
+    return departamentoOuCentro.trim();
+  };
+
+  const validateCurrentItem = (silent = false): PurchaseItemForm | null => {
+    const destVal = getCurrentDestinationValue();
+    if (!categoria) {
+      if (!silent) setFormError('Selecione uma Categoria obrigatória.');
+      return null;
+    }
+    if (!destVal) {
+      if (!silent) setFormError(`Informe o ${tipoDestino === 'EMPRESA' ? 'Nome da Empresa' : tipoDestino === 'CLIENTE' ? 'Nome do Cliente' : tipoDestino === 'CENTRO_DE_CUSTO' ? 'Centro de Custo' : 'Departamento'}.`);
+      return null;
+    }
+    if (!fornecedorNome.trim()) {
+      if (!silent) setFormError('Informe o Nome do Fornecedor / Prestador de serviço.');
+      return null;
+    }
+    if (!fornecedorContato.trim()) {
+      if (!silent) setFormError('Informe o Contato do Fornecedor / Prestador de serviço.');
+      return null;
+    }
+    if (!formaPagamento) {
+      if (!silent) setFormError('Selecione a Forma de Pagamento.');
+      return null;
+    }
+    if (!produtoServico.trim()) {
+      if (!silent) setFormError('Informe a Descrição do Produto ou Serviço.');
+      return null;
+    }
+    if (!valorNumeric || valorNumeric <= 0) {
+      if (!silent) setFormError('Informe um valor válido maior que zero.');
+      return null;
+    }
+    if (!quantidade || quantidade <= 0) {
+      if (!silent) setFormError('Informe uma quantidade válida.');
+      return null;
+    }
+
+    return {
+      categoria,
+      tipo_destino: tipoDestino,
+      departamento_centro_custo: destVal,
+      fornecedor_nome: fornecedorNome.trim(),
+      fornecedor_contato: fornecedorContato.trim(),
+      forma_pagamento: formaPagamento,
+      quantidade_parcelas: Math.max(1, quantidadeParcelas || 1),
+      produto_servico: produtoServico.trim(),
+      valor: valorNumeric,
+      valorDisplay,
+      quantidade,
+      observacoes: observacoes.trim()
+    };
+  };
+
+  // Incluir item na lista da solicitação
+  const handleAddItem = () => {
+    setFormError('');
+    const item = validateCurrentItem(false);
+    if (!item) return;
+
+    setAddedItems(prev => [...prev, item]);
+    // Limpa os dados do produto para permitir preencher o próximo item
+    setProdutoServico('');
+    setValorDisplay('');
+    setValorNumeric(0);
+    setQuantidade(1);
+    setObservacoes('');
+
+    showToast(`✅ Item #${addedItems.length + 1} incluído! Você pode adicionar outro item ou submeter a solicitação.`);
+  };
+
+  // Remover item da lista
+  const handleRemoveItem = (index: number) => {
+    setAddedItems(prev => prev.filter((_, i) => i !== index));
+    showToast('Item removido da solicitação.');
+  };
+
+  // Enviar Nova Solicitação (com 1 ou múltiplos itens)
   const handleSubmitRequest = async (e: React.FormEvent) => {
     e.preventDefault();
     setFormError('');
 
-    if (!fornecedorNome.trim()) {
-      setFormError('Informe o Nome do Fornecedor / Prestador de serviço.');
-      return;
-    }
-    if (!fornecedorContato.trim()) {
-      setFormError('Informe o Contato do Fornecedor / Prestador de serviço.');
-      return;
-    }
-    if (!formaPagamento) {
-      setFormError('Selecione a Forma de Pagamento.');
-      return;
-    }
-    if (!departamentoCentroCusto.trim()) {
-      setFormError('Informe o Departamento / Centro de Custo / Empresa / Cliente.');
-      return;
-    }
-    if (!produtoServico.trim()) {
-      setFormError('Informe a Descrição do Produto ou Serviço.');
-      return;
-    }
-    if (!valorNumeric || valorNumeric <= 0) {
-      setFormError('Informe um valor válido maior que zero.');
-      return;
-    }
-    if (!quantidade || quantidade <= 0) {
-      setFormError('Informe uma quantidade válida.');
+    const itemsToSubmit: PurchaseItemForm[] = [...addedItems];
+
+    // Se o usuário ainda não adicionou nenhum item via botão, ou se o formulário atual estiver preenchido, tenta validar o atual
+    const currentItem = validateCurrentItem(itemsToSubmit.length > 0);
+    if (currentItem) {
+      itemsToSubmit.push(currentItem);
+    } else if (itemsToSubmit.length === 0) {
+      validateCurrentItem(false);
       return;
     }
 
@@ -417,15 +550,19 @@ export const PurchaseApproval: React.FC = () => {
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          fornecedor_nome: fornecedorNome.trim(),
-          fornecedor_contato: fornecedorContato.trim(),
-          forma_pagamento: formaPagamento,
-          quantidade_parcelas: Math.max(1, quantidadeParcelas || 1),
-          departamento_centro_custo: departamentoCentroCusto.trim(),
-          produto_servico: produtoServico.trim(),
-          valor: valorNumeric,
-          quantidade,
-          observacoes: observacoes.trim()
+          itens: itemsToSubmit.map(it => ({
+            categoria: it.categoria,
+            tipo_destino: it.tipo_destino,
+            departamento_centro_custo: it.departamento_centro_custo,
+            fornecedor_nome: it.fornecedor_nome,
+            fornecedor_contato: it.fornecedor_contato,
+            forma_pagamento: it.forma_pagamento,
+            quantidade_parcelas: it.quantidade_parcelas,
+            produto_servico: it.produto_servico,
+            valor: it.valor,
+            quantidade: it.quantidade,
+            observacoes: it.observacoes
+          }))
         })
       });
 
@@ -434,22 +571,27 @@ export const PurchaseApproval: React.FC = () => {
         throw new Error(errData.error || 'Erro ao enviar solicitação.');
       }
 
+      // Limpa formulário completo
+      setAddedItems([]);
+      setCategoria('Insumos');
+      setTipoDestino('DEPARTAMENTO');
+      setDepartamentoOuCentro('Tecnologia');
+      setEmpresaOuCliente('');
       setFornecedorNome('');
       setFornecedorContato('');
       setFormaPagamento('PIX');
       setQuantidadeParcelas(1);
-      setDepartamentoCentroCusto('');
       setProdutoServico('');
       setValorDisplay('');
       setValorNumeric(0);
       setQuantidade(1);
       setObservacoes('');
 
-      showToast('Solicitação registrada no banco SQLite e enviada para aprovação!');
+      showToast(`Solicitação com ${itemsToSubmit.length} item(ns) registrada e enviada para aprovação!`);
       fetchData(false);
       setActiveTab('my_requests');
     } catch (err: any) {
-      setFormError(err.message || 'Erro ao registrar solicitação.');
+      setFormError(err.message || 'Falha ao salvar no SQLite.');
     } finally {
       setSubmitting(false);
     }
@@ -1082,6 +1224,81 @@ export const PurchaseApproval: React.FC = () => {
 
           <form onSubmit={handleSubmitRequest}>
             <div className="pa-form-grid">
+              {/* Categoria Obrigatória */}
+              <div className="pa-form-group full-width">
+                <label>
+                  Categoria da Despesa <span className="pa-required">*</span>
+                </label>
+                <select
+                  className="pa-select"
+                  value={categoria}
+                  onChange={e => setCategoria(e.target.value as CategoriaSolicitacao)}
+                  required
+                >
+                  {CATEGORIAS_PADRAO.map(cat => (
+                    <option key={cat} value={cat}>
+                      🏷️ {cat}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Tipo de Destino / Alocação */}
+              <div className="pa-form-group full-width">
+                <label>
+                  Tipo de Destino / Alocação <span className="pa-required">*</span>
+                </label>
+                <div className="pa-dest-type-grid">
+                  {[
+                    { id: 'DEPARTAMENTO', label: '🏢 Departamento' },
+                    { id: 'CENTRO_DE_CUSTO', label: '📊 Centro de Custo' },
+                    { id: 'EMPRESA', label: '🏛️ Empresa' },
+                    { id: 'CLIENTE', label: '👤 Cliente' }
+                  ].map(dt => (
+                    <button
+                      key={dt.id}
+                      type="button"
+                      className={`pa-dest-type-btn ${tipoDestino === dt.id ? 'active' : ''}`}
+                      onClick={() => {
+                        setTipoDestino(dt.id as TipoDestino);
+                        if (dt.id === 'DEPARTAMENTO' || dt.id === 'CENTRO_DE_CUSTO') {
+                          if (!DEPARTAMENTOS_PADRAO.includes(departamentoOuCentro as any)) {
+                            setDepartamentoOuCentro('Tecnologia');
+                          }
+                        }
+                      }}
+                    >
+                      {dt.label}
+                    </button>
+                  ))}
+                </div>
+
+                {/* Seletor específico dependendo do tipo */}
+                {(tipoDestino === 'DEPARTAMENTO' || tipoDestino === 'CENTRO_DE_CUSTO') ? (
+                  <select
+                    className="pa-select"
+                    value={departamentoOuCentro}
+                    onChange={e => setDepartamentoOuCentro(e.target.value)}
+                    required
+                  >
+                    {DEPARTAMENTOS_PADRAO.map(dep => (
+                      <option key={dep} value={dep}>
+                        {dep}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <input
+                    type="text"
+                    className="pa-input"
+                    placeholder={tipoDestino === 'EMPRESA' ? 'Digite a Razão Social ou Nome Fantasia da Empresa...' : 'Digite o Nome do Cliente...'}
+                    value={empresaOuCliente}
+                    onChange={e => setEmpresaOuCliente(e.target.value)}
+                    required
+                  />
+                )}
+              </div>
+
               {/* Nome do Fornecedor */}
               <div className="pa-form-group">
                 <label>
@@ -1150,21 +1367,6 @@ export const PurchaseApproval: React.FC = () => {
                 />
               </div>
 
-              {/* Departamento / Centro de Custo */}
-              <div className="pa-form-group full-width">
-                <label>
-                  Departamento / Centro de Custo / Empresa / Cliente <span className="pa-required">*</span>
-                </label>
-                <input
-                  type="text"
-                  className="pa-input"
-                  placeholder="Ex: Financeiro / Matriz / Cliente XYZ / Operações"
-                  value={departamentoCentroCusto}
-                  onChange={e => setDepartamentoCentroCusto(e.target.value)}
-                  required
-                />
-              </div>
-
               {/* Descrição do Produto ou Serviço */}
               <div className="pa-form-group full-width">
                 <label>
@@ -1176,14 +1378,14 @@ export const PurchaseApproval: React.FC = () => {
                   placeholder="Ex: Licença de Software, Manutenção de Equipamento, Honorários..."
                   value={produtoServico}
                   onChange={e => setProdutoServico(e.target.value)}
-                  required
+                  required={addedItems.length === 0}
                 />
               </div>
 
               {/* Valor Unitário Estimado */}
               <div className="pa-form-group">
                 <label>
-                  Valor Estimado (R$) <span className="pa-required">*</span>
+                  Valor Unitário Estimado (R$) <span className="pa-required">*</span>
                 </label>
                 <input
                   type="text"
@@ -1191,7 +1393,7 @@ export const PurchaseApproval: React.FC = () => {
                   placeholder="R$ 0,00"
                   value={valorDisplay}
                   onChange={handleCurrencyInput}
-                  required
+                  required={addedItems.length === 0}
                 />
               </div>
 
@@ -1206,13 +1408,13 @@ export const PurchaseApproval: React.FC = () => {
                   className="pa-input"
                   value={quantidade}
                   onChange={e => setQuantidade(Math.max(1, parseInt(e.target.value) || 1))}
-                  required
+                  required={addedItems.length === 0}
                 />
               </div>
 
               {/* Observações */}
               <div className="pa-form-group full-width">
-                <label>Observações Adicionais (Opcional)</label>
+                <label>Observações Adicionais do Item (Opcional)</label>
                 <textarea
                   className="pa-textarea"
                   placeholder="Justificativa da solicitação, links, dados bancários/chave Pix do fornecedor ou detalhes adicionais..."
@@ -1222,23 +1424,88 @@ export const PurchaseApproval: React.FC = () => {
               </div>
             </div>
 
-            {/* Resumo Financeiro ao vivo */}
-            {valorNumeric > 0 && (
-              <div style={{ background: '#0f172a', border: '1px solid #1e293b', padding: '14px 18px', borderRadius: '10px', marginBottom: '1.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
-                <div>
-                  <span style={{ color: '#94a3b8', fontSize: '0.85rem' }}>Resumo da Solicitação:</span>
-                  <div style={{ color: '#60a5fa', fontWeight: 600, fontSize: '0.9rem' }}>
-                    {formaPagamento} {quantidadeParcelas > 1 ? `• ${quantidadeParcelas}x parcelas de ${formatBrl((valorNumeric * quantidade) / quantidadeParcelas)}` : '• À vista'}
+            {/* ITENS ADICIONADOS ANTERIORMENTE NESTA SOLICITAÇÃO */}
+            {addedItems.length > 0 && (
+              <div className="pa-items-added-container">
+                <h3 style={{ fontSize: '0.95rem', color: '#38bdf8', margin: '0 0 6px 0', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  📦 Itens Incluídos nesta Solicitação ({addedItems.length})
+                </h3>
+                {addedItems.map((item, idx) => (
+                  <div key={idx} className="pa-item-card-row">
+                    <div style={{ flex: 1 }}>
+                      <div className="pa-item-card-header">
+                        <span className="pa-code-badge">Item #{idx + 1}</span>
+                        <span className="pa-category-badge">{item.categoria}</span>
+                        <span style={{ fontSize: '0.8rem', color: '#94a3b8' }}>
+                          📍 {item.tipo_destino === 'EMPRESA' ? 'Empresa' : item.tipo_destino === 'CLIENTE' ? 'Cliente' : item.tipo_destino === 'CENTRO_DE_CUSTO' ? 'Centro de Custo' : 'Departamento'}: <strong style={{ color: '#cbd5e1' }}>{item.departamento_centro_custo}</strong>
+                        </span>
+                      </div>
+                      <div style={{ fontSize: '0.92rem', fontWeight: 600, color: '#f8fafc', marginTop: '4px' }}>
+                        {item.produto_servico}
+                      </div>
+                      <div style={{ fontSize: '0.8rem', color: '#94a3b8', marginTop: '2px' }}>
+                        {item.fornecedor_nome} • {item.forma_pagamento} • {item.quantidade} un x {formatBrl(item.valor)}
+                      </div>
+                    </div>
+
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                      <div style={{ textAlign: 'right' }}>
+                        <span style={{ fontSize: '0.75rem', color: '#94a3b8' }}>Subtotal:</span>
+                        <div style={{ fontSize: '1.05rem', fontWeight: 700, color: '#34d399' }}>
+                          {formatBrl(item.valor * item.quantidade)}
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveItem(idx)}
+                        className="pa-btn-action-deny"
+                        style={{ padding: '6px 8px', borderRadius: '8px' }}
+                        title="Remover Item"
+                      >
+                        <Trash2 size={15} />
+                      </button>
+                    </div>
                   </div>
-                </div>
-                <div>
-                  <span style={{ color: '#94a3b8', fontSize: '0.85rem' }}>Valor Total:</span>
-                  <div style={{ fontSize: '1.35rem', fontWeight: 700, color: '#34d399' }}>
-                    {formatBrl(valorNumeric * quantidade)}
-                  </div>
-                </div>
+                ))}
               </div>
             )}
+
+            {/* BOTÃO PARA INCLUIR MAIS UM ITEM */}
+            <button
+              type="button"
+              className="pa-add-more-item-btn"
+              onClick={handleAddItem}
+            >
+              <PlusCircle size={18} />
+              + Incluir Mais Um Item nesta Mesma Solicitação
+            </button>
+
+            {/* RESUMO FINANCEIRO AO VIVO CONSOLIDADO */}
+            {(() => {
+              const currentTotal = valorNumeric > 0 ? (valorNumeric * quantidade) : 0;
+              const addedTotal = addedItems.reduce((acc, it) => acc + (it.valor * it.quantidade), 0);
+              const grandTotal = addedTotal + currentTotal;
+              const totalItemsCount = addedItems.length + (valorNumeric > 0 ? 1 : 0);
+
+              if (grandTotal <= 0) return null;
+
+              return (
+                <div style={{ background: '#0f172a', border: '1px solid #1e293b', padding: '14px 18px', borderRadius: '10px', marginBottom: '1.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
+                  <div>
+                    <span style={{ color: '#94a3b8', fontSize: '0.85rem' }}>Resumo Geral da Solicitação:</span>
+                    <div style={{ color: '#60a5fa', fontWeight: 600, fontSize: '0.9rem' }}>
+                      {totalItemsCount} {totalItemsCount === 1 ? 'item incluso' : 'itens inclusos'}
+                    </div>
+                  </div>
+                  <div>
+                    <span style={{ color: '#94a3b8', fontSize: '0.85rem' }}>Valor Total Consolidado:</span>
+                    <div style={{ fontSize: '1.4rem', fontWeight: 800, color: '#34d399' }}>
+                      {formatBrl(grandTotal)}
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
 
             <button
               type="submit"
@@ -1246,7 +1513,7 @@ export const PurchaseApproval: React.FC = () => {
               className="pa-submit-btn"
             >
               {submitting ? <RefreshCw size={18} className="pwc-spinner" /> : <Send size={18} />}
-              {submitting ? 'Gravando no SQLite...' : 'Submeter Solicitação para Aprovação'}
+              {submitting ? 'Gravando no SQLite...' : `Submeter Solicitação para Aprovação (${addedItems.length + (valorNumeric > 0 ? 1 : 0)} ${addedItems.length + (valorNumeric > 0 ? 1 : 0) === 1 ? 'Item' : 'Itens'})`}
             </button>
           </form>
         </div>
@@ -1691,6 +1958,49 @@ export const PurchaseApproval: React.FC = () => {
                   </div>
                 )}
               </div>
+
+              {/* --- ITENS DISCRIMINADOS DA SOLICITAÇÃO --- */}
+              {selectedRequest.itens && selectedRequest.itens.length > 0 && (
+                <div style={{ marginTop: '1.25rem', borderTop: '1px solid rgba(255, 255, 255, 0.08)', paddingTop: '1.25rem' }}>
+                  <h4 style={{ margin: '0 0 10px 0', fontSize: '0.95rem', color: '#38bdf8', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    📦 Itens da Solicitação ({selectedRequest.itens.length})
+                  </h4>
+                  <div className="pa-multi-items-modal-list">
+                    {selectedRequest.itens.map((it, idx) => (
+                      <div key={it.id || idx} className="pa-modal-item-box">
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <span className="pa-code-badge">Item #{it.numero_item || idx + 1}</span>
+                            <span className="pa-category-badge">🏷️ {it.categoria || 'Outros'}</span>
+                            <span style={{ fontSize: '0.8rem', color: '#94a3b8' }}>
+                              📍 {it.tipo_destino === 'EMPRESA' ? 'Empresa' : it.tipo_destino === 'CLIENTE' ? 'Cliente' : it.tipo_destino === 'CENTRO_DE_CUSTO' ? 'Centro de Custo' : 'Departamento'}: <strong style={{ color: '#cbd5e1' }}>{it.departamento_centro_custo || '-'}</strong>
+                            </span>
+                          </div>
+                          <div style={{ fontSize: '1rem', fontWeight: 750, color: '#34d399' }}>
+                            {formatBrl((it.valor || 0) * (it.quantidade || 1))}
+                          </div>
+                        </div>
+
+                        <div style={{ fontSize: '0.95rem', fontWeight: 600, color: '#f8fafc' }}>
+                          {it.produto_servico}
+                        </div>
+
+                        <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap', fontSize: '0.82rem', color: '#94a3b8' }}>
+                          <span>🏢 Fornecedor: <strong style={{ color: '#cbd5e1' }}>{it.fornecedor_nome || '-'}</strong> ({it.fornecedor_contato || '-'})</span>
+                          <span>💳 Pagamento: <strong style={{ color: '#60a5fa' }}>{it.forma_pagamento || '-'}{it.quantidade_parcelas > 1 ? ` (${it.quantidade_parcelas}x)` : ''}</strong></span>
+                          <span>🔢 Qtd: <strong style={{ color: '#cbd5e1' }}>{it.quantidade || 1} un</strong> x {formatBrl(it.valor)}</span>
+                        </div>
+
+                        {it.observacoes && (
+                          <div style={{ fontSize: '0.8rem', color: '#94a3b8', background: 'rgba(0,0,0,0.2)', padding: '6px 10px', borderRadius: '6px' }}>
+                            📝 {it.observacoes}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               {/* --- SEÇÃO DE ANEXOS --- */}
               <div style={{ marginTop: '1.5rem', borderTop: '1px solid rgba(255, 255, 255, 0.08)', paddingTop: '1.5rem' }}>
