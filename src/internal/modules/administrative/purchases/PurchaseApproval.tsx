@@ -1,10 +1,9 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import {
-  ShoppingCart, ShieldCheck, PlusCircle, ListOrdered, CheckCircle2,
+  ShieldCheck, ListOrdered, CheckCircle2, PlusCircle,
   XCircle, Clock, MessageSquare, Send, X, Archive, RotateCcw,
-  DollarSign, Package, FileText, AlertCircle, RefreshCw, Sparkles, User,
-  Eye, HelpCircle, Edit3, CreditCard, Building2, Phone, Calendar,
-  Layers, Check, ArrowRight, ShieldAlert, Lock
+  DollarSign, AlertCircle, RefreshCw, User,
+  Eye, HelpCircle, CreditCard, Check, ShieldAlert
 } from 'lucide-react';
 import { API_BASE_URL, getAuthHeaders } from '../../../../config/api';
 import { useAuth } from '../../../core/AuthContext';
@@ -77,7 +76,7 @@ export const PurchaseApproval: React.FC = () => {
   const [reviewQueue, setReviewQueue] = useState<PurchaseRequest[]>([]);
   const [myRequests, setMyRequests] = useState<PurchaseRequest[]>([]);
   const [archivedRequests, setArchivedRequests] = useState<PurchaseRequest[]>([]);
-  const [loadingData, setLoadingData] = useState(false);
+  const [, setLoadingData] = useState(false);
 
   // Filter & Search
   const [statusFilter, setStatusFilter] = useState<string>('ALL');
@@ -115,7 +114,10 @@ export const PurchaseApproval: React.FC = () => {
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   const selectedRequestRef = useRef<string | null>(null);
-  selectedRequestRef.current = selectedRequest?.id || null;
+
+  useEffect(() => {
+    selectedRequestRef.current = selectedRequest?.id || null;
+  }, [selectedRequest]);
 
   const showToast = (msg: string) => {
     setToastMessage(msg);
