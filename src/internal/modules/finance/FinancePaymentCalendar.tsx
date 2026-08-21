@@ -497,7 +497,8 @@ export const FinancePaymentCalendar: React.FC = () => {
           <span className="day-number">{day}</span>
           {dayReqs.length > 0 && (
             <span className="day-count-badge">
-              {dayReqs.length} {dayReqs.length === 1 ? 'pgto' : 'pgtos'}
+              <span className="badge-text-full">{dayReqs.length} {dayReqs.length === 1 ? 'pgto' : 'pgtos'}</span>
+              <span className="badge-text-mini">{dayReqs.length}</span>
             </span>
           )}
         </div>
@@ -515,6 +516,14 @@ export const FinancePaymentCalendar: React.FC = () => {
                 +{dayReqs.length - 2} outro(s)...
               </span>
             )}
+          </div>
+        )}
+
+        {/* Mobile Indicator */}
+        {dayReqs.length > 0 && (
+          <div className="day-mobile-indicator">
+            <span className="mobile-event-dot"></span>
+            <span className="mobile-total-val">{formatBrl(totalValue)}</span>
           </div>
         )}
 
@@ -605,8 +614,20 @@ export const FinancePaymentCalendar: React.FC = () => {
       {/* GRID DO CALENDÁRIO */}
       <div className="calendar-card">
         <div className="calendar-grid">
-          {['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'].map(w => (
-            <div key={w} className="calendar-weekday">{w}</div>
+          {[
+            { full: 'Domingo', short: 'Dom', mini: 'D' },
+            { full: 'Segunda', short: 'Seg', mini: 'S' },
+            { full: 'Terça', short: 'Ter', mini: 'T' },
+            { full: 'Quarta', short: 'Qua', mini: 'Q' },
+            { full: 'Quinta', short: 'Qui', mini: 'Q' },
+            { full: 'Sexta', short: 'Sex', mini: 'S' },
+            { full: 'Sábado', short: 'Sáb', mini: 'S' }
+          ].map(w => (
+            <div key={w.full} className="calendar-weekday">
+              <span className="weekday-full">{w.full}</span>
+              <span className="weekday-short">{w.short}</span>
+              <span className="weekday-mini">{w.mini}</span>
+            </div>
           ))}
           {calendarCells}
         </div>

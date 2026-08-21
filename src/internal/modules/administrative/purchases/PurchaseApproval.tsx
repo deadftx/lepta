@@ -1133,34 +1133,34 @@ export const PurchaseApproval: React.FC = () => {
                 ) : (
                   filteredReviewQueue.map(item => (
                     <tr key={item.id}>
-                      <td><span className="pa-code-badge">{item.id}</span></td>
-                      <td>
+                      <td data-label="Código"><span className="pa-code-badge">{item.id}</span></td>
+                      <td data-label="Fornecedor">
                         <strong>{item.fornecedor_nome || '-'}</strong>
                         {item.fornecedor_contato && (
                           <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>{item.fornecedor_contato}</div>
                         )}
                       </td>
-                      <td>{item.produto_servico}</td>
-                      <td>
+                      <td data-label="Descrição">{item.produto_servico}</td>
+                      <td data-label="Pagamento">
                         <span style={{ fontWeight: 600, color: '#60a5fa' }}>{item.forma_pagamento || '-'}</span>
                         {item.quantidade_parcelas > 1 && (
                           <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>{item.quantidade_parcelas}x parcelas</div>
                         )}
                       </td>
-                      <td>{item.departamento_centro_custo || '-'}</td>
-                      <td>
+                      <td data-label="Centro de Custo">{item.departamento_centro_custo || '-'}</td>
+                      <td data-label="Solicitante">
                         <div className="pa-solicitante-cell">
                           <User size={14} color="#94a3b8" />
                           <span>{item.solicitante_nome}</span>
                         </div>
                       </td>
-                      <td>
+                      <td data-label="Valor Total">
                         <span className="pa-price-highlight">
                           {formatBrl(item.valor * item.quantidade)}
                         </span>
                       </td>
-                      <td>{renderStatusBadge(item.status, item.arquivado_manualmente)}</td>
-                      <td>
+                      <td data-label="Status">{renderStatusBadge(item.status, item.arquivado_manualmente)}</td>
+                      <td data-label="Ações">
                         <div style={{ display: 'flex', gap: '6px' }}>
                           <button
                             className="pa-btn-detail"
@@ -1553,29 +1553,29 @@ export const PurchaseApproval: React.FC = () => {
                 ) : (
                   myRequests.map(item => (
                     <tr key={item.id}>
-                      <td><span className="pa-code-badge">{item.id}</span></td>
-                      <td>
+                      <td data-label="Código"><span className="pa-code-badge">{item.id}</span></td>
+                      <td data-label="Fornecedor">
                         <strong>{item.fornecedor_nome || '-'}</strong>
                         {item.fornecedor_contato && (
                           <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>{item.fornecedor_contato}</div>
                         )}
                       </td>
-                      <td>{item.produto_servico}</td>
-                      <td>
+                      <td data-label="Descrição">{item.produto_servico}</td>
+                      <td data-label="Pagamento">
                         <span style={{ fontWeight: 600, color: '#60a5fa' }}>{item.forma_pagamento || '-'}</span>
                         {item.quantidade_parcelas > 1 && (
                           <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>{item.quantidade_parcelas}x</div>
                         )}
                       </td>
-                      <td>{item.departamento_centro_custo || '-'}</td>
-                      <td>
+                      <td data-label="Centro de Custo">{item.departamento_centro_custo || '-'}</td>
+                      <td data-label="Valor Total">
                         <span className="pa-price-highlight">
                           {formatBrl(item.valor * item.quantidade)}
                         </span>
                       </td>
-                      <td>{formatDate(item.created_at)}</td>
-                      <td>{renderStatusBadge(item.status, item.arquivado_manualmente)}</td>
-                      <td>
+                      <td data-label="Data">{formatDate(item.created_at)}</td>
+                      <td data-label="Status">{renderStatusBadge(item.status, item.arquivado_manualmente)}</td>
+                      <td data-label="Ações">
                         <div style={{ display: 'flex', gap: '6px' }}>
                           <button
                             className="pa-btn-detail"
@@ -1662,20 +1662,20 @@ export const PurchaseApproval: React.FC = () => {
                     const isOwner = item.solicitante_id === user?.id || isApprover || isMaster;
                     return (
                       <tr key={item.id}>
-                        <td><span className="pa-code-badge">{item.id}</span></td>
-                        <td>
+                        <td data-label="Código"><span className="pa-code-badge">{item.id}</span></td>
+                        <td data-label="Fornecedor">
                           <strong>{item.fornecedor_nome || '-'}</strong>
                         </td>
-                        <td>{item.produto_servico}</td>
-                        <td>{item.forma_pagamento || '-'}</td>
-                        <td>{item.departamento_centro_custo || '-'}</td>
-                        <td>{item.solicitante_nome}</td>
-                        <td>
+                        <td data-label="Descrição">{item.produto_servico}</td>
+                        <td data-label="Pagamento">{item.forma_pagamento || '-'}</td>
+                        <td data-label="Centro de Custo">{item.departamento_centro_custo || '-'}</td>
+                        <td data-label="Solicitante">{item.solicitante_nome}</td>
+                        <td data-label="Valor Total">
                           <span className="pa-price-highlight">
                             {formatBrl(item.valor * item.quantidade)}
                           </span>
                         </td>
-                        <td>
+                        <td data-label="Decisão">
                           {item.arquivado_manualmente === 1 ? (
                             <span className="pa-master-tag">
                               Por {item.arquivado_por || 'Master'}
@@ -1684,8 +1684,8 @@ export const PurchaseApproval: React.FC = () => {
                             formatDate(item.decidido_em || item.updated_at)
                           )}
                         </td>
-                        <td>{renderStatusBadge(item.status, item.arquivado_manualmente)}</td>
-                        <td>
+                        <td data-label="Status">{renderStatusBadge(item.status, item.arquivado_manualmente)}</td>
+                        <td data-label="Ações">
                           <div style={{ display: 'flex', gap: '6px' }}>
                             <button
                               className="pa-btn-detail"

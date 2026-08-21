@@ -628,16 +628,16 @@ export const FinanceRefundsExpenses: React.FC = () => {
               ) : (
                 filteredQueue.map(item => (
                   <tr key={item.id}>
-                    <td>
+                    <td data-label="Código">
                       <span className="pa-code-badge">{item.id}</span>
                     </td>
-                    <td>
+                    <td data-label="Fornecedor">
                       <strong>{item.fornecedor_nome || '-'}</strong>
                       {item.fornecedor_contato && (
                         <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>{item.fornecedor_contato}</div>
                       )}
                     </td>
-                    <td>
+                    <td data-label="Descrição">
                       <div><strong>{item.produto_servico}</strong></div>
                       <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>
                         Qtd: {item.quantidade} • Criado em {formatDate(item.created_at)}
@@ -648,28 +648,28 @@ export const FinanceRefundsExpenses: React.FC = () => {
                         )}
                       </div>
                     </td>
-                    <td>
+                    <td data-label="Pagamento">
                       <span style={{ fontWeight: 600, color: '#60a5fa' }}>{item.forma_pagamento || '-'}</span>
                       {item.quantidade_parcelas > 1 && (
                         <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>{item.quantidade_parcelas}x parcelas</div>
                       )}
                     </td>
-                    <td>{item.departamento_centro_custo || '-'}</td>
-                    <td>
+                    <td data-label="Centro de Custo">{item.departamento_centro_custo || '-'}</td>
+                    <td data-label="Solicitante">
                       <div className="pa-solicitante-cell">
                         <User size={14} color="#94a3b8" />
                         <span>{item.solicitante_nome}</span>
                       </div>
                     </td>
-                    <td>
+                    <td data-label="Valor Total">
                       <span className="pa-price-highlight">
                         {formatBrl(item.valor * item.quantidade)}
                       </span>
                     </td>
-                    <td>
+                    <td data-label="Status">
                       {renderStatusBadge(item.status)}
                     </td>
-                    <td>
+                    <td data-label="Ações">
                       <button
                         className="pa-btn-detail"
                         onClick={() => handleOpenDetails(item.id)}
