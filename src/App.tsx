@@ -13,6 +13,8 @@ import Marketing from './internal/modules/calendar/Marketing';
 import Finance from './internal/modules/finance/statement-processing/Finance';
 import FinanceDashboard from './internal/modules/finance/FinanceDashboard';
 import GrafenoIntegration from './internal/modules/finance/grafeno/GrafenoIntegration';
+import FinanceRefundsExpenses from './internal/modules/finance/FinanceRefundsExpenses';
+import FinancePaymentCalendar from './internal/modules/finance/FinancePaymentCalendar';
 import CustomerAnalysis from './internal/modules/intelligence/customer-analysis/CustomerAnalysis';
 import CustomerRegistration from './internal/modules/intelligence/customer-registration/CustomerRegistration';
 import RiskAnalysis from './internal/modules/intelligence/risk-analysis/RiskAnalysis';
@@ -58,6 +60,8 @@ function App() {
               <Route path="/financeiro" element={<AccessRoute permission="7"><FinanceDashboard /></AccessRoute>} />
               <Route path="/financeiro/extratos" element={<AccessRoute permission="7.1"><Finance /></AccessRoute>} />
               <Route path="/financeiro/grafeno" element={<AccessRoute permission="7.2"><GrafenoIntegration /></AccessRoute>} />
+              <Route path="/financeiro/reembolsos-despesas" element={<AccessRoute permission="7.4"><FinanceRefundsExpenses /></AccessRoute>} />
+              <Route path="/financeiro/calendario-pagamentos" element={<AccessRoute permission="7.5"><FinancePaymentCalendar /></AccessRoute>} />
               <Route path="/intelligence/analise-clientes" element={<AccessRoute permission="8.1"><CustomerAnalysis /></AccessRoute>} />
               <Route path="/intelligence/cadastro-clientes" element={<AccessRoute permission="8.2"><CustomerRegistration /></AccessRoute>} />
               <Route path="/intelligence/analise-riscos" element={<AccessRoute permission="8.3"><RiskAnalysis /></AccessRoute>} />

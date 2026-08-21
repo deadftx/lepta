@@ -16,7 +16,9 @@ export const permissionGroups: PermissionGroup[] = [
     name: 'Financeiro',
     children: [
       { id: '7.1', name: 'Processar Extrato' },
-      { id: '7.2', name: 'LEPTA x GRAFENO' }
+      { id: '7.2', name: 'LEPTA x GRAFENO' },
+      { id: '7.4', name: 'Reembolsos e Despesas' },
+      { id: '7.5', name: 'Calendário de Pagamentos' }
     ]
   },
   {
@@ -33,7 +35,7 @@ export const permissionGroups: PermissionGroup[] = [
     id: '11',
     name: 'Administrativo',
     children: [
-      { id: '11.1', name: 'Aprovação de Compras' },
+      { id: '11.1', name: 'Solicitações Financeiras' },
       { id: '11.2', name: 'Configuração de Esteira de Compras' }
     ]
   },
@@ -43,7 +45,7 @@ export const permissionGroups: PermissionGroup[] = [
 ];
 
 const legacyChildren: Record<string, string[]> = {
-  '7': ['7.1', '7.2'],
+  '7': ['7.1', '7.2', '7.4', '7.5'],
   '8': ['8.1'],
   '11': ['11.1', '11.2']
 };
