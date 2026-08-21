@@ -1171,14 +1171,22 @@ export function registerPurchaseRoutes(app, {
         WHERE id = ?
       `).run(dateVal, now, id);
 
-      const msgTexto = dateVal
-        ? `📅 Agendou o pagamento para o dia ${dateVal.split('-').reverse().join('/')}.`
-        : '📅 Removeu a data de agendamento de pagamento.';
+      const dataAntiga = requisicao.data_pagamento ? requisicao.data_pagamento.substring(0, 10) : null;
+      const dataNova = dateVal ? dateVal.substring(0, 10) : null;
+
+      let msgTexto = '';
+      if (dataNova && dataAntiga && dataNova !== dataAntiga) {
+        msgTexto = `🔄 Pagamento REAGENDADO por ${financeName}: de ${dataAntiga.split('-').reverse().join('/')} para ${dataNova.split('-').reverse().join('/')}.`;
+      } else if (dataNova) {
+        msgTexto = `📅 Pagamento AGENDADO por ${financeName} para o dia ${dataNova.split('-').reverse().join('/')}.`;
+      } else {
+        msgTexto = `📅 Agendamento de pagamento removido por ${financeName}${dataAntiga ? ` (anterior: ${dataAntiga.split('-').reverse().join('/')})` : ''}.`;
+      }
 
       db.prepare(`
         INSERT INTO compras_mensagens (id, requisicao_id, autor_id, autor_nome, autor_role, mensagem, created_at)
         VALUES (?, ?, ?, ?, ?, ?, ?)
-      `).run(randomUUID(), id, req.authUser.id, financeName, 'APROVADOR', msgTexto, now);
+      `).run(randomUUID(), id, req.authUser.id, financeName, 'FINANCEIRO', msgTexto, now);
 
       const atualizado = db.prepare(`SELECT * FROM compras_requisicoes WHERE id = ?`).get(id);
       return res.json({ success: true, requisicao: atualizado });

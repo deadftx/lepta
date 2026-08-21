@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import {
   Calendar as CalendarIcon, ChevronLeft, ChevronRight, Plus, Trash2,
-  CheckSquare, X, Eye, Download, Paperclip, RefreshCw, CreditCard, CheckCircle2, CalendarCheck
+  CheckSquare, X, Eye, Download, Paperclip, RefreshCw, CreditCard, CheckCircle2, CalendarCheck, RotateCcw
 } from 'lucide-react';
 import { API_BASE_URL, getAuthHeaders } from '../../../config/api';
 import { useAuth } from '../../core/AuthContext';
@@ -287,6 +287,9 @@ export const FinancePaymentCalendar: React.FC = () => {
   };
 
   // Detail Modal popup helpers
+  const [scheduleInputDate, setScheduleInputDate] = useState<string>('');
+  const [scheduleLoading, setScheduleLoading] = useState(false);
+
   const handleOpenDetailModal = async (reqId: string) => {
     setActionLoading(true);
     setUploadError('');
@@ -297,12 +300,53 @@ export const FinancePaymentCalendar: React.FC = () => {
       if (res.ok) {
         const data = await res.json();
         setSelectedRequestDetails(data);
+        setScheduleInputDate(data.data_pagamento ? data.data_pagamento.substring(0, 10) : '');
         await fetchAttachments(reqId);
       }
     } catch (err) {
       console.error(err);
     } finally {
       setActionLoading(false);
+    }
+  };
+
+  const handleSaveScheduleDate = async (newDate: string | null) => {
+    if (!selectedRequestDetails) return;
+    setScheduleLoading(true);
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/compras/requisicoes/${selectedRequestDetails.id}/data-pagamento`, {
+        method: 'PUT',
+        headers: {
+          ...getAuthHeaders(),
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ data_pagamento: newDate })
+      });
+      if (res.ok) {
+        const updated = await res.json();
+        setSelectedRequestDetails(prev => {
+          if (!prev) return null;
+          return {
+            ...prev,
+            data_pagamento: updated.requisicao.data_pagamento
+          };
+        });
+        setScheduleInputDate(newDate || '');
+
+        const isReschedule = Boolean(selectedRequestDetails.data_pagamento && newDate && selectedRequestDetails.data_pagamento.substring(0, 10) !== newDate);
+        showToast(
+          !newDate 
+            ? 'Agendamento cancelado com sucesso!' 
+            : isReschedule 
+              ? 'Pagamento reagendado com sucesso!' 
+              : 'Pagamento agendado com sucesso!'
+        );
+        await fetchData(true);
+      }
+    } catch (err) {
+      console.error('Erro ao agendar data de pagamento:', err);
+    } finally {
+      setScheduleLoading(false);
     }
   };
 
@@ -810,13 +854,84 @@ export const FinancePaymentCalendar: React.FC = () => {
                   <span className="pa-detail-val">{formatDate(selectedRequestDetails.created_at)}</span>
                 </div>
 
-                <div className="pa-detail-item">
-                  <span className="pa-detail-label">Data Agendada de Pagamento</span>
-                  <span className="pa-detail-val" style={{ color: '#fbbf24', fontWeight: 700 }}>
-                    {selectedRequestDetails.data_pagamento 
-                      ? selectedRequestDetails.data_pagamento.substring(0, 10).split('-').reverse().join('/')
-                      : 'Não programada'}
-                  </span>
+                {/* Seletor de Data Programada com Botão Agendar / Reagendar */}
+                <div className="pa-detail-item" style={{ gridColumn: 'span 2', background: 'rgba(56, 189, 248, 0.08)', padding: '16px', borderRadius: '12px', border: '1px solid rgba(56, 189, 248, 0.25)' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
+                    <span className="pa-detail-label" style={{ color: '#38bdf8', fontSize: '0.85rem', fontWeight: 700 }}>
+                      📅 Agendamento de Pagamento (Financeiro)
+                    </span>
+                    {selectedRequestDetails.data_pagamento && (
+                      <span style={{ fontSize: '0.8rem', color: '#fbbf24', background: 'rgba(251, 191, 36, 0.15)', padding: '3px 8px', borderRadius: '6px', border: '1px solid rgba(251, 191, 36, 0.3)' }}>
+                        Agendado para: <strong>{selectedRequestDetails.data_pagamento.substring(0, 10).split('-').reverse().join('/')}</strong>
+                      </span>
+                    )}
+                  </div>
+
+                  <div style={{ display: 'flex', gap: '10px', alignItems: 'center', marginTop: '10px', flexWrap: 'wrap' }}>
+                    <input
+                      type="date"
+                      className="pa-input"
+                      value={scheduleInputDate}
+                      onChange={(e) => setScheduleInputDate(e.target.value)}
+                      style={{ maxWidth: '200px', padding: '8px 12px', fontSize: '0.9rem' }}
+                      disabled={selectedRequestDetails.status === 'SOLICITACAO_CONCLUIDA' || scheduleLoading}
+                    />
+
+                    {/* Botão Agendar ou Reagendar */}
+                    {selectedRequestDetails.data_pagamento ? (
+                      <button
+                        type="button"
+                        onClick={() => handleSaveScheduleDate(scheduleInputDate)}
+                        disabled={!scheduleInputDate || scheduleInputDate === selectedRequestDetails.data_pagamento.substring(0, 10) || scheduleLoading}
+                        className="pa-btn-detail"
+                        style={{
+                          background: (scheduleInputDate && scheduleInputDate !== selectedRequestDetails.data_pagamento.substring(0, 10)) ? '#f59e0b' : 'rgba(255,255,255,0.08)',
+                          color: (scheduleInputDate && scheduleInputDate !== selectedRequestDetails.data_pagamento.substring(0, 10)) ? '#0f172a' : '#64748b',
+                          fontWeight: 750,
+                          cursor: (scheduleInputDate && scheduleInputDate !== selectedRequestDetails.data_pagamento.substring(0, 10)) ? 'pointer' : 'not-allowed'
+                        }}
+                      >
+                        {scheduleLoading ? <RefreshCw size={14} className="pwc-spinner" /> : <RotateCcw size={14} />}
+                        {scheduleLoading ? 'Salvando...' : 'Reagendar Pagamento'}
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => handleSaveScheduleDate(scheduleInputDate)}
+                        disabled={!scheduleInputDate || scheduleLoading}
+                        className="pa-btn-approve"
+                        style={{
+                          padding: '8px 14px',
+                          fontSize: '0.85rem',
+                          cursor: scheduleInputDate ? 'pointer' : 'not-allowed',
+                          opacity: scheduleInputDate ? 1 : 0.5
+                        }}
+                      >
+                        {scheduleLoading ? <RefreshCw size={14} className="pwc-spinner" /> : <CalendarCheck size={14} />}
+                        {scheduleLoading ? 'Agendando...' : 'Agendar Pagamento'}
+                      </button>
+                    )}
+
+                    {/* Botão de Cancelar / Remover Agendamento se já houver */}
+                    {selectedRequestDetails.data_pagamento && selectedRequestDetails.status !== 'SOLICITACAO_CONCLUIDA' && (
+                      <button
+                        type="button"
+                        onClick={() => handleSaveScheduleDate(null)}
+                        disabled={scheduleLoading}
+                        className="pa-btn-action-deny"
+                        style={{ padding: '8px 12px', fontSize: '0.82rem', borderRadius: '8px' }}
+                        title="Remover data agendada"
+                      >
+                        <X size={14} /> Cancelar Agendamento
+                      </button>
+                    )}
+                  </div>
+
+                  <p style={{ margin: '8px 0 0 0', fontSize: '0.8rem', color: '#94a3b8' }}>
+                    {selectedRequestDetails.data_pagamento
+                      ? 'Escolha uma nova data acima e clique em "Reagendar Pagamento" para alterar a programação financeira.'
+                      : 'Selecione a data no calendário e clique em "Agendar Pagamento" para confirmar.'}
+                  </p>
                 </div>
 
                 {selectedRequestDetails.observacoes && (
