@@ -7,7 +7,7 @@ export function registerPurchaseRoutes(app, {
   requirePermission,
   requireMaster
 }) {
-  // Inicialização das tabelas de compras
+  // Inicialização das tabelas de compras e solicitações financeiras
   db.exec(`
     CREATE TABLE IF NOT EXISTS compras_papeis_usuarios (
       user_id TEXT PRIMARY KEY,
@@ -19,12 +19,21 @@ export function registerPurchaseRoutes(app, {
     CREATE TABLE IF NOT EXISTS compras_requisicoes (
       id TEXT PRIMARY KEY,
       numero INTEGER,
+      fornecedor_nome TEXT,
+      fornecedor_contato TEXT,
+      forma_pagamento TEXT, -- 'DINHEIRO', 'PIX', 'DEBITO', 'CREDITO'
+      quantidade_parcelas INTEGER DEFAULT 1,
+      departamento_centro_custo TEXT,
       produto_servico TEXT NOT NULL,
       valor REAL NOT NULL,
       quantidade INTEGER NOT NULL DEFAULT 1,
       observacoes TEXT,
       status TEXT NOT NULL DEFAULT 'PENDENTE', -- 'PENDENTE', 'REABERTO', 'AGUARDANDO_RESPOSTA_SOLICITANTE', 'AGUARDANDO_RESPOSTA_APROVADOR', 'APROVADO', 'NEGADO'
       arquivado INTEGER DEFAULT 0,
+      arquivado_manualmente INTEGER DEFAULT 0,
+      arquivado_por TEXT,
+      arquivado_em TEXT,
+      motivo_arquivamento TEXT,
       solicitante_id TEXT NOT NULL,
       solicitante_nome TEXT NOT NULL,
       solicitante_email TEXT,
@@ -47,13 +56,32 @@ export function registerPurchaseRoutes(app, {
     );
   `);
 
-  // Migration automática para garantir a coluna arquivado
+  // Migration automática para garantir colunas existentes no banco SQLite
   try {
     const cols = db.prepare("PRAGMA table_info(compras_requisicoes)").all().map(c => c.name.toLowerCase());
-    if (!cols.includes('arquivado')) {
-      db.exec("ALTER TABLE compras_requisicoes ADD COLUMN arquivado INTEGER DEFAULT 0");
+    const requiredCols = [
+      { name: 'arquivado', sql: 'ALTER TABLE compras_requisicoes ADD COLUMN arquivado INTEGER DEFAULT 0' },
+      { name: 'fornecedor_nome', sql: 'ALTER TABLE compras_requisicoes ADD COLUMN fornecedor_nome TEXT' },
+      { name: 'fornecedor_contato', sql: 'ALTER TABLE compras_requisicoes ADD COLUMN fornecedor_contato TEXT' },
+      { name: 'forma_pagamento', sql: 'ALTER TABLE compras_requisicoes ADD COLUMN forma_pagamento TEXT' },
+      { name: 'quantidade_parcelas', sql: 'ALTER TABLE compras_requisicoes ADD COLUMN quantidade_parcelas INTEGER DEFAULT 1' },
+      { name: 'departamento_centro_custo', sql: 'ALTER TABLE compras_requisicoes ADD COLUMN departamento_centro_custo TEXT' },
+      { name: 'arquivado_manualmente', sql: 'ALTER TABLE compras_requisicoes ADD COLUMN arquivado_manualmente INTEGER DEFAULT 0' },
+      { name: 'arquivado_por', sql: 'ALTER TABLE compras_requisicoes ADD COLUMN arquivado_por TEXT' },
+      { name: 'arquivado_em', sql: 'ALTER TABLE compras_requisicoes ADD COLUMN arquivado_em TEXT' },
+      { name: 'motivo_arquivamento', sql: 'ALTER TABLE compras_requisicoes ADD COLUMN motivo_arquivamento TEXT' },
+    ];
+    for (const col of requiredCols) {
+      if (!cols.includes(col.name)) {
+        db.exec(col.sql);
+      }
     }
-  } catch {}
+  } catch (err) {
+    console.warn('Aviso na migração SQLite de compras_requisicoes:', err.message);
+  }
+
+  // Middleware de acesso: permite usuários com permissão 11.1 (Aprovação de Compras), 7.3 (Solicitações Financeiras) ou Master
+  const requireAccess = requirePermission(['11.1', '7.3', '11', '7']);
 
   function getUserRoleInPurchases(userId, userGlobalRole) {
     if (userGlobalRole === 'MASTER') return 'APROVADOR';
@@ -95,8 +123,8 @@ export function registerPurchaseRoutes(app, {
 
   const formatBrl = (val) => Number(val || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 
-  // --- ROTA: MEU PAPEL NA ESTEIRA DE COMPRAS ---
-  app.get('/api/compras/meu-papel', requireSession, requirePermission('11.1'), (req, res) => {
+  // --- ROTA: MEU PAPEL NA ESTEIRA DE SOLICITAÇÕES ---
+  app.get('/api/compras/meu-papel', requireSession, requireAccess, (req, res) => {
     try {
       const role = getUserRoleInPurchases(req.authUser.id, req.authUser.role);
       return res.json({
@@ -111,7 +139,7 @@ export function registerPurchaseRoutes(app, {
   });
 
   // --- ROTA: CONFIGURAÇÃO DE USUÁRIOS E PAPÉIS ---
-  app.get('/api/compras/configuracao/usuarios', requireSession, requirePermission('11.2'), (req, res) => {
+  app.get('/api/compras/configuracao/usuarios', requireSession, requirePermission(['11.2', '11']), (req, res) => {
     try {
       const users = db.prepare(`
         SELECT id, username, email, role, permissions
@@ -128,7 +156,7 @@ export function registerPurchaseRoutes(app, {
           permissions = JSON.parse(u.permissions || '[]');
         } catch {}
 
-        const hasAdminAccess = u.role === 'MASTER' || permissions.includes('11') || permissions.includes('11.1') || permissions.includes('11.2');
+        const hasAdminAccess = u.role === 'MASTER' || permissions.includes('11') || permissions.includes('11.1') || permissions.includes('11.2') || permissions.includes('7.3');
         const roleInfo = roleMap.get(u.id);
 
         return {
@@ -150,7 +178,7 @@ export function registerPurchaseRoutes(app, {
     }
   });
 
-  app.put('/api/compras/configuracao/usuarios/:userId', requireSession, requirePermission('11.2'), (req, res) => {
+  app.put('/api/compras/configuracao/usuarios/:userId', requireSession, requirePermission(['11.2', '11']), (req, res) => {
     const { userId } = req.params;
     const { papel } = req.body;
 
@@ -184,38 +212,59 @@ export function registerPurchaseRoutes(app, {
     }
   });
 
-  // --- ROTA: CRIAR REQUISIÇÃO DE COMPRA ---
-  app.post('/api/compras/requisicoes', requireSession, requirePermission('11.1'), (req, res) => {
+  // --- ROTA: CRIAR SOLICITAÇÃO FINANCEIRA / REQUISIÇÃO ---
+  app.post('/api/compras/requisicoes', requireSession, requireAccess, (req, res) => {
+    const fornecedor_nome = String(req.body?.fornecedor_nome || '').trim();
+    const fornecedor_contato = String(req.body?.fornecedor_contato || '').trim();
+    const forma_pagamento = String(req.body?.forma_pagamento || '').trim().toUpperCase();
+    const quantidade_parcelas = Math.max(1, Number(req.body?.quantidade_parcelas) || 1);
+    const departamento_centro_custo = String(req.body?.departamento_centro_custo || '').trim();
     const produto_servico = String(req.body?.produto_servico || '').trim();
     const valor = Number(req.body?.valor);
-    const quantidade = Number(req.body?.quantidade || 1);
+    const quantidade = Math.max(1, Number(req.body?.quantidade || 1));
     const observacoes = String(req.body?.observacoes || '').trim();
 
+    if (!fornecedor_nome) {
+      return res.status(400).json({ error: 'O Nome do Fornecedor / Prestador de serviço é obrigatório.' });
+    }
+    if (!fornecedor_contato) {
+      return res.status(400).json({ error: 'O Contato do Fornecedor / Prestador de serviço é obrigatório.' });
+    }
+    if (!forma_pagamento || !['DINHEIRO', 'PIX', 'DEBITO', 'CREDITO'].includes(forma_pagamento)) {
+      return res.status(400).json({ error: 'Selecione uma Forma de Pagamento válida: Dinheiro, PIX, Débito ou Crédito.' });
+    }
+    if (!departamento_centro_custo) {
+      return res.status(400).json({ error: 'O Departamento / Centro de Custo / Empresa / Cliente é obrigatório.' });
+    }
     if (!produto_servico) {
-      return res.status(400).json({ error: 'O campo Produto / Serviço é obrigatório.' });
+      return res.status(400).json({ error: 'O campo Descrição / Produto / Serviço é obrigatório.' });
     }
     if (isNaN(valor) || valor <= 0) {
       return res.status(400).json({ error: 'Informe um valor válido e maior que zero.' });
-    }
-    if (isNaN(quantidade) || quantidade <= 0) {
-      return res.status(400).json({ error: 'Informe uma quantidade válida maior que zero.' });
     }
 
     try {
       const now = new Date().toISOString();
       const count = db.prepare(`SELECT COUNT(*) as total FROM compras_requisicoes`).get().total + 1;
-      const id = `REQ-${new Date().getFullYear()}-${String(count).padStart(4, '0')}`;
+      const id = `SOL-${new Date().getFullYear()}-${String(count).padStart(4, '0')}`;
       const solicitanteNome = req.authUser.username || req.authUser.id;
 
       db.prepare(`
         INSERT INTO compras_requisicoes (
-          id, numero, produto_servico, valor, quantidade, observacoes,
-          status, arquivado, solicitante_id, solicitante_nome, solicitante_email,
+          id, numero, fornecedor_nome, fornecedor_contato, forma_pagamento,
+          quantidade_parcelas, departamento_centro_custo, produto_servico,
+          valor, quantidade, observacoes, status, arquivado, arquivado_manualmente,
+          solicitante_id, solicitante_nome, solicitante_email,
           created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, 'PENDENTE', 0, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'PENDENTE', 0, 0, ?, ?, ?, ?, ?)
       `).run(
         id,
         count,
+        fornecedor_nome,
+        fornecedor_contato,
+        forma_pagamento,
+        quantidade_parcelas,
+        departamento_centro_custo,
         produto_servico,
         valor,
         quantidade,
@@ -230,23 +279,24 @@ export function registerPurchaseRoutes(app, {
       // Dispara notificação para todos os APROVADORES
       const approverIds = getAllApproverUserIds().filter(uid => uid !== req.authUser.id);
       const totalFormatado = formatBrl(valor * quantidade);
+      const parcelasTexto = quantidade_parcelas > 1 ? ` (${quantidade_parcelas}x)` : '';
       notifyUsers(db, approverIds, {
-        titulo: `🛍️ Nova Requisição de Compra (${id})`,
-        mensagem: `${solicitanteNome} solicitou ${quantidade}x ${produto_servico} (${totalFormatado})`,
+        titulo: `💳 Nova Solicitação Financeira (${id})`,
+        mensagem: `${solicitanteNome} solicitou ${produto_servico} - ${fornecedor_nome} (${totalFormatado}${parcelasTexto} via ${forma_pagamento})`,
         tipo: 'COMPRAS_NOVA_REQUISICAO',
-        link: '/administrativo/compras'
+        link: '/financeiro/solicitacoes'
       });
 
       const nova = db.prepare(`SELECT * FROM compras_requisicoes WHERE id = ?`).get(id);
       return res.status(201).json(nova);
     } catch (error) {
-      console.error('Erro ao criar requisição de compra:', error.message);
-      return res.status(500).json({ error: 'Não foi possível registrar a requisição.' });
+      console.error('Erro ao criar solicitação financeira no SQLite:', error.message);
+      return res.status(500).json({ error: 'Não foi possível registrar a solicitação no banco SQLite.' });
     }
   });
 
   // --- ROTA: MINHAS REQUISIÇÕES ATIVAS (PARA REQUISITANTES) ---
-  app.get('/api/compras/minhas-requisicoes', requireSession, requirePermission('11.1'), (req, res) => {
+  app.get('/api/compras/minhas-requisicoes', requireSession, requireAccess, (req, res) => {
     try {
       const rows = db.prepare(`
         SELECT r.*,
@@ -259,12 +309,12 @@ export function registerPurchaseRoutes(app, {
       return res.json(rows);
     } catch (error) {
       console.error('Erro ao listar minhas requisições:', error.message);
-      return res.status(500).json({ error: 'Erro ao carregar requisições.' });
+      return res.status(500).json({ error: 'Erro ao carregar requisições do SQLite.' });
     }
   });
 
   // --- ROTA: FILA DE APROVAÇÃO ATIVA (PARA APROVADORES E MASTER) ---
-  app.get('/api/compras/fila-aprovacao', requireSession, requirePermission('11.1'), (req, res) => {
+  app.get('/api/compras/fila-aprovacao', requireSession, requireAccess, (req, res) => {
     try {
       const userRole = getUserRoleInPurchases(req.authUser.id, req.authUser.role);
       if (userRole !== 'APROVADOR' && req.authUser.role !== 'MASTER') {
@@ -294,8 +344,8 @@ export function registerPurchaseRoutes(app, {
     }
   });
 
-  // --- ROTA: SOLICITAÇÕES ARQUIVADAS (APROVADAS E NEGADAS) ---
-  app.get('/api/compras/arquivadas', requireSession, requirePermission('11.1'), (req, res) => {
+  // --- ROTA: SOLICITAÇÕES ARQUIVADAS (APROVADAS, NEGADAS E ARQUIVADAS MANUALMENTE) ---
+  app.get('/api/compras/arquivadas', requireSession, requireAccess, (req, res) => {
     try {
       const userRole = getUserRoleInPurchases(req.authUser.id, req.authUser.role);
       const isApprover = userRole === 'APROVADOR' || req.authUser.role === 'MASTER';
@@ -307,7 +357,7 @@ export function registerPurchaseRoutes(app, {
             (SELECT COUNT(*) FROM compras_mensagens m WHERE m.requisicao_id = r.id) as total_mensagens
           FROM compras_requisicoes r
           WHERE r.arquivado = 1
-          ORDER BY r.decidido_em DESC, r.updated_at DESC
+          ORDER BY COALESCE(r.arquivado_em, r.decidido_em, r.updated_at) DESC
         `).all();
       } else {
         rows = db.prepare(`
@@ -315,7 +365,7 @@ export function registerPurchaseRoutes(app, {
             (SELECT COUNT(*) FROM compras_mensagens m WHERE m.requisicao_id = r.id) as total_mensagens
           FROM compras_requisicoes r
           WHERE r.solicitante_id = ? AND r.arquivado = 1
-          ORDER BY r.decidido_em DESC, r.updated_at DESC
+          ORDER BY COALESCE(r.arquivado_em, r.decidido_em, r.updated_at) DESC
         `).all(req.authUser.id);
       }
 
@@ -327,17 +377,17 @@ export function registerPurchaseRoutes(app, {
   });
 
   // --- ROTA: DETALHES DA REQUISIÇÃO + MENSAGENS ---
-  app.get('/api/compras/requisicoes/:id', requireSession, requirePermission('11.1'), (req, res) => {
+  app.get('/api/compras/requisicoes/:id', requireSession, requireAccess, (req, res) => {
     try {
       const requisicao = db.prepare(`SELECT * FROM compras_requisicoes WHERE id = ?`).get(req.params.id);
-      if (!requisicao) return res.status(404).json({ error: 'Requisição não encontrada.' });
+      if (!requisicao) return res.status(404).json({ error: 'Solicitação não encontrada.' });
 
       const userRole = getUserRoleInPurchases(req.authUser.id, req.authUser.role);
       const isOwner = requisicao.solicitante_id === req.authUser.id;
       const isApprover = userRole === 'APROVADOR' || req.authUser.role === 'MASTER';
 
       if (!isOwner && !isApprover) {
-        return res.status(403).json({ error: 'Sem permissão para visualizar esta requisição.' });
+        return res.status(403).json({ error: 'Sem permissão para visualizar esta solicitação.' });
       }
 
       const mensagens = db.prepare(`
@@ -351,23 +401,95 @@ export function registerPurchaseRoutes(app, {
         mensagens
       });
     } catch (error) {
-      console.error('Erro ao consultar detalhes da requisição:', error.message);
-      return res.status(500).json({ error: 'Erro ao carregar detalhes da requisição.' });
+      console.error('Erro ao consultar detalhes da solicitação:', error.message);
+      return res.status(500).json({ error: 'Erro ao carregar detalhes da solicitação.' });
+    }
+  });
+
+  // --- ROTA: ARQUIVAR OU DESARQUIVAR MANUALMENTE (EXCLUSIVO PARA LEPTA MASTER) ---
+  app.post('/api/compras/requisicoes/:id/arquivar-manual', requireSession, requireMaster, (req, res) => {
+    try {
+      const requisicao = db.prepare(`SELECT * FROM compras_requisicoes WHERE id = ?`).get(req.params.id);
+      if (!requisicao) return res.status(404).json({ error: 'Solicitação não encontrada.' });
+
+      // Se passado booleano explicitamente usa-o, caso contrário inverte o estado
+      const arquivar = req.body?.arquivado !== undefined ? Boolean(req.body.arquivado) : (requisicao.arquivado === 0);
+      const motivo = String(req.body?.motivo || '').trim();
+      const now = new Date().toISOString();
+      const masterName = req.authUser.username || req.authUser.id;
+
+      const novoArquivado = arquivar ? 1 : 0;
+      const novoArquivadoManualmente = arquivar ? 1 : 0;
+      const arquivadoPor = arquivar ? masterName : null;
+      const arquivadoEm = arquivar ? now : null;
+
+      db.prepare(`
+        UPDATE compras_requisicoes
+        SET arquivado = ?,
+            arquivado_manualmente = ?,
+            arquivado_por = ?,
+            arquivado_em = ?,
+            motivo_arquivamento = ?,
+            updated_at = ?
+        WHERE id = ?
+      `).run(
+        novoArquivado,
+        novoArquivadoManualmente,
+        arquivadoPor,
+        arquivadoEm,
+        motivo || (arquivar ? 'Arquivado manualmente pelo Lepta Master' : 'Desarquivado manualmente pelo Lepta Master'),
+        now,
+        req.params.id
+      );
+
+      const msgTexto = arquivar
+        ? `📦 Solicitação ARQUIVADA MANUALMENTE pelo Master ${masterName}.${motivo ? ` Motivo: "${motivo}"` : ''}`
+        : `📂 Solicitação DESARQUIVADA MANUALMENTE pelo Master ${masterName} e retornada à esteira ativa.${motivo ? ` Motivo: "${motivo}"` : ''}`;
+
+      db.prepare(`
+        INSERT INTO compras_mensagens (id, requisicao_id, autor_id, autor_nome, autor_role, mensagem, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        randomUUID(),
+        req.params.id,
+        req.authUser.id,
+        masterName,
+        'APROVADOR',
+        msgTexto,
+        now
+      );
+
+      // Notifica o solicitante se não for o próprio Master
+      if (requisicao.solicitante_id !== req.authUser.id) {
+        createNotification(db, {
+          userId: requisicao.solicitante_id,
+          titulo: arquivar ? `📦 Solicitação Arquivada (${requisicao.id})` : `📂 Solicitação Desarquivada (${requisicao.id})`,
+          mensagem: `${masterName} ${arquivar ? 'arquivou' : 'desarquivou'} manualmente sua solicitação (${requisicao.produto_servico}).`,
+          tipo: 'COMPRAS_MENSAGEM',
+          link: '/financeiro/solicitacoes'
+        });
+      }
+
+      const atualizado = db.prepare(`SELECT * FROM compras_requisicoes WHERE id = ?`).get(req.params.id);
+      return res.json({ success: true, requisicao: atualizado });
+    } catch (error) {
+      console.error('Erro ao arquivar/desarquivar solicitação manualmente no SQLite:', error.message);
+      return res.status(500).json({ error: 'Erro ao processar arquivamento manual no banco de dados.' });
     }
   });
 
   // --- ROTA: APROVAR REQUISIÇÃO (MOVE PARA ARQUIVADA E NOTIFICA SOLICITANTE) ---
-  app.post('/api/compras/requisicoes/:id/aprovar', requireSession, requirePermission('11.1'), (req, res) => {
+  app.post('/api/compras/requisicoes/:id/aprovar', requireSession, requireAccess, (req, res) => {
     try {
       const userRole = getUserRoleInPurchases(req.authUser.id, req.authUser.role);
       if (userRole !== 'APROVADOR' && req.authUser.role !== 'MASTER') {
-        return res.status(403).json({ error: 'Apenas aprovadores podem aprovar requisições.' });
+        return res.status(403).json({ error: 'Apenas aprovadores podem aprovar solicitações.' });
       }
 
       const requisicao = db.prepare(`SELECT * FROM compras_requisicoes WHERE id = ?`).get(req.params.id);
-      if (!requisicao) return res.status(404).json({ error: 'Requisição não encontrada.' });
+      if (!requisicao) return res.status(404).json({ error: 'Solicitação não encontrada.' });
       if (requisicao.status === 'APROVADO') {
-        return res.status(400).json({ error: 'Esta requisição já foi aprovada.' });
+        return res.status(400).json({ error: 'Esta solicitação já foi aprovada.' });
       }
 
       const observacao = String(req.body?.observacoes || req.body?.motivo || '').trim();
@@ -404,32 +526,32 @@ export function registerPurchaseRoutes(app, {
       // Notifica o SOLICITANTE
       createNotification(db, {
         userId: requisicao.solicitante_id,
-        titulo: `✅ Requisição Aprovada (${requisicao.id})`,
-        mensagem: `Sua solicitação de compra (${requisicao.produto_servico}) foi aprovada por ${aprovadorNome}.`,
+        titulo: `✅ Solicitação Aprovada (${requisicao.id})`,
+        mensagem: `Sua solicitação (${requisicao.produto_servico} - ${requisicao.fornecedor_nome || ''}) foi aprovada por ${aprovadorNome}.`,
         tipo: 'COMPRAS_APROVADO',
-        link: '/administrativo/compras'
+        link: '/financeiro/solicitacoes'
       });
 
       const atualizado = db.prepare(`SELECT * FROM compras_requisicoes WHERE id = ?`).get(req.params.id);
       return res.json({ success: true, requisicao: atualizado });
     } catch (error) {
-      console.error('Erro ao aprovar requisição:', error.message);
-      return res.status(500).json({ error: 'Não foi possível aprovar a requisição.' });
+      console.error('Erro ao aprovar solicitação:', error.message);
+      return res.status(500).json({ error: 'Não foi possível aprovar a solicitação no banco SQLite.' });
     }
   });
 
   // --- ROTA: NEGAR REQUISIÇÃO (MOVE PARA ARQUIVADA E NOTIFICA SOLICITANTE) ---
-  app.post('/api/compras/requisicoes/:id/negar', requireSession, requirePermission('11.1'), (req, res) => {
+  app.post('/api/compras/requisicoes/:id/negar', requireSession, requireAccess, (req, res) => {
     try {
       const userRole = getUserRoleInPurchases(req.authUser.id, req.authUser.role);
       if (userRole !== 'APROVADOR' && req.authUser.role !== 'MASTER') {
-        return res.status(403).json({ error: 'Apenas aprovadores podem negar requisições.' });
+        return res.status(403).json({ error: 'Apenas aprovadores podem negar solicitações.' });
       }
 
       const requisicao = db.prepare(`SELECT * FROM compras_requisicoes WHERE id = ?`).get(req.params.id);
-      if (!requisicao) return res.status(404).json({ error: 'Requisição não encontrada.' });
+      if (!requisicao) return res.status(404).json({ error: 'Solicitação não encontrada.' });
       if (requisicao.status === 'NEGADO') {
-        return res.status(400).json({ error: 'Esta requisição já foi negada.' });
+        return res.status(400).json({ error: 'Esta solicitação já foi negada.' });
       }
 
       const observacao = String(req.body?.observacoes || req.body?.motivo || '').trim();
@@ -448,7 +570,7 @@ export function registerPurchaseRoutes(app, {
         WHERE id = ?
       `).run(req.authUser.id, aprovadorNome, observacao, now, now, req.params.id);
 
-      const msgTexto = observacao ? `Requisição Negada: ${observacao}` : 'Requisição Negada pelo aprovador.';
+      const msgTexto = observacao ? `Solicitação Negada: ${observacao}` : 'Solicitação Negada pelo aprovador.';
       db.prepare(`
         INSERT INTO compras_mensagens (id, requisicao_id, autor_id, autor_nome, autor_role, mensagem, created_at)
         VALUES (?, ?, ?, ?, ?, ?, ?)
@@ -465,37 +587,42 @@ export function registerPurchaseRoutes(app, {
       // Notifica o SOLICITANTE
       createNotification(db, {
         userId: requisicao.solicitante_id,
-        titulo: `❌ Requisição Negada (${requisicao.id})`,
-        mensagem: `Sua solicitação de compra (${requisicao.produto_servico}) foi negada por ${aprovadorNome}.${observacao ? ` Motivo: "${observacao}"` : ''}`,
+        titulo: `❌ Solicitação Negada (${requisicao.id})`,
+        mensagem: `Sua solicitação (${requisicao.produto_servico}) foi negada por ${aprovadorNome}.${observacao ? ` Motivo: "${observacao}"` : ''}`,
         tipo: 'COMPRAS_NEGADO',
-        link: '/administrativo/compras'
+        link: '/financeiro/solicitacoes'
       });
 
       const atualizado = db.prepare(`SELECT * FROM compras_requisicoes WHERE id = ?`).get(req.params.id);
       return res.json({ success: true, requisicao: atualizado });
     } catch (error) {
-      console.error('Erro ao negar requisição:', error.message);
-      return res.status(500).json({ error: 'Não foi possível negar a requisição.' });
+      console.error('Erro ao negar solicitação:', error.message);
+      return res.status(500).json({ error: 'Não foi possível negar a solicitação no SQLite.' });
     }
   });
 
   // --- ROTA: REABRIR REQUISIÇÃO NEGADA (NOTIFICA APROVADORES QUE INTERAGIRAM) ---
-  app.post('/api/compras/requisicoes/:id/reabrir', requireSession, requirePermission('11.1'), (req, res) => {
+  app.post('/api/compras/requisicoes/:id/reabrir', requireSession, requireAccess, (req, res) => {
     try {
       const requisicao = db.prepare(`SELECT * FROM compras_requisicoes WHERE id = ?`).get(req.params.id);
-      if (!requisicao) return res.status(404).json({ error: 'Requisição não encontrada.' });
+      if (!requisicao) return res.status(404).json({ error: 'Solicitação não encontrada.' });
 
       const isOwner = requisicao.solicitante_id === req.authUser.id;
       const isMaster = req.authUser.role === 'MASTER';
 
       if (!isOwner && !isMaster) {
-        return res.status(403).json({ error: 'Apenas o solicitante pode reabrir esta requisição.' });
+        return res.status(403).json({ error: 'Apenas o solicitante ou Master pode reabrir esta solicitação.' });
       }
 
       const mensagem = String(req.body?.mensagem || '').trim();
+      const fornecedor_nome = req.body?.fornecedor_nome ? String(req.body.fornecedor_nome).trim() : requisicao.fornecedor_nome;
+      const fornecedor_contato = req.body?.fornecedor_contato ? String(req.body.fornecedor_contato).trim() : requisicao.fornecedor_contato;
+      const forma_pagamento = req.body?.forma_pagamento ? String(req.body.forma_pagamento).trim().toUpperCase() : requisicao.forma_pagamento;
+      const quantidade_parcelas = req.body?.quantidade_parcelas !== undefined ? Math.max(1, Number(req.body.quantidade_parcelas) || 1) : requisicao.quantidade_parcelas;
+      const departamento_centro_custo = req.body?.departamento_centro_custo ? String(req.body.departamento_centro_custo).trim() : requisicao.departamento_centro_custo;
       const produto_servico = req.body?.produto_servico ? String(req.body.produto_servico).trim() : requisicao.produto_servico;
       const valor = req.body?.valor !== undefined ? Number(req.body.valor) : requisicao.valor;
-      const quantidade = req.body?.quantidade !== undefined ? Number(req.body.quantidade) : requisicao.quantidade;
+      const quantidade = req.body?.quantidade !== undefined ? Math.max(1, Number(req.body.quantidade) || 1) : requisicao.quantidade;
       const observacoes = req.body?.observacoes !== undefined ? String(req.body.observacoes).trim() : requisicao.observacoes;
 
       const now = new Date().toISOString();
@@ -505,6 +632,12 @@ export function registerPurchaseRoutes(app, {
         UPDATE compras_requisicoes
         SET status = 'REABERTO',
             arquivado = 0,
+            arquivado_manualmente = 0,
+            fornecedor_nome = ?,
+            fornecedor_contato = ?,
+            forma_pagamento = ?,
+            quantidade_parcelas = ?,
+            departamento_centro_custo = ?,
             produto_servico = ?,
             valor = ?,
             quantidade = ?,
@@ -513,7 +646,19 @@ export function registerPurchaseRoutes(app, {
             decidido_em = NULL,
             updated_at = ?
         WHERE id = ?
-      `).run(produto_servico, valor, quantidade, observacoes, now, req.params.id);
+      `).run(
+        fornecedor_nome,
+        fornecedor_contato,
+        forma_pagamento,
+        quantidade_parcelas,
+        departamento_centro_custo,
+        produto_servico,
+        valor,
+        quantidade,
+        observacoes,
+        now,
+        req.params.id
+      );
 
       const msgTexto = mensagem
         ? `Solicitação Reaberta pelo solicitante: ${mensagem}`
@@ -542,32 +687,32 @@ export function registerPurchaseRoutes(app, {
         titulo: `🔄 Solicitação Reaberta (${requisicao.id})`,
         mensagem: `${userName} reabriu a solicitação de ${produto_servico}: "${mensagem || 'Para nova análise'}"`,
         tipo: 'COMPRAS_REABERTO',
-        link: '/administrativo/compras'
+        link: '/financeiro/solicitacoes'
       });
 
       const atualizado = db.prepare(`SELECT * FROM compras_requisicoes WHERE id = ?`).get(req.params.id);
       return res.json({ success: true, requisicao: atualizado });
     } catch (error) {
-      console.error('Erro ao reabrir requisição:', error.message);
-      return res.status(500).json({ error: 'Não foi possível reabrir a requisição.' });
+      console.error('Erro ao reabrir solicitação:', error.message);
+      return res.status(500).json({ error: 'Não foi possível reabrir a solicitação no SQLite.' });
     }
   });
 
   // --- ROTA: ENVIAR MENSAGEM NA REQUISIÇÃO (NOTIFICAÇÃO DIRECIONADA) ---
-  app.post('/api/compras/requisicoes/:id/mensagens', requireSession, requirePermission('11.1'), (req, res) => {
+  app.post('/api/compras/requisicoes/:id/mensagens', requireSession, requireAccess, (req, res) => {
     const mensagem = String(req.body?.mensagem || '').trim();
     if (!mensagem) return res.status(400).json({ error: 'O texto da mensagem é obrigatório.' });
 
     try {
       const requisicao = db.prepare(`SELECT * FROM compras_requisicoes WHERE id = ?`).get(req.params.id);
-      if (!requisicao) return res.status(404).json({ error: 'Requisição não encontrada.' });
+      if (!requisicao) return res.status(404).json({ error: 'Solicitação não encontrada.' });
 
       const userRole = getUserRoleInPurchases(req.authUser.id, req.authUser.role);
       const isOwner = requisicao.solicitante_id === req.authUser.id;
       const isApprover = userRole === 'APROVADOR' || req.authUser.role === 'MASTER';
 
       if (!isOwner && !isApprover) {
-        return res.status(403).json({ error: 'Sem permissão para comentar nesta requisição.' });
+        return res.status(403).json({ error: 'Sem permissão para comentar nesta solicitação.' });
       }
 
       const msgId = randomUUID();
@@ -606,7 +751,7 @@ export function registerPurchaseRoutes(app, {
             titulo: `💬 Mensagem do Aprovador (${requisicao.id})`,
             mensagem: `${autorNome}: "${mensagem}"`,
             tipo: 'COMPRAS_MENSAGEM',
-            link: '/administrativo/compras'
+            link: '/financeiro/solicitacoes'
           });
         }
       } else {
@@ -622,7 +767,7 @@ export function registerPurchaseRoutes(app, {
           titulo: `💬 Resposta do Solicitante (${requisicao.id})`,
           mensagem: `${autorNome}: "${mensagem}"`,
           tipo: 'COMPRAS_MENSAGEM',
-          link: '/administrativo/compras'
+          link: '/financeiro/solicitacoes'
         });
       }
 
@@ -632,7 +777,7 @@ export function registerPurchaseRoutes(app, {
         novoStatus
       });
     } catch (error) {
-      console.error('Erro ao postar mensagem na requisição:', error.message);
+      console.error('Erro ao postar mensagem na solicitação:', error.message);
       return res.status(500).json({ error: 'Não foi possível enviar a mensagem.' });
     }
   });

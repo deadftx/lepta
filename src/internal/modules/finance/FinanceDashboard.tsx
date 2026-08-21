@@ -1,4 +1,4 @@
-import { FileSpreadsheet, ArrowRight, Landmark } from 'lucide-react';
+import { FileSpreadsheet, ArrowRight, Landmark, CreditCard } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../../core/AuthContext';
 import { hasPermission } from '../../core/permissions';
@@ -8,6 +8,7 @@ const FinanceDashboard = () => {
   const { user } = useAuth();
   const canAccessExtratos = hasPermission(user, '7.1');
   const canAccessGrafeno = hasPermission(user, '7.2');
+  const canAccessSolicitacoes = hasPermission(user, '7.3');
 
   return (
     <div className="internal-dashboard-page fade-in">
@@ -17,6 +18,21 @@ const FinanceDashboard = () => {
       </div>
 
       <div className="dashboard-stats" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))' }}>
+        {canAccessSolicitacoes && (
+          <div className="stat-card">
+            <div className="stat-icon" style={{ background: 'rgba(59, 130, 246, 0.1)', color: '#3b82f6' }}>
+              <CreditCard size={24} />
+            </div>
+            <div className="stat-info">
+              <h3>Solicitações Financeiras</h3>
+              <p style={{ marginTop: '0.5rem', color: 'var(--text-muted)' }}>Abertura de solicitações, esteira de aprovação e histórico de compras.</p>
+              <Link to="/financeiro/solicitacoes" className="btn-outline" style={{ marginTop: '1rem', display: 'inline-flex', alignItems: 'center', gap: '0.5rem' }}>
+                Acessar Solicitações <ArrowRight size={16} />
+              </Link>
+            </div>
+          </div>
+        )}
+
         {canAccessExtratos && (
           <div className="stat-card">
             <div className="stat-icon" style={{ background: 'rgba(255, 138, 0, 0.1)', color: 'var(--accent-orange)' }}>

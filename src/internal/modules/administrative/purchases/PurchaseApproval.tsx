@@ -3,20 +3,31 @@ import {
   ShoppingCart, ShieldCheck, PlusCircle, ListOrdered, CheckCircle2,
   XCircle, Clock, MessageSquare, Send, X, Archive, RotateCcw,
   DollarSign, Package, FileText, AlertCircle, RefreshCw, Sparkles, User,
-  Eye, HelpCircle, Edit3
+  Eye, HelpCircle, Edit3, CreditCard, Building2, Phone, Calendar,
+  Layers, Check, ArrowRight, ShieldAlert, Lock
 } from 'lucide-react';
 import { API_BASE_URL, getAuthHeaders } from '../../../../config/api';
+import { useAuth } from '../../../core/AuthContext';
 import './PurchaseApproval.css';
 
 interface PurchaseRequest {
   id: string;
   numero: number;
+  fornecedor_nome: string;
+  fornecedor_contato: string;
+  forma_pagamento: string;
+  quantidade_parcelas: number;
+  departamento_centro_custo: string;
   produto_servico: string;
   valor: number;
   quantidade: number;
   observacoes: string;
   status: 'PENDENTE' | 'REABERTO' | 'AGUARDANDO_RESPOSTA_SOLICITANTE' | 'AGUARDANDO_RESPOSTA_APROVADOR' | 'APROVADO' | 'NEGADO';
   arquivado?: number;
+  arquivado_manualmente?: number;
+  arquivado_por?: string | null;
+  arquivado_em?: string | null;
+  motivo_arquivamento?: string | null;
   solicitante_id: string;
   solicitante_nome: string;
   solicitante_email: string;
@@ -41,12 +52,19 @@ interface PurchaseMessage {
 }
 
 export const PurchaseApproval: React.FC = () => {
+  const { user } = useAuth();
+  const isMaster = user?.role === 'MASTER';
+
   const [activeTab, setActiveTab] = useState<'review' | 'new' | 'my_requests' | 'archived'>('new');
   const [isApprover, setIsApprover] = useState<boolean>(false);
-  const [currentUserId, setCurrentUserId] = useState<string>('');
   const [loadingRole, setLoadingRole] = useState(true);
 
   // Form State
+  const [fornecedorNome, setFornecedorNome] = useState('');
+  const [fornecedorContato, setFornecedorContato] = useState('');
+  const [formaPagamento, setFormaPagamento] = useState<'PIX' | 'DINHEIRO' | 'DEBITO' | 'CREDITO'>('PIX');
+  const [quantidadeParcelas, setQuantidadeParcelas] = useState<number>(1);
+  const [departamentoCentroCusto, setDepartamentoCentroCusto] = useState('');
   const [produtoServico, setProdutoServico] = useState('');
   const [valorDisplay, setValorDisplay] = useState('');
   const [valorNumeric, setValorNumeric] = useState<number>(0);
@@ -75,12 +93,23 @@ export const PurchaseApproval: React.FC = () => {
   // Reopen Modal State
   const [reopenTarget, setReopenTarget] = useState<PurchaseRequest | null>(null);
   const [reopenMessage, setReopenMessage] = useState('');
+  const [reopenFornecedorNome, setReopenFornecedorNome] = useState('');
+  const [reopenFornecedorContato, setReopenFornecedorContato] = useState('');
+  const [reopenFormaPagamento, setReopenFormaPagamento] = useState<'PIX' | 'DINHEIRO' | 'DEBITO' | 'CREDITO'>('PIX');
+  const [reopenQuantidadeParcelas, setReopenQuantidadeParcelas] = useState<number>(1);
+  const [reopenDepartamento, setReopenDepartamento] = useState('');
   const [reopenProduto, setReopenProduto] = useState('');
   const [reopenValorDisplay, setReopenValorDisplay] = useState('');
   const [reopenValorNumeric, setReopenValorNumeric] = useState<number>(0);
   const [reopenQuantidade, setReopenQuantidade] = useState<number>(1);
   const [reopenObservacoes, setReopenObservacoes] = useState('');
   const [reopenLoading, setReopenLoading] = useState(false);
+
+  // Master Manual Archive Modal State
+  const [manualArchiveTarget, setManualArchiveTarget] = useState<PurchaseRequest | null>(null);
+  const [manualArchiveType, setManualArchiveType] = useState<'ARCHIVE' | 'UNARCHIVE'>('ARCHIVE');
+  const [manualArchiveMotivo, setManualArchiveMotivo] = useState('');
+  const [manualArchiveLoading, setManualArchiveLoading] = useState(false);
 
   // Toast
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -118,24 +147,16 @@ export const PurchaseApproval: React.FC = () => {
 
   useEffect(() => {
     fetchUserRole();
-    // Recupera dados do usuário do localStorage se houver
-    try {
-      const authStr = localStorage.getItem('lepta_auth_session') || localStorage.getItem('user');
-      if (authStr) {
-        const u = JSON.parse(authStr);
-        if (u.id) setCurrentUserId(u.id);
-      }
-    } catch {}
   }, [fetchUserRole]);
 
-  // 2. Carrega todos os dados (Fila ativa, Minhas requisições, Arquivadas)
+  // 2. Carrega todos os dados do SQLite (Fila ativa, Minhas solicitações, Arquivadas)
   const fetchData = useCallback(async (isBackground = false) => {
     if (!isBackground) setLoadingData(true);
     try {
       const headers = getAuthHeaders();
 
-      // Fila de revisão (apenas aprovadores)
-      if (isApprover) {
+      // Fila de revisão (apenas aprovadores e master)
+      if (isApprover || isMaster) {
         const resQueue = await fetch(`${API_BASE_URL}/api/compras/fila-aprovacao`, { headers });
         if (resQueue.ok) {
           const data = await resQueue.json();
@@ -157,7 +178,7 @@ export const PurchaseApproval: React.FC = () => {
         setArchivedRequests(data);
       }
 
-      // Se houver modal aberto, atualiza silenciosamente os detalhes e mensagens
+      // Se houver modal aberto, atualiza silenciosamente os detalhes e mensagens do SQLite
       if (selectedRequestRef.current) {
         const resReq = await fetch(`${API_BASE_URL}/api/compras/requisicoes/${selectedRequestRef.current}`, { headers });
         if (resReq.ok) {
@@ -166,17 +187,17 @@ export const PurchaseApproval: React.FC = () => {
             if (!prev) return null;
             return {
               ...data,
-              // Preserva inputs locais se houver
+              mensagens: data.mensagens
             };
           });
         }
       }
     } catch (err) {
-      console.error('Erro ao sincronizar dados de compras:', err);
+      console.error('Erro ao sincronizar dados de solicitações:', err);
     } finally {
       if (!isBackground) setLoadingData(false);
     }
-  }, [isApprover]);
+  }, [isApprover, isMaster]);
 
   // Carga inicial
   useEffect(() => {
@@ -185,7 +206,7 @@ export const PurchaseApproval: React.FC = () => {
     }
   }, [loadingRole, fetchData]);
 
-  // 3. POLLING EM TEMPO REAL (ONLINE): Atualiza a cada 3 segundos silenciosamente
+  // Polling em tempo real online: atualiza a cada 3 segundos
   useEffect(() => {
     if (loadingRole) return;
     const interval = setInterval(() => {
@@ -197,7 +218,7 @@ export const PurchaseApproval: React.FC = () => {
     return () => clearInterval(interval);
   }, [loadingRole, fetchData]);
 
-  // Máscara de moeda R$
+  // Máscaras de Moeda R$
   const handleCurrencyInput = (e: React.ChangeEvent<HTMLInputElement>) => {
     const rawDigits = e.target.value.replace(/\D/g, '');
     if (!rawDigits) {
@@ -222,13 +243,29 @@ export const PurchaseApproval: React.FC = () => {
     setReopenValorDisplay(num.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }));
   };
 
-  // Enviar Nova Requisição
+  // Enviar Nova Solicitação
   const handleSubmitRequest = async (e: React.FormEvent) => {
     e.preventDefault();
     setFormError('');
 
+    if (!fornecedorNome.trim()) {
+      setFormError('Informe o Nome do Fornecedor / Prestador de serviço.');
+      return;
+    }
+    if (!fornecedorContato.trim()) {
+      setFormError('Informe o Contato do Fornecedor / Prestador de serviço.');
+      return;
+    }
+    if (!formaPagamento) {
+      setFormError('Selecione a Forma de Pagamento.');
+      return;
+    }
+    if (!departamentoCentroCusto.trim()) {
+      setFormError('Informe o Departamento / Centro de Custo / Empresa / Cliente.');
+      return;
+    }
     if (!produtoServico.trim()) {
-      setFormError('Informe o Produto ou Serviço.');
+      setFormError('Informe a Descrição do Produto ou Serviço.');
       return;
     }
     if (!valorNumeric || valorNumeric <= 0) {
@@ -249,6 +286,11 @@ export const PurchaseApproval: React.FC = () => {
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
+          fornecedor_nome: fornecedorNome.trim(),
+          fornecedor_contato: fornecedorContato.trim(),
+          forma_pagamento: formaPagamento,
+          quantidade_parcelas: Math.max(1, quantidadeParcelas || 1),
+          departamento_centro_custo: departamentoCentroCusto.trim(),
           produto_servico: produtoServico.trim(),
           valor: valorNumeric,
           quantidade,
@@ -258,20 +300,25 @@ export const PurchaseApproval: React.FC = () => {
 
       if (!res.ok) {
         const errData = await res.json();
-        throw new Error(errData.error || 'Erro ao enviar requisição.');
+        throw new Error(errData.error || 'Erro ao enviar solicitação.');
       }
 
+      setFornecedorNome('');
+      setFornecedorContato('');
+      setFormaPagamento('PIX');
+      setQuantidadeParcelas(1);
+      setDepartamentoCentroCusto('');
       setProdutoServico('');
       setValorDisplay('');
       setValorNumeric(0);
       setQuantidade(1);
       setObservacoes('');
 
-      showToast('Requisição de compra enviada com sucesso para aprovação!');
+      showToast('Solicitação registrada no banco SQLite e enviada para aprovação!');
       fetchData(false);
       setActiveTab('my_requests');
     } catch (err: any) {
-      setFormError(err.message || 'Erro ao registrar requisição.');
+      setFormError(err.message || 'Erro ao registrar solicitação.');
     } finally {
       setSubmitting(false);
     }
@@ -298,7 +345,7 @@ export const PurchaseApproval: React.FC = () => {
     }
   };
 
-  // Aprovar Requisição (Arquiva como Aprovado)
+  // Aprovar Solicitação
   const handleApprove = async () => {
     if (!selectedRequest) return;
     setActionLoading(true);
@@ -317,7 +364,7 @@ export const PurchaseApproval: React.FC = () => {
         throw new Error(err.error || 'Falha ao aprovar.');
       }
 
-      showToast('Requisição APROVADA e movida para Arquivadas!');
+      showToast('Solicitação APROVADA e gravada no SQLite com sucesso!');
       setSelectedRequest(null);
       fetchData(false);
     } catch (err: any) {
@@ -327,7 +374,7 @@ export const PurchaseApproval: React.FC = () => {
     }
   };
 
-  // Negar Requisição (Arquiva como Negado)
+  // Negar Solicitação
   const handleDeny = async () => {
     if (!selectedRequest) return;
     setActionLoading(true);
@@ -346,7 +393,7 @@ export const PurchaseApproval: React.FC = () => {
         throw new Error(err.error || 'Falha ao negar.');
       }
 
-      showToast('Requisição NEGADA e movida para Arquivadas.');
+      showToast('Solicitação NEGADA e arquivada.');
       setSelectedRequest(null);
       fetchData(false);
     } catch (err: any) {
@@ -356,7 +403,49 @@ export const PurchaseApproval: React.FC = () => {
     }
   };
 
-  // Enviar Mensagem na Requisição (Atualiza Status Dinamicamente)
+  // Arquivar / Desarquivar Manualmente (Exclusivo para Lepta Master)
+  const handleOpenManualArchive = (req: PurchaseRequest, arquivar: boolean) => {
+    setManualArchiveTarget(req);
+    setManualArchiveType(arquivar ? 'ARCHIVE' : 'UNARCHIVE');
+    setManualArchiveMotivo('');
+  };
+
+  const handleConfirmManualArchive = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!manualArchiveTarget) return;
+
+    setManualArchiveLoading(true);
+    try {
+      const isArchiving = manualArchiveType === 'ARCHIVE';
+      const res = await fetch(`${API_BASE_URL}/api/compras/requisicoes/${manualArchiveTarget.id}/arquivar-manual`, {
+        method: 'POST',
+        headers: {
+          ...getAuthHeaders(),
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          arquivado: isArchiving,
+          motivo: manualArchiveMotivo.trim()
+        })
+      });
+
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || 'Falha ao processar arquivamento manual.');
+      }
+
+      showToast(isArchiving ? 'Solicitação arquivada manualmente pelo Master!' : 'Solicitação desarquivada e retornada à fila!');
+      setManualArchiveTarget(null);
+      if (selectedRequest?.id === manualArchiveTarget.id) setSelectedRequest(null);
+      fetchData(false);
+    } catch (err: any) {
+      alert(err.message || 'Erro ao processar ação de Master.');
+    } finally {
+      setManualArchiveLoading(false);
+    }
+  };
+
+  // Enviar Mensagem na Solicitação
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedRequest || !newMessageText.trim()) return;
@@ -379,7 +468,7 @@ export const PurchaseApproval: React.FC = () => {
           mensagens: [...(prev.mensagens || []), data.mensagem]
         } : null);
         setNewMessageText('');
-        showToast('Mensagem enviada com sucesso!');
+        showToast('Mensagem gravada no banco SQLite!');
         fetchData(true);
       }
     } catch (err) {
@@ -391,6 +480,11 @@ export const PurchaseApproval: React.FC = () => {
   const handleOpenReopen = (req: PurchaseRequest) => {
     setReopenTarget(req);
     setReopenMessage('');
+    setReopenFornecedorNome(req.fornecedor_nome || '');
+    setReopenFornecedorContato(req.fornecedor_contato || '');
+    setReopenFormaPagamento((req.forma_pagamento as any) || 'PIX');
+    setReopenQuantidadeParcelas(req.quantidade_parcelas || 1);
+    setReopenDepartamento(req.departamento_centro_custo || '');
     setReopenProduto(req.produto_servico);
     setReopenValorNumeric(req.valor);
     setReopenValorDisplay(req.valor.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }));
@@ -413,6 +507,11 @@ export const PurchaseApproval: React.FC = () => {
         },
         body: JSON.stringify({
           mensagem: reopenMessage.trim(),
+          fornecedor_nome: reopenFornecedorNome.trim(),
+          fornecedor_contato: reopenFornecedorContato.trim(),
+          forma_pagamento: reopenFormaPagamento,
+          quantidade_parcelas: reopenQuantidadeParcelas,
+          departamento_centro_custo: reopenDepartamento.trim(),
           produto_servico: reopenProduto.trim(),
           valor: reopenValorNumeric,
           quantidade: reopenQuantidade,
@@ -422,7 +521,7 @@ export const PurchaseApproval: React.FC = () => {
 
       if (!res.ok) {
         const err = await res.json();
-        throw new Error(err.error || 'Falha ao reabrir requisição.');
+        throw new Error(err.error || 'Falha ao reabrir solicitação.');
       }
 
       showToast('Solicitação REABERTA com sucesso e enviada para a fila ativa!');
@@ -437,8 +536,37 @@ export const PurchaseApproval: React.FC = () => {
     }
   };
 
-  // Renderizador de Status Badge
-  const renderStatusBadge = (status: string) => {
+  // Formatador de Moeda
+  const formatBrl = (val: number) => {
+    return Number(val || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+  };
+
+  // Formatador de Data
+  const formatDate = (isoStr: string) => {
+    if (!isoStr) return '-';
+    try {
+      const d = new Date(isoStr);
+      return d.toLocaleDateString('pt-BR', {
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+      });
+    } catch {
+      return isoStr;
+    }
+  };
+
+  // Renderizador de Badge de Status
+  const renderStatusBadge = (status: string, arquivadoManualmente?: number) => {
+    if (arquivadoManualmente === 1) {
+      return (
+        <span className="pa-status-badge" style={{ background: 'rgba(168, 85, 247, 0.15)', color: '#c084fc', border: '1px solid rgba(168, 85, 247, 0.3)' }}>
+          <Archive size={12} /> Arquivado por Master
+        </span>
+      );
+    }
     switch (status) {
       case 'PENDENTE':
         return <span className="pa-status-badge pending"><Clock size={12} /> Pendente</span>;
@@ -463,8 +591,10 @@ export const PurchaseApproval: React.FC = () => {
       const matchStatus = statusFilter === 'ALL' || item.status === statusFilter;
       const q = searchQuery.toLowerCase().trim();
       const matchSearch = !q ||
-        item.produto_servico.toLowerCase().includes(q) ||
-        item.solicitante_nome.toLowerCase().includes(q) ||
+        (item.produto_servico && item.produto_servico.toLowerCase().includes(q)) ||
+        (item.fornecedor_nome && item.fornecedor_nome.toLowerCase().includes(q)) ||
+        (item.departamento_centro_custo && item.departamento_centro_custo.toLowerCase().includes(q)) ||
+        (item.solicitante_nome && item.solicitante_nome.toLowerCase().includes(q)) ||
         item.id.toLowerCase().includes(q);
       return matchStatus && matchSearch;
     });
@@ -476,8 +606,10 @@ export const PurchaseApproval: React.FC = () => {
       const matchStatus = statusFilter === 'ALL' || item.status === statusFilter;
       const q = searchQuery.toLowerCase().trim();
       const matchSearch = !q ||
-        item.produto_servico.toLowerCase().includes(q) ||
-        item.solicitante_nome.toLowerCase().includes(q) ||
+        (item.produto_servico && item.produto_servico.toLowerCase().includes(q)) ||
+        (item.fornecedor_nome && item.fornecedor_nome.toLowerCase().includes(q)) ||
+        (item.departamento_centro_custo && item.departamento_centro_custo.toLowerCase().includes(q)) ||
+        (item.solicitante_nome && item.solicitante_nome.toLowerCase().includes(q)) ||
         item.id.toLowerCase().includes(q);
       return matchStatus && matchSearch;
     });
@@ -485,7 +617,7 @@ export const PurchaseApproval: React.FC = () => {
 
   // Métricas do Topo
   const metrics = useMemo(() => {
-    const list = isApprover ? reviewQueue : myRequests;
+    const list = isApprover || isMaster ? reviewQueue : myRequests;
     const pending = list.filter(r => r.status === 'PENDENTE');
     const reopened = list.filter(r => r.status === 'REABERTO');
     const waiting = list.filter(r => r.status.startsWith('AGUARDANDO_RESPOSTA'));
@@ -497,56 +629,107 @@ export const PurchaseApproval: React.FC = () => {
       archivedCount: archivedRequests.length,
       pendingValue
     };
-  }, [reviewQueue, myRequests, archivedRequests, isApprover]);
-
-  const formatBrl = (val: number) => Number(val || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-  const formatDate = (iso: string) => iso ? new Date(iso).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) : '—';
+  }, [reviewQueue, myRequests, archivedRequests, isApprover, isMaster]);
 
   return (
     <div className="pa-container">
-      {/* Header */}
+      {/* Toast Notification */}
+      {toastMessage && (
+        <div className="pa-toast">
+          <CheckCircle2 size={18} color="#34d399" />
+          <span>{toastMessage}</span>
+        </div>
+      )}
+
+      {/* HEADER */}
       <div className="pa-header">
         <div className="pa-header-left">
           <div className="pa-icon-badge">
-            <ShoppingCart size={26} />
+            <CreditCard size={28} />
           </div>
           <div>
-            <h1>Aprovação de Compras</h1>
+            <h1>Solicitações Financeiras</h1>
             <p className="pa-subtitle">
-              Esteira corporativa para solicitação, revisão, aprovação e mensagens de compras.
+              Esteira corporativa para solicitação de pagamentos, fornecedores, centro de custo e esteira de aprovação.
             </p>
           </div>
         </div>
 
         <div className="pa-header-badges">
-          <div className="pa-live-indicator" title="Atualizando automaticamente sem necessidade de recarregar a página">
-            <div className="pa-live-dot" />
-            <span>Online</span>
+          <div className="pa-live-indicator">
+            <span className="pa-live-dot" /> SQLite Sincronizado
           </div>
-
-          <span className={`pa-role-badge ${isApprover ? 'approver' : 'requester'}`}>
-            {isApprover ? (
-              <>
-                <ShieldCheck size={16} /> Aprovador
-              </>
-            ) : (
-              <>
-                <ShoppingCart size={16} /> Requisitante
-              </>
-            )}
-          </span>
+          {isMaster ? (
+            <span className="pa-role-badge" style={{ background: 'rgba(168, 85, 247, 0.2)', color: '#c084fc', border: '1px solid rgba(168, 85, 247, 0.4)' }}>
+              <ShieldAlert size={14} /> Lepta Master
+            </span>
+          ) : isApprover ? (
+            <span className="pa-role-badge approver">
+              <ShieldCheck size={14} /> Aprovador
+            </span>
+          ) : (
+            <span className="pa-role-badge requester">
+              <User size={14} /> Requisitante
+            </span>
+          )}
         </div>
       </div>
 
-      {/* Tabs */}
+      {/* MÉTRICAS KPI */}
+      <div className="pa-kpi-grid">
+        <div className="pa-kpi-card">
+          <div className="pa-kpi-header">
+            <span>Fila Pendente</span>
+            <Clock size={18} color="#f59e0b" />
+          </div>
+          <div className="pa-kpi-val" style={{ color: '#f59e0b' }}>
+            {metrics.pendingCount}
+          </div>
+          <p className="pa-kpi-sub">Aguardando primeira decisão</p>
+        </div>
+
+        <div className="pa-kpi-card">
+          <div className="pa-kpi-header">
+            <span>Reabertos</span>
+            <RotateCcw size={18} color="#c084fc" />
+          </div>
+          <div className="pa-kpi-val" style={{ color: '#c084fc' }}>
+            {metrics.reopenedCount}
+          </div>
+          <p className="pa-kpi-sub">Recursos reenviados</p>
+        </div>
+
+        <div className="pa-kpi-card">
+          <div className="pa-kpi-header">
+            <span>Em Discussão</span>
+            <MessageSquare size={18} color="#38bdf8" />
+          </div>
+          <div className="pa-kpi-val" style={{ color: '#38bdf8' }}>
+            {metrics.waitingCount}
+          </div>
+          <p className="pa-kpi-sub">Com mensagens pendentes</p>
+        </div>
+
+        <div className="pa-kpi-card">
+          <div className="pa-kpi-header">
+            <span>Total em Fila</span>
+            <DollarSign size={18} color="#34d399" />
+          </div>
+          <div className="pa-kpi-val" style={{ color: '#34d399', fontSize: '1.4rem' }}>
+            {formatBrl(metrics.pendingValue)}
+          </div>
+          <p className="pa-kpi-sub">Volume total sob análise</p>
+        </div>
+      </div>
+
+      {/* TABS DE NAVEGAÇÃO */}
       <div className="pa-tabs">
-        {isApprover && (
+        {(isApprover || isMaster) && (
           <button
-            type="button"
             className={`pa-tab ${activeTab === 'review' ? 'active' : ''}`}
             onClick={() => setActiveTab('review')}
           >
-            <ShieldCheck size={18} /> Revisar Requisições
+            <ShieldCheck size={18} /> Fila de Aprovação
             {reviewQueue.length > 0 && (
               <span className="pa-tab-counter">{reviewQueue.length}</span>
             )}
@@ -554,15 +737,13 @@ export const PurchaseApproval: React.FC = () => {
         )}
 
         <button
-          type="button"
           className={`pa-tab ${activeTab === 'new' ? 'active' : ''}`}
           onClick={() => setActiveTab('new')}
         >
-          <PlusCircle size={18} /> Nova Requisição
+          <PlusCircle size={18} /> Nova Solicitação
         </button>
 
         <button
-          type="button"
           className={`pa-tab ${activeTab === 'my_requests' ? 'active' : ''}`}
           onClick={() => setActiveTab('my_requests')}
         >
@@ -570,7 +751,6 @@ export const PurchaseApproval: React.FC = () => {
         </button>
 
         <button
-          type="button"
           className={`pa-tab ${activeTab === 'archived' ? 'active' : ''}`}
           onClick={() => setActiveTab('archived')}
         >
@@ -578,75 +758,21 @@ export const PurchaseApproval: React.FC = () => {
         </button>
       </div>
 
-      {/* Metrics Cards */}
-      <div className="pa-metrics-grid">
-        <div className="pa-metric-card">
-          <div>
-            <div className="pa-metric-label">Pendentes</div>
-            <div className="pa-metric-value">{metrics.pendingCount}</div>
-          </div>
-          <div className="pa-metric-icon pending">
-            <Clock size={22} />
-          </div>
-        </div>
-
-        <div className="pa-metric-card">
-          <div>
-            <div className="pa-metric-label">Reabertos</div>
-            <div className="pa-metric-value">{metrics.reopenedCount}</div>
-          </div>
-          <div className="pa-metric-icon reopened">
-            <RotateCcw size={22} />
-          </div>
-        </div>
-
-        <div className="pa-metric-card">
-          <div>
-            <div className="pa-metric-label">Aguardando Resposta</div>
-            <div className="pa-metric-value">{metrics.waitingCount}</div>
-          </div>
-          <div className="pa-metric-icon waiting">
-            <MessageSquare size={22} />
-          </div>
-        </div>
-
-        <div className="pa-metric-card">
-          <div>
-            <div className="pa-metric-label">Arquivadas</div>
-            <div className="pa-metric-value">{metrics.archivedCount}</div>
-          </div>
-          <div className="pa-metric-icon archived">
-            <Archive size={22} />
-          </div>
-        </div>
-
-        <div className="pa-metric-card">
-          <div>
-            <div className="pa-metric-label">Valor Ativo</div>
-            <div className="pa-metric-value" style={{ fontSize: '1.25rem' }}>
-              {formatBrl(metrics.pendingValue)}
-            </div>
-          </div>
-          <div className="pa-metric-icon total">
-            <DollarSign size={22} />
-          </div>
-        </div>
-      </div>
-
-      {/* TAB 1: REVISAR REQUISIÇÕES (PARA APROVADORES) */}
-      {activeTab === 'review' && isApprover && (
+      {/* TAB 1: FILA DE APROVAÇÃO ATIVA (APROVADORES E MASTER) */}
+      {(isApprover || isMaster) && activeTab === 'review' && (
         <div className="pa-table-card">
           <div className="pa-table-header">
             <h2>
-              <ShieldCheck size={18} /> Fila Ativa de Aprovação ({filteredReviewQueue.length})
+              <ShieldCheck size={18} /> Fila de Decisão Ativa ({filteredReviewQueue.length})
             </h2>
-            <div className="pa-table-filters">
+
+            <div className="pa-table-controls">
               <select
-                className="pa-filter-select"
+                className="pa-select"
                 value={statusFilter}
                 onChange={e => setStatusFilter(e.target.value)}
               >
-                <option value="ALL">Todos os Status Ativos</option>
+                <option value="ALL">Todos os Status</option>
                 <option value="PENDENTE">Pendentes</option>
                 <option value="REABERTO">Reabertos</option>
                 <option value="AGUARDANDO_RESPOSTA_APROVADOR">Aguardando Aprovador</option>
@@ -655,8 +781,8 @@ export const PurchaseApproval: React.FC = () => {
 
               <input
                 type="text"
-                placeholder="Buscar produto ou solicitante..."
                 className="pa-search-input"
+                placeholder="Buscar fornecedor, solicitante, centro de custo..."
                 value={searchQuery}
                 onChange={e => setSearchQuery(e.target.value)}
               />
@@ -668,59 +794,73 @@ export const PurchaseApproval: React.FC = () => {
               <thead>
                 <tr>
                   <th>Código</th>
-                  <th>Produto / Serviço</th>
+                  <th>Fornecedor / Prestador</th>
+                  <th>Descrição / Serviço</th>
+                  <th>Pagamento</th>
+                  <th>Centro de Custo</th>
                   <th>Solicitante</th>
-                  <th>Qtd</th>
                   <th>Valor Total</th>
-                  <th>Data</th>
                   <th>Status</th>
                   <th>Ações</th>
                 </tr>
               </thead>
               <tbody>
-                {loadingData && reviewQueue.length === 0 ? (
+                {filteredReviewQueue.length === 0 ? (
                   <tr>
-                    <td colSpan={8} className="pa-empty">
-                      <RefreshCw size={24} className="pwc-spinner" style={{ margin: '0 auto 8px' }} />
-                      <div>Carregando fila de aprovação...</div>
-                    </td>
-                  </tr>
-                ) : filteredReviewQueue.length === 0 ? (
-                  <tr>
-                    <td colSpan={8} className="pa-empty">
-                      Nenhuma requisição de compra ativa encontrada na fila.
+                    <td colSpan={9} className="pa-empty">
+                      Nenhuma solicitação pendente no momento.
                     </td>
                   </tr>
                 ) : (
                   filteredReviewQueue.map(item => (
                     <tr key={item.id}>
-                      <td style={{ fontWeight: 600, color: '#93c5fd' }}>{item.id}</td>
-                      <td style={{ fontWeight: 600 }}>{item.produto_servico}</td>
+                      <td><span className="pa-code-badge">{item.id}</span></td>
                       <td>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <strong>{item.fornecedor_nome || '-'}</strong>
+                        {item.fornecedor_contato && (
+                          <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>{item.fornecedor_contato}</div>
+                        )}
+                      </td>
+                      <td>{item.produto_servico}</td>
+                      <td>
+                        <span style={{ fontWeight: 600, color: '#60a5fa' }}>{item.forma_pagamento || '-'}</span>
+                        {item.quantidade_parcelas > 1 && (
+                          <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>{item.quantidade_parcelas}x parcelas</div>
+                        )}
+                      </td>
+                      <td>{item.departamento_centro_custo || '-'}</td>
+                      <td>
+                        <div className="pa-solicitante-cell">
                           <User size={14} color="#94a3b8" />
                           <span>{item.solicitante_nome}</span>
                         </div>
                       </td>
-                      <td>{item.quantidade}</td>
-                      <td style={{ fontWeight: 700, color: '#f8fafc' }}>
-                        {formatBrl(item.valor * item.quantidade)}
-                      </td>
-                      <td>{formatDate(item.created_at)}</td>
-                      <td>{renderStatusBadge(item.status)}</td>
                       <td>
-                        <button
-                          type="button"
-                          className="pa-action-btn"
-                          onClick={() => handleOpenDetails(item.id)}
-                        >
-                          <Eye size={14} /> Revisar
-                          {Boolean(item.total_mensagens) && (
-                            <span style={{ background: '#2563eb', color: '#fff', padding: '1px 6px', borderRadius: '9999px', fontSize: '0.7rem' }}>
-                              {item.total_mensagens}
-                            </span>
+                        <span className="pa-price-highlight">
+                          {formatBrl(item.valor * item.quantidade)}
+                        </span>
+                      </td>
+                      <td>{renderStatusBadge(item.status, item.arquivado_manualmente)}</td>
+                      <td>
+                        <div style={{ display: 'flex', gap: '6px' }}>
+                          <button
+                            className="pa-btn-detail"
+                            onClick={() => handleOpenDetails(item.id)}
+                            title="Avaliar Solicitação"
+                          >
+                            <Eye size={15} /> Analisar
+                          </button>
+                          {isMaster && (
+                            <button
+                              className="pa-btn-archive-master"
+                              style={{ padding: '6px 10px', fontSize: '0.75rem' }}
+                              onClick={() => handleOpenManualArchive(item, true)}
+                              title="Arquivar Manualmente (Exclusivo Master)"
+                            >
+                              <Archive size={13} />
+                            </button>
                           )}
-                        </button>
+                        </div>
                       </td>
                     </tr>
                   ))
@@ -731,15 +871,31 @@ export const PurchaseApproval: React.FC = () => {
         </div>
       )}
 
-      {/* TAB 2: NOVA REQUISIÇÃO DE COMPRA */}
+      {/* TAB 2: NOVA SOLICITAÇÃO FINANCEIRA */}
       {activeTab === 'new' && (
         <div className="pa-form-card">
           <h2>
-            <Package size={22} color="#3b82f6" /> Nova Requisição de Compra
+            <CreditCard size={22} color="#3b82f6" /> Nova Solicitação Financeira
           </h2>
           <p className="pa-form-subtitle">
-            Preencha os campos abaixo para submeter a solicitação para a esteira de aprovação.
+            Preencha os campos abaixo para submeter a solicitação de pagamento / serviço para a esteira de aprovação.
           </p>
+
+          {/* Vínculo automático do Colaborador Responsável da Sessão */}
+          <div className="pa-user-session-card">
+            <div className="pa-user-session-avatar">
+              <User size={22} />
+            </div>
+            <div className="pa-user-session-info">
+              <span className="pa-user-session-label">Colaborador Responsável (Sessão Ativa)</span>
+              <span className="pa-user-session-name">
+                {user?.username || 'Usuário Conectado'} {user?.email ? `(${user.email})` : ''}
+              </span>
+              <span className="pa-user-session-note">
+                Vínculo preenchido automaticamente a partir do seu login no sistema.
+              </span>
+            </div>
+          </div>
 
           {formError && (
             <div style={{ background: 'rgba(239, 68, 68, 0.15)', border: '1px solid #ef4444', color: '#fca5a5', padding: '12px 16px', borderRadius: '10px', marginBottom: '1.5rem', display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -749,23 +905,108 @@ export const PurchaseApproval: React.FC = () => {
 
           <form onSubmit={handleSubmitRequest}>
             <div className="pa-form-grid">
-              <div className="pa-form-group full-width">
+              {/* Nome do Fornecedor */}
+              <div className="pa-form-group">
                 <label>
-                  Produto / Serviço <span className="pa-required">*</span>
+                  Nome do Fornecedor / Prestador de Serviço <span className="pa-required">*</span>
                 </label>
                 <input
                   type="text"
                   className="pa-input"
-                  placeholder="Ex: Licença de Software, Equipamento de TI, Material de Escritório..."
+                  placeholder="Ex: Tech Soluções LTDA, João Silva ME..."
+                  value={fornecedorNome}
+                  onChange={e => setFornecedorNome(e.target.value)}
+                  required
+                />
+              </div>
+
+              {/* Contato do Fornecedor */}
+              <div className="pa-form-group">
+                <label>
+                  Contato do Fornecedor / Prestador de Serviço <span className="pa-required">*</span>
+                </label>
+                <input
+                  type="text"
+                  className="pa-input"
+                  placeholder="Ex: (11) 99999-9999 / financeiro@fornecedor.com.br"
+                  value={fornecedorContato}
+                  onChange={e => setFornecedorContato(e.target.value)}
+                  required
+                />
+              </div>
+
+              {/* Forma de Pagamento */}
+              <div className="pa-form-group">
+                <label>
+                  Forma de Pagamento <span className="pa-required">*</span>
+                </label>
+                <div className="pa-payment-grid">
+                  {(['PIX', 'DINHEIRO', 'DEBITO', 'CREDITO'] as const).map(op => (
+                    <button
+                      key={op}
+                      type="button"
+                      className={`pa-payment-option-btn ${formaPagamento === op ? 'active' : ''}`}
+                      onClick={() => setFormaPagamento(op)}
+                    >
+                      {op === 'PIX' && '⚡ PIX'}
+                      {op === 'DINHEIRO' && '💵 Dinheiro'}
+                      {op === 'DEBITO' && '💳 Débito'}
+                      {op === 'CREDITO' && '💳 Crédito'}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Quantidade de Parcelas */}
+              <div className="pa-form-group">
+                <label>
+                  Quantidade de Parcelas <span style={{ color: '#94a3b8', fontSize: '0.8rem' }}>(Opcional)</span>
+                </label>
+                <input
+                  type="number"
+                  min="1"
+                  max="120"
+                  className="pa-input"
+                  placeholder="1x (à vista)"
+                  value={quantidadeParcelas}
+                  onChange={e => setQuantidadeParcelas(Math.max(1, parseInt(e.target.value) || 1))}
+                />
+              </div>
+
+              {/* Departamento / Centro de Custo */}
+              <div className="pa-form-group full-width">
+                <label>
+                  Departamento / Centro de Custo / Empresa / Cliente <span className="pa-required">*</span>
+                </label>
+                <input
+                  type="text"
+                  className="pa-input"
+                  placeholder="Ex: Financeiro / Matriz / Cliente XYZ / Operações"
+                  value={departamentoCentroCusto}
+                  onChange={e => setDepartamentoCentroCusto(e.target.value)}
+                  required
+                />
+              </div>
+
+              {/* Descrição do Produto ou Serviço */}
+              <div className="pa-form-group full-width">
+                <label>
+                  Descrição do Produto / Serviço <span className="pa-required">*</span>
+                </label>
+                <input
+                  type="text"
+                  className="pa-input"
+                  placeholder="Ex: Licença de Software, Manutenção de Equipamento, Honorários..."
                   value={produtoServico}
                   onChange={e => setProdutoServico(e.target.value)}
                   required
                 />
               </div>
 
+              {/* Valor Unitário Estimado */}
               <div className="pa-form-group">
                 <label>
-                  Valor Unitário Estimado (R$) <span className="pa-required">*</span>
+                  Valor Estimado (R$) <span className="pa-required">*</span>
                 </label>
                 <input
                   type="text"
@@ -777,6 +1018,7 @@ export const PurchaseApproval: React.FC = () => {
                 />
               </div>
 
+              {/* Quantidade */}
               <div className="pa-form-group">
                 <label>
                   Quantidade <span className="pa-required">*</span>
@@ -791,23 +1033,33 @@ export const PurchaseApproval: React.FC = () => {
                 />
               </div>
 
+              {/* Observações */}
               <div className="pa-form-group full-width">
                 <label>Observações Adicionais (Opcional)</label>
                 <textarea
                   className="pa-textarea"
-                  placeholder="Justificativa da compra, links de fornecedores, prazos de entrega ou detalhes adicionais..."
+                  placeholder="Justificativa da solicitação, links, dados bancários/chave Pix do fornecedor ou detalhes adicionais..."
                   value={observacoes}
                   onChange={e => setObservacoes(e.target.value)}
                 />
               </div>
             </div>
 
+            {/* Resumo Financeiro ao vivo */}
             {valorNumeric > 0 && (
-              <div style={{ background: '#0f172a', border: '1px solid #1e293b', padding: '12px 16px', borderRadius: '10px', marginBottom: '1.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <span style={{ color: '#94a3b8', fontSize: '0.9rem' }}>Valor Total da Requisição:</span>
-                <span style={{ fontSize: '1.25rem', fontWeight: 700, color: '#34d399' }}>
-                  {formatBrl(valorNumeric * quantidade)}
-                </span>
+              <div style={{ background: '#0f172a', border: '1px solid #1e293b', padding: '14px 18px', borderRadius: '10px', marginBottom: '1.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
+                <div>
+                  <span style={{ color: '#94a3b8', fontSize: '0.85rem' }}>Resumo da Solicitação:</span>
+                  <div style={{ color: '#60a5fa', fontWeight: 600, fontSize: '0.9rem' }}>
+                    {formaPagamento} {quantidadeParcelas > 1 ? `• ${quantidadeParcelas}x parcelas de ${formatBrl((valorNumeric * quantidade) / quantidadeParcelas)}` : '• À vista'}
+                  </div>
+                </div>
+                <div>
+                  <span style={{ color: '#94a3b8', fontSize: '0.85rem' }}>Valor Total:</span>
+                  <div style={{ fontSize: '1.35rem', fontWeight: 700, color: '#34d399' }}>
+                    {formatBrl(valorNumeric * quantidade)}
+                  </div>
+                </div>
               </div>
             )}
 
@@ -817,7 +1069,7 @@ export const PurchaseApproval: React.FC = () => {
               className="pa-submit-btn"
             >
               {submitting ? <RefreshCw size={18} className="pwc-spinner" /> : <Send size={18} />}
-              {submitting ? 'Enviando Requisição...' : 'Submeter para Aprovação'}
+              {submitting ? 'Gravando no SQLite...' : 'Submeter Solicitação para Aprovação'}
             </button>
           </form>
         </div>
@@ -837,8 +1089,10 @@ export const PurchaseApproval: React.FC = () => {
               <thead>
                 <tr>
                   <th>Código</th>
-                  <th>Produto / Serviço</th>
-                  <th>Qtd</th>
+                  <th>Fornecedor / Prestador</th>
+                  <th>Descrição / Serviço</th>
+                  <th>Pagamento</th>
+                  <th>Centro de Custo</th>
                   <th>Valor Total</th>
                   <th>Data de Envio</th>
                   <th>Status</th>
@@ -848,34 +1102,55 @@ export const PurchaseApproval: React.FC = () => {
               <tbody>
                 {myRequests.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="pa-empty">
-                      Você não possui requisições de compra ativas no momento. (Requisições aprovadas ou negadas ficam em <strong>Solicitações Arquivadas</strong>).
+                    <td colSpan={9} className="pa-empty">
+                      Você não possui solicitações ativas no momento.
                     </td>
                   </tr>
                 ) : (
                   myRequests.map(item => (
                     <tr key={item.id}>
-                      <td style={{ fontWeight: 600, color: '#93c5fd' }}>{item.id}</td>
-                      <td style={{ fontWeight: 600 }}>{item.produto_servico}</td>
-                      <td>{item.quantidade}</td>
-                      <td style={{ fontWeight: 700, color: '#f8fafc' }}>
-                        {formatBrl(item.valor * item.quantidade)}
+                      <td><span className="pa-code-badge">{item.id}</span></td>
+                      <td>
+                        <strong>{item.fornecedor_nome || '-'}</strong>
+                        {item.fornecedor_contato && (
+                          <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>{item.fornecedor_contato}</div>
+                        )}
+                      </td>
+                      <td>{item.produto_servico}</td>
+                      <td>
+                        <span style={{ fontWeight: 600, color: '#60a5fa' }}>{item.forma_pagamento || '-'}</span>
+                        {item.quantidade_parcelas > 1 && (
+                          <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>{item.quantidade_parcelas}x</div>
+                        )}
+                      </td>
+                      <td>{item.departamento_centro_custo || '-'}</td>
+                      <td>
+                        <span className="pa-price-highlight">
+                          {formatBrl(item.valor * item.quantidade)}
+                        </span>
                       </td>
                       <td>{formatDate(item.created_at)}</td>
-                      <td>{renderStatusBadge(item.status)}</td>
+                      <td>{renderStatusBadge(item.status, item.arquivado_manualmente)}</td>
                       <td>
-                        <button
-                          type="button"
-                          className="pa-action-btn"
-                          onClick={() => handleOpenDetails(item.id)}
-                        >
-                          <Eye size={14} /> Detalhes & Chat
-                          {Boolean(item.total_mensagens) && (
-                            <span style={{ background: '#2563eb', color: '#fff', padding: '1px 6px', borderRadius: '9999px', fontSize: '0.7rem' }}>
-                              {item.total_mensagens}
-                            </span>
+                        <div style={{ display: 'flex', gap: '6px' }}>
+                          <button
+                            className="pa-btn-detail"
+                            onClick={() => handleOpenDetails(item.id)}
+                            title="Visualizar Detalhes"
+                          >
+                            <Eye size={15} /> Detalhes
+                          </button>
+                          {isMaster && (
+                            <button
+                              className="pa-btn-archive-master"
+                              style={{ padding: '6px 10px', fontSize: '0.75rem' }}
+                              onClick={() => handleOpenManualArchive(item, true)}
+                              title="Arquivar Manualmente (Exclusivo Master)"
+                            >
+                              <Archive size={13} />
+                            </button>
                           )}
-                        </button>
+                        </div>
                       </td>
                     </tr>
                   ))
@@ -886,28 +1161,29 @@ export const PurchaseApproval: React.FC = () => {
         </div>
       )}
 
-      {/* TAB 4: SOLICITAÇÕES ARQUIVADAS (APROVADAS E NEGADAS) */}
+      {/* TAB 4: SOLICITAÇÕES ARQUIVADAS */}
       {activeTab === 'archived' && (
         <div className="pa-table-card">
           <div className="pa-table-header">
             <h2>
               <Archive size={18} /> Solicitações Arquivadas ({filteredArchived.length})
             </h2>
-            <div className="pa-table-filters">
+
+            <div className="pa-table-controls">
               <select
-                className="pa-filter-select"
+                className="pa-select"
                 value={statusFilter}
                 onChange={e => setStatusFilter(e.target.value)}
               >
                 <option value="ALL">Todos os Arquivados</option>
-                <option value="APROVADO">Apenas Aprovados</option>
-                <option value="NEGADO">Apenas Negados</option>
+                <option value="APROVADO">Aprovados</option>
+                <option value="NEGADO">Negados</option>
               </select>
 
               <input
                 type="text"
-                placeholder="Buscar produto ou solicitante..."
                 className="pa-search-input"
+                placeholder="Buscar fornecedor, solicitante, centro de custo..."
                 value={searchQuery}
                 onChange={e => setSearchQuery(e.target.value)}
               />
@@ -919,67 +1195,81 @@ export const PurchaseApproval: React.FC = () => {
               <thead>
                 <tr>
                   <th>Código</th>
-                  <th>Produto / Serviço</th>
+                  <th>Fornecedor / Prestador</th>
+                  <th>Descrição / Serviço</th>
+                  <th>Pagamento</th>
+                  <th>Centro de Custo</th>
                   <th>Solicitante</th>
                   <th>Valor Total</th>
-                  <th>Decidido Em</th>
+                  <th>Decisão / Arquivamento</th>
                   <th>Status</th>
-                  <th>Decisão / Aprovador</th>
                   <th>Ações</th>
                 </tr>
               </thead>
               <tbody>
                 {filteredArchived.length === 0 ? (
                   <tr>
-                    <td colSpan={8} className="pa-empty">
+                    <td colSpan={10} className="pa-empty">
                       Nenhuma solicitação arquivada encontrada.
                     </td>
                   </tr>
                 ) : (
                   filteredArchived.map(item => {
-                    const isOwner = item.solicitante_id === currentUserId || isApprover;
-                    const canReopen = item.status === 'NEGADO' && isOwner;
-
+                    const isOwner = item.solicitante_id === user?.id || isApprover || isMaster;
                     return (
                       <tr key={item.id}>
-                        <td style={{ fontWeight: 600, color: '#93c5fd' }}>{item.id}</td>
-                        <td style={{ fontWeight: 600 }}>{item.produto_servico}</td>
-                        <td>{item.solicitante_nome}</td>
-                        <td style={{ fontWeight: 700, color: '#f8fafc' }}>
-                          {formatBrl(item.valor * item.quantidade)}
-                        </td>
-                        <td>{formatDate(item.decidido_em || item.updated_at)}</td>
-                        <td>{renderStatusBadge(item.status)}</td>
+                        <td><span className="pa-code-badge">{item.id}</span></td>
                         <td>
-                          {item.aprovador_nome ? (
-                            <div style={{ fontSize: '0.85rem' }}>
-                              <span style={{ color: '#cbd5e1' }}>{item.aprovador_nome}</span>
-                              {item.motivo_decisao && (
-                                <div style={{ color: '#94a3b8', fontSize: '0.75rem', fontStyle: 'italic' }}>
-                                  "{item.motivo_decisao}"
-                                </div>
-                              )}
-                            </div>
-                          ) : '—'}
+                          <strong>{item.fornecedor_nome || '-'}</strong>
                         </td>
+                        <td>{item.produto_servico}</td>
+                        <td>{item.forma_pagamento || '-'}</td>
+                        <td>{item.departamento_centro_custo || '-'}</td>
+                        <td>{item.solicitante_nome}</td>
+                        <td>
+                          <span className="pa-price-highlight">
+                            {formatBrl(item.valor * item.quantidade)}
+                          </span>
+                        </td>
+                        <td>
+                          {item.arquivado_manualmente === 1 ? (
+                            <span className="pa-master-tag">
+                              Por {item.arquivado_por || 'Master'}
+                            </span>
+                          ) : (
+                            formatDate(item.decidido_em || item.updated_at)
+                          )}
+                        </td>
+                        <td>{renderStatusBadge(item.status, item.arquivado_manualmente)}</td>
                         <td>
                           <div style={{ display: 'flex', gap: '6px' }}>
                             <button
-                              type="button"
-                              className="pa-action-btn"
+                              className="pa-btn-detail"
                               onClick={() => handleOpenDetails(item.id)}
                             >
-                              <Eye size={14} /> Detalhes
+                              <Eye size={15} /> Ver
                             </button>
 
-                            {canReopen && (
+                            {/* Se negada e for dono ou master -> Reabrir */}
+                            {item.status === 'NEGADO' && isOwner && (
                               <button
-                                type="button"
-                                className="pa-reopen-btn"
+                                className="pa-btn-reopen"
                                 onClick={() => handleOpenReopen(item)}
-                                title="Reabrir requisição negada com nova mensagem ou ajuste"
+                                title="Reabrir Solicitação"
                               >
-                                <RotateCcw size={13} /> Reabrir
+                                <RotateCcw size={14} /> Reabrir
+                              </button>
+                            )}
+
+                            {/* Se Master -> Desarquivar Manualmente */}
+                            {isMaster && (
+                              <button
+                                className="pa-btn-unarchive-master"
+                                style={{ padding: '6px 10px', fontSize: '0.75rem' }}
+                                onClick={() => handleOpenManualArchive(item, false)}
+                                title="Desarquivar Solicitação (Master)"
+                              >
+                                <RotateCcw size={13} /> Desarquivar
                               </button>
                             )}
                           </div>
@@ -994,14 +1284,16 @@ export const PurchaseApproval: React.FC = () => {
         </div>
       )}
 
-      {/* MODAL DE REVISÃO DETALHADA E MENSAGENS */}
+      {/* MODAL DE DETALHES, HISTÓRICO E DECISÃO */}
       {selectedRequest && (
         <div className="pa-modal-overlay" onClick={() => setSelectedRequest(null)}>
           <div className="pa-modal-card" onClick={e => e.stopPropagation()}>
             <div className="pa-modal-header">
               <h3>
-                <FileText size={20} color="#3b82f6" /> Requisição: {selectedRequest.id}
-                <div style={{ marginLeft: '8px' }}>{renderStatusBadge(selectedRequest.status)}</div>
+                <CreditCard size={20} color="#3b82f6" /> Solicitação: {selectedRequest.id}
+                <div style={{ marginLeft: '8px' }}>
+                  {renderStatusBadge(selectedRequest.status, selectedRequest.arquivado_manualmente)}
+                </div>
               </h3>
               <button
                 type="button"
@@ -1013,16 +1305,39 @@ export const PurchaseApproval: React.FC = () => {
             </div>
 
             <div className="pa-modal-body">
-              {/* Detalhes da Requisição */}
+              {/* Detalhes da Solicitação */}
               <div className="pa-req-details-grid">
                 <div className="pa-detail-item">
-                  <span className="pa-detail-label">Produto / Serviço</span>
-                  <span className="pa-detail-val">{selectedRequest.produto_servico}</span>
+                  <span className="pa-detail-label">Fornecedor / Prestador</span>
+                  <span className="pa-detail-val">{selectedRequest.fornecedor_nome || 'Não informado'}</span>
                 </div>
 
                 <div className="pa-detail-item">
-                  <span className="pa-detail-label">Solicitante</span>
+                  <span className="pa-detail-label">Contato do Fornecedor</span>
+                  <span className="pa-detail-val">{selectedRequest.fornecedor_contato || 'Não informado'}</span>
+                </div>
+
+                <div className="pa-detail-item">
+                  <span className="pa-detail-label">Forma de Pagamento & Parcelas</span>
+                  <span className="pa-detail-val" style={{ color: '#60a5fa' }}>
+                    {selectedRequest.forma_pagamento || '-'}
+                    {selectedRequest.quantidade_parcelas > 1 ? ` (${selectedRequest.quantidade_parcelas}x de ${formatBrl((selectedRequest.valor * selectedRequest.quantidade) / selectedRequest.quantidade_parcelas)})` : ' (À vista)'}
+                  </span>
+                </div>
+
+                <div className="pa-detail-item">
+                  <span className="pa-detail-label">Centro de Custo / Cliente</span>
+                  <span className="pa-detail-val">{selectedRequest.departamento_centro_custo || 'Não informado'}</span>
+                </div>
+
+                <div className="pa-detail-item">
+                  <span className="pa-detail-label">Colaborador Responsável</span>
                   <span className="pa-detail-val">{selectedRequest.solicitante_nome} ({selectedRequest.solicitante_email || 'Sem e-mail'})</span>
+                </div>
+
+                <div className="pa-detail-item">
+                  <span className="pa-detail-label">Descrição / Produto / Serviço</span>
+                  <span className="pa-detail-val">{selectedRequest.produto_servico}</span>
                 </div>
 
                 <div className="pa-detail-item">
@@ -1032,13 +1347,13 @@ export const PurchaseApproval: React.FC = () => {
 
                 <div className="pa-detail-item">
                   <span className="pa-detail-label">Quantidade & Total</span>
-                  <span className="pa-detail-val" style={{ color: '#34d399' }}>
+                  <span className="pa-detail-val" style={{ color: '#34d399', fontWeight: 700 }}>
                     {selectedRequest.quantidade}x = {formatBrl(selectedRequest.valor * selectedRequest.quantidade)}
                   </span>
                 </div>
 
                 <div className="pa-detail-item" style={{ gridColumn: 'span 2' }}>
-                  <span className="pa-detail-label">Observações do Solicitante</span>
+                  <span className="pa-detail-label">Observações Adicionais</span>
                   <span className="pa-detail-val" style={{ fontWeight: 400, color: '#cbd5e1' }}>
                     {selectedRequest.observacoes || 'Nenhuma observação informada.'}
                   </span>
@@ -1055,6 +1370,22 @@ export const PurchaseApproval: React.FC = () => {
                     {selectedRequest.motivo_decisao && (
                       <p style={{ marginTop: '4px', fontSize: '0.85rem', color: '#94a3b8' }}>
                         "{selectedRequest.motivo_decisao}"
+                      </p>
+                    )}
+                  </div>
+                )}
+
+                {selectedRequest.arquivado_manualmente === 1 && (
+                  <div className="pa-detail-item" style={{ gridColumn: 'span 2', background: 'rgba(168, 85, 247, 0.1)', border: '1px solid rgba(168, 85, 247, 0.3)', padding: '10px 14px', borderRadius: '8px' }}>
+                    <span className="pa-detail-label" style={{ color: '#c084fc' }}>
+                      Arquivamento Manual (Lepta Master)
+                    </span>
+                    <span className="pa-detail-val">
+                      Arquivado por <strong>{selectedRequest.arquivado_por || 'Master'}</strong> em {formatDate(selectedRequest.arquivado_em || '')}
+                    </span>
+                    {selectedRequest.motivo_arquivamento && (
+                      <p style={{ marginTop: '4px', fontSize: '0.85rem', color: '#d8b4fe' }}>
+                        "{selectedRequest.motivo_arquivamento}"
                       </p>
                     )}
                   </div>
@@ -1077,10 +1408,10 @@ export const PurchaseApproval: React.FC = () => {
                 </div>
               )}
 
-              {/* Ações de Aprovação / Negação (Apenas para Aprovadores em requisições Ativas) */}
-              {isApprover && selectedRequest.arquivado !== 1 && selectedRequest.status !== 'APROVADO' && selectedRequest.status !== 'NEGADO' && (
+              {/* Ações de Aprovação / Negação (Apenas para Aprovadores em solicitações Ativas) */}
+              {(isApprover || isMaster) && selectedRequest.arquivado !== 1 && selectedRequest.status !== 'APROVADO' && selectedRequest.status !== 'NEGADO' && (
                 <div className="pa-actions-bar">
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
                     <span style={{ fontWeight: 600, fontSize: '0.9rem', color: '#f8fafc' }}>
                       Decisão do Aprovador:
                     </span>
@@ -1090,7 +1421,7 @@ export const PurchaseApproval: React.FC = () => {
                         className="pa-btn-approve"
                         onClick={() => setShowActionConfirm(showActionConfirm === 'APPROVE' ? null : 'APPROVE')}
                       >
-                        <CheckCircle2 size={16} /> Aprovar Requisição
+                        <CheckCircle2 size={16} /> Aprovar Solicitação
                       </button>
 
                       <button
@@ -1098,99 +1429,122 @@ export const PurchaseApproval: React.FC = () => {
                         className="pa-btn-deny"
                         onClick={() => setShowActionConfirm(showActionConfirm === 'DENY' ? null : 'DENY')}
                       >
-                        <XCircle size={16} /> Negar Requisição
+                        <XCircle size={16} /> Negar Solicitação
                       </button>
                     </div>
                   </div>
 
                   {showActionConfirm && (
-                    <div style={{ background: '#111827', padding: '12px', borderRadius: '10px', border: '1px solid #334155', marginTop: '8px' }}>
-                      <label style={{ display: 'block', fontSize: '0.85rem', color: '#cbd5e1', marginBottom: '6px' }}>
-                        Observação / Justificativa ({showActionConfirm === 'APPROVE' ? 'Opcional' : 'Recomendada'}):
-                      </label>
-                      <input
-                        type="text"
-                        placeholder="Adicione um comentário para o solicitante..."
-                        className="pa-input"
-                        style={{ width: '100%', marginBottom: '10px' }}
+                    <div className="pa-confirm-box">
+                      <h4>
+                        {showActionConfirm === 'APPROVE' ? 'Confirmar Aprovação da Solicitação' : 'Confirmar Negação da Solicitação'}
+                      </h4>
+                      <p>
+                        {showActionConfirm === 'APPROVE'
+                          ? 'A solicitação será marcada como APROVADA, gravada no SQLite e o solicitante será notificado.'
+                          : 'A solicitação será marcada como NEGADA no SQLite. O solicitante poderá reabri-la caso deseje.'}
+                      </p>
+                      <textarea
+                        className="pa-textarea"
+                        placeholder={showActionConfirm === 'APPROVE' ? 'Observações de aprovação (opcional)...' : 'Motivo da recusa (recomendado)...'}
                         value={actionObservation}
                         onChange={e => setActionObservation(e.target.value)}
                       />
-                      <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+                      <div className="pa-confirm-actions">
                         <button
                           type="button"
-                          className="pa-action-btn"
+                          className="pa-btn-cancel"
                           onClick={() => setShowActionConfirm(null)}
                         >
                           Cancelar
                         </button>
-                        {showActionConfirm === 'APPROVE' ? (
-                          <button
-                            type="button"
-                            disabled={actionLoading}
-                            className="pa-btn-approve"
-                            onClick={handleApprove}
-                          >
-                            {actionLoading ? 'Processando...' : 'Confirmar Aprovação (Mover p/ Arquivo)'}
-                          </button>
-                        ) : (
-                          <button
-                            type="button"
-                            disabled={actionLoading}
-                            className="pa-btn-deny"
-                            onClick={handleDeny}
-                          >
-                            {actionLoading ? 'Processando...' : 'Confirmar Negação (Mover p/ Arquivo)'}
-                          </button>
-                        )}
+                        <button
+                          type="button"
+                          disabled={actionLoading}
+                          className={showActionConfirm === 'APPROVE' ? 'pa-btn-confirm-approve' : 'pa-btn-confirm-deny'}
+                          onClick={showActionConfirm === 'APPROVE' ? handleApprove : handleDeny}
+                        >
+                          {actionLoading ? <RefreshCw size={15} className="pwc-spinner" /> : <Check size={15} />}
+                          {showActionConfirm === 'APPROVE' ? 'Sim, Aprovar' : 'Sim, Negar'}
+                        </button>
                       </div>
                     </div>
                   )}
                 </div>
               )}
 
-              {/* Seção de Mensagens / Esclarecimentos */}
-              <div className="pa-chat-section">
-                <div className="pa-chat-title">
-                  <MessageSquare size={16} color="#3b82f6" /> Histórico de Mensagens e Esclarecimentos ({selectedRequest.mensagens?.length || 0})
+              {/* Botão de Ação Exclusiva Master: Arquivar / Desarquivar Manualmente */}
+              {isMaster && (
+                <div style={{ background: 'rgba(15, 23, 42, 0.9)', border: '1px solid rgba(168, 85, 247, 0.3)', padding: '14px', borderRadius: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px', marginTop: '1rem' }}>
+                  <div>
+                    <span style={{ color: '#c084fc', fontSize: '0.85rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                      Controle Lepta Master
+                    </span>
+                    <p style={{ margin: '2px 0 0 0', fontSize: '0.8rem', color: '#94a3b8' }}>
+                      Você possui autoridade Master para arquivar ou desarquivar manualmente esta solicitação a qualquer momento.
+                    </p>
+                  </div>
+                  {selectedRequest.arquivado === 1 ? (
+                    <button
+                      type="button"
+                      className="pa-btn-unarchive-master"
+                      onClick={() => handleOpenManualArchive(selectedRequest, false)}
+                    >
+                      <RotateCcw size={15} /> Desarquivar Solicitação
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      className="pa-btn-archive-master"
+                      onClick={() => handleOpenManualArchive(selectedRequest, true)}
+                    >
+                      <Archive size={15} /> Arquivar Manualmente
+                    </button>
+                  )}
+                </div>
+              )}
+
+              {/* HISTÓRICO DE MENSAGENS E COMENTÁRIOS */}
+              <div className="pa-messages-container">
+                <div className="pa-messages-header">
+                  <MessageSquare size={16} color="#3b82f6" />
+                  <span>Histórico de Interações & Mensagens</span>
                 </div>
 
-                <div className="pa-messages-list">
+                <div className="pa-chat-box">
                   {(!selectedRequest.mensagens || selectedRequest.mensagens.length === 0) ? (
-                    <p style={{ color: '#64748b', fontSize: '0.85rem', textAlign: 'center', padding: '12px' }}>
-                      Nenhuma mensagem enviada nesta requisição ainda.
-                    </p>
+                    <div style={{ textAlign: 'center', color: '#64748b', fontSize: '0.85rem', padding: '1rem' }}>
+                      Nenhuma mensagem registrada nesta solicitação.
+                    </div>
                   ) : (
                     selectedRequest.mensagens.map(msg => (
                       <div
                         key={msg.id}
-                        className={`pa-message-bubble ${msg.autor_role.toLowerCase()}`}
+                        className={`pa-message-bubble ${msg.autor_role === 'APROVADOR' ? 'approver' : 'requester'}`}
                       >
                         <div className="pa-message-meta">
                           <strong>{msg.autor_nome} ({msg.autor_role === 'APROVADOR' ? 'Aprovador' : 'Solicitante'})</strong>
                           <span>{formatDate(msg.created_at)}</span>
                         </div>
-                        <div>{msg.mensagem}</div>
+                        <p style={{ margin: 0, fontSize: '0.85rem', whiteSpace: 'pre-wrap' }}>
+                          {msg.mensagem}
+                        </p>
                       </div>
                     ))
                   )}
                 </div>
 
-                {/* Input de Envio de Mensagem */}
+                {/* Input para nova mensagem */}
                 <form onSubmit={handleSendMessage} className="pa-chat-input-row">
                   <input
                     type="text"
-                    placeholder="Escrever uma mensagem ou pergunta sobre esta compra..."
                     className="pa-chat-input"
+                    placeholder="Adicione um comentário ou responda sobre esta solicitação..."
                     value={newMessageText}
                     onChange={e => setNewMessageText(e.target.value)}
                   />
-                  <button
-                    type="submit"
-                    disabled={!newMessageText.trim()}
-                    className="pa-chat-send-btn"
-                  >
-                    <Send size={15} /> Responder
+                  <button type="submit" disabled={!newMessageText.trim()} className="pa-chat-send-btn">
+                    <Send size={15} /> Enviar
                   </button>
                 </form>
               </div>
@@ -1218,76 +1572,121 @@ export const PurchaseApproval: React.FC = () => {
 
             <form onSubmit={handleConfirmReopen}>
               <div className="pa-modal-body">
-                <p style={{ fontSize: '0.9rem', color: '#cbd5e1' }}>
-                  Ao reabrir esta solicitação, ela voltará para a fila ativa dos aprovadores com o status <strong>REABERTO</strong>.
-                </p>
-
-                <div className="pa-form-group">
-                  <label>Mensagem / Justificativa para a Reabertura <span className="pa-required">*</span></label>
-                  <textarea
-                    className="pa-textarea"
-                    placeholder="Explique os ajustes realizados ou a justificativa para nova avaliação..."
-                    value={reopenMessage}
-                    onChange={e => setReopenMessage(e.target.value)}
-                    required
-                  />
+                <div style={{ background: 'rgba(192, 132, 252, 0.1)', border: '1px solid rgba(192, 132, 252, 0.3)', padding: '12px 16px', borderRadius: '10px', marginBottom: '1.5rem', color: '#e9d5ff', fontSize: '0.85rem' }}>
+                  Ao reabrir esta solicitação, ela voltará para a esteira ativa dos aprovadores com o status <strong>REABERTO</strong>.
                 </div>
 
-                <div style={{ borderTop: '1px solid #1e293b', paddingTop: '1rem' }}>
-                  <h4 style={{ fontSize: '0.95rem', fontWeight: 600, color: '#f8fafc', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    <Edit3 size={16} color="#3b82f6" /> Ajustar Dados da Compra (Opcional)
-                  </h4>
+                <div className="pa-form-grid">
+                  <div className="pa-form-group">
+                    <label>Fornecedor / Prestador</label>
+                    <input
+                      type="text"
+                      className="pa-input"
+                      value={reopenFornecedorNome}
+                      onChange={e => setReopenFornecedorNome(e.target.value)}
+                      required
+                    />
+                  </div>
 
-                  <div className="pa-form-grid">
-                    <div className="pa-form-group full-width">
-                      <label>Produto / Serviço</label>
-                      <input
-                        type="text"
-                        className="pa-input"
-                        value={reopenProduto}
-                        onChange={e => setReopenProduto(e.target.value)}
-                        required
-                      />
-                    </div>
+                  <div className="pa-form-group">
+                    <label>Contato do Fornecedor</label>
+                    <input
+                      type="text"
+                      className="pa-input"
+                      value={reopenFornecedorContato}
+                      onChange={e => setReopenFornecedorContato(e.target.value)}
+                      required
+                    />
+                  </div>
 
-                    <div className="pa-form-group">
-                      <label>Valor Unitário (R$)</label>
-                      <input
-                        type="text"
-                        className="pa-input"
-                        value={reopenValorDisplay}
-                        onChange={handleReopenCurrencyInput}
-                        required
-                      />
+                  <div className="pa-form-group">
+                    <label>Forma de Pagamento</label>
+                    <div className="pa-payment-grid">
+                      {(['PIX', 'DINHEIRO', 'DEBITO', 'CREDITO'] as const).map(op => (
+                        <button
+                          key={op}
+                          type="button"
+                          className={`pa-payment-option-btn ${reopenFormaPagamento === op ? 'active' : ''}`}
+                          onClick={() => setReopenFormaPagamento(op)}
+                        >
+                          {op}
+                        </button>
+                      ))}
                     </div>
+                  </div>
 
-                    <div className="pa-form-group">
-                      <label>Quantidade</label>
-                      <input
-                        type="number"
-                        min="1"
-                        className="pa-input"
-                        value={reopenQuantidade}
-                        onChange={e => setReopenQuantidade(Math.max(1, parseInt(e.target.value) || 1))}
-                        required
-                      />
-                    </div>
+                  <div className="pa-form-group">
+                    <label>Parcelas</label>
+                    <input
+                      type="number"
+                      min="1"
+                      className="pa-input"
+                      value={reopenQuantidadeParcelas}
+                      onChange={e => setReopenQuantidadeParcelas(Math.max(1, parseInt(e.target.value) || 1))}
+                    />
+                  </div>
 
-                    <div className="pa-form-group full-width">
-                      <label>Observações</label>
-                      <textarea
-                        className="pa-textarea"
-                        value={reopenObservacoes}
-                        onChange={e => setReopenObservacoes(e.target.value)}
-                      />
-                    </div>
+                  <div className="pa-form-group full-width">
+                    <label>Departamento / Centro de Custo</label>
+                    <input
+                      type="text"
+                      className="pa-input"
+                      value={reopenDepartamento}
+                      onChange={e => setReopenDepartamento(e.target.value)}
+                      required
+                    />
+                  </div>
+
+                  <div className="pa-form-group full-width">
+                    <label>Descrição do Produto / Serviço</label>
+                    <input
+                      type="text"
+                      className="pa-input"
+                      value={reopenProduto}
+                      onChange={e => setReopenProduto(e.target.value)}
+                      required
+                    />
+                  </div>
+
+                  <div className="pa-form-group">
+                    <label>Valor Unitário (R$)</label>
+                    <input
+                      type="text"
+                      className="pa-input"
+                      value={reopenValorDisplay}
+                      onChange={handleReopenCurrencyInput}
+                      required
+                    />
+                  </div>
+
+                  <div className="pa-form-group">
+                    <label>Quantidade</label>
+                    <input
+                      type="number"
+                      min="1"
+                      className="pa-input"
+                      value={reopenQuantidade}
+                      onChange={e => setReopenQuantidade(Math.max(1, parseInt(e.target.value) || 1))}
+                      required
+                    />
+                  </div>
+
+                  <div className="pa-form-group full-width">
+                    <label>Motivo da Reabertura / Justificativa <span className="pa-required">*</span></label>
+                    <textarea
+                      className="pa-textarea"
+                      placeholder="Explique o motivo da reabertura, novos valores negociados ou justificativas adicionais..."
+                      value={reopenMessage}
+                      onChange={e => setReopenMessage(e.target.value)}
+                      required
+                    />
                   </div>
                 </div>
 
-                <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end', marginTop: '1rem' }}>
+                <div className="pa-confirm-actions" style={{ marginTop: '1.5rem' }}>
                   <button
                     type="button"
-                    className="pa-action-btn"
+                    className="pa-btn-cancel"
                     onClick={() => setReopenTarget(null)}
                   >
                     Cancelar
@@ -1295,8 +1694,7 @@ export const PurchaseApproval: React.FC = () => {
                   <button
                     type="submit"
                     disabled={reopenLoading || !reopenMessage.trim()}
-                    className="pa-btn-approve"
-                    style={{ background: '#9333ea' }}
+                    className="pa-reopen-btn"
                   >
                     {reopenLoading ? <RefreshCw size={16} className="pwc-spinner" /> : <RotateCcw size={16} />}
                     {reopenLoading ? 'Reabrindo...' : 'Confirmar Reabertura'}
@@ -1308,10 +1706,62 @@ export const PurchaseApproval: React.FC = () => {
         </div>
       )}
 
-      {/* Toast */}
-      {toastMessage && (
-        <div className="pwc-toast">
-          <Sparkles size={18} /> {toastMessage}
+      {/* MODAL DE ARQUIVAMENTO MANUAL (EXCLUSIVO MASTER) */}
+      {manualArchiveTarget && (
+        <div className="pa-modal-overlay" onClick={() => setManualArchiveTarget(null)}>
+          <div className="pa-modal-card" style={{ maxWidth: '550px' }} onClick={e => e.stopPropagation()}>
+            <div className="pa-modal-header">
+              <h3>
+                <ShieldAlert size={20} color="#c084fc" />
+                {manualArchiveType === 'ARCHIVE' ? 'Arquivar Solicitação Manualmente' : 'Desarquivar Solicitação'}
+              </h3>
+              <button
+                type="button"
+                className="pa-modal-close"
+                onClick={() => setManualArchiveTarget(null)}
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <form onSubmit={handleConfirmManualArchive}>
+              <div className="pa-modal-body">
+                <p style={{ color: '#e2e8f0', fontSize: '0.9rem', lineHeight: '1.5' }}>
+                  {manualArchiveType === 'ARCHIVE'
+                    ? `Deseja arquivar manualmente a solicitação ${manualArchiveTarget.id} (${manualArchiveTarget.produto_servico})? Ela será movida para a aba de arquivadas.`
+                    : `Deseja desarquivar a solicitação ${manualArchiveTarget.id} e retorná-la para a esteira ativa de decisões?`}
+                </p>
+
+                <div className="pa-form-group" style={{ marginTop: '1rem' }}>
+                  <label>Motivo / Observação do Master (Opcional)</label>
+                  <textarea
+                    className="pa-textarea"
+                    placeholder="Informe uma justificativa para registro de auditoria no SQLite..."
+                    value={manualArchiveMotivo}
+                    onChange={e => setManualArchiveMotivo(e.target.value)}
+                  />
+                </div>
+
+                <div className="pa-confirm-actions" style={{ marginTop: '1.5rem' }}>
+                  <button
+                    type="button"
+                    className="pa-btn-cancel"
+                    onClick={() => setManualArchiveTarget(null)}
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={manualArchiveLoading}
+                    className={manualArchiveType === 'ARCHIVE' ? 'pa-btn-archive-master' : 'pa-btn-unarchive-master'}
+                  >
+                    {manualArchiveLoading ? <RefreshCw size={16} className="pwc-spinner" /> : <Check size={16} />}
+                    {manualArchiveLoading ? 'Processando...' : (manualArchiveType === 'ARCHIVE' ? 'Confirmar Arquivamento' : 'Confirmar Desarquivamento')}
+                  </button>
+                </div>
+              </div>
+            </form>
+          </div>
         </div>
       )}
     </div>

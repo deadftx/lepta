@@ -194,6 +194,7 @@ function ensureAccessAreas() {
   const areas = [
     ['7.1', 'Financeiro > Processar Extrato'],
     ['7.2', 'Financeiro > LEPTA x GRAFENO'],
+    ['7.3', 'Financeiro > Solicitações'],
     ['8.1', 'Lepta Intelligence > Análise de Clientes'],
     ['8.2', 'Lepta Intelligence > Cadastro de Clientes'],
     ['8.3', 'Lepta Intelligence > Análise de Riscos'],
@@ -356,9 +357,15 @@ function requireSessionPurpose(allowedPurposes = ['auth']) {
 const requireSession = requireSessionPurpose(['auth']);
 const requireSecuritySetupSession = requireSessionPurpose(['auth', 'security-setup']);
 
-function requirePermission(permission) {
+function requirePermission(...permissions) {
+  const permList = permissions.flat().map(String);
   return (req, res, next) => {
-    if (!req.authUser || !hasPermission(req.authUser, permission)) {
+    if (!req.authUser) {
+      return res.status(403).json({ error: 'Usuário sem permissão para acessar este recurso.' });
+    }
+    if (req.authUser.role === 'MASTER') return next();
+    const hasAny = permList.some(perm => hasPermission(req.authUser, perm));
+    if (!hasAny) {
       return res.status(403).json({ error: 'Usuário sem permissão para acessar este recurso.' });
     }
     next();
@@ -2485,7 +2492,7 @@ app.post('/api/auth/admin/unlock/:id', requireSession, requireMaster, (req, res)
 });
 
 const ASSIGNABLE_PERMISSION_IDS = new Set([
-  '4', '5', '6', '7.1', '7.2', '8.1', '8.2', '8.3', '9', '10', '11', '11.1', '11.2'
+  '4', '5', '6', '7.1', '7.2', '7.3', '8.1', '8.2', '8.3', '9', '10', '11', '11.1', '11.2'
 ]);
 
 function normalizeAssignablePermissions(value) {

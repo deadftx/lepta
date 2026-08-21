@@ -58,6 +58,8 @@ function App() {
               <Route path="/financeiro" element={<AccessRoute permission="7"><FinanceDashboard /></AccessRoute>} />
               <Route path="/financeiro/extratos" element={<AccessRoute permission="7.1"><Finance /></AccessRoute>} />
               <Route path="/financeiro/grafeno" element={<AccessRoute permission="7.2"><GrafenoIntegration /></AccessRoute>} />
+              <Route path="/financeiro/solicitacoes" element={<AccessRoute permission="7.3"><PurchaseApproval /></AccessRoute>} />
+              <Route path="/financeiro/solicitacao" element={<AccessRoute permission="7.3"><PurchaseApproval /></AccessRoute>} />
               <Route path="/intelligence/analise-clientes" element={<AccessRoute permission="8.1"><CustomerAnalysis /></AccessRoute>} />
               <Route path="/intelligence/cadastro-clientes" element={<AccessRoute permission="8.2"><CustomerRegistration /></AccessRoute>} />
               <Route path="/intelligence/analise-riscos" element={<AccessRoute permission="8.3"><RiskAnalysis /></AccessRoute>} />
