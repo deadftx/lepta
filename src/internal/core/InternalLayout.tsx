@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { LogOut, User, ShieldAlert, Shield, UserPlus, Users, ChevronDown, ChevronRight, LayoutDashboard, Sliders, Home, Calendar, Menu, X, Wallet, FileSpreadsheet, BrainCircuit, Database, ClipboardCheck, ContactRound, ShieldCheck, Landmark, Briefcase, ShoppingCart, SlidersHorizontal, CreditCard } from 'lucide-react';
+import { LogOut, User, ShieldAlert, Shield, UserPlus, Users, ChevronDown, ChevronRight, LayoutDashboard, Sliders, Home, Calendar, Menu, X, Wallet, FileSpreadsheet, BrainCircuit, Database, ClipboardCheck, ContactRound, ShieldCheck, Landmark, Briefcase, ShoppingCart, SlidersHorizontal, CreditCard, DollarSign } from 'lucide-react';
 import { useNavigate, Outlet, Link, useLocation } from 'react-router-dom';
 import { useAuth } from './AuthContext';
 import NotificationBell from './NotificationBell';
@@ -96,7 +96,7 @@ const InternalLayout = () => {
               <Calendar size={20} /> Calendário
             </Link>
           )}
-          {hasAnyPermission(user, ['7.1', '7.2', '7.3']) && (
+          {hasAnyPermission(user, ['7.1', '7.2', '7.3', '7.4']) && (
             <div className="nav-menu-group">
               <div 
                 className={`nav-item nav-item-parent ${isFinanceActive ? 'active' : ''}`}
@@ -124,6 +124,16 @@ const InternalLayout = () => {
                   {hasAccess('7.3') && (
                     <Link to="/financeiro/solicitacoes" className={navItemClass('/financeiro/solicitacoes')}>
                       <CreditCard size={18} /> Solicitações
+                    </Link>
+                  )}
+                  {hasAccess('7.4') && (
+                    <Link to="/financeiro/reembolsos-despesas" className={navItemClass('/financeiro/reembolsos-despesas')}>
+                      <DollarSign size={18} /> Reembolsos e Despesas
+                    </Link>
+                  )}
+                  {hasAccess('7.5') && (
+                    <Link to="/financeiro/calendario-pagamentos" className={navItemClass('/financeiro/calendario-pagamentos')}>
+                      <Calendar size={18} /> Calendário de Pagamentos
                     </Link>
                   )}
                 </div>

@@ -3,7 +3,8 @@ import {
   ShieldCheck, ListOrdered, CheckCircle2, PlusCircle,
   XCircle, Clock, MessageSquare, Send, X, Archive, RotateCcw,
   DollarSign, AlertCircle, RefreshCw, User,
-  Eye, HelpCircle, CreditCard, Check, ShieldAlert
+  Eye, HelpCircle, CreditCard, Check, ShieldAlert,
+  Paperclip, Download, Trash2
 } from 'lucide-react';
 import { API_BASE_URL, getAuthHeaders } from '../../../../config/api';
 import { useAuth } from '../../../core/AuthContext';
@@ -21,7 +22,8 @@ interface PurchaseRequest {
   valor: number;
   quantidade: number;
   observacoes: string;
-  status: 'PENDENTE' | 'REABERTO' | 'AGUARDANDO_RESPOSTA_SOLICITANTE' | 'AGUARDANDO_RESPOSTA_APROVADOR' | 'APROVADO' | 'NEGADO';
+  status: 'PENDENTE' | 'REABERTO' | 'AGUARDANDO_RESPOSTA_SOLICITANTE' | 'AGUARDANDO_RESPOSTA_APROVADOR' | 'APROVADO' | 'NEGADO' | 'PAGO' | 'REVISAO' | 'SOLICITACAO_CONCLUIDA';
+  data_pagamento?: string | null;
   arquivado?: number;
   arquivado_manualmente?: number;
   arquivado_por?: string | null;
@@ -113,6 +115,25 @@ export const PurchaseApproval: React.FC = () => {
   // Toast
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
+  // Attachments State
+  const [attachments, setAttachments] = useState<any[]>([]);
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState('');
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Edit Proposal State (under REVISAO status)
+  const [isEditingProposal, setIsEditingProposal] = useState(false);
+  const [editFornecedorNome, setEditFornecedorNome] = useState('');
+  const [editFornecedorContato, setEditFornecedorContato] = useState('');
+  const [editFormaPagamento, setEditFormaPagamento] = useState<'PIX' | 'DINHEIRO' | 'DEBITO' | 'CREDITO'>('PIX');
+  const [editQuantidadeParcelas, setEditQuantidadeParcelas] = useState<number>(1);
+  const [editDepartamento, setEditDepartamento] = useState('');
+  const [editProduto, setEditProduto] = useState('');
+  const [editValorDisplay, setEditValorDisplay] = useState('');
+  const [editValorNumeric, setEditValorNumeric] = useState<number>(0);
+  const [editQuantidade, setEditQuantidade] = useState<number>(1);
+  const [editObservacoes, setEditObservacoes] = useState('');
+
   const selectedRequestRef = useRef<string | null>(null);
 
   useEffect(() => {
@@ -122,6 +143,113 @@ export const PurchaseApproval: React.FC = () => {
   const showToast = (msg: string) => {
     setToastMessage(msg);
     setTimeout(() => setToastMessage(null), 3500);
+  };
+
+  // Helper masks for edit
+  const handleEditCurrencyInput = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const rawDigits = e.target.value.replace(/\D/g, '');
+    if (!rawDigits) {
+      setEditValorDisplay('');
+      setEditValorNumeric(0);
+      return;
+    }
+    const num = Number(rawDigits) / 100;
+    setEditValorNumeric(num);
+    setEditValorDisplay(num.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }));
+  };
+
+  // Attachment functions
+  const fetchAttachments = async (reqId: string) => {
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/compras/requisicoes/${reqId}/anexos`, {
+        headers: getAuthHeaders()
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setAttachments(data);
+      }
+    } catch (err) {
+      console.error('Erro ao buscar anexos:', err);
+    }
+  };
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!selectedRequest || !e.target.files || e.target.files.length === 0) return;
+    const file = e.target.files[0];
+    const limit = 20 * 1024 * 1024;
+    if (file.size > limit) {
+      setUploadError('O arquivo excede o limite máximo de 20MB.');
+      return;
+    }
+    setUploadError('');
+    setUploading(true);
+
+    const formData = new FormData();
+    formData.append('file', file);
+
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/compras/requisicoes/${selectedRequest.id}/anexos`, {
+        method: 'POST',
+        headers: getAuthHeaders() as any,
+        body: formData
+      });
+
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || 'Erro ao enviar anexo.');
+      }
+
+      showToast('Anexo adicionado!');
+      await fetchAttachments(selectedRequest.id);
+      fetchData(true);
+    } catch (err: any) {
+      setUploadError(err.message || 'Falha ao subir arquivo.');
+    } finally {
+      setUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
+
+  const handleDeleteAttachment = async (anexoId: string) => {
+    if (!selectedRequest) return;
+    if (!window.confirm('Excluir este anexo?')) return;
+
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/compras/requisicoes/${selectedRequest.id}/anexos/${anexoId}`, {
+        method: 'DELETE',
+        headers: getAuthHeaders()
+      });
+      if (res.ok) {
+        showToast('Anexo removido!');
+        await fetchAttachments(selectedRequest.id);
+        fetchData(true);
+      }
+    } catch (err) {
+      console.error('Erro ao deletar anexo:', err);
+    }
+  };
+
+  const handleDownloadAttachment = (anexoId: string, filename: string) => {
+    if (!selectedRequest) return;
+    const url = `${API_BASE_URL}/api/compras/requisicoes/${selectedRequest.id}/anexos/${anexoId}`;
+    
+    fetch(url, { headers: getAuthHeaders() })
+      .then(res => {
+        if (!res.ok) throw new Error('Não foi possível obter o arquivo.');
+        return res.blob();
+      })
+      .then(blob => {
+        const blobUrl = window.URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = blobUrl;
+        link.setAttribute('download', filename);
+        document.body.appendChild(link);
+        link.click();
+        link.parentNode?.removeChild(link);
+      })
+      .catch(err => {
+        alert(err.message || 'Erro ao baixar anexo.');
+      });
   };
 
   // 1. Identifica o papel do usuário (Aprovador ou Requisitante)
@@ -193,6 +321,7 @@ export const PurchaseApproval: React.FC = () => {
             };
           });
         }
+        await fetchAttachments(selectedRequestRef.current);
       }
     } catch (err) {
       console.error('Erro ao sincronizar dados de solicitações:', err);
@@ -332,6 +461,8 @@ export const PurchaseApproval: React.FC = () => {
     setShowActionConfirm(null);
     setActionObservation('');
     setNewMessageText('');
+    setIsEditingProposal(false);
+    setUploadError('');
     try {
       const res = await fetch(`${API_BASE_URL}/api/compras/requisicoes/${reqId}`, {
         headers: getAuthHeaders()
@@ -339,6 +470,20 @@ export const PurchaseApproval: React.FC = () => {
       if (res.ok) {
         const data = await res.json();
         setSelectedRequest(data);
+        
+        // Copia dados da proposta para os states de edição (para suporte a edições)
+        setEditFornecedorNome(data.fornecedor_nome || '');
+        setEditFornecedorContato(data.fornecedor_contato || '');
+        setEditFormaPagamento(data.forma_pagamento || 'PIX');
+        setEditQuantidadeParcelas(data.quantidade_parcelas || 1);
+        setEditDepartamento(data.departamento_centro_custo || '');
+        setEditProduto(data.produto_servico || '');
+        setEditValorNumeric(data.valor || 0);
+        setEditValorDisplay(data.valor ? data.valor.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) : '');
+        setEditQuantidade(data.quantidade || 1);
+        setEditObservacoes(data.observacoes || '');
+        
+        await fetchAttachments(reqId);
       }
     } catch (err) {
       console.error('Erro ao abrir detalhes:', err);
@@ -352,13 +497,28 @@ export const PurchaseApproval: React.FC = () => {
     if (!selectedRequest) return;
     setActionLoading(true);
     try {
+      const bodyData: any = { observacoes: actionObservation.trim() };
+      
+      // Se o aprovador modificou a proposta antes de aprovar
+      if (isEditingProposal) {
+        bodyData.fornecedor_nome = editFornecedorNome.trim();
+        bodyData.fornecedor_contato = editFornecedorContato.trim();
+        bodyData.forma_pagamento = editFormaPagamento;
+        bodyData.quantidade_parcelas = editQuantidadeParcelas;
+        bodyData.departamento_centro_custo = editDepartamento.trim();
+        bodyData.produto_servico = editProduto.trim();
+        bodyData.valor = editValorNumeric;
+        bodyData.quantidade = editQuantidade;
+        bodyData.observacoes = editObservacoes.trim();
+      }
+
       const res = await fetch(`${API_BASE_URL}/api/compras/requisicoes/${selectedRequest.id}/aprovar`, {
         method: 'POST',
         headers: {
           ...getAuthHeaders(),
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify({ observacoes: actionObservation.trim() })
+        body: JSON.stringify(bodyData)
       });
 
       if (!res.ok) {
@@ -582,6 +742,12 @@ export const PurchaseApproval: React.FC = () => {
         return <span className="pa-status-badge approved"><CheckCircle2 size={12} /> Aprovado</span>;
       case 'NEGADO':
         return <span className="pa-status-badge denied"><XCircle size={12} /> Negado</span>;
+      case 'PAGO':
+        return <span className="pa-status-badge approved" style={{ background: 'rgba(52, 211, 153, 0.15)', color: '#34d399', border: '1px solid rgba(52, 211, 153, 0.3)' }}><CheckCircle2 size={12} /> Pago</span>;
+      case 'SOLICITACAO_CONCLUIDA':
+        return <span className="pa-status-badge approved" style={{ background: 'rgba(52, 211, 153, 0.15)', color: '#34d399', border: '1px solid rgba(52, 211, 153, 0.3)' }}><CheckCircle2 size={12} /> Concluída</span>;
+      case 'REVISAO':
+        return <span className="pa-status-badge waiting-approver" style={{ background: 'rgba(239, 68, 68, 0.15)', color: '#ef4444', border: '1px solid rgba(239, 68, 68, 0.3)' }}><RotateCcw size={12} /> Reaprovação Necessária</span>;
       default:
         return <span className="pa-status-badge pending">{status}</span>;
     }
@@ -1316,29 +1482,98 @@ export const PurchaseApproval: React.FC = () => {
             </div>
 
             <div className="pa-modal-body">
+              {/* Opção para Editar Proposta caso esteja em REVISAO */}
+              {selectedRequest.status === 'REVISAO' && (isApprover || isMaster) && (
+                <div style={{ marginBottom: '1rem', display: 'flex', gap: '8px' }}>
+                  <button
+                    type="button"
+                    className="pa-btn-action-view"
+                    style={{ background: isEditingProposal ? 'rgba(56, 189, 248, 0.2)' : 'rgba(255,255,255,0.05)', color: isEditingProposal ? '#38bdf8' : '#cbd5e1', border: isEditingProposal ? '1px solid #38bdf8' : '1px solid rgba(255,255,255,0.1)' }}
+                    onClick={() => setIsEditingProposal(!isEditingProposal)}
+                  >
+                    {isEditingProposal ? '✏️ Modo Edição Ativo (Clique para cancelar)' : '✏️ Editar Proposta'}
+                  </button>
+                </div>
+              )}
+
               {/* Detalhes da Solicitação */}
               <div className="pa-req-details-grid">
                 <div className="pa-detail-item">
                   <span className="pa-detail-label">Fornecedor / Prestador</span>
-                  <span className="pa-detail-val">{selectedRequest.fornecedor_nome || 'Não informado'}</span>
+                  {isEditingProposal ? (
+                    <input
+                      type="text"
+                      className="pa-input"
+                      value={editFornecedorNome}
+                      onChange={e => setEditFornecedorNome(e.target.value)}
+                      style={{ padding: '4px 8px', fontSize: '0.85rem', width: '100%', boxSizing: 'border-box' }}
+                    />
+                  ) : (
+                    <span className="pa-detail-val">{selectedRequest.fornecedor_nome || 'Não informado'}</span>
+                  )}
                 </div>
 
                 <div className="pa-detail-item">
                   <span className="pa-detail-label">Contato do Fornecedor</span>
-                  <span className="pa-detail-val">{selectedRequest.fornecedor_contato || 'Não informado'}</span>
+                  {isEditingProposal ? (
+                    <input
+                      type="text"
+                      className="pa-input"
+                      value={editFornecedorContato}
+                      onChange={e => setEditFornecedorContato(e.target.value)}
+                      style={{ padding: '4px 8px', fontSize: '0.85rem', width: '100%', boxSizing: 'border-box' }}
+                    />
+                  ) : (
+                    <span className="pa-detail-val">{selectedRequest.fornecedor_contato || 'Não informado'}</span>
+                  )}
                 </div>
 
                 <div className="pa-detail-item">
-                  <span className="pa-detail-label">Forma de Pagamento & Parcelas</span>
-                  <span className="pa-detail-val" style={{ color: '#60a5fa' }}>
-                    {selectedRequest.forma_pagamento || '-'}
-                    {selectedRequest.quantidade_parcelas > 1 ? ` (${selectedRequest.quantidade_parcelas}x de ${formatBrl((selectedRequest.valor * selectedRequest.quantidade) / selectedRequest.quantidade_parcelas)})` : ' (À vista)'}
-                  </span>
+                  <span className="pa-detail-label">Forma de Pagamento</span>
+                  {isEditingProposal ? (
+                    <div style={{ display: 'flex', gap: '4px' }}>
+                      <select
+                        className="pa-select"
+                        value={editFormaPagamento}
+                        onChange={e => setEditFormaPagamento(e.target.value as any)}
+                        style={{ padding: '4px 8px', fontSize: '0.85rem', flex: 1 }}
+                      >
+                        <option value="PIX">PIX</option>
+                        <option value="DINHEIRO">Dinheiro</option>
+                        <option value="DEBITO">Débito</option>
+                        <option value="CREDITO">Crédito</option>
+                      </select>
+                      <input
+                        type="number"
+                        min="1"
+                        className="pa-input"
+                        value={editQuantidadeParcelas}
+                        onChange={e => setEditQuantidadeParcelas(Math.max(1, Number(e.target.value) || 1))}
+                        style={{ padding: '4px 8px', fontSize: '0.85rem', width: '60px' }}
+                        title="Parcelas"
+                      />
+                    </div>
+                  ) : (
+                    <span className="pa-detail-val" style={{ color: '#60a5fa' }}>
+                      {selectedRequest.forma_pagamento || '-'}
+                      {selectedRequest.quantidade_parcelas > 1 ? ` (${selectedRequest.quantidade_parcelas}x de ${formatBrl((selectedRequest.valor * selectedRequest.quantidade) / selectedRequest.quantidade_parcelas)})` : ' (À vista)'}
+                    </span>
+                  )}
                 </div>
 
                 <div className="pa-detail-item">
                   <span className="pa-detail-label">Centro de Custo / Cliente</span>
-                  <span className="pa-detail-val">{selectedRequest.departamento_centro_custo || 'Não informado'}</span>
+                  {isEditingProposal ? (
+                    <input
+                      type="text"
+                      className="pa-input"
+                      value={editDepartamento}
+                      onChange={e => setEditDepartamento(e.target.value)}
+                      style={{ padding: '4px 8px', fontSize: '0.85rem', width: '100%', boxSizing: 'border-box' }}
+                    />
+                  ) : (
+                    <span className="pa-detail-val">{selectedRequest.departamento_centro_custo || 'Não informado'}</span>
+                  )}
                 </div>
 
                 <div className="pa-detail-item">
@@ -1347,39 +1582,93 @@ export const PurchaseApproval: React.FC = () => {
                 </div>
 
                 <div className="pa-detail-item">
+                  <span className="pa-detail-label">Data Agendada de Pagamento</span>
+                  <span className="pa-detail-val" style={{ color: '#fbbf24', fontWeight: 600 }}>
+                    {selectedRequest.data_pagamento
+                      ? selectedRequest.data_pagamento.substring(0, 10).split('-').reverse().join('/')
+                      : 'Não programada pelo Financeiro'}
+                  </span>
+                </div>
+
+                <div className="pa-detail-item">
                   <span className="pa-detail-label">Descrição / Produto / Serviço</span>
-                  <span className="pa-detail-val">{selectedRequest.produto_servico}</span>
+                  {isEditingProposal ? (
+                    <input
+                      type="text"
+                      className="pa-input"
+                      value={editProduto}
+                      onChange={e => setEditProduto(e.target.value)}
+                      style={{ padding: '4px 8px', fontSize: '0.85rem', width: '100%', boxSizing: 'border-box' }}
+                    />
+                  ) : (
+                    <span className="pa-detail-val">{selectedRequest.produto_servico}</span>
+                  )}
                 </div>
 
                 <div className="pa-detail-item">
                   <span className="pa-detail-label">Valor Unitário</span>
-                  <span className="pa-detail-val">{formatBrl(selectedRequest.valor)}</span>
+                  {isEditingProposal ? (
+                    <input
+                      type="text"
+                      className="pa-input"
+                      value={editValorDisplay}
+                      onChange={handleEditCurrencyInput}
+                      style={{ padding: '4px 8px', fontSize: '0.85rem', width: '100%', boxSizing: 'border-box' }}
+                    />
+                  ) : (
+                    <span className="pa-detail-val">{formatBrl(selectedRequest.valor)}</span>
+                  )}
                 </div>
 
                 <div className="pa-detail-item">
                   <span className="pa-detail-label">Quantidade & Total</span>
-                  <span className="pa-detail-val" style={{ color: '#34d399', fontWeight: 700 }}>
-                    {selectedRequest.quantidade}x = {formatBrl(selectedRequest.valor * selectedRequest.quantidade)}
-                  </span>
+                  {isEditingProposal ? (
+                    <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                      <input
+                        type="number"
+                        min="1"
+                        className="pa-input"
+                        value={editQuantidade}
+                        onChange={e => setEditQuantidade(Math.max(1, Number(e.target.value) || 1))}
+                        style={{ padding: '4px 8px', fontSize: '0.85rem', width: '70px' }}
+                      />
+                      <span style={{ fontSize: '0.8rem', color: '#34d399', fontWeight: 600 }}>
+                        Total: {formatBrl(editValorNumeric * editQuantidade)}
+                      </span>
+                    </div>
+                  ) : (
+                    <span className="pa-detail-val" style={{ color: '#34d399', fontWeight: 700 }}>
+                      {selectedRequest.quantidade}x = {formatBrl(selectedRequest.valor * selectedRequest.quantidade)}
+                    </span>
+                  )}
                 </div>
 
                 <div className="pa-detail-item" style={{ gridColumn: 'span 2' }}>
                   <span className="pa-detail-label">Observações Adicionais</span>
-                  <span className="pa-detail-val" style={{ fontWeight: 400, color: '#cbd5e1' }}>
-                    {selectedRequest.observacoes || 'Nenhuma observação informada.'}
-                  </span>
+                  {isEditingProposal ? (
+                    <textarea
+                      className="pa-textarea"
+                      value={editObservacoes}
+                      onChange={e => setEditObservacoes(e.target.value)}
+                      style={{ fontSize: '0.85rem', minHeight: '50px', width: '100%', boxSizing: 'border-box' }}
+                    />
+                  ) : (
+                    <span className="pa-detail-val" style={{ fontWeight: 400, color: '#cbd5e1' }}>
+                      {selectedRequest.observacoes || 'Nenhuma observação informada.'}
+                    </span>
+                  )}
                 </div>
 
                 {selectedRequest.aprovador_nome && (
                   <div className="pa-detail-item" style={{ gridColumn: 'span 2', background: '#1e293b', padding: '10px 14px', borderRadius: '8px' }}>
                     <span className="pa-detail-label">
-                      {selectedRequest.status === 'APROVADO' ? 'Aprovado por' : 'Negado por'}
+                      {selectedRequest.status === 'APROVADO' ? 'Aprovado por' : selectedRequest.status === 'REVISAO' ? 'Retornado para Revisão por' : 'Negado por'}
                     </span>
                     <span className="pa-detail-val">
-                      {selectedRequest.aprovador_nome} em {formatDate(selectedRequest.decidido_em || '')}
+                      {selectedRequest.aprovador_nome || 'Financeiro'} em {formatDate(selectedRequest.decidido_em || selectedRequest.updated_at || '')}
                     </span>
                     {selectedRequest.motivo_decisao && (
-                      <p style={{ marginTop: '4px', fontSize: '0.85rem', color: '#94a3b8' }}>
+                      <p style={{ marginTop: '4px', fontSize: '0.85rem', color: '#ef4444' }}>
                         "{selectedRequest.motivo_decisao}"
                       </p>
                     )}
@@ -1401,6 +1690,74 @@ export const PurchaseApproval: React.FC = () => {
                     )}
                   </div>
                 )}
+              </div>
+
+              {/* --- SEÇÃO DE ANEXOS --- */}
+              <div style={{ marginTop: '1.5rem', borderTop: '1px solid rgba(255, 255, 255, 0.08)', paddingTop: '1.5rem' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                  <h4 style={{ margin: 0, fontSize: '0.9rem', color: '#38bdf8', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <Paperclip size={16} /> Anexos do Processo ({attachments.length})
+                  </h4>
+                  <label className="pa-btn-action-view" style={{ cursor: 'pointer', margin: 0, padding: '4px 8px', fontSize: '0.75rem', background: 'rgba(56, 189, 248, 0.15)', color: '#38bdf8' }}>
+                    <Paperclip size={12} style={{ marginRight: '4px' }} /> Anexar Documento
+                    <input
+                      type="file"
+                      ref={fileInputRef}
+                      style={{ display: 'none' }}
+                      onChange={handleFileUpload}
+                      disabled={uploading}
+                    />
+                  </label>
+                </div>
+
+                {uploadError && (
+                  <div style={{ color: '#ef4444', fontSize: '0.75rem', marginBottom: '8px' }}>
+                    {uploadError}
+                  </div>
+                )}
+
+                {uploading && (
+                  <div style={{ color: '#38bdf8', fontSize: '0.75rem', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    <RefreshCw size={12} className="animate-spin" /> Enviando anexo...
+                  </div>
+                )}
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  {attachments.length === 0 ? (
+                    <p style={{ color: '#64748b', fontSize: '0.8rem', fontStyle: 'italic', margin: 0 }}>Nenhum documento anexado.</p>
+                  ) : (
+                    attachments.map(att => (
+                      <div key={att.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 12px', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '8px' }}>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', maxWidth: '75%' }}>
+                          <strong style={{ fontSize: '0.8rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{att.nome_arquivo}</strong>
+                          <span style={{ fontSize: '0.7rem', color: '#64748b' }}>
+                            {(att.tamanho_bytes / 1024 / 1024).toFixed(2)} MB • Por {att.enviado_por_nome}
+                          </span>
+                        </div>
+                        <div style={{ display: 'flex', gap: '4px' }}>
+                          <button
+                            type="button"
+                            onClick={() => handleDownloadAttachment(att.id, att.nome_arquivo)}
+                            style={{ background: 'none', border: 'none', color: '#38bdf8', cursor: 'pointer', padding: '4px' }}
+                            title="Baixar Arquivo"
+                          >
+                            <Download size={14} />
+                          </button>
+                          {(att.enviado_por_id === user?.id || isMaster) && (
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteAttachment(att.id)}
+                              style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', padding: '4px' }}
+                              title="Remover Arquivo"
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
               </div>
 
               {/* Botão de Reabrir dentro do modal se estiver negada */}

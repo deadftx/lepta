@@ -1,0 +1,9 @@
+{
+  "recommendations": [
+    "ms-vscode-remote.remote-ssh",
+    "alexcvzz.vscode-sqlite",
+    "yy0931.vscode-sqlite3-editor",
+    "mtxr.sqltools",
+    "mtxr.sqltools-driver-sqlite"
+  ]
+}

@@ -17,7 +17,9 @@ export const permissionGroups: PermissionGroup[] = [
     children: [
       { id: '7.1', name: 'Processar Extrato' },
       { id: '7.2', name: 'LEPTA x GRAFENO' },
-      { id: '7.3', name: 'Solicitações' }
+      { id: '7.3', name: 'Solicitações' },
+      { id: '7.4', name: 'Reembolsos e Despesas' },
+      { id: '7.5', name: 'Calendário de Pagamentos' }
     ]
   },
   {
@@ -44,7 +46,7 @@ export const permissionGroups: PermissionGroup[] = [
 ];
 
 const legacyChildren: Record<string, string[]> = {
-  '7': ['7.1', '7.2', '7.3'],
+  '7': ['7.1', '7.2', '7.3', '7.4', '7.5'],
   '8': ['8.1'],
   '11': ['11.1', '11.2']
 };
