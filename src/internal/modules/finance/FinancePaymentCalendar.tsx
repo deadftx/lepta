@@ -783,8 +783,8 @@ export const FinancePaymentCalendar: React.FC = () => {
 
       {/* MODAL DE DETALHES COMPLETOS (AO CLICAR NO OLHO) */}
       {selectedRequestDetails && (
-        <div className="pa-modal-overlay" onClick={() => setSelectedRequestDetails(null)}>
-          <div className="pa-modal-card" style={{ maxWidth: '780px' }} onClick={e => e.stopPropagation()}>
+        <div className="pa-modal-overlay" style={{ zIndex: 2000 }} onClick={() => setSelectedRequestDetails(null)}>
+          <div className="pa-modal-card" style={{ maxWidth: '780px', zIndex: 2001, position: 'relative' }} onClick={e => e.stopPropagation()}>
             <div className="pa-modal-header">
               <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                 <CreditCard size={20} color="#38bdf8" />
