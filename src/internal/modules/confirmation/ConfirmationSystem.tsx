@@ -1,9 +1,10 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   ClipboardCheck, LayoutDashboard, TrendingUp, Layers,
-  Search, Users, DollarSign, RefreshCw, Calendar
+  Search, Users, DollarSign, RefreshCw, Calendar, Upload, Database, CheckCircle2, AlertCircle, X
 } from 'lucide-react';
 import { API_BASE_URL, getAuthHeaders } from '../../../config/api';
+import { useAuth } from '../../core/AuthContext';
 import ConfirmationDashboard from './ConfirmationDashboard';
 import ConfirmationCotas from './ConfirmationCotas';
 import ConfirmationCarteira from './ConfirmationCarteira';
@@ -15,6 +16,9 @@ import './ConfirmationSystem.css';
 type ActiveTab = 'dashboard' | 'cotas' | 'carteira' | 'titulos' | 'cedentes' | 'receitas';
 
 export const ConfirmationSystem: React.FC = () => {
+  const { user } = useAuth();
+  const isMaster = user?.role === 'MASTER';
+
   const [fundoId, setFundoId] = useState<'MULTISETORIAL' | 'SPECIAL'>('MULTISETORIAL');
   const [dataPosicao, setDataPosicao] = useState<string>('');
   const [activeTab, setActiveTab] = useState<ActiveTab>('dashboard');
@@ -23,8 +27,17 @@ export const ConfirmationSystem: React.FC = () => {
   const [dashboardData, setDashboardData] = useState<any>(null);
   const [loadingDashboard, setLoadingDashboard] = useState(false);
 
+  // Modal de Restauração de Banco
+  const [isRestoreModalOpen, setIsRestoreModalOpen] = useState(false);
+  const [selectedDbFile, setSelectedDbFile] = useState<File | null>(null);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [uploading, setUploading] = useState(false);
+  const [uploadSuccess, setUploadSuccess] = useState<string | null>(null);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
   // 1. Carrega Fundos e Classes
-  useEffect(() => {
+  const fetchFundos = useCallback(() => {
     fetch(`${API_BASE_URL}/api/confirmacao/fundos`, { headers: getAuthHeaders() })
       .then(res => (res.ok ? res.json() : null))
       .then(data => {
@@ -32,6 +45,10 @@ export const ConfirmationSystem: React.FC = () => {
       })
       .catch(console.error);
   }, []);
+
+  useEffect(() => {
+    fetchFundos();
+  }, [fetchFundos]);
 
   // 2. Carrega Dashboard do FIDC
   const fetchDashboard = useCallback(async () => {
@@ -58,6 +75,65 @@ export const ConfirmationSystem: React.FC = () => {
   useEffect(() => {
     fetchDashboard();
   }, [fetchDashboard]);
+
+  const handleUploadBackup = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedDbFile) return;
+
+    setUploading(true);
+    setUploadProgress(0);
+    setUploadError(null);
+    setUploadSuccess(null);
+
+    const formData = new FormData();
+    formData.append('database', selectedDbFile);
+
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', `${API_BASE_URL}/api/confirmacao/upload-backup`);
+
+    const headers = getAuthHeaders() as Record<string, string>;
+    Object.entries(headers).forEach(([key, val]) => {
+      xhr.setRequestHeader(key, val);
+    });
+
+    xhr.upload.onprogress = (event) => {
+      if (event.lengthComputable) {
+        const pct = Math.round((event.loaded / event.total) * 100);
+        setUploadProgress(pct);
+      }
+    };
+
+    xhr.onload = () => {
+      setUploading(false);
+      try {
+        const res = JSON.parse(xhr.responseText);
+        if (xhr.status >= 200 && xhr.status < 300 && res.success) {
+          setUploadSuccess(
+            `✅ ${res.message} (${res.counts?.titulos?.toLocaleString('pt-BR')} títulos, ${res.counts?.cotas?.toLocaleString('pt-BR')} cotas carregadas)`
+          );
+          setSelectedDbFile(null);
+          if (fileInputRef.current) fileInputRef.current.value = '';
+          fetchFundos();
+          fetchDashboard();
+          setTimeout(() => {
+            setIsRestoreModalOpen(false);
+            setUploadSuccess(null);
+          }, 3000);
+        } else {
+          setUploadError(res.error || 'Erro ao processar arquivo de banco de dados.');
+        }
+      } catch (err) {
+        setUploadError('Erro ao ler resposta do servidor.');
+      }
+    };
+
+    xhr.onerror = () => {
+      setUploading(false);
+      setUploadError('Erro de conexão durante o upload.');
+    };
+
+    xhr.send(formData);
+  };
 
   return (
     <div className="cs-container">
@@ -112,6 +188,18 @@ export const ConfirmationSystem: React.FC = () => {
             <RefreshCw size={14} className={loadingDashboard ? 'pwc-spinner' : ''} />
             Atualizar
           </button>
+
+          {isMaster && (
+            <button
+              className="cs-page-btn"
+              onClick={() => setIsRestoreModalOpen(true)}
+              title="Restaurar / Importar Banco FIDC (.db)"
+              style={{ display: 'flex', alignItems: 'center', gap: '6px', background: 'rgba(56, 189, 248, 0.15)', borderColor: '#38bdf8', color: '#38bdf8' }}
+            >
+              <Upload size={14} />
+              Restaurar Banco FIDC
+            </button>
+          )}
         </div>
       </div>
 
@@ -178,6 +266,95 @@ export const ConfirmationSystem: React.FC = () => {
 
       {activeTab === 'receitas' && (
         <ConfirmationReceitas fundoId={fundoId} />
+      )}
+
+      {/* Modal de Restauração de Banco FIDC */}
+      {isRestoreModalOpen && (
+        <div className="cs-modal-overlay" onClick={() => !uploading && setIsRestoreModalOpen(false)}>
+          <div className="cs-modal" onClick={e => e.stopPropagation()}>
+            <div className="cs-modal-header">
+              <h3 className="cs-modal-title" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Database size={20} color="#38bdf8" /> Restaurar / Importar Banco FIDC (.db)
+              </h3>
+              {!uploading && (
+                <button className="cs-modal-close" onClick={() => setIsRestoreModalOpen(false)}>
+                  <X size={20} />
+                </button>
+              )}
+            </div>
+
+            {uploadSuccess && (
+              <div className="cs-badge success" style={{ padding: '12px 16px', marginBottom: '1rem', width: '100%', boxSizing: 'border-box' }}>
+                <CheckCircle2 size={18} /> {uploadSuccess}
+              </div>
+            )}
+
+            {uploadError && (
+              <div className="cs-badge danger" style={{ padding: '12px 16px', marginBottom: '1rem', width: '100%', boxSizing: 'border-box' }}>
+                <AlertCircle size={18} /> {uploadError}
+              </div>
+            )}
+
+            <form onSubmit={handleUploadBackup}>
+              <p style={{ color: '#cbd5e1', fontSize: '0.88rem', lineHeight: '1.5', margin: '0 0 1.25rem 0' }}>
+                Selecione o arquivo de banco de dados do FIDC (ex: <code>lepta_backup_2026-08-17.db</code> ou <code>lepta.db</code>).
+                O servidor receberá o arquivo e atualizará todos os fundos, cotas, títulos e dashboards instantaneamente.
+              </p>
+
+              <div style={{ marginBottom: '1.5rem' }}>
+                <input
+                  type="file"
+                  accept=".db,.sqlite,.db3"
+                  ref={fileInputRef}
+                  disabled={uploading}
+                  onChange={e => setSelectedDbFile(e.target.files?.[0] || null)}
+                  className="cs-search-input"
+                  style={{ width: '100%', boxSizing: 'border-box', padding: '10px' }}
+                  required
+                />
+              </div>
+
+              {uploading && (
+                <div style={{ marginBottom: '1.5rem' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem', color: '#94a3b8', marginBottom: '6px' }}>
+                    <span>Enviando banco de dados para o servidor...</span>
+                    <span style={{ fontWeight: 700, color: '#38bdf8' }}>{uploadProgress}%</span>
+                  </div>
+                  <div style={{ background: 'rgba(255, 255, 255, 0.1)', borderRadius: '10px', height: '10px', overflow: 'hidden' }}>
+                    <div
+                      style={{
+                        background: 'linear-gradient(90deg, #2563eb, #38bdf8)',
+                        height: '100%',
+                        width: `${uploadProgress}%`,
+                        transition: 'width 0.2s ease'
+                      }}
+                    />
+                  </div>
+                </div>
+              )}
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
+                <button
+                  type="button"
+                  className="cs-page-btn"
+                  disabled={uploading}
+                  onClick={() => setIsRestoreModalOpen(false)}
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  className="cs-btn-save"
+                  disabled={uploading || !selectedDbFile}
+                  style={{ padding: '8px 22px' }}
+                >
+                  {uploading ? <RefreshCw size={16} className="pwc-spinner" /> : <Upload size={16} />}
+                  {uploading ? `Enviando (${uploadProgress}%)...` : 'Iniciar Restauração'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
       )}
     </div>
   );

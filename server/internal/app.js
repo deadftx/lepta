@@ -2772,6 +2772,7 @@ registerEmailConfigRoutes(app, {
 });
 
 registerConfirmationRoutes(app, {
+  db,
   requireSession,
   requirePermission,
   requireMaster

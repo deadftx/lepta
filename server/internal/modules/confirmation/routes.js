@@ -1,3 +1,6 @@
+import multer from 'multer';
+import fs from 'fs';
+import path from 'path';
 import {
   getFundosAndClasses,
   getDashboardSummary,
@@ -8,13 +11,29 @@ import {
   saveCedente,
   getReceitas
 } from './fidcService.js';
-import { getFidcDb } from './fidcDb.js';
+import { setFidcDb, getFidcDb, importBackupIntoMainDb } from './fidcDb.js';
 
 export function registerConfirmationRoutes(app, {
+  db,
   requireSession,
   requirePermission,
   requireMaster
 }) {
+  setFidcDb(db);
+
+  // Tenta auto-popular se rodando localmente com backup existente
+  try {
+    const localBackup = 'C:/Users/ArthurFeltrinDeco/OneDrive - Lepta/Tecnologia/SISTEMA/SISTEMA/SistemaProdutos/BACKUPS/lepta_backup_2026-08-17.db';
+    const currentCount = db.prepare('SELECT COUNT(*) as c FROM fundos').get()?.c || 0;
+    if (currentCount === 0 && fs.existsSync(localBackup)) {
+      console.log('🔄 [FIDC] Populando database.sqlite principal a partir do backup local...');
+      importBackupIntoMainDb(db, localBackup);
+      console.log('✅ [FIDC] database.sqlite populado com sucesso!');
+    }
+  } catch (err) {
+    console.warn('Aviso no auto-import do FIDC:', err.message);
+  }
+
   const checkAccess = (req, res, next) => {
     // Permissão 10 é Confirmação
     if (req.authSession?.role === 'MASTER') return next();
@@ -193,6 +212,64 @@ export function registerConfirmationRoutes(app, {
     } catch (err) {
       console.error('Erro ao buscar snapshots:', err);
       return res.status(500).json({ error: err.message });
+    }
+  });
+
+  // --- 9. UPLOAD / RESTAURAÇÃO DE BANCO DE DADOS FIDC (.db) ---
+  const uploadStorage = multer.diskStorage({
+    destination: (req, file, cb) => {
+      const targetDir = path.join(path.resolve(), 'server', 'data');
+      if (!fs.existsSync(targetDir)) fs.mkdirSync(targetDir, { recursive: true });
+      cb(null, targetDir);
+    },
+    filename: (req, file, cb) => {
+      cb(null, `fidc_incoming_${Date.now()}.db`);
+    }
+  });
+  const backupUpload = multer({
+    storage: uploadStorage,
+    limits: { fileSize: 2 * 1024 * 1024 * 1024 } // até 2GB
+  });
+
+  app.post('/api/confirmacao/upload-backup', requireSession, requireMaster, backupUpload.single('database'), (req, res) => {
+    try {
+      if (!req.file || !req.file.path) {
+        return res.status(400).json({ error: 'Nenhum arquivo de banco de dados (.db) foi enviado.' });
+      }
+
+      const uploadedFilePath = req.file.path;
+
+      // Importa todas as tabelas diretamente para o database.sqlite principal
+      const result = importBackupIntoMainDb(db, uploadedFilePath);
+
+      // Remove o arquivo temporário de upload para não ocupar espaço
+      try {
+        if (fs.existsSync(uploadedFilePath)) {
+          fs.unlinkSync(uploadedFilePath);
+        }
+      } catch (delErr) {
+        console.warn('Aviso ao remover arquivo temporário de upload:', delErr.message);
+      }
+
+      // Obtém contagens para confirmação
+      const fundosCount = db.prepare('SELECT COUNT(*) as c FROM fundos').get()?.c || 0;
+      const cotasCount = db.prepare('SELECT COUNT(*) as c FROM historico_cotas').get()?.c || 0;
+      const titulosCount = db.prepare('SELECT COUNT(*) as c FROM estoque_titulos').get()?.c || 0;
+      const cedentesCount = db.prepare('SELECT COUNT(*) as c FROM cedentes').get()?.c || 0;
+
+      return res.json({
+        success: true,
+        message: 'Dados do FIDC importados e mesclados diretamente no banco de dados principal com sucesso!',
+        counts: {
+          fundos: fundosCount,
+          cotas: cotasCount,
+          titulos: titulosCount,
+          cedentes: cedentesCount
+        }
+      });
+    } catch (err) {
+      console.error('Erro ao importar backup FIDC para o banco principal:', err);
+      return res.status(500).json({ error: `Erro ao processar backup: ${err.message}` });
     }
   });
 }
