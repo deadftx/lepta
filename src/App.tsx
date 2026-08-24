@@ -22,6 +22,7 @@ import DatabaseManagement from './internal/modules/database/DatabaseManagement';
 import PurchaseApproval from './internal/modules/administrative/purchases/PurchaseApproval';
 import PurchaseWorkflowConfig from './internal/modules/administrative/purchases/PurchaseWorkflowConfig';
 import EmailConfig from './internal/modules/administration/access/EmailConfig';
+import ConfirmationSystem from './internal/modules/confirmation/ConfirmationSystem';
 import ProtectedRoute from './internal/core/ProtectedRoute';
 import InternalLayout from './internal/core/InternalLayout';
 import AccessRoute from './internal/core/AccessRoute';
@@ -68,6 +69,7 @@ function App() {
               <Route path="/intelligence/analise-riscos" element={<AccessRoute permission="8.3"><RiskAnalysis /></AccessRoute>} />
               <Route path="/administrativo/compras" element={<AccessRoute permission="11.1"><PurchaseApproval /></AccessRoute>} />
               <Route path="/administrativo/configuracao-compras" element={<AccessRoute permission="11.2"><PurchaseWorkflowConfig /></AccessRoute>} />
+              <Route path="/confirmacao/sistema" element={<AccessRoute permission="10"><ConfirmationSystem /></AccessRoute>} />
               <Route path="/banco-de-dados" element={<AccessRoute permission="9"><DatabaseManagement /></AccessRoute>} />
               <Route path="/permissions" element={<AccessRoute masterOnly><Permissions /></AccessRoute>} />
               <Route path="/permissions/create-user" element={<AccessRoute masterOnly><CreateUser /></AccessRoute>} />

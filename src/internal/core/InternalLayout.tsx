@@ -22,6 +22,9 @@ const InternalLayout = () => {
 
   const isAdministrativeActive = location.pathname.startsWith('/administrativo');
   const [isAdministrativeOpen, setIsAdministrativeOpen] = useState(true);
+
+  const isConfirmationActive = location.pathname.startsWith('/confirmacao');
+  const [isConfirmationOpen, setIsConfirmationOpen] = useState(true);
   
   // Mobile sidebar state
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
@@ -199,8 +202,25 @@ const InternalLayout = () => {
             </div>
           )}
           {hasAccess('10') && (
-            <div className="nav-item" aria-label="Confirmação">
-              <ClipboardCheck size={20} /> Confirmação
+            <div className="nav-menu-group">
+              <div
+                className={`nav-item nav-item-parent ${isConfirmationActive ? 'active' : ''}`}
+                onClick={() => setIsConfirmationOpen(!isConfirmationOpen)}
+                style={{ cursor: 'pointer', justifyContent: 'space-between' }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                  <ClipboardCheck size={20} /> Confirmação
+                </div>
+                {isConfirmationOpen ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+              </div>
+
+              {isConfirmationOpen && (
+                <div className="nav-submenu" style={{ paddingLeft: '1rem' }}>
+                  <Link to="/confirmacao/sistema" className={navItemClass('/confirmacao/sistema')}>
+                    <ClipboardCheck size={18} /> Sistema de Confirmação
+                  </Link>
+                </div>
+              )}
             </div>
           )}
           {hasAccess('9') && (
