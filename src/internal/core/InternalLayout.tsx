@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { LogOut, User, ShieldAlert, Shield, UserPlus, Users, ChevronDown, ChevronRight, LayoutDashboard, Sliders, Home, Calendar, Menu, X, Wallet, FileSpreadsheet, BrainCircuit, Database, ClipboardCheck, ContactRound, ShieldCheck, Landmark, Briefcase, ShoppingCart, SlidersHorizontal, DollarSign } from 'lucide-react';
+import { LogOut, User, ShieldAlert, Shield, UserPlus, Users, ChevronDown, ChevronRight, LayoutDashboard, Sliders, Home, Calendar, Menu, X, Wallet, FileSpreadsheet, BrainCircuit, Database, ClipboardCheck, ContactRound, ShieldCheck, Landmark, Briefcase, ShoppingCart, SlidersHorizontal, DollarSign, Mail } from 'lucide-react';
 import { useNavigate, Outlet, Link, useLocation } from 'react-router-dom';
 import { useAuth } from './AuthContext';
 import NotificationBell from './NotificationBell';
@@ -22,6 +22,9 @@ const InternalLayout = () => {
 
   const isAdministrativeActive = location.pathname.startsWith('/administrativo');
   const [isAdministrativeOpen, setIsAdministrativeOpen] = useState(true);
+
+  const isConfirmationActive = location.pathname.startsWith('/confirmacao');
+  const [isConfirmationOpen, setIsConfirmationOpen] = useState(true);
   
   // Mobile sidebar state
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
@@ -199,8 +202,25 @@ const InternalLayout = () => {
             </div>
           )}
           {hasAccess('10') && (
-            <div className="nav-item" aria-label="Confirmação">
-              <ClipboardCheck size={20} /> Confirmação
+            <div className="nav-menu-group">
+              <div
+                className={`nav-item nav-item-parent ${isConfirmationActive ? 'active' : ''}`}
+                onClick={() => setIsConfirmationOpen(!isConfirmationOpen)}
+                style={{ cursor: 'pointer', justifyContent: 'space-between' }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                  <ClipboardCheck size={20} /> Confirmação
+                </div>
+                {isConfirmationOpen ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+              </div>
+
+              {isConfirmationOpen && (
+                <div className="nav-submenu" style={{ paddingLeft: '1rem' }}>
+                  <Link to="/confirmacao/sistema" className={navItemClass('/confirmacao/sistema')}>
+                    <ClipboardCheck size={18} /> Sistema de Confirmação
+                  </Link>
+                </div>
+              )}
             </div>
           )}
           {hasAccess('9') && (
@@ -244,6 +264,9 @@ const InternalLayout = () => {
                     </Link>
                     <Link to="/permissions/groups" className={navItemClass('/permissions/groups')}>
                       <Users size={18} /> Configurar Grupos
+                    </Link>
+                    <Link to="/permissions/email-config" className={navItemClass('/permissions/email-config')}>
+                      <Mail size={18} /> Configuração de E-mail
                     </Link>
                   </div>
                 )}

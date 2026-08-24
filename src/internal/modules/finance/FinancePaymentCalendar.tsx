@@ -13,6 +13,7 @@ export interface PurchaseItem {
   requisicao_id?: string;
   numero_item?: number;
   tipo_destino?: string;
+  empresa_pagadora?: string;
   departamento_centro_custo?: string;
   categoria?: string;
   fornecedor_nome?: string;
@@ -30,6 +31,7 @@ interface PurchaseRequest {
   id: string;
   numero: number;
   tipo_destino?: string;
+  empresa_pagadora?: string;
   categoria?: string;
   fornecedor_nome: string;
   fornecedor_contato: string;
@@ -497,7 +499,8 @@ export const FinancePaymentCalendar: React.FC = () => {
           <span className="day-number">{day}</span>
           {dayReqs.length > 0 && (
             <span className="day-count-badge">
-              {dayReqs.length} {dayReqs.length === 1 ? 'pgto' : 'pgtos'}
+              <span className="badge-text-full">{dayReqs.length} {dayReqs.length === 1 ? 'pgto' : 'pgtos'}</span>
+              <span className="badge-text-mini">{dayReqs.length}</span>
             </span>
           )}
         </div>
@@ -515,6 +518,14 @@ export const FinancePaymentCalendar: React.FC = () => {
                 +{dayReqs.length - 2} outro(s)...
               </span>
             )}
+          </div>
+        )}
+
+        {/* Mobile Indicator */}
+        {dayReqs.length > 0 && (
+          <div className="day-mobile-indicator">
+            <span className="mobile-event-dot"></span>
+            <span className="mobile-total-val">{formatBrl(totalValue)}</span>
           </div>
         )}
 
@@ -605,8 +616,20 @@ export const FinancePaymentCalendar: React.FC = () => {
       {/* GRID DO CALENDÁRIO */}
       <div className="calendar-card">
         <div className="calendar-grid">
-          {['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'].map(w => (
-            <div key={w} className="calendar-weekday">{w}</div>
+          {[
+            { full: 'Domingo', short: 'Dom', mini: 'D' },
+            { full: 'Segunda', short: 'Seg', mini: 'S' },
+            { full: 'Terça', short: 'Ter', mini: 'T' },
+            { full: 'Quarta', short: 'Qua', mini: 'Q' },
+            { full: 'Quinta', short: 'Qui', mini: 'Q' },
+            { full: 'Sexta', short: 'Sex', mini: 'S' },
+            { full: 'Sábado', short: 'Sáb', mini: 'S' }
+          ].map(w => (
+            <div key={w.full} className="calendar-weekday">
+              <span className="weekday-full">{w.full}</span>
+              <span className="weekday-short">{w.short}</span>
+              <span className="weekday-mini">{w.mini}</span>
+            </div>
           ))}
           {calendarCells}
         </div>
@@ -839,6 +862,13 @@ export const FinancePaymentCalendar: React.FC = () => {
                   <span className="pa-detail-val" style={{ color: '#60a5fa' }}>
                     {selectedRequestDetails.forma_pagamento}
                     {selectedRequestDetails.quantidade_parcelas > 1 ? ` (${selectedRequestDetails.quantidade_parcelas}x)` : ' (À vista)'}
+                  </span>
+                </div>
+
+                <div className="pa-detail-item">
+                  <span className="pa-detail-label">Empresa Pagadora</span>
+                  <span className="pa-detail-val" style={{ color: '#a5b4fc', fontWeight: 600 }}>
+                    {selectedRequestDetails.empresa_pagadora || 'INDIFERENTE'}
                   </span>
                 </div>
 

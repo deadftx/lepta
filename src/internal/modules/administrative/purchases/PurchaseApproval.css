@@ -419,6 +419,122 @@
   box-shadow: 0 0 0 1px #3b82f6;
 }
 
+/* Seletor de Empresa Pagadora */
+.pa-empresa-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.pa-empresa-btn {
+  background: #0f172a;
+  border: 1px solid #334155;
+  color: #94a3b8;
+  padding: 9px 12px;
+  border-radius: 10px;
+  font-size: 0.82rem;
+  font-weight: 700;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  transition: all 0.2s ease;
+  text-align: center;
+}
+
+.pa-empresa-btn:hover {
+  border-color: #64748b;
+  color: #f8fafc;
+}
+
+.pa-empresa-btn.active {
+  background: rgba(99, 102, 241, 0.18);
+  border-color: #818cf8;
+  color: #a5b4fc;
+  box-shadow: 0 0 0 1px #818cf8;
+}
+
+/* Área de Upload de Anexos no Formulário */
+.pa-attachment-zone {
+  background: rgba(15, 23, 42, 0.6);
+  border: 2px dashed rgba(148, 163, 184, 0.25);
+  border-radius: 14px;
+  padding: 1.5rem;
+  text-align: center;
+  transition: all 0.2s ease;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.pa-attachment-zone:hover, .pa-attachment-zone.dragging {
+  border-color: #38bdf8;
+  background: rgba(56, 189, 248, 0.05);
+}
+
+.pa-attachment-zone-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  background: rgba(56, 189, 248, 0.12);
+  color: #38bdf8;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 2px;
+}
+
+.pa-attachment-zone-text {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: #f8fafc;
+}
+
+.pa-attachment-zone-sub {
+  font-size: 0.75rem;
+  color: #64748b;
+}
+
+.pa-form-attachments-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.pa-form-attachment-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: rgba(30, 41, 59, 0.7);
+  border: 1px solid rgba(148, 163, 184, 0.15);
+  padding: 8px 14px;
+  border-radius: 10px;
+  transition: border-color 0.2s ease;
+}
+
+.pa-form-attachment-item:hover {
+  border-color: rgba(56, 189, 248, 0.35);
+}
+
+.pa-attachment-count-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: rgba(56, 189, 248, 0.12);
+  color: #38bdf8;
+  border: 1px solid rgba(56, 189, 248, 0.3);
+  padding: 2px 7px;
+  border-radius: 6px;
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
 .pa-submit-btn {
   background: linear-gradient(135deg, #2563eb, #1d4ed8);
   border: 1px solid rgba(59, 130, 246, 0.4);
@@ -1116,13 +1232,251 @@
 }
 
 @media (max-width: 768px) {
+  /* Container e Espaçamento */
+  .pa-container {
+    padding: 0.25rem 0;
+    gap: 1rem;
+    width: 100%;
+    box-sizing: border-box;
+  }
+
+  /* Header */
+  .pa-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
+    width: 100%;
+  }
+
+  .pa-header-left {
+    gap: 12px;
+    width: 100%;
+  }
+
+  .pa-header h1 {
+    font-size: 1.4rem;
+    line-height: 1.25;
+  }
+
+  .pa-subtitle {
+    font-size: 0.82rem;
+  }
+
+  .pa-icon-badge {
+    padding: 10px;
+    border-radius: 12px;
+  }
+
+  .pa-header-badges {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  /* KPIs */
+  .pa-kpi-grid {
+    grid-template-columns: 1fr;
+    gap: 10px;
+    width: 100%;
+  }
+
+  .pa-kpi-card {
+    padding: 1rem 1.15rem;
+    width: 100%;
+    box-sizing: border-box;
+  }
+
+  .pa-kpi-val {
+    font-size: 1.55rem;
+  }
+
+  /* Abas / Tabs */
+  .pa-tabs-container, .pa-tabs {
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 4px;
+    box-sizing: border-box;
+  }
+
+  .pa-tab {
+    width: 100%;
+    justify-content: center;
+    padding: 10px 14px;
+    font-size: 0.88rem;
+    box-sizing: border-box;
+  }
+
+  /* Cards de Tabela e Formulário */
+  .pa-table-card, .pa-form-card {
+    padding: 1rem 0.75rem;
+    border-radius: 14px;
+    width: 100%;
+    box-sizing: border-box;
+  }
+
+  .pa-table-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
+    width: 100%;
+  }
+
+  .pa-table-header h2 {
+    font-size: 1.05rem;
+  }
+
+  .pa-table-controls {
+    width: 100%;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .pa-search-input, .pa-select {
+    width: 100% !important;
+    box-sizing: border-box;
+  }
+
+  /* Transformação da Tabela em Lista de Cards no Mobile */
+  .pa-table-responsive {
+    overflow-x: visible;
+    width: 100%;
+  }
+
+  .pa-table {
+    display: block;
+    width: 100%;
+  }
+
+  .pa-table thead {
+    display: none;
+  }
+
+  .pa-table tbody {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    width: 100%;
+  }
+
+  .pa-table tr {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    background: rgba(15, 23, 42, 0.8);
+    border: 1px solid rgba(56, 189, 248, 0.25);
+    border-radius: 14px;
+    padding: 14px;
+    box-sizing: border-box;
+    width: 100%;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.25);
+  }
+
+  .pa-table td {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 6px 0;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+    font-size: 0.88rem;
+    text-align: right;
+    width: 100%;
+    box-sizing: border-box;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  .pa-table td:before {
+    content: attr(data-label);
+    font-weight: 750;
+    font-size: 0.76rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: #94a3b8;
+    text-align: left;
+    flex-shrink: 0;
+  }
+
+  .pa-table td:last-child {
+    border-bottom: none;
+    padding-top: 10px;
+    display: block;
+  }
+
+  .pa-table td:last-child:before {
+    display: none;
+  }
+
+  .pa-table td:last-child button,
+  .pa-table td:last-child .pa-btn-detail,
+  .pa-table td:last-child div {
+    width: 100%;
+    justify-content: center;
+    padding: 10px 14px;
+    box-sizing: border-box;
+  }
+
+  /* Formulários e Detalhes */
   .pa-form-grid, .pa-req-details-grid {
     grid-template-columns: 1fr;
+    gap: 1rem;
   }
+
   .pa-form-group.full-width, .pa-detail-item {
     grid-column: span 1;
   }
+
   .pa-dest-type-grid {
     grid-template-columns: repeat(2, 1fr);
+    gap: 8px;
+  }
+
+  .pa-dest-type-btn {
+    padding: 10px 8px;
+    font-size: 0.78rem;
+  }
+
+  .pa-item-card-row {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+  }
+
+  .pa-item-card-header {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .pa-user-session-card {
+    padding: 12px;
+    gap: 10px;
+  }
+
+  /* Modais no Mobile */
+  .pa-modal-overlay {
+    padding: 0.5rem;
+  }
+
+  .pa-modal-card {
+    max-height: 94vh;
+    border-radius: 14px;
+  }
+
+  .pa-modal-header {
+    padding: 1rem 1.25rem;
+  }
+
+  .pa-modal-header h3 {
+    font-size: 1rem;
+  }
+
+  .pa-modal-body {
+    padding: 1rem;
+    gap: 1rem;
+  }
+
+  .pa-actions-buttons {
+    flex-direction: column;
+    gap: 8px;
   }
 }

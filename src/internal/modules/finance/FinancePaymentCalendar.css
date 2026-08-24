@@ -256,12 +256,33 @@
   color: #34d399;
 }
 
+.weekday-full {
+  display: inline;
+}
+.weekday-short {
+  display: none;
+}
+.weekday-mini {
+  display: none;
+}
+
+.badge-text-full {
+  display: inline;
+}
+.badge-text-mini {
+  display: none;
+}
+
+.day-mobile-indicator {
+  display: none;
+}
+
 /* Floating Day Modal Popover */
 .popover-backdrop {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.6);
-  backdrop-filter: blur(3px);
+  background: rgba(0, 0, 0, 0.7);
+  backdrop-filter: blur(4px);
   z-index: 1000;
 }
 
@@ -330,4 +351,182 @@
   margin-top: 0.5rem;
   padding-top: 0.5rem;
   border-top: 1px solid rgba(51, 65, 85, 0.4);
+}
+
+/* =========================================================
+   RESPONSIVIDADE MOBILE DO CALENDÁRIO
+   ========================================================= */
+@media (max-width: 900px) {
+  .weekday-full {
+    display: none;
+  }
+  .weekday-short {
+    display: inline;
+  }
+}
+
+@media (max-width: 768px) {
+  .calendar-wrapper {
+    gap: 0.75rem;
+    width: 100%;
+  }
+
+  /* Barra de Navegação e KPIs */
+  .calendar-controls-card {
+    flex-direction: column;
+    align-items: stretch;
+    padding: 12px 14px;
+    gap: 12px;
+    border-radius: 14px;
+    width: 100%;
+    box-sizing: border-box;
+  }
+
+  .calendar-nav-group {
+    width: 100%;
+    justify-content: space-between;
+    gap: 4px;
+  }
+
+  .calendar-nav-btn, .calendar-today-btn {
+    padding: 8px 10px;
+    font-size: 0.78rem;
+  }
+
+  .calendar-title-heading {
+    font-size: 1.25rem;
+    text-align: center;
+    margin: 2px 0;
+  }
+
+  .calendar-kpi-group {
+    width: 100%;
+    justify-content: space-around;
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+    padding-top: 10px;
+    gap: 8px;
+  }
+
+  .calendar-kpi-item {
+    align-items: center;
+    text-align: center;
+  }
+
+  .calendar-kpi-label {
+    font-size: 0.68rem;
+  }
+
+  .calendar-kpi-val {
+    font-size: 1.05rem;
+  }
+
+  /* Grid do Calendário */
+  .calendar-card {
+    padding: 8px 4px;
+    border-radius: 14px;
+    width: 100%;
+    box-sizing: border-box;
+  }
+
+  .calendar-grid {
+    gap: 3px;
+  }
+
+  .calendar-weekday {
+    padding: 6px 1px;
+    font-size: 0.7rem;
+    border-radius: 6px;
+    letter-spacing: 0;
+  }
+
+  .weekday-short {
+    display: none;
+  }
+  .weekday-mini {
+    display: inline;
+  }
+
+  /* Célula do Dia no Mobile */
+  .calendar-day {
+    min-height: 52px;
+    max-height: 64px;
+    padding: 3px 2px;
+    border-radius: 8px;
+    justify-content: flex-start;
+    gap: 2px;
+  }
+
+  .day-header {
+    justify-content: center;
+    width: 100%;
+    position: relative;
+  }
+
+  .day-number {
+    font-size: 0.82rem;
+    width: 20px;
+    height: 20px;
+  }
+
+  .day-count-badge {
+    position: absolute;
+    top: -2px;
+    right: -2px;
+    padding: 1px 4px;
+    font-size: 0.6rem;
+  }
+
+  .badge-text-full {
+    display: none;
+  }
+  .badge-text-mini {
+    display: inline;
+  }
+
+  /* Ocultar listagem cheia no grid e exibir indicador limpo */
+  .day-events-list, .day-footer-total {
+    display: none;
+  }
+
+  .day-mobile-indicator {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 1px;
+    width: 100%;
+    margin-top: 1px;
+  }
+
+  .mobile-event-dot {
+    width: 5px;
+    height: 5px;
+    background: #34d399;
+    border-radius: 50%;
+    box-shadow: 0 0 5px rgba(52, 211, 153, 0.9);
+  }
+
+  .mobile-total-val {
+    font-size: 0.58rem;
+    font-weight: 800;
+    color: #34d399;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 100%;
+    text-align: center;
+  }
+
+  /* Modal do Dia no Mobile */
+  .popover-day-modal {
+    width: 95% !important;
+    max-width: 95% !important;
+    padding: 1rem;
+    border-radius: 14px;
+    max-height: 88vh;
+  }
+
+  .popover-header h3 {
+    font-size: 0.98rem;
+  }
 }

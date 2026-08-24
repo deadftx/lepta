@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation, useSearchParams } from 'react-router-dom';
 import { Lock, User, ArrowRight, AlertCircle, CheckCircle2, KeyRound, Mail, ArrowLeft } from 'lucide-react';
 import { useAuth } from '../internal/core/AuthContext';
 import { API_BASE_URL } from '../config/api';
@@ -7,6 +7,8 @@ import './Login.css';
 
 const Login = () => {
   const navigate = useNavigate();
+  const location = useLocation();
+  const [searchParams] = useSearchParams();
   const { login } = useAuth();
 
   // Login form state
@@ -40,7 +42,14 @@ const Login = () => {
 
     setLoading(false);
     if (success) {
-      navigate('/dashboard');
+      const fromState = (location.state as any)?.from;
+      let targetUrl = '/dashboard';
+      if (fromState && fromState.pathname) {
+        targetUrl = `${fromState.pathname}${fromState.search || ''}`;
+      } else if (searchParams.get('redirect')) {
+        targetUrl = searchParams.get('redirect')!;
+      }
+      navigate(targetUrl, { replace: true });
     } else {
       setError('Credenciais incorretas.');
     }

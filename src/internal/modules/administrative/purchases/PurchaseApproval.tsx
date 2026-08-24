@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import {
   ShieldCheck, ListOrdered, CheckCircle2, PlusCircle,
   XCircle, Clock, MessageSquare, Send, X, Archive, RotateCcw,
@@ -36,14 +37,34 @@ export const CATEGORIAS_PADRAO: CategoriaSolicitacao[] = [
   'Outros'
 ];
 
+export type EmpresaPagadora =
+  | 'INDIFERENTE'
+  | 'Lepta Consultora'
+  | 'Lepta Gestora'
+  | 'Lepta Securitizadora'
+  | 'BDM'
+  | 'Lepta Metais'
+  | 'LeptaHub';
+
+export const EMPRESAS_PAGADORAS: EmpresaPagadora[] = [
+  'INDIFERENTE',
+  'Lepta Consultora',
+  'Lepta Gestora',
+  'Lepta Securitizadora',
+  'BDM',
+  'Lepta Metais',
+  'LeptaHub'
+];
+
 export interface PurchaseItemForm {
   id?: string;
   categoria: CategoriaSolicitacao;
   tipo_destino: TipoDestino;
+  empresa_pagadora: EmpresaPagadora;
   departamento_centro_custo: string;
   fornecedor_nome: string;
   fornecedor_contato: string;
-  forma_pagamento: 'PIX' | 'DINHEIRO' | 'DEBITO' | 'CREDITO';
+  forma_pagamento: 'PIX' | 'BOLETO' | 'CREDITO';
   quantidade_parcelas: number;
   produto_servico: string;
   valor: number;
@@ -57,11 +78,12 @@ export interface PurchaseItem {
   requisicao_id?: string;
   numero_item?: number;
   tipo_destino: TipoDestino;
+  empresa_pagadora?: EmpresaPagadora;
   departamento_centro_custo: string;
   categoria: CategoriaSolicitacao;
   fornecedor_nome: string;
   fornecedor_contato: string;
-  forma_pagamento: 'PIX' | 'DINHEIRO' | 'DEBITO' | 'CREDITO';
+  forma_pagamento: string;
   quantidade_parcelas: number;
   produto_servico: string;
   valor: number;
@@ -74,6 +96,7 @@ interface PurchaseRequest {
   id: string;
   numero: number;
   tipo_destino?: TipoDestino;
+  empresa_pagadora?: EmpresaPagadora;
   categoria?: string;
   fornecedor_nome: string;
   fornecedor_contato: string;
@@ -102,6 +125,7 @@ interface PurchaseRequest {
   updated_at: string;
   total_mensagens?: number;
   total_itens?: number;
+  total_anexos?: number;
   itens?: PurchaseItem[];
   mensagens?: PurchaseMessage[];
 }
@@ -130,11 +154,12 @@ export const PurchaseApproval: React.FC = () => {
   // Current Item Form State
   const [categoria, setCategoria] = useState<CategoriaSolicitacao>('Insumos');
   const [tipoDestino, setTipoDestino] = useState<TipoDestino>('DEPARTAMENTO');
+  const [empresaPagadora, setEmpresaPagadora] = useState<EmpresaPagadora>('INDIFERENTE');
   const [departamentoOuCentro, setDepartamentoOuCentro] = useState<string>('Tecnologia');
   const [empresaOuCliente, setEmpresaOuCliente] = useState<string>('');
   const [fornecedorNome, setFornecedorNome] = useState('');
   const [fornecedorContato, setFornecedorContato] = useState('');
-  const [formaPagamento, setFormaPagamento] = useState<'PIX' | 'DINHEIRO' | 'DEBITO' | 'CREDITO'>('PIX');
+  const [formaPagamento, setFormaPagamento] = useState<'PIX' | 'BOLETO' | 'CREDITO'>('PIX');
   const [quantidadeParcelas, setQuantidadeParcelas] = useState<number>(1);
   const [produtoServico, setProdutoServico] = useState('');
   const [valorDisplay, setValorDisplay] = useState('');
@@ -143,6 +168,11 @@ export const PurchaseApproval: React.FC = () => {
   const [observacoes, setObservacoes] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState('');
+
+  // Form Attachments State (Até 5 arquivos de até 20MB cada)
+  const [formAttachments, setFormAttachments] = useState<File[]>([]);
+  const [formAttachmentError, setFormAttachmentError] = useState('');
+  const formFileInputRef = useRef<HTMLInputElement>(null);
 
   // Data States
   const [reviewQueue, setReviewQueue] = useState<PurchaseRequest[]>([]);
@@ -166,7 +196,8 @@ export const PurchaseApproval: React.FC = () => {
   const [reopenMessage, setReopenMessage] = useState('');
   const [reopenFornecedorNome, setReopenFornecedorNome] = useState('');
   const [reopenFornecedorContato, setReopenFornecedorContato] = useState('');
-  const [reopenFormaPagamento, setReopenFormaPagamento] = useState<'PIX' | 'DINHEIRO' | 'DEBITO' | 'CREDITO'>('PIX');
+  const [reopenFormaPagamento, setReopenFormaPagamento] = useState<'PIX' | 'BOLETO' | 'CREDITO'>('PIX');
+  const [reopenEmpresaPagadora, setReopenEmpresaPagadora] = useState<EmpresaPagadora>('INDIFERENTE');
   const [reopenQuantidadeParcelas, setReopenQuantidadeParcelas] = useState<number>(1);
   const [reopenDepartamento, setReopenDepartamento] = useState('');
   const [reopenProduto, setReopenProduto] = useState('');
@@ -185,7 +216,7 @@ export const PurchaseApproval: React.FC = () => {
   // Toast
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
-  // Attachments State
+  // Attachments State (Modal)
   const [attachments, setAttachments] = useState<any[]>([]);
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState('');
@@ -195,7 +226,8 @@ export const PurchaseApproval: React.FC = () => {
   const [isEditingProposal, setIsEditingProposal] = useState(false);
   const [editFornecedorNome, setEditFornecedorNome] = useState('');
   const [editFornecedorContato, setEditFornecedorContato] = useState('');
-  const [editFormaPagamento, setEditFormaPagamento] = useState<'PIX' | 'DINHEIRO' | 'DEBITO' | 'CREDITO'>('PIX');
+  const [editFormaPagamento, setEditFormaPagamento] = useState<'PIX' | 'BOLETO' | 'CREDITO'>('PIX');
+  const [editEmpresaPagadora, setEditEmpresaPagadora] = useState<EmpresaPagadora>('INDIFERENTE');
   const [editQuantidadeParcelas, setEditQuantidadeParcelas] = useState<number>(1);
   const [editDepartamento, setEditDepartamento] = useState('');
   const [editProduto, setEditProduto] = useState('');
@@ -419,6 +451,24 @@ export const PurchaseApproval: React.FC = () => {
     return () => clearInterval(interval);
   }, [loadingRole, fetchData]);
 
+  const [searchParams] = useSearchParams();
+
+  // Abre automaticamente a solicitação se houver ?id= ou ?solicitacao= na URL (vindo de e-mail / link direto)
+  useEffect(() => {
+    const targetId = searchParams.get('id') || searchParams.get('solicitacao');
+    if (targetId) {
+      fetch(`${API_BASE_URL}/api/compras/requisicoes/${targetId}`, { headers: getAuthHeaders() })
+        .then(r => (r.ok ? r.json() : null))
+        .then(data => {
+          if (data) {
+            setSelectedRequest(data);
+            fetchAttachments(targetId);
+          }
+        })
+        .catch(err => console.error('Erro ao abrir solicitação via URL:', err));
+    }
+  }, [searchParams]);
+
   // Máscaras de Moeda R$
   const handleCurrencyInput = (e: React.ChangeEvent<HTMLInputElement>) => {
     const rawDigits = e.target.value.replace(/\D/g, '');
@@ -451,6 +501,42 @@ export const PurchaseApproval: React.FC = () => {
     return departamentoOuCentro.trim();
   };
 
+  const handleFormFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!e.target.files || e.target.files.length === 0) return;
+    const filesToAdd = Array.from(e.target.files);
+    const limit = 20 * 1024 * 1024; // 20MB
+
+    let newFiles = [...formAttachments];
+    let error = '';
+
+    for (const file of filesToAdd) {
+      if (file.size > limit) {
+        error = `O arquivo "${file.name}" ultrapassa o limite máximo de 20MB.`;
+        break;
+      }
+      if (newFiles.length >= 5) {
+        error = 'Você pode anexar no máximo 5 arquivos por solicitação.';
+        break;
+      }
+      if (!newFiles.some(f => f.name === file.name && f.size === file.size)) {
+        newFiles.push(file);
+      }
+    }
+
+    if (error) {
+      setFormAttachmentError(error);
+    } else {
+      setFormAttachmentError('');
+    }
+    setFormAttachments(newFiles);
+    if (formFileInputRef.current) formFileInputRef.current.value = '';
+  };
+
+  const handleRemoveFormAttachment = (index: number) => {
+    setFormAttachments(prev => prev.filter((_, i) => i !== index));
+    setFormAttachmentError('');
+  };
+
   const validateCurrentItem = (silent = false): PurchaseItemForm | null => {
     const destVal = getCurrentDestinationValue();
     if (!categoria) {
@@ -459,6 +545,10 @@ export const PurchaseApproval: React.FC = () => {
     }
     if (!destVal) {
       if (!silent) setFormError(`Informe o ${tipoDestino === 'EMPRESA' ? 'Nome da Empresa' : tipoDestino === 'CLIENTE' ? 'Nome do Cliente' : tipoDestino === 'CENTRO_DE_CUSTO' ? 'Centro de Custo' : 'Departamento'}.`);
+      return null;
+    }
+    if (!empresaPagadora) {
+      if (!silent) setFormError('Selecione a Empresa Pagadora.');
       return null;
     }
     if (!fornecedorNome.trim()) {
@@ -489,6 +579,7 @@ export const PurchaseApproval: React.FC = () => {
     return {
       categoria,
       tipo_destino: tipoDestino,
+      empresa_pagadora: empresaPagadora,
       departamento_centro_custo: destVal,
       fornecedor_nome: fornecedorNome.trim(),
       fornecedor_contato: fornecedorContato.trim(),
@@ -525,7 +616,7 @@ export const PurchaseApproval: React.FC = () => {
     showToast('Item removido da solicitação.');
   };
 
-  // Enviar Nova Solicitação (com 1 ou múltiplos itens)
+  // Enviar Nova Solicitação (com 1 ou múltiplos itens e até 5 anexos)
   const handleSubmitRequest = async (e: React.FormEvent) => {
     e.preventDefault();
     setFormError('');
@@ -550,9 +641,11 @@ export const PurchaseApproval: React.FC = () => {
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
+          empresa_pagadora: empresaPagadora,
           itens: itemsToSubmit.map(it => ({
             categoria: it.categoria,
             tipo_destino: it.tipo_destino,
+            empresa_pagadora: it.empresa_pagadora || empresaPagadora,
             departamento_centro_custo: it.departamento_centro_custo,
             fornecedor_nome: it.fornecedor_nome,
             fornecedor_contato: it.fornecedor_contato,
@@ -571,10 +664,30 @@ export const PurchaseApproval: React.FC = () => {
         throw new Error(errData.error || 'Erro ao enviar solicitação.');
       }
 
+      const createdReq = await res.json();
+
+      // Se houver arquivos anexados pelo usuário no formulário, envia-os em lote
+      if (formAttachments.length > 0 && createdReq?.id) {
+        try {
+          const formData = new FormData();
+          formAttachments.forEach(f => formData.append('files', f));
+          await fetch(`${API_BASE_URL}/api/compras/requisicoes/${createdReq.id}/anexos`, {
+            method: 'POST',
+            headers: getAuthHeaders() as any,
+            body: formData
+          });
+        } catch (attErr) {
+          console.error('Aviso ao enviar anexos:', attErr);
+        }
+      }
+
       // Limpa formulário completo
       setAddedItems([]);
+      setFormAttachments([]);
+      setFormAttachmentError('');
       setCategoria('Insumos');
       setTipoDestino('DEPARTAMENTO');
+      setEmpresaPagadora('INDIFERENTE');
       setDepartamentoOuCentro('Tecnologia');
       setEmpresaOuCliente('');
       setFornecedorNome('');
@@ -587,7 +700,7 @@ export const PurchaseApproval: React.FC = () => {
       setQuantidade(1);
       setObservacoes('');
 
-      showToast(`Solicitação com ${itemsToSubmit.length} item(ns) registrada e enviada para aprovação!`);
+      showToast(`Solicitação registrada e enviada para aprovação com ${itemsToSubmit.length} item(ns)${formAttachments.length > 0 ? ` e ${formAttachments.length} anexo(s)` : ''}!`);
       fetchData(false);
       setActiveTab('my_requests');
     } catch (err: any) {
@@ -617,6 +730,7 @@ export const PurchaseApproval: React.FC = () => {
         setEditFornecedorNome(data.fornecedor_nome || '');
         setEditFornecedorContato(data.fornecedor_contato || '');
         setEditFormaPagamento(data.forma_pagamento || 'PIX');
+        setEditEmpresaPagadora(data.empresa_pagadora || 'INDIFERENTE');
         setEditQuantidadeParcelas(data.quantidade_parcelas || 1);
         setEditDepartamento(data.departamento_centro_custo || '');
         setEditProduto(data.produto_servico || '');
@@ -646,6 +760,7 @@ export const PurchaseApproval: React.FC = () => {
         bodyData.fornecedor_nome = editFornecedorNome.trim();
         bodyData.fornecedor_contato = editFornecedorContato.trim();
         bodyData.forma_pagamento = editFormaPagamento;
+        bodyData.empresa_pagadora = editEmpresaPagadora;
         bodyData.quantidade_parcelas = editQuantidadeParcelas;
         bodyData.departamento_centro_custo = editDepartamento.trim();
         bodyData.produto_servico = editProduto.trim();
@@ -787,6 +902,7 @@ export const PurchaseApproval: React.FC = () => {
     setReopenFornecedorNome(req.fornecedor_nome || '');
     setReopenFornecedorContato(req.fornecedor_contato || '');
     setReopenFormaPagamento((req.forma_pagamento as any) || 'PIX');
+    setReopenEmpresaPagadora(req.empresa_pagadora || 'INDIFERENTE');
     setReopenQuantidadeParcelas(req.quantidade_parcelas || 1);
     setReopenDepartamento(req.departamento_centro_custo || '');
     setReopenProduto(req.produto_servico);
@@ -814,6 +930,7 @@ export const PurchaseApproval: React.FC = () => {
           fornecedor_nome: reopenFornecedorNome.trim(),
           fornecedor_contato: reopenFornecedorContato.trim(),
           forma_pagamento: reopenFormaPagamento,
+          empresa_pagadora: reopenEmpresaPagadora,
           quantidade_parcelas: reopenQuantidadeParcelas,
           departamento_centro_custo: reopenDepartamento.trim(),
           produto_servico: reopenProduto.trim(),
@@ -1116,6 +1233,7 @@ export const PurchaseApproval: React.FC = () => {
                   <th>Fornecedor / Prestador</th>
                   <th>Descrição / Serviço</th>
                   <th>Pagamento</th>
+                  <th>Empresa</th>
                   <th>Centro de Custo</th>
                   <th>Solicitante</th>
                   <th>Valor Total</th>
@@ -1126,41 +1244,55 @@ export const PurchaseApproval: React.FC = () => {
               <tbody>
                 {filteredReviewQueue.length === 0 ? (
                   <tr>
-                    <td colSpan={9} className="pa-empty">
+                    <td colSpan={10} className="pa-empty">
                       Nenhuma solicitação pendente no momento.
                     </td>
                   </tr>
                 ) : (
                   filteredReviewQueue.map(item => (
                     <tr key={item.id}>
-                      <td><span className="pa-code-badge">{item.id}</span></td>
-                      <td>
+                      <td data-label="Código">
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          <span className="pa-code-badge">{item.id}</span>
+                          {(item.total_anexos || 0) > 0 && (
+                            <span className="pa-attachment-count-badge" title={`${item.total_anexos} anexo(s) anexado(s)`}>
+                              <Paperclip size={11} /> {item.total_anexos}
+                            </span>
+                          )}
+                        </div>
+                      </td>
+                      <td data-label="Fornecedor">
                         <strong>{item.fornecedor_nome || '-'}</strong>
                         {item.fornecedor_contato && (
                           <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>{item.fornecedor_contato}</div>
                         )}
                       </td>
-                      <td>{item.produto_servico}</td>
-                      <td>
+                      <td data-label="Descrição">{item.produto_servico}</td>
+                      <td data-label="Pagamento">
                         <span style={{ fontWeight: 600, color: '#60a5fa' }}>{item.forma_pagamento || '-'}</span>
                         {item.quantidade_parcelas > 1 && (
                           <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>{item.quantidade_parcelas}x parcelas</div>
                         )}
                       </td>
-                      <td>{item.departamento_centro_custo || '-'}</td>
-                      <td>
+                      <td data-label="Empresa">
+                        <span style={{ fontSize: '0.8rem', color: item.empresa_pagadora && item.empresa_pagadora !== 'INDIFERENTE' ? '#a5b4fc' : '#94a3b8' }}>
+                          {item.empresa_pagadora || 'INDIFERENTE'}
+                        </span>
+                      </td>
+                      <td data-label="Centro de Custo">{item.departamento_centro_custo || '-'}</td>
+                      <td data-label="Solicitante">
                         <div className="pa-solicitante-cell">
                           <User size={14} color="#94a3b8" />
                           <span>{item.solicitante_nome}</span>
                         </div>
                       </td>
-                      <td>
+                      <td data-label="Valor Total">
                         <span className="pa-price-highlight">
                           {formatBrl(item.valor * item.quantidade)}
                         </span>
                       </td>
-                      <td>{renderStatusBadge(item.status, item.arquivado_manualmente)}</td>
-                      <td>
+                      <td data-label="Status">{renderStatusBadge(item.status, item.arquivado_manualmente)}</td>
+                      <td data-label="Ações">
                         <div style={{ display: 'flex', gap: '6px' }}>
                           <button
                             className="pa-btn-detail"
@@ -1299,6 +1431,25 @@ export const PurchaseApproval: React.FC = () => {
                 )}
               </div>
 
+              {/* Empresa Pagadora (Abaixo de Tipo de Destino) */}
+              <div className="pa-form-group full-width">
+                <label>
+                  Empresa Pagadora <span className="pa-required">*</span>
+                </label>
+                <div className="pa-empresa-grid">
+                  {EMPRESAS_PAGADORAS.map(emp => (
+                    <button
+                      key={emp}
+                      type="button"
+                      className={`pa-empresa-btn ${empresaPagadora === emp ? 'active' : ''}`}
+                      onClick={() => setEmpresaPagadora(emp)}
+                    >
+                      {emp === 'INDIFERENTE' ? '🌐 INDIFERENTE' : `🏛️ ${emp}`}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
               {/* Nome do Fornecedor */}
               <div className="pa-form-group">
                 <label>
@@ -1329,13 +1480,13 @@ export const PurchaseApproval: React.FC = () => {
                 />
               </div>
 
-              {/* Forma de Pagamento */}
+              {/* Forma de Pagamento (Exclusivo PIX, Boleto e Crédito) */}
               <div className="pa-form-group">
                 <label>
                   Forma de Pagamento <span className="pa-required">*</span>
                 </label>
                 <div className="pa-payment-grid">
-                  {(['PIX', 'DINHEIRO', 'DEBITO', 'CREDITO'] as const).map(op => (
+                  {(['PIX', 'BOLETO', 'CREDITO'] as const).map(op => (
                     <button
                       key={op}
                       type="button"
@@ -1343,8 +1494,7 @@ export const PurchaseApproval: React.FC = () => {
                       onClick={() => setFormaPagamento(op)}
                     >
                       {op === 'PIX' && '⚡ PIX'}
-                      {op === 'DINHEIRO' && '💵 Dinheiro'}
-                      {op === 'DEBITO' && '💳 Débito'}
+                      {op === 'BOLETO' && '📄 Boleto'}
                       {op === 'CREDITO' && '💳 Crédito'}
                     </button>
                   ))}
@@ -1439,6 +1589,11 @@ export const PurchaseApproval: React.FC = () => {
                         <span style={{ fontSize: '0.8rem', color: '#94a3b8' }}>
                           📍 {item.tipo_destino === 'EMPRESA' ? 'Empresa' : item.tipo_destino === 'CLIENTE' ? 'Cliente' : item.tipo_destino === 'CENTRO_DE_CUSTO' ? 'Centro de Custo' : 'Departamento'}: <strong style={{ color: '#cbd5e1' }}>{item.departamento_centro_custo}</strong>
                         </span>
+                        {item.empresa_pagadora && item.empresa_pagadora !== 'INDIFERENTE' && (
+                          <span style={{ fontSize: '0.78rem', color: '#a5b4fc', background: 'rgba(99,102,241,0.15)', padding: '2px 6px', borderRadius: '4px' }}>
+                            🏛️ {item.empresa_pagadora}
+                          </span>
+                        )}
                       </div>
                       <div style={{ fontSize: '0.92rem', fontWeight: 600, color: '#f8fafc', marginTop: '4px' }}>
                         {item.produto_servico}
@@ -1479,6 +1634,74 @@ export const PurchaseApproval: React.FC = () => {
               <PlusCircle size={18} />
               + Incluir Mais Um Item nesta Mesma Solicitação
             </button>
+
+            {/* ANEXOS DA SOLICITAÇÃO (ATÉ 5 ARQUIVOS DE ATÉ 20MB CADA) */}
+            <div className="pa-form-group full-width" style={{ marginTop: '1.25rem', marginBottom: '1.25rem' }}>
+              <label style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span>📎 Anexar Documentos / Comprovantes (Opcional - Até 5 arquivos de até 20MB cada)</span>
+                <span style={{ fontSize: '0.78rem', color: '#94a3b8' }}>
+                  {formAttachments.length}/5 anexados
+                </span>
+              </label>
+              
+              <div
+                className="pa-attachment-zone"
+                onClick={() => formFileInputRef.current?.click()}
+              >
+                <div className="pa-attachment-zone-icon">
+                  <Paperclip size={22} />
+                </div>
+                <span className="pa-attachment-zone-text">
+                  Clique aqui para selecionar até 5 arquivos (PDF, PNG, JPG, DOCX, XLSX, etc.)
+                </span>
+                <span className="pa-attachment-zone-sub">
+                  Tamanho máximo de 20MB por arquivo • Visível para toda a esteira e financeiro
+                </span>
+                <input
+                  type="file"
+                  ref={formFileInputRef}
+                  style={{ display: 'none' }}
+                  multiple
+                  onChange={handleFormFileSelect}
+                />
+              </div>
+
+              {formAttachmentError && (
+                <div style={{ color: '#ef4444', fontSize: '0.82rem', marginTop: '6px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <AlertCircle size={14} /> {formAttachmentError}
+                </div>
+              )}
+
+              {formAttachments.length > 0 && (
+                <div className="pa-form-attachments-list">
+                  {formAttachments.map((file, idx) => (
+                    <div key={idx} className="pa-form-attachment-item">
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', maxWidth: '80%' }}>
+                        <Paperclip size={15} style={{ color: '#38bdf8', flexShrink: 0 }} />
+                        <span style={{ fontSize: '0.85rem', fontWeight: 600, color: '#f8fafc', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {file.name}
+                        </span>
+                        <span style={{ fontSize: '0.75rem', color: '#94a3b8' }}>
+                          ({(file.size / (1024 * 1024)).toFixed(2)} MB)
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        className="pa-btn-action-deny"
+                        style={{ padding: '4px 8px', borderRadius: '6px' }}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleRemoveFormAttachment(idx);
+                        }}
+                        title="Remover anexo"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
 
             {/* RESUMO FINANCEIRO AO VIVO CONSOLIDADO */}
             {(() => {
@@ -1536,6 +1759,7 @@ export const PurchaseApproval: React.FC = () => {
                   <th>Fornecedor / Prestador</th>
                   <th>Descrição / Serviço</th>
                   <th>Pagamento</th>
+                  <th>Empresa</th>
                   <th>Centro de Custo</th>
                   <th>Valor Total</th>
                   <th>Data de Envio</th>
@@ -1546,36 +1770,50 @@ export const PurchaseApproval: React.FC = () => {
               <tbody>
                 {myRequests.length === 0 ? (
                   <tr>
-                    <td colSpan={9} className="pa-empty">
+                    <td colSpan={10} className="pa-empty">
                       Você não possui solicitações ativas no momento.
                     </td>
                   </tr>
                 ) : (
                   myRequests.map(item => (
                     <tr key={item.id}>
-                      <td><span className="pa-code-badge">{item.id}</span></td>
-                      <td>
+                      <td data-label="Código">
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          <span className="pa-code-badge">{item.id}</span>
+                          {(item.total_anexos || 0) > 0 && (
+                            <span className="pa-attachment-count-badge" title={`${item.total_anexos} anexo(s) anexado(s)`}>
+                              <Paperclip size={11} /> {item.total_anexos}
+                            </span>
+                          )}
+                        </div>
+                      </td>
+                      <td data-label="Fornecedor">
                         <strong>{item.fornecedor_nome || '-'}</strong>
                         {item.fornecedor_contato && (
                           <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>{item.fornecedor_contato}</div>
                         )}
                       </td>
-                      <td>{item.produto_servico}</td>
-                      <td>
+                      <td data-label="Descrição">{item.produto_servico}</td>
+                      <td data-label="Pagamento">
                         <span style={{ fontWeight: 600, color: '#60a5fa' }}>{item.forma_pagamento || '-'}</span>
                         {item.quantidade_parcelas > 1 && (
                           <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>{item.quantidade_parcelas}x</div>
                         )}
                       </td>
-                      <td>{item.departamento_centro_custo || '-'}</td>
-                      <td>
+                      <td data-label="Empresa">
+                        <span style={{ fontSize: '0.8rem', color: item.empresa_pagadora && item.empresa_pagadora !== 'INDIFERENTE' ? '#a5b4fc' : '#94a3b8' }}>
+                          {item.empresa_pagadora || 'INDIFERENTE'}
+                        </span>
+                      </td>
+                      <td data-label="Centro de Custo">{item.departamento_centro_custo || '-'}</td>
+                      <td data-label="Valor Total">
                         <span className="pa-price-highlight">
                           {formatBrl(item.valor * item.quantidade)}
                         </span>
                       </td>
-                      <td>{formatDate(item.created_at)}</td>
-                      <td>{renderStatusBadge(item.status, item.arquivado_manualmente)}</td>
-                      <td>
+                      <td data-label="Data">{formatDate(item.created_at)}</td>
+                      <td data-label="Status">{renderStatusBadge(item.status, item.arquivado_manualmente)}</td>
+                      <td data-label="Ações">
                         <div style={{ display: 'flex', gap: '6px' }}>
                           <button
                             className="pa-btn-detail"
@@ -1642,6 +1880,7 @@ export const PurchaseApproval: React.FC = () => {
                   <th>Fornecedor / Prestador</th>
                   <th>Descrição / Serviço</th>
                   <th>Pagamento</th>
+                  <th>Empresa</th>
                   <th>Centro de Custo</th>
                   <th>Solicitante</th>
                   <th>Valor Total</th>
@@ -1653,7 +1892,7 @@ export const PurchaseApproval: React.FC = () => {
               <tbody>
                 {filteredArchived.length === 0 ? (
                   <tr>
-                    <td colSpan={10} className="pa-empty">
+                    <td colSpan={11} className="pa-empty">
                       Nenhuma solicitação arquivada encontrada.
                     </td>
                   </tr>
@@ -1662,20 +1901,34 @@ export const PurchaseApproval: React.FC = () => {
                     const isOwner = item.solicitante_id === user?.id || isApprover || isMaster;
                     return (
                       <tr key={item.id}>
-                        <td><span className="pa-code-badge">{item.id}</span></td>
-                        <td>
+                        <td data-label="Código">
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            <span className="pa-code-badge">{item.id}</span>
+                            {(item.total_anexos || 0) > 0 && (
+                              <span className="pa-attachment-count-badge" title={`${item.total_anexos} anexo(s) anexado(s)`}>
+                                <Paperclip size={11} /> {item.total_anexos}
+                              </span>
+                            )}
+                          </div>
+                        </td>
+                        <td data-label="Fornecedor">
                           <strong>{item.fornecedor_nome || '-'}</strong>
                         </td>
-                        <td>{item.produto_servico}</td>
-                        <td>{item.forma_pagamento || '-'}</td>
-                        <td>{item.departamento_centro_custo || '-'}</td>
-                        <td>{item.solicitante_nome}</td>
-                        <td>
+                        <td data-label="Descrição">{item.produto_servico}</td>
+                        <td data-label="Pagamento">{item.forma_pagamento || '-'}</td>
+                        <td data-label="Empresa">
+                          <span style={{ fontSize: '0.8rem', color: item.empresa_pagadora && item.empresa_pagadora !== 'INDIFERENTE' ? '#a5b4fc' : '#94a3b8' }}>
+                            {item.empresa_pagadora || 'INDIFERENTE'}
+                          </span>
+                        </td>
+                        <td data-label="Centro de Custo">{item.departamento_centro_custo || '-'}</td>
+                        <td data-label="Solicitante">{item.solicitante_nome}</td>
+                        <td data-label="Valor Total">
                           <span className="pa-price-highlight">
                             {formatBrl(item.valor * item.quantidade)}
                           </span>
                         </td>
-                        <td>
+                        <td data-label="Decisão">
                           {item.arquivado_manualmente === 1 ? (
                             <span className="pa-master-tag">
                               Por {item.arquivado_por || 'Master'}
@@ -1684,8 +1937,8 @@ export const PurchaseApproval: React.FC = () => {
                             formatDate(item.decidido_em || item.updated_at)
                           )}
                         </td>
-                        <td>{renderStatusBadge(item.status, item.arquivado_manualmente)}</td>
-                        <td>
+                        <td data-label="Status">{renderStatusBadge(item.status, item.arquivado_manualmente)}</td>
+                        <td data-label="Ações">
                           <div style={{ display: 'flex', gap: '6px' }}>
                             <button
                               className="pa-btn-detail"
@@ -1806,8 +2059,7 @@ export const PurchaseApproval: React.FC = () => {
                         style={{ padding: '4px 8px', fontSize: '0.85rem', flex: 1 }}
                       >
                         <option value="PIX">PIX</option>
-                        <option value="DINHEIRO">Dinheiro</option>
-                        <option value="DEBITO">Débito</option>
+                        <option value="BOLETO">Boleto</option>
                         <option value="CREDITO">Crédito</option>
                       </select>
                       <input
@@ -1824,6 +2076,28 @@ export const PurchaseApproval: React.FC = () => {
                     <span className="pa-detail-val" style={{ color: '#60a5fa' }}>
                       {selectedRequest.forma_pagamento || '-'}
                       {selectedRequest.quantidade_parcelas > 1 ? ` (${selectedRequest.quantidade_parcelas}x de ${formatBrl((selectedRequest.valor * selectedRequest.quantidade) / selectedRequest.quantidade_parcelas)})` : ' (À vista)'}
+                    </span>
+                  )}
+                </div>
+
+                <div className="pa-detail-item">
+                  <span className="pa-detail-label">Empresa Pagadora</span>
+                  {isEditingProposal ? (
+                    <select
+                      className="pa-select"
+                      value={editEmpresaPagadora}
+                      onChange={e => setEditEmpresaPagadora(e.target.value as any)}
+                      style={{ padding: '4px 8px', fontSize: '0.85rem', width: '100%', boxSizing: 'border-box' }}
+                    >
+                      {EMPRESAS_PAGADORAS.map(emp => (
+                        <option key={emp} value={emp}>
+                          {emp}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <span className="pa-detail-val" style={{ color: '#a5b4fc', fontWeight: 600 }}>
+                      {selectedRequest.empresa_pagadora || 'INDIFERENTE'}
                     </span>
                   )}
                 </div>
@@ -2280,17 +2554,32 @@ export const PurchaseApproval: React.FC = () => {
                   <div className="pa-form-group">
                     <label>Forma de Pagamento</label>
                     <div className="pa-payment-grid">
-                      {(['PIX', 'DINHEIRO', 'DEBITO', 'CREDITO'] as const).map(op => (
+                      {(['PIX', 'BOLETO', 'CREDITO'] as const).map(op => (
                         <button
                           key={op}
                           type="button"
                           className={`pa-payment-option-btn ${reopenFormaPagamento === op ? 'active' : ''}`}
                           onClick={() => setReopenFormaPagamento(op)}
                         >
-                          {op}
+                          {op === 'PIX' ? '⚡ PIX' : op === 'BOLETO' ? '📄 Boleto' : '💳 Crédito'}
                         </button>
                       ))}
                     </div>
+                  </div>
+
+                  <div className="pa-form-group">
+                    <label>Empresa Pagadora</label>
+                    <select
+                      className="pa-select"
+                      value={reopenEmpresaPagadora}
+                      onChange={e => setReopenEmpresaPagadora(e.target.value as any)}
+                    >
+                      {EMPRESAS_PAGADORAS.map(emp => (
+                        <option key={emp} value={emp}>
+                          {emp}
+                        </option>
+                      ))}
+                    </select>
                   </div>
 
                   <div className="pa-form-group">

@@ -450,8 +450,19 @@
 }
 
 @media (max-width: 768px) {
+  .internal-header {
+    padding: 0 12px;
+    height: 56px;
+  }
+
+  .internal-body {
+    padding: 10px 8px;
+    width: 100%;
+    box-sizing: border-box;
+  }
+
   .search-input {
-    display: none; /* Esconder busca no celular se faltar espaço, ou reduzir */
+    display: none;
   }
   
   .quick-links-grid {
@@ -459,7 +470,7 @@
   }
   
   .internal-card {
-    padding: 16px;
+    padding: 14px;
   }
 }
 @media (max-width: 767px), (max-width: 900px) and (hover: none) and (pointer: coarse) {

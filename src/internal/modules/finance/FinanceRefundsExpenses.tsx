@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import {
   Clock, Send, X, RefreshCw,
   Eye, CreditCard, ArrowDownLeft, CheckSquare, RotateCcw, Paperclip, Trash2, Download, CheckCircle2, User, FileSpreadsheet, CalendarCheck
@@ -12,6 +13,7 @@ export interface PurchaseItem {
   requisicao_id?: string;
   numero_item?: number;
   tipo_destino?: string;
+  empresa_pagadora?: string;
   departamento_centro_custo?: string;
   categoria?: string;
   fornecedor_nome?: string;
@@ -29,6 +31,7 @@ interface PurchaseRequest {
   id: string;
   numero: number;
   tipo_destino?: string;
+  empresa_pagadora?: string;
   categoria?: string;
   fornecedor_nome: string;
   fornecedor_contato: string;
@@ -57,6 +60,7 @@ interface PurchaseRequest {
   updated_at: string;
   total_mensagens?: number;
   total_itens?: number;
+  total_anexos?: number;
   itens?: PurchaseItem[];
   mensagens?: PurchaseMessage[];
 }
@@ -158,6 +162,8 @@ export const FinanceRefundsExpenses: React.FC = () => {
     }
   };
 
+  const [searchParams] = useSearchParams();
+
   const handleOpenDetails = async (id: string) => {
     try {
       const res = await fetch(`${API_BASE_URL}/api/compras/requisicoes/${id}`, {
@@ -177,6 +183,14 @@ export const FinanceRefundsExpenses: React.FC = () => {
       console.error('Erro ao abrir detalhes:', err);
     }
   };
+
+  // Abre automaticamente a solicitação se houver ?id= ou ?solicitacao= na URL (vindo de e-mail / notificação)
+  useEffect(() => {
+    const targetId = searchParams.get('id') || searchParams.get('solicitacao');
+    if (targetId) {
+      handleOpenDetails(targetId);
+    }
+  }, [searchParams]);
 
   const handleSaveScheduleDate = async (newDate: string | null) => {
     if (!selectedRequest) return;
@@ -596,8 +610,7 @@ export const FinanceRefundsExpenses: React.FC = () => {
             >
               <option value="TODAS">Forma de Pagamento: Todas</option>
               <option value="PIX">PIX</option>
-              <option value="DINHEIRO">Dinheiro</option>
-              <option value="DEBITO">Débito</option>
+              <option value="BOLETO">Boleto</option>
               <option value="CREDITO">Crédito</option>
             </select>
           </div>
@@ -611,6 +624,7 @@ export const FinanceRefundsExpenses: React.FC = () => {
                 <th>Fornecedor / Prestador</th>
                 <th>Descrição / Serviço</th>
                 <th>Pagamento</th>
+                <th>Empresa</th>
                 <th>Centro de Custo</th>
                 <th>Solicitante</th>
                 <th>Valor Total</th>
@@ -621,23 +635,30 @@ export const FinanceRefundsExpenses: React.FC = () => {
             <tbody>
               {filteredQueue.length === 0 ? (
                 <tr>
-                  <td colSpan={9} style={{ textAlign: 'center', padding: '2rem', color: '#94a3b8' }}>
+                  <td colSpan={10} style={{ textAlign: 'center', padding: '2rem', color: '#94a3b8' }}>
                     Nenhuma solicitação encontrada para o filtro atual.
                   </td>
                 </tr>
               ) : (
                 filteredQueue.map(item => (
                   <tr key={item.id}>
-                    <td>
-                      <span className="pa-code-badge">{item.id}</span>
+                    <td data-label="Código">
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <span className="pa-code-badge">{item.id}</span>
+                        {(item.total_anexos || 0) > 0 && (
+                          <span className="pa-attachment-count-badge" title={`${item.total_anexos} anexo(s) anexado(s)`}>
+                            <Paperclip size={11} /> {item.total_anexos}
+                          </span>
+                        )}
+                      </div>
                     </td>
-                    <td>
+                    <td data-label="Fornecedor">
                       <strong>{item.fornecedor_nome || '-'}</strong>
                       {item.fornecedor_contato && (
                         <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>{item.fornecedor_contato}</div>
                       )}
                     </td>
-                    <td>
+                    <td data-label="Descrição">
                       <div><strong>{item.produto_servico}</strong></div>
                       <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>
                         Qtd: {item.quantidade} • Criado em {formatDate(item.created_at)}
@@ -648,28 +669,33 @@ export const FinanceRefundsExpenses: React.FC = () => {
                         )}
                       </div>
                     </td>
-                    <td>
+                    <td data-label="Pagamento">
                       <span style={{ fontWeight: 600, color: '#60a5fa' }}>{item.forma_pagamento || '-'}</span>
                       {item.quantidade_parcelas > 1 && (
                         <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>{item.quantidade_parcelas}x parcelas</div>
                       )}
                     </td>
-                    <td>{item.departamento_centro_custo || '-'}</td>
-                    <td>
+                    <td data-label="Empresa">
+                      <span style={{ fontSize: '0.8rem', color: item.empresa_pagadora && item.empresa_pagadora !== 'INDIFERENTE' ? '#a5b4fc' : '#94a3b8' }}>
+                        {item.empresa_pagadora || 'INDIFERENTE'}
+                      </span>
+                    </td>
+                    <td data-label="Centro de Custo">{item.departamento_centro_custo || '-'}</td>
+                    <td data-label="Solicitante">
                       <div className="pa-solicitante-cell">
                         <User size={14} color="#94a3b8" />
                         <span>{item.solicitante_nome}</span>
                       </div>
                     </td>
-                    <td>
+                    <td data-label="Valor Total">
                       <span className="pa-price-highlight">
                         {formatBrl(item.valor * item.quantidade)}
                       </span>
                     </td>
-                    <td>
+                    <td data-label="Status">
                       {renderStatusBadge(item.status)}
                     </td>
-                    <td>
+                    <td data-label="Ações">
                       <button
                         className="pa-btn-detail"
                         onClick={() => handleOpenDetails(item.id)}
@@ -743,6 +769,13 @@ export const FinanceRefundsExpenses: React.FC = () => {
                   <span className="pa-detail-val" style={{ color: '#60a5fa' }}>
                     {selectedRequest.forma_pagamento}
                     {selectedRequest.quantidade_parcelas > 1 ? ` (${selectedRequest.quantidade_parcelas}x)` : ' (À vista)'}
+                  </span>
+                </div>
+
+                <div className="pa-detail-item">
+                  <span className="pa-detail-label">Empresa Pagadora</span>
+                  <span className="pa-detail-val" style={{ color: '#a5b4fc', fontWeight: 600 }}>
+                    {selectedRequest.empresa_pagadora || 'INDIFERENTE'}
                   </span>
                 </div>
 
