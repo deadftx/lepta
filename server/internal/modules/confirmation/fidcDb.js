@@ -1,41 +1,23 @@
-import Database from 'better-sqlite3';
-import path from 'path';
 import fs from 'fs';
 
-const projectRoot = path.resolve();
+let mainDbInstance = null;
 
-function resolveFidcDbPath() {
-  if (process.env.FIDC_DATABASE_PATH && fs.existsSync(process.env.FIDC_DATABASE_PATH)) {
-    return path.resolve(process.env.FIDC_DATABASE_PATH);
-  }
-  const localCopy = path.join(projectRoot, 'server', 'data', 'fidc.db');
-  if (fs.existsSync(localCopy)) {
-    return localCopy;
-  }
-  const originalBackup = 'C:/Users/ArthurFeltrinDeco/OneDrive - Lepta/Tecnologia/SISTEMA/SISTEMA/SistemaProdutos/BACKUPS/lepta_backup_2026-08-17.db';
-  if (fs.existsSync(originalBackup)) {
-    return originalBackup;
-  }
-  return localCopy;
+export function setFidcDb(db) {
+  mainDbInstance = db;
+  ensureFidcSchema(db);
+  return mainDbInstance;
 }
-
-const fidcDbPath = resolveFidcDbPath();
-
-let fidcDb = null;
 
 export function getFidcDb() {
-  if (!fidcDb) {
-    fidcDb = new Database(fidcDbPath, { fileMustExist: false, timeout: 60000 });
-    fidcDb.pragma('journal_mode = WAL');
-    fidcDb.pragma('busy_timeout = 60000');
-    fidcDb.pragma('synchronous = NORMAL');
-    fidcDb.pragma('temp_store = MEMORY');
-    fidcDb.pragma('cache_size = -64000');
-    ensureFidcSchema(fidcDb);
+  if (!mainDbInstance) {
+    throw new Error('Banco de dados principal do LeptaSys não foi inicializado.');
   }
-  return fidcDb;
+  return mainDbInstance;
 }
 
+/**
+ * Garante que todas as tabelas do Sistema de Confirmação & FIDCs existam dentro do database.sqlite principal
+ */
 export function ensureFidcSchema(db) {
   db.exec(`
     CREATE TABLE IF NOT EXISTS config (key TEXT PRIMARY KEY, value TEXT);
@@ -164,4 +146,68 @@ export function ensureFidcSchema(db) {
       data TEXT DEFAULT (datetime('now'))
     );
   `);
+}
+
+/**
+ * Importa/Copia todas as tabelas de um arquivo de backup (.db) diretamente para dentro do database.sqlite principal
+ */
+export function importBackupIntoMainDb(db, backupFilePath) {
+  if (!fs.existsSync(backupFilePath)) {
+    throw new Error(`Arquivo de backup não encontrado: ${backupFilePath}`);
+  }
+
+  ensureFidcSchema(db);
+
+  // Normaliza o caminho do arquivo para SQLite (barras normais)
+  const normalizedPath = backupFilePath.replace(/\\/g, '/');
+
+  // Faz o ATTACH do arquivo de backup no banco principal
+  db.exec(`ATTACH DATABASE '${normalizedPath}' AS backup_source;`);
+
+  try {
+    const tablesToImport = [
+      'config',
+      'fundos',
+      'classes',
+      'limites_sub',
+      'historico_cotas',
+      'cdi',
+      'carteira_dc',
+      'estoque_snapshots',
+      'estoque_titulos',
+      'limites_conc',
+      'gerentes',
+      'setores',
+      'cedentes',
+      'cedentes_cnpjs',
+      'receita_lancamentos',
+      'feriados'
+    ];
+
+    const results = {};
+
+    db.transaction(() => {
+      for (const table of tablesToImport) {
+        try {
+          db.exec(`INSERT OR REPLACE INTO "${table}" SELECT * FROM backup_source."${table}"`);
+          const count = db.prepare(`SELECT COUNT(*) as c FROM "${table}"`).get()?.c || 0;
+          results[table] = count;
+        } catch (tableErr) {
+          console.warn(`Aviso ao importar tabela ${table}:`, tableErr.message);
+        }
+      }
+    })();
+
+    return {
+      success: true,
+      message: 'Dados do FIDC importados com sucesso para o banco principal!',
+      counts: results
+    };
+  } finally {
+    try {
+      db.exec('DETACH DATABASE backup_source;');
+    } catch (detachErr) {
+      console.warn('Aviso ao desanexar backup_source:', detachErr.message);
+    }
+  }
 }
