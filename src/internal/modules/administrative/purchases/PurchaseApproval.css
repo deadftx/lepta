@@ -419,6 +419,122 @@
   box-shadow: 0 0 0 1px #3b82f6;
 }
 
+/* Seletor de Empresa Pagadora */
+.pa-empresa-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.pa-empresa-btn {
+  background: #0f172a;
+  border: 1px solid #334155;
+  color: #94a3b8;
+  padding: 9px 12px;
+  border-radius: 10px;
+  font-size: 0.82rem;
+  font-weight: 700;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  transition: all 0.2s ease;
+  text-align: center;
+}
+
+.pa-empresa-btn:hover {
+  border-color: #64748b;
+  color: #f8fafc;
+}
+
+.pa-empresa-btn.active {
+  background: rgba(99, 102, 241, 0.18);
+  border-color: #818cf8;
+  color: #a5b4fc;
+  box-shadow: 0 0 0 1px #818cf8;
+}
+
+/* Área de Upload de Anexos no Formulário */
+.pa-attachment-zone {
+  background: rgba(15, 23, 42, 0.6);
+  border: 2px dashed rgba(148, 163, 184, 0.25);
+  border-radius: 14px;
+  padding: 1.5rem;
+  text-align: center;
+  transition: all 0.2s ease;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.pa-attachment-zone:hover, .pa-attachment-zone.dragging {
+  border-color: #38bdf8;
+  background: rgba(56, 189, 248, 0.05);
+}
+
+.pa-attachment-zone-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  background: rgba(56, 189, 248, 0.12);
+  color: #38bdf8;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 2px;
+}
+
+.pa-attachment-zone-text {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: #f8fafc;
+}
+
+.pa-attachment-zone-sub {
+  font-size: 0.75rem;
+  color: #64748b;
+}
+
+.pa-form-attachments-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.pa-form-attachment-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: rgba(30, 41, 59, 0.7);
+  border: 1px solid rgba(148, 163, 184, 0.15);
+  padding: 8px 14px;
+  border-radius: 10px;
+  transition: border-color 0.2s ease;
+}
+
+.pa-form-attachment-item:hover {
+  border-color: rgba(56, 189, 248, 0.35);
+}
+
+.pa-attachment-count-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: rgba(56, 189, 248, 0.12);
+  color: #38bdf8;
+  border: 1px solid rgba(56, 189, 248, 0.3);
+  padding: 2px 7px;
+  border-radius: 6px;
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
 .pa-submit-btn {
   background: linear-gradient(135deg, #2563eb, #1d4ed8);
   border: 1px solid rgba(59, 130, 246, 0.4);

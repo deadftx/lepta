@@ -56,10 +56,11 @@ export function registerPurchaseRoutes(app, {
       id TEXT PRIMARY KEY,
       numero INTEGER,
       tipo_destino TEXT DEFAULT 'DEPARTAMENTO',
+      empresa_pagadora TEXT DEFAULT 'INDIFERENTE',
       categoria TEXT,
       fornecedor_nome TEXT,
       fornecedor_contato TEXT,
-      forma_pagamento TEXT, -- 'DINHEIRO', 'PIX', 'DEBITO', 'CREDITO'
+      forma_pagamento TEXT, -- 'PIX', 'BOLETO', 'CREDITO'
       quantidade_parcelas INTEGER DEFAULT 1,
       departamento_centro_custo TEXT,
       produto_servico TEXT NOT NULL,
@@ -89,6 +90,7 @@ export function registerPurchaseRoutes(app, {
       requisicao_id TEXT NOT NULL,
       numero_item INTEGER DEFAULT 1,
       tipo_destino TEXT,
+      empresa_pagadora TEXT DEFAULT 'INDIFERENTE',
       departamento_centro_custo TEXT,
       categoria TEXT NOT NULL,
       fornecedor_nome TEXT,
@@ -130,6 +132,7 @@ export function registerPurchaseRoutes(app, {
     const requiredCols = [
       { name: 'arquivado', sql: 'ALTER TABLE compras_requisicoes ADD COLUMN arquivado INTEGER DEFAULT 0' },
       { name: 'tipo_destino', sql: "ALTER TABLE compras_requisicoes ADD COLUMN tipo_destino TEXT DEFAULT 'DEPARTAMENTO'" },
+      { name: 'empresa_pagadora', sql: "ALTER TABLE compras_requisicoes ADD COLUMN empresa_pagadora TEXT DEFAULT 'INDIFERENTE'" },
       { name: 'categoria', sql: 'ALTER TABLE compras_requisicoes ADD COLUMN categoria TEXT' },
       { name: 'fornecedor_nome', sql: 'ALTER TABLE compras_requisicoes ADD COLUMN fornecedor_nome TEXT' },
       { name: 'fornecedor_contato', sql: 'ALTER TABLE compras_requisicoes ADD COLUMN fornecedor_contato TEXT' },
@@ -147,9 +150,26 @@ export function registerPurchaseRoutes(app, {
         db.exec(col.sql);
       }
     }
+
+    const itemCols = db.prepare("PRAGMA table_info(compras_requisicoes_itens)").all().map(c => c.name.toLowerCase());
+    if (!itemCols.includes('empresa_pagadora')) {
+      db.exec("ALTER TABLE compras_requisicoes_itens ADD COLUMN empresa_pagadora TEXT DEFAULT 'INDIFERENTE'");
+    }
   } catch (err) {
     console.warn('Aviso na migração SQLite de compras_requisicoes:', err.message);
   }
+
+  const EMPRESAS_PAGADORAS_VALIDAS = [
+    'INDIFERENTE',
+    'Lepta Consultora',
+    'Lepta Gestora',
+    'Lepta Securitizadora',
+    'BDM',
+    'Lepta Metais',
+    'LeptaHub'
+  ];
+
+  const FORMAS_PAGAMENTO_VALIDAS = ['PIX', 'BOLETO', 'CREDITO'];
 
   // Middleware de acesso: permite usuários com permissão 11.1 (Aprovação de Compras), 7.3 (Solicitações Financeiras) ou Master
   const requireAccess = requirePermission(['11.1', '7.3', '11', '7']);
@@ -297,6 +317,7 @@ export function registerPurchaseRoutes(app, {
 
       const categoria = String(it?.categoria || '').trim();
       const tipo_destino = String(it?.tipo_destino || 'DEPARTAMENTO').trim().toUpperCase();
+      const empresa_pagadora = String(it?.empresa_pagadora || req.body?.empresa_pagadora || 'INDIFERENTE').trim();
       const departamento_centro_custo = String(it?.departamento_centro_custo || '').trim();
       const fornecedor_nome = String(it?.fornecedor_nome || '').trim();
       const fornecedor_contato = String(it?.fornecedor_contato || '').trim();
@@ -310,6 +331,9 @@ export function registerPurchaseRoutes(app, {
       if (!tipo_destino || !['DEPARTAMENTO', 'CENTRO_DE_CUSTO', 'EMPRESA', 'CLIENTE'].includes(tipo_destino)) {
         return res.status(400).json({ error: `${prefix}Selecione o Tipo de Destino (Departamento, Centro de Custo, Empresa ou Cliente).` });
       }
+      if (!EMPRESAS_PAGADORAS_VALIDAS.includes(empresa_pagadora)) {
+        return res.status(400).json({ error: `${prefix}Selecione uma Empresa Pagadora válida.` });
+      }
       if (!departamento_centro_custo) {
         return res.status(400).json({ error: `${prefix}O preenchimento do ${tipo_destino === 'EMPRESA' ? 'Nome da Empresa' : tipo_destino === 'CLIENTE' ? 'Nome do Cliente' : tipo_destino === 'CENTRO_DE_CUSTO' ? 'Centro de Custo' : 'Departamento'} é obrigatório.` });
       }
@@ -319,8 +343,8 @@ export function registerPurchaseRoutes(app, {
       if (!fornecedor_contato) {
         return res.status(400).json({ error: `${prefix}O Contato do Fornecedor / Prestador é obrigatório.` });
       }
-      if (!forma_pagamento || !['DINHEIRO', 'PIX', 'DEBITO', 'CREDITO'].includes(forma_pagamento)) {
-        return res.status(400).json({ error: `${prefix}Selecione uma Forma de Pagamento válida: Dinheiro, PIX, Débito ou Crédito.` });
+      if (!forma_pagamento || !FORMAS_PAGAMENTO_VALIDAS.includes(forma_pagamento)) {
+        return res.status(400).json({ error: `${prefix}Selecione uma Forma de Pagamento válida: PIX, Boleto ou Crédito.` });
       }
       if (!produto_servico) {
         return res.status(400).json({ error: `${prefix}A Descrição do Produto / Serviço é obrigatória.` });
@@ -339,13 +363,14 @@ export function registerPurchaseRoutes(app, {
       let totalValor = 0;
       let totalQtd = 0;
       const firstItem = itens[0];
+      const mainEmpresaPagadora = String(firstItem.empresa_pagadora || req.body?.empresa_pagadora || 'INDIFERENTE').trim();
 
       const insertItemStmt = db.prepare(`
         INSERT INTO compras_requisicoes_itens (
-          id, requisicao_id, numero_item, tipo_destino, departamento_centro_custo,
+          id, requisicao_id, numero_item, tipo_destino, empresa_pagadora, departamento_centro_custo,
           categoria, fornecedor_nome, fornecedor_contato, forma_pagamento,
           quantidade_parcelas, produto_servico, valor, quantidade, observacoes, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `);
 
       const createdItems = [];
@@ -356,6 +381,7 @@ export function registerPurchaseRoutes(app, {
         const itQtd = Math.max(1, Number(it.quantidade || 1));
         const itVal = Number(it.valor);
         const itParcelas = Math.max(1, Number(it.quantidade_parcelas) || 1);
+        const itEmpresa = String(it.empresa_pagadora || mainEmpresaPagadora).trim();
 
         totalValor += (itVal * itQtd);
         totalQtd += itQtd;
@@ -365,6 +391,7 @@ export function registerPurchaseRoutes(app, {
           id,
           numItem,
           String(it.tipo_destino || 'DEPARTAMENTO').trim().toUpperCase(),
+          itEmpresa,
           String(it.departamento_centro_custo || '').trim(),
           String(it.categoria || 'Outros').trim(),
           String(it.fornecedor_nome || '').trim(),
@@ -383,6 +410,7 @@ export function registerPurchaseRoutes(app, {
           requisicao_id: id,
           numero_item: numItem,
           tipo_destino: it.tipo_destino,
+          empresa_pagadora: itEmpresa,
           departamento_centro_custo: it.departamento_centro_custo,
           categoria: it.categoria,
           fornecedor_nome: it.fornecedor_nome,
@@ -407,16 +435,17 @@ export function registerPurchaseRoutes(app, {
 
       db.prepare(`
         INSERT INTO compras_requisicoes (
-          id, numero, tipo_destino, categoria, fornecedor_nome, fornecedor_contato, forma_pagamento,
+          id, numero, tipo_destino, empresa_pagadora, categoria, fornecedor_nome, fornecedor_contato, forma_pagamento,
           quantidade_parcelas, departamento_centro_custo, produto_servico,
           valor, quantidade, observacoes, status, arquivado, arquivado_manualmente,
           solicitante_id, solicitante_nome, solicitante_email,
           created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'PENDENTE', 0, 0, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'PENDENTE', 0, 0, ?, ?, ?, ?, ?)
       `).run(
         id,
         count,
         firstItem.tipo_destino || 'DEPARTAMENTO',
+        mainEmpresaPagadora,
         mainCategoria,
         firstItem.fornecedor_nome,
         firstItem.fornecedor_contato,
@@ -458,7 +487,8 @@ export function registerPurchaseRoutes(app, {
       const rows = db.prepare(`
         SELECT r.*,
           (SELECT COUNT(*) FROM compras_mensagens m WHERE m.requisicao_id = r.id) as total_mensagens,
-          COALESCE((SELECT COUNT(*) FROM compras_requisicoes_itens i WHERE i.requisicao_id = r.id), 1) as total_itens
+          COALESCE((SELECT COUNT(*) FROM compras_requisicoes_itens i WHERE i.requisicao_id = r.id), 1) as total_itens,
+          COALESCE((SELECT COUNT(*) FROM compras_anexos a WHERE a.requisicao_id = r.id), 0) as total_anexos
         FROM compras_requisicoes r
         WHERE r.solicitante_id = ?
         ORDER BY r.created_at DESC
@@ -482,7 +512,8 @@ export function registerPurchaseRoutes(app, {
       const rows = db.prepare(`
         SELECT r.*,
           (SELECT COUNT(*) FROM compras_mensagens m WHERE m.requisicao_id = r.id) as total_mensagens,
-          COALESCE((SELECT COUNT(*) FROM compras_requisicoes_itens i WHERE i.requisicao_id = r.id), 1) as total_itens
+          COALESCE((SELECT COUNT(*) FROM compras_requisicoes_itens i WHERE i.requisicao_id = r.id), 1) as total_itens,
+          COALESCE((SELECT COUNT(*) FROM compras_anexos a WHERE a.requisicao_id = r.id), 0) as total_anexos
         FROM compras_requisicoes r
         WHERE r.arquivado = 0 AND r.status IN ('PENDENTE', 'REABERTO', 'REVISAO', 'AGUARDANDO_RESPOSTA_APROVADOR', 'AGUARDANDO_RESPOSTA_SOLICITANTE')
         ORDER BY 
@@ -509,7 +540,7 @@ export function registerPurchaseRoutes(app, {
     try {
       const userRole = getUserRoleInPurchases(req.authUser.id, req.authUser.role);
       const isApprover = userRole === 'APROVADOR' || req.authUser.role === 'MASTER';
-      const hasFinanceAccess = req.authUser.role === 'MASTER' || checkUserPermission(req.authUser, '7') || checkUserPermission(req.authUser, '7.4') || checkUserPermission(req.authUser, '7.5');
+      const hasFinanceAccess = req.authUser.role === 'MASTER' || checkUserPermission(req.authUser, '7') || checkUserPermission(req.authUser, '7.3') || checkUserPermission(req.authUser, '7.4') || checkUserPermission(req.authUser, '7.5');
 
       if (!isApprover && !hasFinanceAccess) {
         return res.status(403).json({ error: 'Apenas aprovadores ou financeiro têm acesso à fila geral de arquivados.' });
@@ -518,7 +549,8 @@ export function registerPurchaseRoutes(app, {
       const rows = db.prepare(`
         SELECT r.*,
           (SELECT COUNT(*) FROM compras_mensagens m WHERE m.requisicao_id = r.id) as total_mensagens,
-          COALESCE((SELECT COUNT(*) FROM compras_requisicoes_itens i WHERE i.requisicao_id = r.id), 1) as total_itens
+          COALESCE((SELECT COUNT(*) FROM compras_requisicoes_itens i WHERE i.requisicao_id = r.id), 1) as total_itens,
+          COALESCE((SELECT COUNT(*) FROM compras_anexos a WHERE a.requisicao_id = r.id), 0) as total_anexos
         FROM compras_requisicoes r
         WHERE r.arquivado = 1
         ORDER BY COALESCE(r.arquivado_em, r.decidido_em, r.updated_at) DESC
@@ -540,7 +572,7 @@ export function registerPurchaseRoutes(app, {
       const userRole = getUserRoleInPurchases(req.authUser.id, req.authUser.role);
       const isOwner = requisicao.solicitante_id === req.authUser.id;
       const isApprover = userRole === 'APROVADOR' || req.authUser.role === 'MASTER';
-      const hasFinanceAccess = req.authUser.role === 'MASTER' || checkUserPermission(req.authUser, '7') || checkUserPermission(req.authUser, '7.4') || checkUserPermission(req.authUser, '7.5');
+      const hasFinanceAccess = req.authUser.role === 'MASTER' || checkUserPermission(req.authUser, '7') || checkUserPermission(req.authUser, '7.3') || checkUserPermission(req.authUser, '7.4') || checkUserPermission(req.authUser, '7.5');
 
       if (!isOwner && !isApprover && !hasFinanceAccess) {
         return res.status(403).json({ error: 'Sem permissão para visualizar esta solicitação.' });
@@ -559,6 +591,7 @@ export function registerPurchaseRoutes(app, {
           requisicao_id: requisicao.id,
           numero_item: 1,
           tipo_destino: requisicao.tipo_destino || 'DEPARTAMENTO',
+          empresa_pagadora: requisicao.empresa_pagadora || 'INDIFERENTE',
           departamento_centro_custo: requisicao.departamento_centro_custo || '',
           categoria: requisicao.categoria || 'Outros',
           fornecedor_nome: requisicao.fornecedor_nome || '',
@@ -684,6 +717,7 @@ export function registerPurchaseRoutes(app, {
       const fornecedor_nome = req.body?.fornecedor_nome ? String(req.body.fornecedor_nome).trim() : requisicao.fornecedor_nome;
       const fornecedor_contato = req.body?.fornecedor_contato ? String(req.body.fornecedor_contato).trim() : requisicao.fornecedor_contato;
       const forma_pagamento = req.body?.forma_pagamento ? String(req.body.forma_pagamento).trim().toUpperCase() : requisicao.forma_pagamento;
+      const empresa_pagadora = req.body?.empresa_pagadora ? String(req.body.empresa_pagadora).trim() : (requisicao.empresa_pagadora || 'INDIFERENTE');
       const quantidade_parcelas = req.body?.quantidade_parcelas !== undefined ? Math.max(1, Number(req.body.quantidade_parcelas) || 1) : requisicao.quantidade_parcelas;
       const departamento_centro_custo = req.body?.departamento_centro_custo ? String(req.body.departamento_centro_custo).trim() : requisicao.departamento_centro_custo;
       const produto_servico = req.body?.produto_servico ? String(req.body.produto_servico).trim() : requisicao.produto_servico;
@@ -702,6 +736,7 @@ export function registerPurchaseRoutes(app, {
             fornecedor_nome = ?,
             fornecedor_contato = ?,
             forma_pagamento = ?,
+            empresa_pagadora = ?,
             quantidade_parcelas = ?,
             departamento_centro_custo = ?,
             produto_servico = ?,
@@ -718,6 +753,7 @@ export function registerPurchaseRoutes(app, {
         fornecedor_nome,
         fornecedor_contato,
         forma_pagamento,
+        empresa_pagadora,
         quantidade_parcelas,
         departamento_centro_custo,
         produto_servico,
@@ -849,6 +885,7 @@ export function registerPurchaseRoutes(app, {
       const fornecedor_nome = req.body?.fornecedor_nome ? String(req.body.fornecedor_nome).trim() : requisicao.fornecedor_nome;
       const fornecedor_contato = req.body?.fornecedor_contato ? String(req.body.fornecedor_contato).trim() : requisicao.fornecedor_contato;
       const forma_pagamento = req.body?.forma_pagamento ? String(req.body.forma_pagamento).trim().toUpperCase() : requisicao.forma_pagamento;
+      const empresa_pagadora = req.body?.empresa_pagadora ? String(req.body.empresa_pagadora).trim() : (requisicao.empresa_pagadora || 'INDIFERENTE');
       const quantidade_parcelas = req.body?.quantidade_parcelas !== undefined ? Math.max(1, Number(req.body.quantidade_parcelas) || 1) : requisicao.quantidade_parcelas;
       const departamento_centro_custo = req.body?.departamento_centro_custo ? String(req.body.departamento_centro_custo).trim() : requisicao.departamento_centro_custo;
       const produto_servico = req.body?.produto_servico ? String(req.body.produto_servico).trim() : requisicao.produto_servico;
@@ -867,6 +904,7 @@ export function registerPurchaseRoutes(app, {
             fornecedor_nome = ?,
             fornecedor_contato = ?,
             forma_pagamento = ?,
+            empresa_pagadora = ?,
             quantidade_parcelas = ?,
             departamento_centro_custo = ?,
             produto_servico = ?,
@@ -881,6 +919,7 @@ export function registerPurchaseRoutes(app, {
         fornecedor_nome,
         fornecedor_contato,
         forma_pagamento,
+        empresa_pagadora,
         quantidade_parcelas,
         departamento_centro_custo,
         produto_servico,
@@ -1014,11 +1053,13 @@ export function registerPurchaseRoutes(app, {
   });
 
   // --- ROTA: FILA DO FINANCEIRO (REEMBOLSOS E DESPESAS) ---
-  app.get('/api/compras/financeiro-fila', requireSession, requirePermission(['7.4', '7.5', '7']), (req, res) => {
+  app.get('/api/compras/financeiro-fila', requireSession, requirePermission(['7.3', '7.4', '7.5', '7', '11', '11.1']), (req, res) => {
     try {
       const rows = db.prepare(`
         SELECT r.*,
-          (SELECT COUNT(*) FROM compras_mensagens m WHERE m.requisicao_id = r.id) as total_mensagens
+          (SELECT COUNT(*) FROM compras_mensagens m WHERE m.requisicao_id = r.id) as total_mensagens,
+          COALESCE((SELECT COUNT(*) FROM compras_requisicoes_itens i WHERE i.requisicao_id = r.id), 1) as total_itens,
+          COALESCE((SELECT COUNT(*) FROM compras_anexos a WHERE a.requisicao_id = r.id), 0) as total_anexos
         FROM compras_requisicoes r
         WHERE r.status IN ('APROVADO', 'SOLICITACAO_CONCLUIDA', 'PAGO')
         ORDER BY 
@@ -1196,64 +1237,87 @@ export function registerPurchaseRoutes(app, {
     }
   });
 
-  // --- ROTA: ENVIAR ANEXO (SOLICITANTE/APROVADOR/FINANCEIRO) ---
-  app.post('/api/compras/requisicoes/:id/anexos', requireSession, requireAccess, upload.single('file'), (req, res) => {
+  // --- ROTA: ENVIAR ANEXO(S) (SUPORTA 1 OU ATÉ 5 ANEXOS DE ATÉ 20MB CADA) ---
+  app.post('/api/compras/requisicoes/:id/anexos', requireSession, requireAccess, upload.any(), (req, res) => {
     const { id } = req.params;
-    const file = req.file;
-    if (!file) return res.status(400).json({ error: 'Nenhum arquivo enviado.' });
+    const files = req.files && req.files.length > 0 ? req.files : (req.file ? [req.file] : []);
+    if (files.length === 0) return res.status(400).json({ error: 'Nenhum arquivo enviado.' });
 
     try {
       const reqInfo = db.prepare(`SELECT * FROM compras_requisicoes WHERE id = ?`).get(id);
       if (!reqInfo) {
-        if (fs.existsSync(file.path)) fs.unlinkSync(file.path);
+        for (const file of files) {
+          if (fs.existsSync(file.path)) fs.unlinkSync(file.path);
+        }
         return res.status(404).json({ error: 'Solicitação não encontrada.' });
       }
 
       const userRole = getUserRoleInPurchases(req.authUser.id, req.authUser.role);
       const isOwner = reqInfo.solicitante_id === req.authUser.id;
       const isApprover = userRole === 'APROVADOR' || req.authUser.role === 'MASTER';
-      const hasFinanceAccess = req.authUser.role === 'MASTER' || checkUserPermission(req.authUser, '7') || checkUserPermission(req.authUser, '7.4');
+      const hasFinanceAccess = req.authUser.role === 'MASTER' || checkUserPermission(req.authUser, '7') || checkUserPermission(req.authUser, '7.3') || checkUserPermission(req.authUser, '7.4') || checkUserPermission(req.authUser, '7.5') || checkUserPermission(req.authUser, '11') || checkUserPermission(req.authUser, '11.1');
 
       if (!isOwner && !isApprover && !hasFinanceAccess) {
-        if (fs.existsSync(file.path)) fs.unlinkSync(file.path);
+        for (const file of files) {
+          if (fs.existsSync(file.path)) fs.unlinkSync(file.path);
+        }
         return res.status(403).json({ error: 'Sem permissão para adicionar anexos a esta solicitação.' });
       }
 
-      const anexoId = randomUUID();
+      const countExisting = db.prepare(`SELECT COUNT(*) as total FROM compras_anexos WHERE requisicao_id = ?`).get(id).total;
+      if (countExisting + files.length > 5) {
+        for (const file of files) {
+          if (fs.existsSync(file.path)) fs.unlinkSync(file.path);
+        }
+        return res.status(400).json({ error: `A solicitação permite no máximo 5 arquivos anexados no total (já possui ${countExisting}).` });
+      }
+
       const now = new Date().toISOString();
       const userName = req.authUser.username || req.authUser.id;
+      const createdAttachments = [];
 
-      db.prepare(`
+      const insertStmt = db.prepare(`
         INSERT INTO compras_anexos (id, requisicao_id, nome_arquivo, caminho_arquivo, tamanho_bytes, enviado_por_id, enviado_por_nome, created_at)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-      `).run(anexoId, id, file.originalname, file.filename, file.size, req.authUser.id, userName, now);
+      `);
 
-      db.prepare(`
-        INSERT INTO compras_mensagens (id, requisicao_id, autor_id, autor_nome, autor_role, mensagem, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-      `).run(
-        randomUUID(),
-        id,
-        req.authUser.id,
-        userName,
-        isApprover ? 'APROVADOR' : 'REQUISITANTE',
-        `📎 Adicionou o anexo: ${file.originalname}`,
-        now
-      );
+      for (const file of files) {
+        const anexoId = randomUUID();
+        insertStmt.run(anexoId, id, file.originalname, file.filename, file.size, req.authUser.id, userName, now);
 
-      return res.status(201).json({
-        id: anexoId,
-        nome_arquivo: file.originalname,
-        tamanho_bytes: file.size,
-        enviado_por_nome: userName,
-        created_at: now
-      });
-    } catch (error) {
-      console.error('Erro ao salvar anexo:', error.message);
-      if (file && fs.existsSync(file.path)) {
-        fs.unlinkSync(file.path);
+        db.prepare(`
+          INSERT INTO compras_mensagens (id, requisicao_id, autor_id, autor_nome, autor_role, mensagem, created_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?)
+        `).run(
+          randomUUID(),
+          id,
+          req.authUser.id,
+          userName,
+          isApprover ? 'APROVADOR' : 'REQUISITANTE',
+          `📎 Adicionou o anexo: ${file.originalname}`,
+          now
+        );
+
+        createdAttachments.push({
+          id: anexoId,
+          nome_arquivo: file.originalname,
+          tamanho_bytes: file.size,
+          enviado_por_nome: userName,
+          created_at: now
+        });
       }
-      return res.status(500).json({ error: 'Erro interno ao salvar anexo.' });
+
+      return res.status(201).json(files.length === 1 ? createdAttachments[0] : { success: true, anexos: createdAttachments });
+    } catch (error) {
+      console.error('Erro ao salvar anexo(s):', error.message);
+      if (files) {
+        for (const file of files) {
+          if (file && fs.existsSync(file.path)) {
+            fs.unlinkSync(file.path);
+          }
+        }
+      }
+      return res.status(500).json({ error: 'Erro interno ao salvar anexo(s).' });
     }
   });
 
@@ -1267,7 +1331,7 @@ export function registerPurchaseRoutes(app, {
       const userRole = getUserRoleInPurchases(req.authUser.id, req.authUser.role);
       const isOwner = reqInfo.solicitante_id === req.authUser.id;
       const isApprover = userRole === 'APROVADOR' || req.authUser.role === 'MASTER';
-      const hasFinanceAccess = req.authUser.role === 'MASTER' || checkUserPermission(req.authUser, '7') || checkUserPermission(req.authUser, '7.4');
+      const hasFinanceAccess = req.authUser.role === 'MASTER' || checkUserPermission(req.authUser, '7') || checkUserPermission(req.authUser, '7.3') || checkUserPermission(req.authUser, '7.4') || checkUserPermission(req.authUser, '7.5') || checkUserPermission(req.authUser, '11') || checkUserPermission(req.authUser, '11.1');
 
       if (!isOwner && !isApprover && !hasFinanceAccess) {
         return res.status(403).json({ error: 'Sem permissão para visualizar anexos desta solicitação.' });
@@ -1297,7 +1361,7 @@ export function registerPurchaseRoutes(app, {
       const userRole = getUserRoleInPurchases(req.authUser.id, req.authUser.role);
       const isOwner = reqInfo.solicitante_id === req.authUser.id;
       const isApprover = userRole === 'APROVADOR' || req.authUser.role === 'MASTER';
-      const hasFinanceAccess = req.authUser.role === 'MASTER' || checkUserPermission(req.authUser, '7') || checkUserPermission(req.authUser, '7.4');
+      const hasFinanceAccess = req.authUser.role === 'MASTER' || checkUserPermission(req.authUser, '7') || checkUserPermission(req.authUser, '7.3') || checkUserPermission(req.authUser, '7.4') || checkUserPermission(req.authUser, '7.5') || checkUserPermission(req.authUser, '11') || checkUserPermission(req.authUser, '11.1');
 
       if (!isOwner && !isApprover && !hasFinanceAccess) {
         return res.status(403).json({ error: 'Sem permissão para baixar este anexo.' });

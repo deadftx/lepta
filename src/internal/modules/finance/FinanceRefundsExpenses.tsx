@@ -12,6 +12,7 @@ export interface PurchaseItem {
   requisicao_id?: string;
   numero_item?: number;
   tipo_destino?: string;
+  empresa_pagadora?: string;
   departamento_centro_custo?: string;
   categoria?: string;
   fornecedor_nome?: string;
@@ -29,6 +30,7 @@ interface PurchaseRequest {
   id: string;
   numero: number;
   tipo_destino?: string;
+  empresa_pagadora?: string;
   categoria?: string;
   fornecedor_nome: string;
   fornecedor_contato: string;
@@ -57,6 +59,7 @@ interface PurchaseRequest {
   updated_at: string;
   total_mensagens?: number;
   total_itens?: number;
+  total_anexos?: number;
   itens?: PurchaseItem[];
   mensagens?: PurchaseMessage[];
 }
@@ -596,8 +599,7 @@ export const FinanceRefundsExpenses: React.FC = () => {
             >
               <option value="TODAS">Forma de Pagamento: Todas</option>
               <option value="PIX">PIX</option>
-              <option value="DINHEIRO">Dinheiro</option>
-              <option value="DEBITO">Débito</option>
+              <option value="BOLETO">Boleto</option>
               <option value="CREDITO">Crédito</option>
             </select>
           </div>
@@ -611,6 +613,7 @@ export const FinanceRefundsExpenses: React.FC = () => {
                 <th>Fornecedor / Prestador</th>
                 <th>Descrição / Serviço</th>
                 <th>Pagamento</th>
+                <th>Empresa</th>
                 <th>Centro de Custo</th>
                 <th>Solicitante</th>
                 <th>Valor Total</th>
@@ -621,7 +624,7 @@ export const FinanceRefundsExpenses: React.FC = () => {
             <tbody>
               {filteredQueue.length === 0 ? (
                 <tr>
-                  <td colSpan={9} style={{ textAlign: 'center', padding: '2rem', color: '#94a3b8' }}>
+                  <td colSpan={10} style={{ textAlign: 'center', padding: '2rem', color: '#94a3b8' }}>
                     Nenhuma solicitação encontrada para o filtro atual.
                   </td>
                 </tr>
@@ -629,7 +632,14 @@ export const FinanceRefundsExpenses: React.FC = () => {
                 filteredQueue.map(item => (
                   <tr key={item.id}>
                     <td data-label="Código">
-                      <span className="pa-code-badge">{item.id}</span>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <span className="pa-code-badge">{item.id}</span>
+                        {(item.total_anexos || 0) > 0 && (
+                          <span className="pa-attachment-count-badge" title={`${item.total_anexos} anexo(s) anexado(s)`}>
+                            <Paperclip size={11} /> {item.total_anexos}
+                          </span>
+                        )}
+                      </div>
                     </td>
                     <td data-label="Fornecedor">
                       <strong>{item.fornecedor_nome || '-'}</strong>
@@ -653,6 +663,11 @@ export const FinanceRefundsExpenses: React.FC = () => {
                       {item.quantidade_parcelas > 1 && (
                         <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>{item.quantidade_parcelas}x parcelas</div>
                       )}
+                    </td>
+                    <td data-label="Empresa">
+                      <span style={{ fontSize: '0.8rem', color: item.empresa_pagadora && item.empresa_pagadora !== 'INDIFERENTE' ? '#a5b4fc' : '#94a3b8' }}>
+                        {item.empresa_pagadora || 'INDIFERENTE'}
+                      </span>
                     </td>
                     <td data-label="Centro de Custo">{item.departamento_centro_custo || '-'}</td>
                     <td data-label="Solicitante">
@@ -743,6 +758,13 @@ export const FinanceRefundsExpenses: React.FC = () => {
                   <span className="pa-detail-val" style={{ color: '#60a5fa' }}>
                     {selectedRequest.forma_pagamento}
                     {selectedRequest.quantidade_parcelas > 1 ? ` (${selectedRequest.quantidade_parcelas}x)` : ' (À vista)'}
+                  </span>
+                </div>
+
+                <div className="pa-detail-item">
+                  <span className="pa-detail-label">Empresa Pagadora</span>
+                  <span className="pa-detail-val" style={{ color: '#a5b4fc', fontWeight: 600 }}>
+                    {selectedRequest.empresa_pagadora || 'INDIFERENTE'}
                   </span>
                 </div>
 

@@ -13,6 +13,7 @@ export interface PurchaseItem {
   requisicao_id?: string;
   numero_item?: number;
   tipo_destino?: string;
+  empresa_pagadora?: string;
   departamento_centro_custo?: string;
   categoria?: string;
   fornecedor_nome?: string;
@@ -30,6 +31,7 @@ interface PurchaseRequest {
   id: string;
   numero: number;
   tipo_destino?: string;
+  empresa_pagadora?: string;
   categoria?: string;
   fornecedor_nome: string;
   fornecedor_contato: string;
@@ -860,6 +862,13 @@ export const FinancePaymentCalendar: React.FC = () => {
                   <span className="pa-detail-val" style={{ color: '#60a5fa' }}>
                     {selectedRequestDetails.forma_pagamento}
                     {selectedRequestDetails.quantidade_parcelas > 1 ? ` (${selectedRequestDetails.quantidade_parcelas}x)` : ' (À vista)'}
+                  </span>
+                </div>
+
+                <div className="pa-detail-item">
+                  <span className="pa-detail-label">Empresa Pagadora</span>
+                  <span className="pa-detail-val" style={{ color: '#a5b4fc', fontWeight: 600 }}>
+                    {selectedRequestDetails.empresa_pagadora || 'INDIFERENTE'}
                   </span>
                 </div>
 
