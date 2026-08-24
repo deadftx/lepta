@@ -12,6 +12,7 @@ import { registerPowerBiRoutes } from './modules/database/biRoutes.js';
 import { registerGrafenoRoutes } from './modules/finance/grafenoRoutes.js';
 import { registerPurchaseRoutes } from './modules/purchases/routes.js';
 import { registerNotificationRoutes } from './modules/notifications/routes.js';
+import { registerEmailConfigRoutes } from './modules/administration/emailRoutes.js';
 import { ensureCedentesTableSchema, consolidateCedentesTable, syncAllCedentesFromUnltdApi } from './modules/database/unltdSync.js';
 
 const app = express();
@@ -2761,6 +2762,12 @@ registerPurchaseRoutes(app, {
 registerNotificationRoutes(app, {
   db,
   requireSession
+});
+
+registerEmailConfigRoutes(app, {
+  db,
+  requireSession,
+  requireMaster
 });
 
 function dropLegacyBases() {

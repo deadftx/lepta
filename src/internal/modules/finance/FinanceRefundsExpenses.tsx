@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import {
   Clock, Send, X, RefreshCw,
   Eye, CreditCard, ArrowDownLeft, CheckSquare, RotateCcw, Paperclip, Trash2, Download, CheckCircle2, User, FileSpreadsheet, CalendarCheck
@@ -161,6 +162,8 @@ export const FinanceRefundsExpenses: React.FC = () => {
     }
   };
 
+  const [searchParams] = useSearchParams();
+
   const handleOpenDetails = async (id: string) => {
     try {
       const res = await fetch(`${API_BASE_URL}/api/compras/requisicoes/${id}`, {
@@ -180,6 +183,14 @@ export const FinanceRefundsExpenses: React.FC = () => {
       console.error('Erro ao abrir detalhes:', err);
     }
   };
+
+  // Abre automaticamente a solicitação se houver ?id= ou ?solicitacao= na URL (vindo de e-mail / notificação)
+  useEffect(() => {
+    const targetId = searchParams.get('id') || searchParams.get('solicitacao');
+    if (targetId) {
+      handleOpenDetails(targetId);
+    }
+  }, [searchParams]);
 
   const handleSaveScheduleDate = async (newDate: string | null) => {
     if (!selectedRequest) return;

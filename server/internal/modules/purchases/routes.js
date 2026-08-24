@@ -3,6 +3,7 @@ import fs from 'fs';
 import path from 'path';
 import multer from 'multer';
 import { createNotification, notifyUsers } from '../notifications/routes.js';
+import { sendPurchaseApprovalEmail } from '../../services/emailService.js';
 
 // Configuração do Multer para upload de anexos de até 20MB
 const uploadDir = path.join(path.resolve(), 'uploads', 'compras');
@@ -794,12 +795,26 @@ export function registerPurchaseRoutes(app, {
         link: '/administrativo/compras'
       });
 
-      // Se foi reaprovada a partir da REVISAO, notifica o Financeiro também
-      const financeAccessList = getAllApproverUserIds().filter(uid => uid !== req.authUser.id); // Finance/Approvers can be notified
-      // Actually notify users who have permission for finance
-      // For simplicity, we can notify users who interacted or just let them check the real-time queue.
-
       const atualizado = db.prepare(`SELECT * FROM compras_requisicoes WHERE id = ?`).get(req.params.id);
+
+      // Dispara e-mail para pagamentos@lepta.com.br com todos os dados e anexos
+      try {
+        const itensRequisicao = db.prepare(`SELECT * FROM compras_requisicoes_itens WHERE requisicao_id = ?`).all(req.params.id);
+        const anexosRequisicao = db.prepare(`SELECT * FROM compras_anexos WHERE requisicao_id = ?`).all(req.params.id);
+
+        sendPurchaseApprovalEmail({
+          requisicao: atualizado,
+          itens: itensRequisicao,
+          anexos: anexosRequisicao,
+          aprovadorNome,
+          uploadDir
+        }).catch(err => {
+          console.error('❌ Falha ao enviar e-mail de notificação de aprovação:', err);
+        });
+      } catch (emailErr) {
+        console.error('⚠️ Erro ao preparar envio de e-mail:', emailErr.message);
+      }
+
       return res.json({ success: true, requisicao: atualizado });
     } catch (error) {
       console.error('Erro ao aprovar solicitação:', error.message);

@@ -21,6 +21,7 @@ import RiskAnalysis from './internal/modules/intelligence/risk-analysis/RiskAnal
 import DatabaseManagement from './internal/modules/database/DatabaseManagement';
 import PurchaseApproval from './internal/modules/administrative/purchases/PurchaseApproval';
 import PurchaseWorkflowConfig from './internal/modules/administrative/purchases/PurchaseWorkflowConfig';
+import EmailConfig from './internal/modules/administration/access/EmailConfig';
 import ProtectedRoute from './internal/core/ProtectedRoute';
 import InternalLayout from './internal/core/InternalLayout';
 import AccessRoute from './internal/core/AccessRoute';
@@ -71,6 +72,7 @@ function App() {
               <Route path="/permissions" element={<AccessRoute masterOnly><Permissions /></AccessRoute>} />
               <Route path="/permissions/create-user" element={<AccessRoute masterOnly><CreateUser /></AccessRoute>} />
               <Route path="/permissions/groups" element={<AccessRoute masterOnly><Groups /></AccessRoute>} />
+              <Route path="/permissions/email-config" element={<AccessRoute masterOnly><EmailConfig /></AccessRoute>} />
             </Route>
           </Route>
         </Routes>

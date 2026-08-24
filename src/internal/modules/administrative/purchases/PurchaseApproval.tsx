@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import {
   ShieldCheck, ListOrdered, CheckCircle2, PlusCircle,
   XCircle, Clock, MessageSquare, Send, X, Archive, RotateCcw,
@@ -449,6 +450,24 @@ export const PurchaseApproval: React.FC = () => {
 
     return () => clearInterval(interval);
   }, [loadingRole, fetchData]);
+
+  const [searchParams] = useSearchParams();
+
+  // Abre automaticamente a solicitação se houver ?id= ou ?solicitacao= na URL (vindo de e-mail / link direto)
+  useEffect(() => {
+    const targetId = searchParams.get('id') || searchParams.get('solicitacao');
+    if (targetId) {
+      fetch(`${API_BASE_URL}/api/compras/requisicoes/${targetId}`, { headers: getAuthHeaders() })
+        .then(r => (r.ok ? r.json() : null))
+        .then(data => {
+          if (data) {
+            setSelectedRequest(data);
+            fetchAttachments(targetId);
+          }
+        })
+        .catch(err => console.error('Erro ao abrir solicitação via URL:', err));
+    }
+  }, [searchParams]);
 
   // Máscaras de Moeda R$
   const handleCurrencyInput = (e: React.ChangeEvent<HTMLInputElement>) => {
