@@ -112,6 +112,19 @@ export function ensureFidcSchema(db) {
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       nome TEXT NOT NULL UNIQUE
     );
+    CREATE TABLE IF NOT EXISTS fidc_cedentes (
+      cnpj_raiz TEXT PRIMARY KEY,
+      nome TEXT NOT NULL,
+      estado TEXT,
+      setor_id INTEGER,
+      gerente_id INTEGER,
+      criado_em TEXT DEFAULT (datetime('now'))
+    );
+    CREATE TABLE IF NOT EXISTS fidc_cedentes_cnpjs (
+      cnpj TEXT PRIMARY KEY,
+      cnpj_raiz TEXT NOT NULL,
+      nome TEXT
+    );
     CREATE TABLE IF NOT EXISTS cedentes (
       cnpj_raiz TEXT PRIMARY KEY,
       nome TEXT NOT NULL,
@@ -184,6 +197,8 @@ export function importBackupIntoMainDb(db, backupFilePath) {
       'limites_conc',
       'gerentes',
       'setores',
+      'fidc_cedentes',
+      'fidc_cedentes_cnpjs',
       'cedentes',
       'cedentes_cnpjs',
       'receita_lancamentos',
@@ -196,18 +211,28 @@ export function importBackupIntoMainDb(db, backupFilePath) {
 
     for (const table of tablesToImport) {
       try {
-        // Verifica se a tabela existe na fonte de backup
-        const hasTable = db.prepare(`SELECT 1 FROM backup_source.sqlite_master WHERE type='table' AND name=?`).get(table);
+        // Determina a tabela correspondente na fonte de backup
+        let sourceTable = table;
+        if (table === 'fidc_cedentes') {
+          const hasFidc = db.prepare(`SELECT 1 FROM backup_source.sqlite_master WHERE type='table' AND name='fidc_cedentes'`).get();
+          sourceTable = hasFidc ? 'fidc_cedentes' : 'cedentes';
+        } else if (table === 'fidc_cedentes_cnpjs') {
+          const hasFidc = db.prepare(`SELECT 1 FROM backup_source.sqlite_master WHERE type='table' AND name='fidc_cedentes_cnpjs'`).get();
+          sourceTable = hasFidc ? 'fidc_cedentes_cnpjs' : 'cedentes_cnpjs';
+        }
+
+        // Verifica se a tabela fonte existe na fonte de backup
+        const hasTable = db.prepare(`SELECT 1 FROM backup_source.sqlite_master WHERE type='table' AND name=?`).get(sourceTable);
         if (!hasTable) continue;
 
         // Obtém colunas comuns entre o banco destino e a tabela de backup
         const targetCols = db.prepare(`PRAGMA table_info("${table}")`).all().map(c => c.name);
-        const sourceCols = db.prepare(`PRAGMA backup_source.table_info("${table}")`).all().map(c => c.name);
+        const sourceCols = db.prepare(`PRAGMA backup_source.table_info("${sourceTable}")`).all().map(c => c.name);
         const commonCols = targetCols.filter(col => sourceCols.includes(col));
 
         if (commonCols.length > 0) {
           const colList = commonCols.map(c => `"${c}"`).join(', ');
-          db.exec(`INSERT OR REPLACE INTO "${table}" (${colList}) SELECT ${colList} FROM backup_source."${table}"`);
+          db.exec(`INSERT OR REPLACE INTO "${table}" (${colList}) SELECT ${colList} FROM backup_source."${sourceTable}"`);
           const count = db.prepare(`SELECT COUNT(*) as c FROM "${table}"`).get()?.c || 0;
           results[table] = count;
         }
