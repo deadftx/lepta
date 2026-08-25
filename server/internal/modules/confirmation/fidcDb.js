@@ -194,17 +194,27 @@ export function importBackupIntoMainDb(db, backupFilePath) {
 
     const results = {};
 
-    db.transaction(() => {
-      for (const table of tablesToImport) {
-        try {
-          db.exec(`INSERT OR REPLACE INTO "${table}" SELECT * FROM backup_source."${table}"`);
+    for (const table of tablesToImport) {
+      try {
+        // Verifica se a tabela existe na fonte de backup
+        const hasTable = db.prepare(`SELECT 1 FROM backup_source.sqlite_master WHERE type='table' AND name=?`).get(table);
+        if (!hasTable) continue;
+
+        // Obtém colunas comuns entre o banco destino e a tabela de backup
+        const targetCols = db.prepare(`PRAGMA table_info("${table}")`).all().map(c => c.name);
+        const sourceCols = db.prepare(`PRAGMA backup_source.table_info("${table}")`).all().map(c => c.name);
+        const commonCols = targetCols.filter(col => sourceCols.includes(col));
+
+        if (commonCols.length > 0) {
+          const colList = commonCols.map(c => `"${c}"`).join(', ');
+          db.exec(`INSERT OR REPLACE INTO "${table}" (${colList}) SELECT ${colList} FROM backup_source."${table}"`);
           const count = db.prepare(`SELECT COUNT(*) as c FROM "${table}"`).get()?.c || 0;
           results[table] = count;
-        } catch (tableErr) {
-          console.warn(`Aviso ao importar tabela ${table}:`, tableErr.message);
         }
+      } catch (tableErr) {
+        console.warn(`Aviso ao importar tabela ${table}:`, tableErr.message);
       }
-    })();
+    }
 
     return {
       success: true,
