@@ -3,6 +3,9 @@
   flex-direction: column;
   gap: 1.25rem;
   padding-bottom: 2rem;
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
 }
 
 .registration-header,
