@@ -302,6 +302,13 @@ export function getCarteiraSummary({ fundoId = 'MULTISETORIAL', data }) {
     WHERE snapshot_id = ?
   `).get(snap.id);
 
+  const RATING_ALIQUOTAS = {
+    'AA': 0.5, 'A': 1.0, 'B': 2.0, 'BB': 2.0,
+    'C': 5.0, 'CC': 5.0, 'D': 10.0, 'DD': 15.0,
+    'E': 20.0, 'EE': 30.0, 'F': 50.0, 'FF': 70.0,
+    'G': 90.0, 'H': 100.0
+  };
+
   // 2. Por Tipo de Ativo
   const porTipo = db.prepare(`
     SELECT
@@ -315,6 +322,9 @@ export function getCarteiraSummary({ fundoId = 'MULTISETORIAL', data }) {
     ORDER BY valor DESC
   `).all(snap.id).map(r => ({
     ...r,
+    qtd: r.titulos,
+    vp: r.valor || 0,
+    tipo_ativo: r.tipo,
     pctPL: plTotal > 0 ? (r.valor / plTotal) * 100 : 0
   }));
 
@@ -329,7 +339,18 @@ export function getCarteiraSummary({ fundoId = 'MULTISETORIAL', data }) {
     WHERE snapshot_id = ?
     GROUP BY nota_pdd
     ORDER BY pdd DESC
-  `).all(snap.id);
+  `).all(snap.id).map(r => {
+    const rawNota = String(r.nota || '').trim().replace(/^Nota\s+/i, '').toUpperCase();
+    const aliquota = RATING_ALIQUOTAS[rawNota] !== undefined
+      ? RATING_ALIQUOTAS[rawNota]
+      : (r.valor > 0 ? Number(((r.pdd / r.valor) * 100).toFixed(1)) : 0);
+    return {
+      ...r,
+      qtd: r.titulos,
+      vp: r.valor || 0,
+      pct_aliquota: aliquota
+    };
+  });
 
   // 4. Por Faixa de Vencimento
   const porVencimento = db.prepare(`
@@ -349,7 +370,11 @@ export function getCarteiraSummary({ fundoId = 'MULTISETORIAL', data }) {
     WHERE snapshot_id = ?
     GROUP BY faixa
     ORDER BY valor DESC
-  `).all(snap.id);
+  `).all(snap.id).map(r => ({
+    ...r,
+    qtd: r.titulos,
+    vp: r.valor || 0
+  }));
 
   // 5. Top 15 Cedentes e Top 15 Sacados
   const topCedentes = db.prepare(`
