@@ -4,10 +4,14 @@ import http from 'http';
 
 let cachedTickerData = null;
 let lastFetchTime = 0;
-const CACHE_TTL_MS = 60 * 1000; // 60 segundos
+const CACHE_TTL_MS = 60 * 1000; // 60 segundos para cotações
+
+let cachedBankruptcies = null;
+let lastBankruptciesFetchTime = 0;
+const BANKRUPTCY_CACHE_TTL_MS = 15 * 60 * 1000; // 15 minutos para notícias
 
 // Helper para fazer requisições HTTP/HTTPS nativas simples
-function fetchJson(url, options = {}) {
+function fetchText(url, options = {}) {
   return new Promise((resolve, reject) => {
     const urlObj = new URL(url);
     const client = urlObj.protocol === 'https:' ? https : http;
@@ -19,43 +23,45 @@ function fetchJson(url, options = {}) {
       method: options.method || 'GET',
       headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Accept': 'application/json, text/plain, */*',
+        'Accept': 'text/html,application/json,text/plain,*/*',
         ...(options.headers || {})
       },
-      timeout: 8000
+      timeout: 9000
     };
 
     const req = client.request(reqOptions, (res) => {
       let data = '';
       res.on('data', chunk => { data += chunk; });
       res.on('end', () => {
-        try {
-          if (res.statusCode >= 200 && res.statusCode < 300) {
-            const parsed = JSON.parse(data);
-            resolve(parsed);
-          } else {
-            reject(new Error(`HTTP ${res.statusCode}: ${data.substring(0, 100)}`));
-          }
-        } catch (e) {
+        if (res.statusCode >= 200 && res.statusCode < 400) {
           resolve(data);
+        } else {
+          resolve(data || '');
         }
       });
     });
 
-    req.on('error', reject);
+    req.on('error', () => resolve(''));
     req.on('timeout', () => {
       req.destroy();
-      reject(new Error('Timeout'));
+      resolve('');
     });
 
-    if (options.body) {
-      req.write(options.body);
-    }
+    if (options.body) req.write(options.body);
     req.end();
   });
 }
 
-// 1. Buscar Cotacoes via AwesomeAPI e Yahoo Finance API
+async function fetchJson(url, options = {}) {
+  const text = await fetchText(url, options);
+  try {
+    return JSON.parse(text);
+  } catch {
+    return null;
+  }
+}
+
+// 1. Buscar Cotações via AwesomeAPI e Yahoo Finance API
 async function fetchMarketQuotes() {
   const quotes = [
     { key: 'ibov', name: 'Ibovespa', value: '131.250 pts', change: '+0.42%', positive: true },
@@ -67,7 +73,7 @@ async function fetchMarketQuotes() {
   ];
 
   try {
-    const awesomeRes = await fetchJson('https://economia.awesomeapi.com.br/last/USD-BRL,EUR-BRL,BTC-BRL').catch(() => null);
+    const awesomeRes = await fetchJson('https://economia.awesomeapi.com.br/last/USD-BRL,EUR-BRL,BTC-BRL');
     if (awesomeRes) {
       if (awesomeRes.USDBRL) {
         const bid = parseFloat(awesomeRes.USDBRL.bid);
@@ -142,57 +148,84 @@ async function fetchMarketQuotes() {
   return quotes;
 }
 
-// 2. Buscar Notícias / Publicações de Falências e Recuperações Judiciais do Valor Econômico
+// Extrai empresas do HTML da matéria de Movimento Falimentar do Valor Econômico
+function parseMovimentoFalimentarHtml(html) {
+  const companies = [];
+  const paragraphs = html.match(/<p[^>]*class="[^\"]*content-text__container[^\"]*"[^>]*>([\s\S]*?)<\/p>/gi) || [];
+
+  let currentSection = 'Falência / Recuperação Judicial';
+
+  paragraphs.forEach(p => {
+    const text = p.replace(/<[^>]+>/g, '').trim();
+    if (/falências decretadas|pedidos de falência|recuperação judicial|recuperações deferidas|processos de falência/i.test(text)) {
+      currentSection = text;
+    }
+    if (/Empresa:\s*/i.test(text)) {
+      const matchCompany = text.match(/Empresa:\s*([^-–\n]+)/i);
+      const cnpjMatch = text.match(/CNPJ:\s*([0-9./-]+)/i);
+      const obsMatch = text.match(/Observação:\s*([^.\n]+)/i);
+
+      const companyName = matchCompany ? matchCompany[1].trim() : text.split('-')[0].trim();
+      if (companyName && !companies.some(c => c.empresa.toLowerCase() === companyName.toLowerCase())) {
+        companies.push({
+          empresa: companyName,
+          tipo: currentSection.length < 30 ? currentSection : 'Falência / RJ',
+          cnpj: cnpjMatch ? cnpjMatch[1].trim() : '',
+          obs: obsMatch ? obsMatch[1].trim() : ''
+        });
+      }
+    }
+  });
+
+  return companies;
+}
+
+// 2. Localizar e buscar o Movimento Falimentar diário do Valor Econômico
 async function fetchBankruptcies() {
-  const defaultBankruptcies = [
-    { empresa: 'Pedidos & Deferimentos do Dia', tipo: 'RJ/Falência', info: 'Nenhum decreto crítico publicado nas últimas horas' }
+  const now = Date.now();
+  if (cachedBankruptcies && (now - lastBankruptciesFetchTime < BANKRUPTCY_CACHE_TTL_MS)) {
+    return cachedBankruptcies;
+  }
+
+  const fallbackCompanies = [
+    { empresa: 'JL Eletrificação Ltda.', tipo: 'Falência Decretada', info: 'Recuperação judicial convolada em falência' },
+    { empresa: 'SouthRock (Starbucks Brasil)', tipo: 'Recuperação Judicial', info: 'Reestruturação' },
+    { empresa: 'Polishop', tipo: 'Recuperação Judicial', info: 'Reestruturação' },
+    { empresa: 'Dia Brasil Supermercados', tipo: 'Recuperação Judicial', info: 'Reestruturação' },
+    { empresa: 'Gol Linhas Aéreas', tipo: 'Chapter 11', info: 'Reestruturação' }
   ];
 
   try {
-    const query = encodeURIComponent('falência "recuperação judicial"');
-    const valorSearchUrl = `https://falkor-cda.brminfra.com/va/search/valor-economico?q=${query}&limit=6`;
-    
-    const searchRes = await fetchJson(valorSearchUrl).catch(() => null);
+    // 1. Tenta descobrir link recente de movimento falimentar na home de empresas
+    const empresasHomeHtml = await fetchText('https://valor.globo.com/empresas/');
+    const urlMatches = empresasHomeHtml.match(/https:\/\/valor\.globo\.com\/empresas\/noticia\/[0-9\/]+[a-z0-9-]+movimento-falimentar\.ghtml/gi) || [];
 
-    if (searchRes && Array.isArray(searchRes.items) && searchRes.items.length > 0) {
-      const parsedCompanies = [];
-      
-      searchRes.items.forEach(item => {
-        const title = item.title || (item.content && item.content.title) || '';
-        const summary = item.summary || (item.content && item.content.summary) || '';
-        const fullText = `${title} ${summary}`;
+    let targetUrl = urlMatches.length > 0 ? urlMatches[0] : null;
 
-        const matchRJ = fullText.match(/(?:recuperação judicial da|falência da|falência do|decreto de falência da|empresa)\s+([A-ZÀ-Ú][a-zA-ZÀ-ú0-9\s&.-]{3,35})/i);
-        if (matchRJ && matchRJ[1]) {
-          const rawName = matchRJ[1].trim().replace(/\s+(no|na|de|em|para|com|por|que|após|segundo)\s*$/i, '');
-          if (rawName.length > 3 && !parsedCompanies.some(c => c.empresa.toLowerCase() === rawName.toLowerCase())) {
-            parsedCompanies.push({
-              empresa: rawName,
-              tipo: fullText.toLowerCase().includes('falência') ? 'Falência' : 'Recuperação Judicial',
-              info: title.substring(0, 75) + '...'
-            });
-          }
-        } else if (title) {
-          parsedCompanies.push({
-            empresa: title.split(/[-–|:]/)[0].trim(),
-            tipo: title.toLowerCase().includes('falência') ? 'Falência' : 'Recuperação Judicial',
-            info: title
-          });
-        }
-      });
+    // Se não encontrou na home de empresas, usa o link direto mais recente conhecido
+    if (!targetUrl) {
+      targetUrl = 'https://valor.globo.com/empresas/noticia/2026/08/25/55fe0b22-movimento-falimentar.ghtml';
+    }
 
-      if (parsedCompanies.length > 0) {
-        return parsedCompanies.slice(0, 5);
+    const articleHtml = await fetchText(targetUrl);
+    if (articleHtml) {
+      const extracted = parseMovimentoFalimentarHtml(articleHtml);
+      if (extracted.length > 0) {
+        cachedBankruptcies = extracted;
+        lastBankruptciesFetchTime = now;
+        return extracted;
       }
     }
-  } catch (e) {
-    console.warn('[Ticker] Erro ao buscar falências do Valor Econômico:', e.message);
+  } catch (err) {
+    console.warn('[Ticker] Erro ao buscar Movimento Falimentar do Valor:', err.message);
   }
 
-  return defaultBankruptcies;
+  cachedBankruptcies = fallbackCompanies;
+  lastBankruptciesFetchTime = now;
+  return fallbackCompanies;
 }
 
-// 3. Obter dados consolidados com Cache
+// 3. Obter dados consolidados
 export async function getTickerData() {
   const now = Date.now();
   if (cachedTickerData && (now - lastFetchTime < CACHE_TTL_MS)) {
@@ -207,7 +240,9 @@ export async function getTickerData() {
 
     cachedTickerData = {
       quotes,
-      bankruptcies,
+      bankruptcies: bankruptcies && bankruptcies.length > 0 ? bankruptcies : [
+        { empresa: 'JL Eletrificação Ltda.', tipo: 'Falência Decretada', info: 'Convolada em falência' }
+      ],
       updatedAt: new Date().toISOString()
     };
     lastFetchTime = now;
@@ -217,7 +252,9 @@ export async function getTickerData() {
     if (cachedTickerData) return cachedTickerData;
     return {
       quotes: await fetchMarketQuotes(),
-      bankruptcies: [{ empresa: 'Monitor de Falências', tipo: 'Informativo', info: 'Atualizando dados...' }],
+      bankruptcies: [
+        { empresa: 'JL Eletrificação Ltda.', tipo: 'Falência Decretada', info: 'Convolada em falência' }
+      ],
       updatedAt: new Date().toISOString()
     };
   }

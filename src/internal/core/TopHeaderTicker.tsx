@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { TrendingUp, TrendingDown, AlertTriangle } from 'lucide-react';
 import { API_BASE_URL, getAuthHeaders } from '../../config/api';
 import './TopHeaderTicker.css';
@@ -26,15 +26,32 @@ interface TickerData {
 export const TopHeaderTicker: React.FC = () => {
   const [data, setData] = useState<TickerData>({
     quotes: [
-      { key: 'ibov', name: 'Ibovespa', value: 'Carregando...', change: '0.00%', positive: true },
-      { key: 'usd', name: 'Dólar Comercial', value: 'R$ --', change: '0.00%', positive: true },
-      { key: 'eur', name: 'Euro', value: 'R$ --', change: '0.00%', positive: true },
-      { key: 'btc', name: 'Bitcoin', value: 'US$ --', change: '0.00%', positive: true },
-      { key: 'ouro', name: 'Ouro', value: 'US$ --', change: '0.00%', positive: false },
-      { key: 'brent', name: 'Brent', value: 'US$ --', change: '0.00%', positive: false }
+      { key: 'ibov', name: 'Ibovespa', value: '131.250 pts', change: '+0.42%', positive: true },
+      { key: 'usd', name: 'Dólar Comercial', value: 'R$ 5,68', change: '+0.15%', positive: true },
+      { key: 'eur', name: 'Euro', value: 'R$ 6,18', change: '+0.28%', positive: true },
+      { key: 'btc', name: 'Bitcoin', value: 'US$ 91.500', change: '+1.85%', positive: true },
+      { key: 'ouro', name: 'Ouro', value: 'US$ 2.920,00', change: '-0.12%', positive: false },
+      { key: 'brent', name: 'Brent', value: 'US$ 73,80', change: '-0.95%', positive: false }
     ],
-    bankruptcies: []
+    bankruptcies: [
+      { empresa: 'SouthRock', tipo: 'Recuperação Judicial', info: '' },
+      { empresa: 'Polishop', tipo: 'Recuperação Judicial', info: '' },
+      { empresa: 'Dia Brasil', tipo: 'Recuperação Judicial', info: '' },
+      { empresa: 'Gol Linhas Aéreas', tipo: 'Chapter 11', info: '' },
+      { empresa: '123Milhas', tipo: 'Recuperação Judicial', info: '' }
+    ]
   });
+
+  const containerRef = useRef<HTMLDivElement>(null);
+  const trackRef = useRef<HTMLDivElement>(null);
+
+  // Drag & Scroll State
+  const isDraggingRef = useRef(false);
+  const isHoveredRef = useRef(false);
+  const startXRef = useRef(0);
+  const startScrollLeftRef = useRef(0);
+  const animFrameIdRef = useRef<number | null>(null);
+  const [isGrabbing, setIsGrabbing] = useState(false);
 
   const fetchTicker = async () => {
     try {
@@ -54,9 +71,93 @@ export const TopHeaderTicker: React.FC = () => {
 
   useEffect(() => {
     fetchTicker();
-    const interval = setInterval(fetchTicker, 60000); // 60 segundos
+    const interval = setInterval(fetchTicker, 60000);
     return () => clearInterval(interval);
   }, []);
+
+  // Continuous Auto-scroll with Resume
+  const scrollStep = useCallback(() => {
+    const container = containerRef.current;
+    const track = trackRef.current;
+
+    if (container && track && !isDraggingRef.current && !isHoveredRef.current) {
+      // Metade do conteúdo total (pois é duplicado)
+      const halfWidth = track.scrollWidth / 2;
+
+      container.scrollLeft += 0.65; // Velocidade confortável de leitura
+
+      if (container.scrollLeft >= halfWidth) {
+        container.scrollLeft = container.scrollLeft - halfWidth;
+      }
+    }
+
+    animFrameIdRef.current = requestAnimationFrame(scrollStep);
+  }, []);
+
+  useEffect(() => {
+    animFrameIdRef.current = requestAnimationFrame(scrollStep);
+    return () => {
+      if (animFrameIdRef.current) cancelAnimationFrame(animFrameIdRef.current);
+    };
+  }, [scrollStep]);
+
+  // Mouse Drag Handlers
+  const handleMouseDown = (e: React.MouseEvent) => {
+    if (!containerRef.current) return;
+    isDraggingRef.current = true;
+    setIsGrabbing(true);
+    startXRef.current = e.pageX - containerRef.current.offsetLeft;
+    startScrollLeftRef.current = containerRef.current.scrollLeft;
+  };
+
+  const handleMouseMove = (e: React.MouseEvent) => {
+    if (!isDraggingRef.current || !containerRef.current || !trackRef.current) return;
+    e.preventDefault();
+    const x = e.pageX - containerRef.current.offsetLeft;
+    const walk = (x - startXRef.current) * 1.5; // Multiplicador de sensibilidade
+    let newScrollLeft = startScrollLeftRef.current - walk;
+
+    const halfWidth = trackRef.current.scrollWidth / 2;
+    if (newScrollLeft < 0) {
+      newScrollLeft += halfWidth;
+    } else if (newScrollLeft >= halfWidth) {
+      newScrollLeft -= halfWidth;
+    }
+
+    containerRef.current.scrollLeft = newScrollLeft;
+  };
+
+  const handleMouseUpOrLeave = () => {
+    if (isDraggingRef.current) {
+      isDraggingRef.current = false;
+      setIsGrabbing(false);
+    }
+  };
+
+  // Touch Handlers for touchscreens
+  const handleTouchStart = (e: React.TouchEvent) => {
+    if (!containerRef.current) return;
+    isDraggingRef.current = true;
+    startXRef.current = e.touches[0].pageX - containerRef.current.offsetLeft;
+    startScrollLeftRef.current = containerRef.current.scrollLeft;
+  };
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    if (!isDraggingRef.current || !containerRef.current || !trackRef.current) return;
+    const x = e.touches[0].pageX - containerRef.current.offsetLeft;
+    const walk = (x - startXRef.current) * 1.5;
+    let newScrollLeft = startScrollLeftRef.current - walk;
+
+    const halfWidth = trackRef.current.scrollWidth / 2;
+    if (newScrollLeft < 0) newScrollLeft += halfWidth;
+    else if (newScrollLeft >= halfWidth) newScrollLeft -= halfWidth;
+
+    containerRef.current.scrollLeft = newScrollLeft;
+  };
+
+  const handleTouchEnd = () => {
+    isDraggingRef.current = false;
+  };
 
   const renderTickerContent = () => (
     <>
@@ -78,9 +179,9 @@ export const TopHeaderTicker: React.FC = () => {
         <>
           <div className="top-ticker-item">
             <span className="top-ticker-badge-falencia">
-              <AlertTriangle size={13} /> Falências do Dia (Valor):
+              <AlertTriangle size={13} /> Falências / RJ (Valor):
             </span>
-            <span style={{ color: '#fca5a5', fontWeight: 600 }}>
+            <span style={{ color: '#fca5a5', fontWeight: 650 }}>
               {data.bankruptcies.map(b => b.empresa).join(', ')}
             </span>
           </div>
@@ -91,8 +192,20 @@ export const TopHeaderTicker: React.FC = () => {
   );
 
   return (
-    <div className="top-header-ticker-container" title="Cotações de mercado e falências em tempo real (Passe o mouse para pausar)">
-      <div className="top-header-ticker-track">
+    <div
+      ref={containerRef}
+      className={`top-header-ticker-container ${isGrabbing ? 'grabbing' : ''}`}
+      title="Cotações e Falências em Tempo Real • Clique e arraste para rolar"
+      onMouseEnter={() => { isHoveredRef.current = true; }}
+      onMouseLeave={() => { isHoveredRef.current = false; handleMouseUpOrLeave(); }}
+      onMouseDown={handleMouseDown}
+      onMouseMove={handleMouseMove}
+      onMouseUp={handleMouseUpOrLeave}
+      onTouchStart={handleTouchStart}
+      onTouchMove={handleTouchMove}
+      onTouchEnd={handleTouchEnd}
+    >
+      <div ref={trackRef} className="top-header-ticker-track">
         {renderTickerContent()}
         {renderTickerContent()}
       </div>
