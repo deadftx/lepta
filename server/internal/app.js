@@ -194,15 +194,24 @@ function ensureUserSecurityColumns() {
 
 function ensureAccessAreas() {
   const areas = [
+    ['4', 'Business Intelligence'],
+    ['5', 'Dashboards'],
+    ['6', 'Calendário'],
+    ['7', 'Financeiro'],
     ['7.1', 'Financeiro > Processar Extrato'],
     ['7.2', 'Financeiro > LEPTA x GRAFENO'],
     ['7.3', 'Financeiro > Solicitações'],
+    ['7.4', 'Financeiro > Reembolsos e Despesas'],
+    ['7.5', 'Financeiro > Calendário de Pagamentos'],
+    ['8', 'Lepta Intelligence'],
     ['8.1', 'Lepta Intelligence > Análise de Clientes'],
     ['8.2', 'Lepta Intelligence > Cadastro de Clientes'],
     ['8.3', 'Lepta Intelligence > Análise de Riscos'],
+    ['9', 'Banco de Dados'],
     ['10', 'Confirmação'],
+    ['10.1', 'Confirmação > Sistema de Confirmação'],
     ['11', 'Administrativo'],
-    ['11.1', 'Administrativo > Aprovação de Compras'],
+    ['11.1', 'Administrativo > Solicitações Financeiras'],
     ['11.2', 'Administrativo > Configuração de Esteira de Compras']
   ];
   try {
@@ -2494,7 +2503,12 @@ app.post('/api/auth/admin/unlock/:id', requireSession, requireMaster, (req, res)
 });
 
 const ASSIGNABLE_PERMISSION_IDS = new Set([
-  '4', '5', '6', '7.1', '7.2', '7.3', '8.1', '8.2', '8.3', '9', '10', '11', '11.1', '11.2'
+  '4', '5', '6',
+  '7', '7.1', '7.2', '7.3', '7.4', '7.5',
+  '8', '8.1', '8.2', '8.3',
+  '9',
+  '10', '10.1',
+  '11', '11.1', '11.2'
 ]);
 
 function normalizeAssignablePermissions(value) {

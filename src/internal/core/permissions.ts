@@ -52,13 +52,13 @@ export const permissionGroups: PermissionGroup[] = [
 
 const legacyChildren: Record<string, string[]> = {
   '7': ['7.1', '7.2', '7.4', '7.5'],
-  '8': ['8.1'],
+  '8': ['8.1', '8.2', '8.3'],
   '10': ['10.1'],
   '11': ['11.1', '11.2']
 };
 
 export const allPermissionIds = permissionGroups.flatMap(group =>
-  group.children?.map(child => child.id) ?? [group.id]
+  group.children ? [group.id, ...group.children.map(child => child.id)] : [group.id]
 );
 
 export const normalizePermissions = (permissions: string[] = []) => {
