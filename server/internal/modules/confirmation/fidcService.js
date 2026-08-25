@@ -558,10 +558,10 @@ export function getReceitas({ fundoId = 'MULTISETORIAL', mes, ano }) {
 
   if (ano && mes) {
     const mesStr = String(mes).padStart(2, '0');
-    query += ' AND strftime("%Y-%m", data) = ?';
+    query += " AND strftime('%Y-%m', data) = ?";
     params.push(`${ano}-${mesStr}`);
   } else if (ano) {
-    query += ' AND strftime("%Y", data) = ?';
+    query += " AND strftime('%Y', data) = ?";
     params.push(String(ano));
   }
 
