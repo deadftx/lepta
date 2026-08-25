@@ -308,6 +308,9 @@ export function registerConfirmationRoutes(app, {
         path.join(root, 'backups'),
         root,
         path.join(root, '..'),
+        '/root',
+        '/tmp',
+        '/tmp/backups',
         ...(process.env.FIDC_BACKUPS_PATH ? [path.resolve(process.env.FIDC_BACKUPS_PATH)] : [])
       ];
 
