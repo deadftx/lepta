@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { TrendingUp, TrendingDown, AlertTriangle } from 'lucide-react';
+import { TrendingUp, TrendingDown } from 'lucide-react';
 import { API_BASE_URL, getAuthHeaders } from '../../config/api';
 import './TopHeaderTicker.css';
 
@@ -11,15 +11,8 @@ interface MarketQuote {
   positive: boolean;
 }
 
-interface BankruptcyItem {
-  empresa: string;
-  tipo: string;
-  info: string;
-}
-
 interface TickerData {
   quotes: MarketQuote[];
-  bankruptcies: BankruptcyItem[];
   updatedAt?: string;
 }
 
@@ -32,13 +25,6 @@ export const TopHeaderTicker: React.FC = () => {
       { key: 'btc', name: 'Bitcoin', value: 'US$ 91.500', change: '+1.85%', positive: true },
       { key: 'ouro', name: 'Ouro', value: 'US$ 2.920,00', change: '-0.12%', positive: false },
       { key: 'brent', name: 'Brent', value: 'US$ 73,80', change: '-0.95%', positive: false }
-    ],
-    bankruptcies: [
-      { empresa: 'SouthRock', tipo: 'Recuperação Judicial', info: '' },
-      { empresa: 'Polishop', tipo: 'Recuperação Judicial', info: '' },
-      { empresa: 'Dia Brasil', tipo: 'Recuperação Judicial', info: '' },
-      { empresa: 'Gol Linhas Aéreas', tipo: 'Chapter 11', info: '' },
-      { empresa: '123Milhas', tipo: 'Recuperação Judicial', info: '' }
     ]
   });
 
@@ -61,7 +47,7 @@ export const TopHeaderTicker: React.FC = () => {
       if (res.ok) {
         const json = await res.json();
         if (json.quotes && json.quotes.length > 0) {
-          setData(json);
+          setData({ quotes: json.quotes, updatedAt: json.updatedAt });
         }
       }
     } catch (err) {
@@ -81,9 +67,7 @@ export const TopHeaderTicker: React.FC = () => {
     const track = trackRef.current;
 
     if (container && track && !isDraggingRef.current && !isHoveredRef.current) {
-      // Metade do conteúdo total (pois é duplicado)
       const halfWidth = track.scrollWidth / 2;
-
       container.scrollLeft += 0.65; // Velocidade confortável de leitura
 
       if (container.scrollLeft >= halfWidth) {
@@ -114,7 +98,7 @@ export const TopHeaderTicker: React.FC = () => {
     if (!isDraggingRef.current || !containerRef.current || !trackRef.current) return;
     e.preventDefault();
     const x = e.pageX - containerRef.current.offsetLeft;
-    const walk = (x - startXRef.current) * 1.5; // Multiplicador de sensibilidade
+    const walk = (x - startXRef.current) * 1.5;
     let newScrollLeft = startScrollLeftRef.current - walk;
 
     const halfWidth = trackRef.current.scrollWidth / 2;
@@ -174,26 +158,6 @@ export const TopHeaderTicker: React.FC = () => {
           <span className="top-ticker-separator">•</span>
         </React.Fragment>
       ))}
-
-      {data.bankruptcies && data.bankruptcies.length > 0 && (
-        <>
-          <div className="top-ticker-item">
-            <span className="top-ticker-badge-falencia">
-              <AlertTriangle size={13} /> Falências / RJ (Valor):
-            </span>
-          </div>
-          {data.bankruptcies.map((b, idx) => (
-            <React.Fragment key={`bankr-${idx}`}>
-              <div className="top-ticker-item">
-                <span className="top-ticker-company-pill">
-                  {b.empresa}
-                </span>
-              </div>
-              <span className="top-ticker-separator">•</span>
-            </React.Fragment>
-          ))}
-        </>
-      )}
     </>
   );
 
@@ -201,7 +165,7 @@ export const TopHeaderTicker: React.FC = () => {
     <div
       ref={containerRef}
       className={`top-header-ticker-container ${isGrabbing ? 'grabbing' : ''}`}
-      title="Cotações e Falências em Tempo Real • Clique e arraste para rolar"
+      title="Cotações de Mercado em Tempo Real • Clique e arraste para rolar"
       onMouseEnter={() => { isHoveredRef.current = true; }}
       onMouseLeave={() => { isHoveredRef.current = false; handleMouseUpOrLeave(); }}
       onMouseDown={handleMouseDown}
