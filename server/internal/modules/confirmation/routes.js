@@ -36,9 +36,9 @@ export function registerConfirmationRoutes(app, {
   }
 
   const checkAccess = (req, res, next) => {
-    // Permissão 10 é Confirmação
+    // Permissão 10.1 / 10 é Confirmação
     if (req.authSession?.role === 'MASTER') return next();
-    return requirePermission('10')(req, res, next);
+    return requirePermission(['10.1', '10'])(req, res, next);
   };
 
   // --- 1. LISTA DE FUNDOS E CLASSES ---
