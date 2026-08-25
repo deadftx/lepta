@@ -215,61 +215,86 @@ export function registerConfirmationRoutes(app, {
     }
   });
 
-  // --- 9. UPLOAD / RESTAURAÇÃO DE BANCO DE DADOS FIDC (.db) ---
-  const uploadStorage = multer.diskStorage({
-    destination: (req, file, cb) => {
-      const targetDir = path.join(path.resolve(), 'server', 'data');
-      if (!fs.existsSync(targetDir)) fs.mkdirSync(targetDir, { recursive: true });
-      cb(null, targetDir);
-    },
-    filename: (req, file, cb) => {
-      cb(null, `fidc_incoming_${Date.now()}.db`);
-    }
-  });
-  const backupUpload = multer({
-    storage: uploadStorage,
-    limits: { fileSize: 2 * 1024 * 1024 * 1024 } // até 2GB
-  });
+  // --- 9. UPLOAD EM CHUNKS (FATIADO) PARA ARQUIVOS GRANDES DE QUALQUER TAMANHO ---
+  const chunkDir = path.join(path.resolve(), 'server', 'data', 'chunks');
+  if (!fs.existsSync(chunkDir)) fs.mkdirSync(chunkDir, { recursive: true });
 
-  app.post('/api/confirmacao/upload-backup', requireSession, requireMaster, backupUpload.single('database'), (req, res) => {
+  const chunkStorage = multer.diskStorage({
+    destination: (req, file, cb) => cb(null, chunkDir),
+    filename: (req, file, cb) => cb(null, `chunk_${Date.now()}_${Math.random().toString(36).slice(2)}.part`)
+  });
+  const chunkUpload = multer({ storage: chunkStorage, limits: { fileSize: 50 * 1024 * 1024 } }); // 50MB por chunk
+
+  app.post('/api/confirmacao/upload-chunk', requireSession, requireMaster, chunkUpload.single('chunk'), (req, res) => {
     try {
       if (!req.file || !req.file.path) {
-        return res.status(400).json({ error: 'Nenhum arquivo de banco de dados (.db) foi enviado.' });
+        return res.status(400).json({ error: 'Nenhum pedaço (chunk) enviado.' });
       }
 
-      const uploadedFilePath = req.file.path;
+      const { uploadId, chunkIndex, totalChunks } = req.body;
+      const parsedIndex = parseInt(chunkIndex, 10);
+      const parsedTotal = parseInt(totalChunks, 10);
 
-      // Importa todas as tabelas diretamente para o database.sqlite principal
-      const result = importBackupIntoMainDb(db, uploadedFilePath);
+      if (!uploadId || isNaN(parsedIndex) || isNaN(parsedTotal)) {
+        fs.unlinkSync(req.file.path);
+        return res.status(400).json({ error: 'Parâmetros de upload inválidos.' });
+      }
 
-      // Remove o arquivo temporário de upload para não ocupar espaço
-      try {
-        if (fs.existsSync(uploadedFilePath)) {
-          fs.unlinkSync(uploadedFilePath);
+      const assembledPath = path.join(chunkDir, `assembled_${uploadId}.db`);
+
+      // Se for o primeiro chunk, garante que qualquer arquivo antigo com esse ID seja apagado
+      if (parsedIndex === 0 && fs.existsSync(assembledPath)) {
+        try { fs.unlinkSync(assembledPath); } catch (_) {}
+      }
+
+      // Concatena o chunk no arquivo montado
+      const chunkBuffer = fs.readFileSync(req.file.path);
+      fs.appendFileSync(assembledPath, chunkBuffer);
+
+      // Apaga o arquivo temporário do chunk
+      try { fs.unlinkSync(req.file.path); } catch (_) {}
+
+      // Se for o último chunk, processa a importação para o database.sqlite principal!
+      if (parsedIndex === parsedTotal - 1) {
+        console.log(`📦 [FIDC] Todos os ${parsedTotal} chunks recebidos! Iniciando importação no banco principal...`);
+        const result = importBackupIntoMainDb(db, assembledPath);
+
+        // Remove o arquivo montado temporário
+        try {
+          if (fs.existsSync(assembledPath)) {
+            fs.unlinkSync(assembledPath);
+          }
+        } catch (delErr) {
+          console.warn('Aviso ao remover arquivo montado:', delErr.message);
         }
-      } catch (delErr) {
-        console.warn('Aviso ao remover arquivo temporário de upload:', delErr.message);
+
+        const fundosCount = db.prepare('SELECT COUNT(*) as c FROM fundos').get()?.c || 0;
+        const cotasCount = db.prepare('SELECT COUNT(*) as c FROM historico_cotas').get()?.c || 0;
+        const titulosCount = db.prepare('SELECT COUNT(*) as c FROM estoque_titulos').get()?.c || 0;
+        const cedentesCount = db.prepare('SELECT COUNT(*) as c FROM cedentes').get()?.c || 0;
+
+        return res.json({
+          done: true,
+          success: true,
+          message: 'Banco de dados FIDC importado e integrado com sucesso ao LeptaSys!',
+          counts: {
+            fundos: fundosCount,
+            cotas: cotasCount,
+            titulos: titulosCount,
+            cedentes: cedentesCount
+          }
+        });
       }
 
-      // Obtém contagens para confirmação
-      const fundosCount = db.prepare('SELECT COUNT(*) as c FROM fundos').get()?.c || 0;
-      const cotasCount = db.prepare('SELECT COUNT(*) as c FROM historico_cotas').get()?.c || 0;
-      const titulosCount = db.prepare('SELECT COUNT(*) as c FROM estoque_titulos').get()?.c || 0;
-      const cedentesCount = db.prepare('SELECT COUNT(*) as c FROM cedentes').get()?.c || 0;
-
+      // Retorna sucesso para o chunk atual
       return res.json({
-        success: true,
-        message: 'Dados do FIDC importados e mesclados diretamente no banco de dados principal com sucesso!',
-        counts: {
-          fundos: fundosCount,
-          cotas: cotasCount,
-          titulos: titulosCount,
-          cedentes: cedentesCount
-        }
+        done: false,
+        chunkIndex: parsedIndex,
+        totalChunks: parsedTotal
       });
     } catch (err) {
-      console.error('Erro ao importar backup FIDC para o banco principal:', err);
-      return res.status(500).json({ error: `Erro ao processar backup: ${err.message}` });
+      console.error('Erro ao processar chunk do FIDC:', err);
+      return res.status(500).json({ error: `Erro no upload do pedaço: ${err.message}` });
     }
   });
 }

@@ -76,7 +76,9 @@ export const ConfirmationSystem: React.FC = () => {
     fetchDashboard();
   }, [fetchDashboard]);
 
-  const handleUploadBackup = (e: React.FormEvent) => {
+  const [chunkStatusText, setChunkStatusText] = useState('');
+
+  const handleUploadBackup = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedDbFile) return;
 
@@ -84,55 +86,87 @@ export const ConfirmationSystem: React.FC = () => {
     setUploadProgress(0);
     setUploadError(null);
     setUploadSuccess(null);
+    setChunkStatusText('Preparando envio do arquivo...');
 
-    const formData = new FormData();
-    formData.append('database', selectedDbFile);
+    const CHUNK_SIZE = 5 * 1024 * 1024; // 5 MB por pedaço (passa liso por qualquer Cloudflare / Nginx / Hostinger)
+    const totalChunks = Math.ceil(selectedDbFile.size / CHUNK_SIZE);
+    const uploadId = `fidc_${Date.now()}_${Math.random().toString(36).slice(2)}`;
 
-    const xhr = new XMLHttpRequest();
-    xhr.open('POST', `${API_BASE_URL}/api/confirmacao/upload-backup`);
+    try {
+      for (let i = 0; i < totalChunks; i++) {
+        const start = i * CHUNK_SIZE;
+        const end = Math.min(selectedDbFile.size, start + CHUNK_SIZE);
+        const chunkBlob = selectedDbFile.slice(start, end);
 
-    const headers = getAuthHeaders() as Record<string, string>;
-    Object.entries(headers).forEach(([key, val]) => {
-      xhr.setRequestHeader(key, val);
-    });
+        setChunkStatusText(`Enviando pedaço ${i + 1} de ${totalChunks}...`);
 
-    xhr.upload.onprogress = (event) => {
-      if (event.lengthComputable) {
-        const pct = Math.round((event.loaded / event.total) * 100);
-        setUploadProgress(pct);
-      }
-    };
+        let attempts = 0;
+        let success = false;
+        let lastError = '';
 
-    xhr.onload = () => {
-      setUploading(false);
-      try {
-        const res = JSON.parse(xhr.responseText);
-        if (xhr.status >= 200 && xhr.status < 300 && res.success) {
-          setUploadSuccess(
-            `✅ ${res.message} (${res.counts?.titulos?.toLocaleString('pt-BR')} títulos, ${res.counts?.cotas?.toLocaleString('pt-BR')} cotas carregadas)`
-          );
-          setSelectedDbFile(null);
-          if (fileInputRef.current) fileInputRef.current.value = '';
-          fetchFundos();
-          fetchDashboard();
-          setTimeout(() => {
-            setIsRestoreModalOpen(false);
-            setUploadSuccess(null);
-          }, 3000);
-        } else {
-          setUploadError(res.error || 'Erro ao processar arquivo de banco de dados.');
+        while (attempts < 3 && !success) {
+          attempts++;
+          try {
+            const formData = new FormData();
+            formData.append('chunk', chunkBlob, selectedDbFile.name);
+            formData.append('uploadId', uploadId);
+            formData.append('chunkIndex', String(i));
+            formData.append('totalChunks', String(totalChunks));
+            formData.append('fileName', selectedDbFile.name);
+
+            const headers = getAuthHeaders() as Record<string, string>;
+
+            const res = await fetch(`${API_BASE_URL}/api/confirmacao/upload-chunk`, {
+              method: 'POST',
+              headers,
+              body: formData
+            });
+
+            if (!res.ok) {
+              const errText = await res.text();
+              throw new Error(errText || `Erro HTTP ${res.status}`);
+            }
+
+            const json = await res.json();
+
+            if (json.done) {
+              setUploadProgress(100);
+              setChunkStatusText('Finalizando e integrando ao banco principal...');
+              setUploadSuccess(
+                `✅ ${json.message} (${json.counts?.titulos?.toLocaleString('pt-BR')} títulos, ${json.counts?.cotas?.toLocaleString('pt-BR')} cotas carregadas)`
+              );
+              setSelectedDbFile(null);
+              if (fileInputRef.current) fileInputRef.current.value = '';
+              fetchFundos();
+              fetchDashboard();
+              setTimeout(() => {
+                setIsRestoreModalOpen(false);
+                setUploadSuccess(null);
+              }, 4000);
+            }
+
+            success = true;
+            const pct = Math.round(((i + 1) / totalChunks) * 100);
+            setUploadProgress(pct);
+          } catch (chunkErr: any) {
+            lastError = chunkErr.message;
+            if (attempts < 3) {
+              setChunkStatusText(`Reconectando pedaço ${i + 1}... tentativa ${attempts + 1}/3`);
+              await new Promise(r => setTimeout(r, 1500));
+            }
+          }
         }
-      } catch (err) {
-        setUploadError('Erro ao ler resposta do servidor.');
+
+        if (!success) {
+          throw new Error(`Falha ao enviar pedaço ${i + 1} após 3 tentativas: ${lastError}`);
+        }
       }
-    };
-
-    xhr.onerror = () => {
+    } catch (err: any) {
+      console.error('Erro no upload fatiado:', err);
+      setUploadError(err.message || 'Erro durante o envio do arquivo.');
+    } finally {
       setUploading(false);
-      setUploadError('Erro de conexão durante o upload.');
-    };
-
-    xhr.send(formData);
+    }
   };
 
   return (
@@ -317,7 +351,7 @@ export const ConfirmationSystem: React.FC = () => {
               {uploading && (
                 <div style={{ marginBottom: '1.5rem' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem', color: '#94a3b8', marginBottom: '6px' }}>
-                    <span>Enviando banco de dados para o servidor...</span>
+                    <span>{chunkStatusText || 'Enviando banco de dados para o servidor...'}</span>
                     <span style={{ fontWeight: 700, color: '#38bdf8' }}>{uploadProgress}%</span>
                   </div>
                   <div style={{ background: 'rgba(255, 255, 255, 0.1)', borderRadius: '10px', height: '10px', overflow: 'hidden' }}>
