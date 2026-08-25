@@ -201,7 +201,7 @@ const InternalLayout = () => {
               )}
             </div>
           )}
-          {hasAccess('10') && (
+          {hasAnyPermission(user, ['10.1', '10']) && (
             <div className="nav-menu-group">
               <div
                 className={`nav-item nav-item-parent ${isConfirmationActive ? 'active' : ''}`}
@@ -216,9 +216,11 @@ const InternalLayout = () => {
 
               {isConfirmationOpen && (
                 <div className="nav-submenu" style={{ paddingLeft: '1rem' }}>
-                  <Link to="/confirmacao/sistema" className={navItemClass('/confirmacao/sistema')}>
-                    <ClipboardCheck size={18} /> Sistema de Confirmação
-                  </Link>
+                  {(hasAccess('10.1') || hasAccess('10')) && (
+                    <Link to="/confirmacao/sistema" className={navItemClass('/confirmacao/sistema')}>
+                      <ClipboardCheck size={18} /> Sistema de Confirmação
+                    </Link>
+                  )}
                 </div>
               )}
             </div>
