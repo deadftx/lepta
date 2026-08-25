@@ -367,13 +367,18 @@ export function generateRelatorioDiarioHtml(options = {}) {
       `;
 
       for (const n of (cart.porNota || [])) {
+        const titulos = n.titulos ?? n.qtd ?? 0;
+        const valor = n.valor ?? n.vp ?? 0;
+        const pdd = n.pdd ?? 0;
+        const aliquota = n.pct_aliquota !== undefined ? `${n.pct_aliquota}%` : (valor > 0 ? `${((pdd / valor) * 100).toFixed(1)}%` : '—');
+
         html += `
             <tr>
-              <td><span class="badge" style="background: rgba(56, 189, 248, 0.15); color: #38bdf8;">Nota ${n.nota}</span></td>
-              <td class="num">${n.pct_aliquota}%</td>
-              <td class="num">${n.qtd}</td>
-              <td class="num">${formatBrl(n.vp)}</td>
-              <td class="num" style="font-weight: 700; color: var(--warning);">${formatBrl(n.pdd)}</td>
+              <td><span class="badge" style="background: rgba(56, 189, 248, 0.15); color: #38bdf8;">${String(n.nota).startsWith('Nota') ? n.nota : `Nota ${n.nota}`}</span></td>
+              <td class="num">${aliquota}</td>
+              <td class="num">${titulos.toLocaleString('pt-BR')}</td>
+              <td class="num">${formatBrl(valor)}</td>
+              <td class="num" style="font-weight: 700; color: var(--warning);">${formatBrl(pdd)}</td>
             </tr>
         `;
       }
@@ -406,13 +411,15 @@ export function generateRelatorioDiarioHtml(options = {}) {
       for (const v of (cart.porVencimento || [])) {
         const isVencido = v.faixa.startsWith('Vencido');
         const color = isVencido ? 'var(--danger)' : '#f8fafc';
-        const pct = (v.vp / vpTotal) * 100;
+        const titulos = v.titulos ?? v.qtd ?? 0;
+        const valor = v.valor ?? v.vp ?? 0;
+        const pct = vpTotal > 0 ? (valor / vpTotal) * 100 : 0;
 
         html += `
             <tr>
               <td style="font-weight: 600; color: ${color};">${v.faixa}</td>
-              <td class="num">${v.qtd}</td>
-              <td class="num" style="font-weight: 600;">${formatBrl(v.vp)}</td>
+              <td class="num">${titulos.toLocaleString('pt-BR')}</td>
+              <td class="num" style="font-weight: 600;">${formatBrl(valor)}</td>
               <td class="num" style="font-weight: 700;">${formatPct(pct)}</td>
             </tr>
         `;
@@ -444,12 +451,15 @@ export function generateRelatorioDiarioHtml(options = {}) {
 
       const vpTotal = cart.totais?.vp || 1;
       for (const t of (cart.porTipo || [])) {
-        const pct = (t.vp / vpTotal) * 100;
+        const titulos = t.titulos ?? t.qtd ?? 0;
+        const valor = t.valor ?? t.vp ?? 0;
+        const tipoNome = t.tipo || t.tipo_ativo || 'Outros';
+        const pct = vpTotal > 0 ? (valor / vpTotal) * 100 : 0;
         html += `
             <tr>
-              <td style="font-weight: 600;">${t.tipo_ativo || 'Não Especificado'}</td>
-              <td class="num">${t.qtd}</td>
-              <td class="num" style="font-weight: 600;">${formatBrl(t.vp)}</td>
+              <td style="font-weight: 600;">${tipoNome}</td>
+              <td class="num">${titulos.toLocaleString('pt-BR')}</td>
+              <td class="num" style="font-weight: 600;">${formatBrl(valor)}</td>
               <td class="num" style="font-weight: 700; color: var(--primary);">${formatPct(pct)}</td>
             </tr>
         `;
