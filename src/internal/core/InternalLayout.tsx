@@ -3,6 +3,7 @@ import { LogOut, User, ShieldAlert, Shield, UserPlus, Users, ChevronDown, Chevro
 import { useNavigate, Outlet, Link, useLocation } from 'react-router-dom';
 import { useAuth } from './AuthContext';
 import NotificationBell from './NotificationBell';
+import TopHeaderTicker from './TopHeaderTicker';
 import './styles/Dashboard.css';
 import { hasAnyPermission, hasPermission } from './permissions';
 
@@ -291,6 +292,9 @@ const InternalLayout = () => {
               <Menu size={24} />
             </button>
           </div>
+
+          <TopHeaderTicker />
+
           <div className="header-actions">
             <NotificationBell />
           </div>

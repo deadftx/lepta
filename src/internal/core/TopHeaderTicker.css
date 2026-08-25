@@ -1,0 +1,92 @@
+/* Estilos do Ticker de Mercado & Falências do Topo (LeptaSys) */
+
+.top-header-ticker-container {
+  display: none; /* Oculto por padrão em mobile/tablet */
+  flex: 1;
+  max-width: calc(100% - 240px);
+  margin: 0 1.5rem;
+  overflow: hidden;
+  position: relative;
+  background: rgba(15, 23, 42, 0.45);
+  border: 1px solid rgba(56, 189, 248, 0.15);
+  border-radius: 999px;
+  height: 36px;
+  align-items: center;
+  mask-image: linear-gradient(to right, transparent, black 4%, black 96%, transparent);
+  -webkit-mask-image: linear-gradient(to right, transparent, black 4%, black 96%, transparent);
+}
+
+@media (min-width: 1025px) {
+  .top-header-ticker-container {
+    display: flex;
+  }
+}
+
+.top-header-ticker-track {
+  display: flex;
+  align-items: center;
+  gap: 2.5rem;
+  white-space: nowrap;
+  animation: top-ticker-scroll 38s linear infinite;
+  will-change: transform;
+}
+
+.top-header-ticker-container:hover .top-header-ticker-track {
+  animation-play-state: paused;
+  cursor: default;
+}
+
+@keyframes top-ticker-scroll {
+  0% {
+    transform: translateX(0%);
+  }
+  100% {
+    transform: translateX(-50%);
+  }
+}
+
+.top-ticker-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.82rem;
+  color: #94a3b8;
+  font-weight: 500;
+  user-select: none;
+}
+
+.top-ticker-item strong {
+  color: #f1f5f9;
+  font-weight: 650;
+}
+
+.top-ticker-val {
+  font-family: 'Inter', -apple-system, sans-serif;
+  font-weight: 700;
+}
+
+.top-ticker-val.positive {
+  color: #34d399;
+}
+
+.top-ticker-val.negative {
+  color: #f87171;
+}
+
+.top-ticker-badge-falencia {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  background: rgba(239, 68, 68, 0.15);
+  border: 1px solid rgba(239, 68, 68, 0.4);
+  color: #fca5a5;
+  padding: 2px 10px;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.top-ticker-separator {
+  color: rgba(255, 255, 255, 0.15);
+  font-size: 0.75rem;
+}

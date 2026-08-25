@@ -14,6 +14,7 @@ import { registerPurchaseRoutes } from './modules/purchases/routes.js';
 import { registerNotificationRoutes } from './modules/notifications/routes.js';
 import { registerEmailConfigRoutes } from './modules/administration/emailRoutes.js';
 import { registerConfirmationRoutes } from './modules/confirmation/routes.js';
+import { registerTickerRoutes } from './modules/ticker/routes.js';
 import { ensureCedentesTableSchema, consolidateCedentesTable, syncAllCedentesFromUnltdApi } from './modules/database/unltdSync.js';
 
 const app = express();
@@ -2792,6 +2793,8 @@ registerConfirmationRoutes(app, {
   requirePermission,
   requireMaster
 });
+
+registerTickerRoutes(app);
 
 function dropLegacyBases() {
   try {
