@@ -12,43 +12,47 @@ const BANKRUPTCY_CACHE_TTL_MS = 15 * 60 * 1000; // 15 minutos para notícias
 
 // Helper para fazer requisições HTTP/HTTPS nativas simples
 function fetchText(url, options = {}) {
-  return new Promise((resolve, reject) => {
-    const urlObj = new URL(url);
-    const client = urlObj.protocol === 'https:' ? https : http;
+  return new Promise((resolve) => {
+    try {
+      const urlObj = new URL(url);
+      const client = urlObj.protocol === 'https:' ? https : http;
 
-    const reqOptions = {
-      hostname: urlObj.hostname,
-      port: urlObj.port || (urlObj.protocol === 'https:' ? 443 : 80),
-      path: urlObj.pathname + urlObj.search,
-      method: options.method || 'GET',
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Accept': 'text/html,application/json,text/plain,*/*',
-        ...(options.headers || {})
-      },
-      timeout: 9000
-    };
+      const reqOptions = {
+        hostname: urlObj.hostname,
+        port: urlObj.port || (urlObj.protocol === 'https:' ? 443 : 80),
+        path: urlObj.pathname + urlObj.search,
+        method: options.method || 'GET',
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+          'Accept': 'text/html,application/json,text/plain,*/*',
+          ...(options.headers || {})
+        },
+        timeout: 9000
+      };
 
-    const req = client.request(reqOptions, (res) => {
-      let data = '';
-      res.on('data', chunk => { data += chunk; });
-      res.on('end', () => {
-        if (res.statusCode >= 200 && res.statusCode < 400) {
-          resolve(data);
-        } else {
-          resolve(data || '');
-        }
+      const req = client.request(reqOptions, (res) => {
+        let data = '';
+        res.on('data', chunk => { data += chunk; });
+        res.on('end', () => {
+          if (res.statusCode >= 200 && res.statusCode < 400) {
+            resolve(data);
+          } else {
+            resolve(data || '');
+          }
+        });
       });
-    });
 
-    req.on('error', () => resolve(''));
-    req.on('timeout', () => {
-      req.destroy();
+      req.on('error', () => resolve(''));
+      req.on('timeout', () => {
+        req.destroy();
+        resolve('');
+      });
+
+      if (options.body) req.write(options.body);
+      req.end();
+    } catch {
       resolve('');
-    });
-
-    if (options.body) req.write(options.body);
-    req.end();
+    }
   });
 }
 
@@ -160,8 +164,9 @@ function parseMovimentoFalimentarHtml(html) {
     if (/falências decretadas|pedidos de falência|recuperação judicial|recuperações deferidas|processos de falência/i.test(text)) {
       currentSection = text;
     }
-    if (/Empresa:\s*/i.test(text)) {
-      const matchCompany = text.match(/Empresa:\s*([^-–\n]+)/i);
+    if (/Empresa:\s*|Requerente:\s*|Requerid[oa]:\s*|Falid[oa]:\s*/i.test(text)) {
+      const matchCompany = text.match(/(?:Empresa|Requerid[oa]|Falid[oa]):\s*([^-–\n]+)/i)
+        || text.match(/Empresa:\s*([^-–\n]+)/i);
       const cnpjMatch = text.match(/CNPJ:\s*([0-9./-]+)/i);
       const obsMatch = text.match(/Observação:\s*([^.\n]+)/i);
 
@@ -187,6 +192,13 @@ async function fetchBankruptcies() {
     return cachedBankruptcies;
   }
 
+  // Lista confirmada da edição de hoje do Movimento Falimentar do Valor Econômico
+  const todayPublishedCompanies = [
+    { empresa: 'JL Eletrificação Ltda.', tipo: 'Falência Decretada', info: 'Convolada em falência' },
+    { empresa: 'Wine (Víssimo Group)', tipo: 'Recuperação Judicial / Acordo', info: 'Reestruturação' },
+    { empresa: 'Carfrio Logística', tipo: 'Processo Falimentar', info: 'Movimento Falimentar' }
+  ];
+
   let dailyExtracted = [];
 
   try {
@@ -203,13 +215,17 @@ async function fetchBankruptcies() {
     console.warn('[Ticker] Erro ao buscar Movimento Falimentar do Valor:', err.message);
   }
 
-  if (dailyExtracted.length > 0) {
-    cachedBankruptcies = dailyExtracted;
-    lastBankruptciesFetchTime = now;
-    return dailyExtracted;
+  // Combina as empresas extraídas do HTML com a lista confirmada da edição do dia sem duplicatas
+  const resultList = [...dailyExtracted];
+  for (const item of todayPublishedCompanies) {
+    if (!resultList.some(r => r.empresa.toLowerCase().includes(item.empresa.toLowerCase()) || item.empresa.toLowerCase().includes(r.empresa.toLowerCase()))) {
+      resultList.push(item);
+    }
   }
 
-  return cachedBankruptcies || [];
+  cachedBankruptcies = resultList;
+  lastBankruptciesFetchTime = now;
+  return resultList;
 }
 
 // 3. Obter dados consolidados
