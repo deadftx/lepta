@@ -2769,6 +2769,7 @@ registerGrafenoRoutes(app, {
 
 registerPurchaseRoutes(app, {
   db,
+  verifyPassword,
   requireSession,
   requirePermission,
   requireMaster

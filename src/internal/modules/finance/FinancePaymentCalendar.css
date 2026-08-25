@@ -232,6 +232,15 @@
   white-space: nowrap;
 }
 
+.event-chip.paused {
+  background: rgba(245, 158, 11, 0.18);
+  border-left: 3px solid #f59e0b;
+  color: #fbbf24;
+  border: 1px dashed rgba(245, 158, 11, 0.4);
+  border-left-width: 3px;
+  border-left-style: solid;
+}
+
 .event-chip-title {
   overflow: hidden;
   text-overflow: ellipsis;
@@ -242,6 +251,20 @@
   font-weight: 700;
   color: #34d399;
   font-size: 0.7rem;
+}
+
+.event-chip.paused .event-chip-val {
+  color: #fbbf24;
+}
+
+.event-chip-paused-badge {
+  background: #f59e0b;
+  color: #0f172a;
+  font-size: 0.6rem;
+  font-weight: 800;
+  padding: 1px 4px;
+  border-radius: 3px;
+  margin-left: 2px;
 }
 
 .day-footer-total {

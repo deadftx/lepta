@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import {
   Calendar as CalendarIcon, ChevronLeft, ChevronRight, Plus, Trash2,
-  CheckSquare, X, Eye, Download, Paperclip, RefreshCw, CreditCard, CheckCircle2, CalendarCheck, RotateCcw
+  CheckSquare, X, Eye, Download, Paperclip, RefreshCw, CreditCard, CheckCircle2, CalendarCheck, RotateCcw,
+  PauseCircle
 } from 'lucide-react';
 import { API_BASE_URL, getAuthHeaders } from '../../../config/api';
 import { useAuth } from '../../core/AuthContext';
@@ -27,6 +28,19 @@ export interface PurchaseItem {
   created_at?: string;
 }
 
+export interface PurchaseParcela {
+  id?: string;
+  requisicao_id?: string;
+  numero_parcela: number;
+  total_parcelas?: number;
+  valor?: number;
+  data_pagamento?: string | null;
+  status?: string;
+  pausado?: number;
+  pausado_em?: string | null;
+  motivo_pausa?: string | null;
+}
+
 interface PurchaseRequest {
   id: string;
   numero: number;
@@ -42,9 +56,16 @@ interface PurchaseRequest {
   valor: number;
   quantidade: number;
   observacoes: string;
-  status: 'PENDENTE' | 'REABERTO' | 'AGUARDANDO_RESPOSTA_SOLICITANTE' | 'AGUARDANDO_RESPOSTA_APROVADOR' | 'APROVADO' | 'NEGADO' | 'SOLICITACAO_CONCLUIDA' | 'PAGO' | 'REVISAO';
+  status: 'PENDENTE' | 'REABERTO' | 'AGUARDANDO_RESPOSTA_SOLICITANTE' | 'AGUARDANDO_RESPOSTA_APROVADOR' | 'APROVADO' | 'PAGAMENTO_PAUSADO' | 'NEGADO' | 'SOLICITACAO_CONCLUIDA' | 'PAGO' | 'REVISAO';
   arquivado?: number;
   data_pagamento?: string | null;
+  datas_parcelas?: string | null;
+  pausado_em?: string | null;
+  pausado_por_id?: string | null;
+  pausado_por_nome?: string | null;
+  motivo_pausa?: string | null;
+  status_anterior?: string | null;
+  parcelas?: PurchaseParcela[];
   solicitante_id: string;
   solicitante_nome: string;
   solicitante_email: string;
@@ -54,6 +75,17 @@ interface PurchaseRequest {
   created_at: string;
   updated_at: string;
   itens?: PurchaseItem[];
+}
+
+export interface CalendarPaymentItem {
+  req: PurchaseRequest;
+  isParcela: boolean;
+  numeroParcela?: number;
+  totalParcelas?: number;
+  valorItem: number;
+  dataPagamento: string;
+  isPaused: boolean;
+  motivoPausa?: string | null;
 }
 
 interface Attachment {
@@ -161,16 +193,44 @@ export const FinancePaymentCalendar: React.FC = () => {
     }
   };
 
-  // Group requests by scheduled date: YYYY-MM-DD
-  const requestsByDate = useMemo(() => {
-    const map: Record<string, PurchaseRequest[]> = {};
+  // Group payments by scheduled date: YYYY-MM-DD (suporta parcelas individuais e solicitações integrais)
+  const itemsByDate = useMemo(() => {
+    const map: Record<string, CalendarPaymentItem[]> = {};
+
     requests.forEach(req => {
-      if (req.data_pagamento) {
+      const isReqPaused = req.status === 'PAGAMENTO_PAUSADO';
+
+      if (Array.isArray(req.parcelas) && req.parcelas.length > 0) {
+        req.parcelas.forEach(p => {
+          if (p.data_pagamento) {
+            const dateStr = p.data_pagamento.substring(0, 10);
+            if (!map[dateStr]) map[dateStr] = [];
+            map[dateStr].push({
+              req,
+              isParcela: true,
+              numeroParcela: p.numero_parcela,
+              totalParcelas: p.total_parcelas || req.quantidade_parcelas || req.parcelas!.length,
+              valorItem: p.valor || ((req.valor * req.quantidade) / (req.quantidade_parcelas || 1)),
+              dataPagamento: dateStr,
+              isPaused: isReqPaused || Boolean(p.pausado),
+              motivoPausa: p.motivo_pausa || req.motivo_pausa
+            });
+          }
+        });
+      } else if (req.data_pagamento) {
         const dateStr = req.data_pagamento.substring(0, 10);
         if (!map[dateStr]) map[dateStr] = [];
-        map[dateStr].push(req);
+        map[dateStr].push({
+          req,
+          isParcela: false,
+          valorItem: req.valor * req.quantidade,
+          dataPagamento: dateStr,
+          isPaused: isReqPaused,
+          motivoPausa: req.motivo_pausa
+        });
       }
     });
+
     return map;
   }, [requests]);
 
@@ -181,20 +241,28 @@ export const FinancePaymentCalendar: React.FC = () => {
     
     let totalValue = 0;
     let totalCount = 0;
+    let pausedCount = 0;
+    let pausedValue = 0;
 
-    requests.forEach(req => {
-      if (req.data_pagamento && req.data_pagamento.startsWith(prefix)) {
-        totalValue += (req.valor * req.quantidade);
-        totalCount++;
+    Object.entries(itemsByDate).forEach(([dt, items]) => {
+      if (dt.startsWith(prefix)) {
+        items.forEach(it => {
+          totalValue += it.valorItem;
+          totalCount++;
+          if (it.isPaused) {
+            pausedCount++;
+            pausedValue += it.valorItem;
+          }
+        });
       }
     });
 
-    return { totalValue, totalCount };
-  }, [requests, year, month]);
+    return { totalValue, totalCount, pausedCount, pausedValue };
+  }, [itemsByDate, year, month]);
 
   // Approved requests available for scheduling
   const unscheduledApprovedRequests = useMemo(() => {
-    return requests.filter(req => req.status === 'APROVADO' && !req.data_pagamento);
+    return requests.filter(req => req.status === 'APROVADO' && !req.data_pagamento && (!req.parcelas || req.parcelas.length === 0));
   }, [requests]);
 
   const handleDayClick = (day: number) => {
@@ -484,52 +552,64 @@ export const FinancePaymentCalendar: React.FC = () => {
     const formattedDay = String(day).padStart(2, '0');
     const formattedMonth = String(month + 1).padStart(2, '0');
     const dateStr = `${year}-${formattedMonth}-${formattedDay}`;
-    const dayReqs = requestsByDate[dateStr] || [];
+    const dayItems = itemsByDate[dateStr] || [];
+    const hasPaused = dayItems.some(it => it.isPaused);
 
     const isToday = new Date().toDateString() === new Date(year, month, day).toDateString();
-    const totalValue = dayReqs.reduce((sum, r) => sum + (r.valor * r.quantidade), 0);
+    const totalValue = dayItems.reduce((sum, it) => sum + it.valorItem, 0);
 
     calendarCells.push(
       <div
         key={`day-${day}`}
-        className={`calendar-day ${isToday ? 'today' : ''} ${dayReqs.length > 0 ? 'has-events' : ''}`}
+        className={`calendar-day ${isToday ? 'today' : ''} ${dayItems.length > 0 ? 'has-events' : ''}`}
+        style={hasPaused ? { borderColor: 'rgba(245, 158, 11, 0.45)', background: 'linear-gradient(180deg, rgba(245, 158, 11, 0.05) 0%, rgba(15, 23, 42, 0.6) 100%)' } : {}}
         onClick={() => handleDayClick(day)}
       >
         <div className="day-header">
           <span className="day-number">{day}</span>
-          {dayReqs.length > 0 && (
-            <span className="day-count-badge">
-              <span className="badge-text-full">{dayReqs.length} {dayReqs.length === 1 ? 'pgto' : 'pgtos'}</span>
-              <span className="badge-text-mini">{dayReqs.length}</span>
+          {dayItems.length > 0 && (
+            <span className="day-count-badge" style={hasPaused ? { background: 'rgba(245, 158, 11, 0.2)', color: '#fbbf24', borderColor: 'rgba(245, 158, 11, 0.4)' } : {}}>
+              <span className="badge-text-full">{dayItems.length} {dayItems.length === 1 ? 'pgto' : 'pgtos'}{hasPaused ? ' (⏸️)' : ''}</span>
+              <span className="badge-text-mini">{dayItems.length}</span>
             </span>
           )}
         </div>
 
-        {dayReqs.length > 0 && (
+        {dayItems.length > 0 && (
           <div className="day-events-list">
-            {dayReqs.slice(0, 2).map(req => (
-              <div key={req.id} className="event-chip" title={`${req.fornecedor_nome} - ${formatBrl(req.valor * req.quantidade)}`}>
-                <span className="event-chip-title">{req.fornecedor_nome || req.produto_servico}</span>
-                <span className="event-chip-val">{formatBrl(req.valor * req.quantidade)}</span>
+            {dayItems.slice(0, 2).map((it, idx) => (
+              <div
+                key={`${it.req.id}-${idx}`}
+                className={`event-chip ${it.isPaused ? 'paused' : ''}`}
+                title={`${it.isPaused ? '[DATA PAUSADA] ' : ''}${it.req.fornecedor_nome} ${it.isParcela ? `(P${it.numeroParcela}/${it.totalParcelas})` : ''} - ${formatBrl(it.valorItem)}`}
+              >
+                <span className="event-chip-title">
+                  {it.isParcela ? `P${it.numeroParcela}/${it.totalParcelas} ` : ''}
+                  {it.req.fornecedor_nome || it.req.produto_servico}
+                </span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '3px' }}>
+                  <span className="event-chip-val">{formatBrl(it.valorItem)}</span>
+                  {it.isPaused && <span className="event-chip-paused-badge">⏸️</span>}
+                </div>
               </div>
             ))}
-            {dayReqs.length > 2 && (
+            {dayItems.length > 2 && (
               <span style={{ fontSize: '0.68rem', color: '#94a3b8', paddingLeft: '4px' }}>
-                +{dayReqs.length - 2} outro(s)...
+                +{dayItems.length - 2} outro(s)...
               </span>
             )}
           </div>
         )}
 
         {/* Mobile Indicator */}
-        {dayReqs.length > 0 && (
+        {dayItems.length > 0 && (
           <div className="day-mobile-indicator">
             <span className="mobile-event-dot"></span>
             <span className="mobile-total-val">{formatBrl(totalValue)}</span>
           </div>
         )}
 
-        {dayReqs.length > 0 && (
+        {dayItems.length > 0 && (
           <div className="day-footer-total">
             <span>Total Dia:</span>
             <span>{formatBrl(totalValue)}</span>
@@ -567,7 +647,7 @@ export const FinancePaymentCalendar: React.FC = () => {
               <CalendarCheck size={14} /> Gestão Financeira
             </div>
             <h1>Calendário de Pagamentos</h1>
-            <p className="pa-subtitle">Planejamento visual, agendamento de liquidações e conclusão de despesas</p>
+            <p className="pa-subtitle">Planejamento visual, agendamento de parcelas e controle de pagamentos pausados</p>
           </div>
         </div>
 
@@ -603,9 +683,15 @@ export const FinancePaymentCalendar: React.FC = () => {
 
         <div className="calendar-kpi-group">
           <div className="calendar-kpi-item">
-            <span className="calendar-kpi-label">Total Agendado no Mês</span>
+            <span className="calendar-kpi-label">Total Programado no Mês</span>
             <span className="calendar-kpi-val">{formatBrl(monthlyScheduledStats.totalValue)}</span>
           </div>
+          {monthlyScheduledStats.pausedCount > 0 && (
+            <div className="calendar-kpi-item">
+              <span className="calendar-kpi-label" style={{ color: '#fbbf24' }}>Pausados</span>
+              <span className="calendar-kpi-val" style={{ color: '#fbbf24' }}>{monthlyScheduledStats.pausedCount} ({formatBrl(monthlyScheduledStats.pausedValue)})</span>
+            </div>
+          )}
           <div className="calendar-kpi-item">
             <span className="calendar-kpi-label">Qtd. Pagamentos</span>
             <span className="calendar-kpi-val" style={{ color: '#38bdf8' }}>{monthlyScheduledStats.totalCount}</span>
@@ -639,7 +725,7 @@ export const FinancePaymentCalendar: React.FC = () => {
       {selectedDayStr && (
         <>
           <div className="popover-backdrop" onClick={() => setSelectedDayStr(null)} />
-          <div className="popover-day-modal pa-modal-card" style={{ maxWidth: '520px', margin: 'auto', position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', zIndex: 1001 }}>
+          <div className="popover-day-modal pa-modal-card" style={{ maxWidth: '580px', margin: 'auto', position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', zIndex: 1001 }}>
             <div className="popover-header">
               <h3>
                 <CalendarIcon size={18} color="#38bdf8" />
@@ -656,21 +742,23 @@ export const FinancePaymentCalendar: React.FC = () => {
 
             {/* Lista de pagamentos do dia */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '280px', overflowY: 'auto' }}>
-              {(requestsByDate[selectedDayStr] || []).length === 0 ? (
+              {(itemsByDate[selectedDayStr] || []).length === 0 ? (
                 <div style={{ padding: '1.5rem 1rem', textAlign: 'center', color: '#94a3b8', fontStyle: 'italic', fontSize: '0.88rem' }}>
                   Nenhum pagamento agendado para esta data.
                 </div>
               ) : (
-                (requestsByDate[selectedDayStr] || []).map(req => {
+                (itemsByDate[selectedDayStr] || []).map((item, idx) => {
+                  const req = item.req;
                   const isChecked = !!selectedReqIds[req.id];
                   return (
                     <div
-                      key={req.id}
+                      key={`${req.id}-${idx}`}
                       className={`popover-item ${isChecked ? 'selected' : ''}`}
+                      style={item.isPaused ? { borderColor: 'rgba(245, 158, 11, 0.5)', background: 'rgba(245, 158, 11, 0.08)' } : {}}
                     >
                       <div className="popover-item-header">
                         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                          {req.status !== 'SOLICITACAO_CONCLUIDA' && (
+                          {req.status !== 'SOLICITACAO_CONCLUIDA' && !item.isPaused && (
                             <input
                               type="checkbox"
                               checked={isChecked}
@@ -679,22 +767,37 @@ export const FinancePaymentCalendar: React.FC = () => {
                             />
                           )}
                           <div>
-                            <span style={{ fontSize: '0.9rem', fontWeight: 700, color: '#f8fafc' }}>
-                              {req.fornecedor_nome || req.produto_servico}
-                            </span>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                              <span style={{ fontSize: '0.9rem', fontWeight: 700, color: '#f8fafc' }}>
+                                {req.fornecedor_nome || req.produto_servico}
+                              </span>
+                              {item.isParcela && (
+                                <span style={{ background: 'rgba(56, 189, 248, 0.2)', color: '#38bdf8', fontSize: '0.7rem', padding: '1px 6px', borderRadius: '4px', fontWeight: 700 }}>
+                                  Parcela {item.numeroParcela}/{item.totalParcelas}
+                                </span>
+                              )}
+                            </div>
                             <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>
                               {req.produto_servico} • {req.departamento_centro_custo}
                             </div>
+                            {item.isPaused && (
+                              <div style={{ fontSize: '0.75rem', color: '#fbbf24', marginTop: '2px', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                <PauseCircle size={12} /> DATA PAUSADA: {item.motivoPausa || req.motivo_pausa || 'Motivo não informado'}
+                              </div>
+                            )}
                           </div>
                         </div>
 
                         <div style={{ textAlign: 'right' }}>
-                          <span style={{ fontSize: '0.95rem', fontWeight: 800, color: req.status === 'SOLICITACAO_CONCLUIDA' ? '#34d399' : '#38bdf8' }}>
-                            {formatBrl(req.valor * req.quantidade)}
+                          <span style={{ fontSize: '0.95rem', fontWeight: 800, color: item.isPaused ? '#fbbf24' : (req.status === 'SOLICITACAO_CONCLUIDA' ? '#34d399' : '#38bdf8') }}>
+                            {formatBrl(item.valorItem)}
                           </span>
                           <div>
-                            <span className={`pa-status-badge ${req.status === 'SOLICITACAO_CONCLUIDA' ? 'approved' : 'pending'}`} style={{ fontSize: '0.68rem', padding: '2px 6px' }}>
-                              {req.status === 'SOLICITACAO_CONCLUIDA' ? 'Concluída' : 'Aprovada'}
+                            <span
+                              className={`pa-status-badge ${item.isPaused ? '' : (req.status === 'SOLICITACAO_CONCLUIDA' ? 'approved' : 'pending')}`}
+                              style={item.isPaused ? { background: 'rgba(245, 158, 11, 0.2)', color: '#fbbf24', border: '1px solid rgba(245, 158, 11, 0.4)', fontSize: '0.68rem', padding: '2px 6px' } : { fontSize: '0.68rem', padding: '2px 6px' }}
+                            >
+                              {item.isPaused ? 'PAGAMENTO PAUSADO' : (req.status === 'SOLICITACAO_CONCLUIDA' ? 'Concluída' : 'Aprovada')}
                             </span>
                           </div>
                         </div>
@@ -709,7 +812,7 @@ export const FinancePaymentCalendar: React.FC = () => {
                         >
                           <Eye size={13} /> Detalhes
                         </button>
-                        {req.status !== 'SOLICITACAO_CONCLUIDA' && (
+                        {req.status !== 'SOLICITACAO_CONCLUIDA' && !item.isParcela && (
                           <button
                             type="button"
                             className="pa-btn-archive-master"
@@ -809,11 +912,14 @@ export const FinancePaymentCalendar: React.FC = () => {
         <div className="pa-modal-overlay" style={{ zIndex: 2000 }} onClick={() => setSelectedRequestDetails(null)}>
           <div className="pa-modal-card" style={{ maxWidth: '780px', zIndex: 2001, position: 'relative' }} onClick={e => e.stopPropagation()}>
             <div className="pa-modal-header">
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
                 <CreditCard size={20} color="#38bdf8" />
                 <h3 style={{ margin: 0 }}>Detalhes da Solicitação: {selectedRequestDetails.id}</h3>
-                <span className="pa-status-badge approved">
-                  {selectedRequestDetails.status === 'SOLICITACAO_CONCLUIDA' ? 'Concluída' : 'Aprovada'}
+                <span
+                  className={`pa-status-badge ${selectedRequestDetails.status === 'PAGAMENTO_PAUSADO' ? '' : (selectedRequestDetails.status === 'SOLICITACAO_CONCLUIDA' ? 'approved' : 'pending')}`}
+                  style={selectedRequestDetails.status === 'PAGAMENTO_PAUSADO' ? { background: 'rgba(245, 158, 11, 0.2)', color: '#fbbf24', border: '1px solid rgba(245, 158, 11, 0.4)' } : {}}
+                >
+                  {selectedRequestDetails.status === 'PAGAMENTO_PAUSADO' ? 'PAGAMENTO PAUSADO' : (selectedRequestDetails.status === 'SOLICITACAO_CONCLUIDA' ? 'Concluída' : 'Aprovada')}
                 </span>
               </div>
               <button
@@ -826,6 +932,30 @@ export const FinancePaymentCalendar: React.FC = () => {
             </div>
 
             <div className="pa-modal-body">
+              {/* BANNER DE PAUSA */}
+              {selectedRequestDetails.status === 'PAGAMENTO_PAUSADO' && (
+                <div style={{
+                  background: 'rgba(245, 158, 11, 0.12)',
+                  border: '1px solid #f59e0b',
+                  borderRadius: '12px',
+                  padding: '12px 16px',
+                  marginBottom: '1rem',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '12px'
+                }}>
+                  <PauseCircle size={24} color="#f59e0b" />
+                  <div>
+                    <div style={{ fontWeight: 800, color: '#fbbf24', fontSize: '0.92rem' }}>
+                      PAGAMENTO PAUSADO
+                    </div>
+                    <div style={{ fontSize: '0.82rem', color: '#e2e8f0' }}>
+                      Pausado por <strong style={{ color: '#fbbf24' }}>{selectedRequestDetails.pausado_por_nome || 'Usuário'}</strong>: <em>"{selectedRequestDetails.motivo_pausa || 'Não informado'}"</em>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               <div className="pa-req-details-grid">
                 <div className="pa-detail-item">
                   <span className="pa-detail-label">Solicitante</span>
