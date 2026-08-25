@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import {
   Calendar as CalendarIcon, ChevronLeft, ChevronRight, Plus, Trash2,
   CheckSquare, X, Eye, Download, Paperclip, RefreshCw, CreditCard, CheckCircle2, CalendarCheck, RotateCcw,
-  PauseCircle
+  PauseCircle, PlayCircle
 } from 'lucide-react';
 import { API_BASE_URL, getAuthHeaders } from '../../../config/api';
 import { useAuth } from '../../core/AuthContext';
@@ -41,7 +41,7 @@ export interface PurchaseParcela {
   motivo_pausa?: string | null;
 }
 
-interface PurchaseRequest {
+export interface PurchaseRequest {
   id: string;
   numero: number;
   tipo_destino?: string;
@@ -56,7 +56,7 @@ interface PurchaseRequest {
   valor: number;
   quantidade: number;
   observacoes: string;
-  status: 'PENDENTE' | 'REABERTO' | 'AGUARDANDO_RESPOSTA_SOLICITANTE' | 'AGUARDANDO_RESPOSTA_APROVADOR' | 'APROVADO' | 'PAGAMENTO_PAUSADO' | 'NEGADO' | 'SOLICITACAO_CONCLUIDA' | 'PAGO' | 'REVISAO';
+  status: 'PENDENTE' | 'REABERTO' | 'AGUARDANDO_RESPOSTA_SOLICITANTE' | 'AGUARDANDO_RESPOSTA_APROVADOR' | 'APROVADO' | 'PAGAMENTO_PAUSADO' | 'NEGADO' | 'PAGO' | 'REVISAO' | 'SOLICITACAO_CONCLUIDA';
   arquivado?: number;
   data_pagamento?: string | null;
   datas_parcelas?: string | null;
@@ -64,16 +64,17 @@ interface PurchaseRequest {
   pausado_por_id?: string | null;
   pausado_por_nome?: string | null;
   motivo_pausa?: string | null;
-  status_anterior?: string | null;
   parcelas?: PurchaseParcela[];
   solicitante_id: string;
   solicitante_nome: string;
   solicitante_email: string;
+  aprovador_id: string | null;
   aprovador_nome: string | null;
   motivo_decisao: string | null;
   decidido_em: string | null;
   created_at: string;
   updated_at: string;
+  total_anexos?: number;
   itens?: PurchaseItem[];
 }
 
@@ -119,6 +120,11 @@ export const FinancePaymentCalendar: React.FC = () => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [actionObservation, setActionObservation] = useState('');
   const [actionLoading, setActionLoading] = useState(false);
+
+  // Pausa de Pagamento
+  const [isPauseModalOpen, setIsPauseModalOpen] = useState(false);
+  const [pauseReason, setPauseReason] = useState('');
+  const [pauseLoading, setPauseLoading] = useState(false);
 
   // Dropdown options for adding payment
   const [showAddDropdown, setShowAddDropdown] = useState(false);
@@ -505,6 +511,90 @@ export const FinancePaymentCalendar: React.FC = () => {
       }
     } catch (err) {
       console.error(err);
+    }
+  };
+
+  // Pausar Pagamento
+  const handlePausePayment = async () => {
+    if (!selectedRequestDetails || !pauseReason.trim()) {
+      alert('Por favor, informe o motivo para pausar o pagamento.');
+      return;
+    }
+    setPauseLoading(true);
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/compras/requisicoes/${selectedRequestDetails.id}/pausar-pagamento`, {
+        method: 'POST',
+        headers: {
+          ...getAuthHeaders(),
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ motivo: pauseReason.trim() })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setSelectedRequestDetails(prev => prev ? { ...prev, ...data.requisicao } : null);
+        setIsPauseModalOpen(false);
+        setPauseReason('');
+
+        // Recarrega detalhes
+        const resDetails = await fetch(`${API_BASE_URL}/api/compras/requisicoes/${selectedRequestDetails.id}`, {
+          headers: getAuthHeaders()
+        });
+        if (resDetails.ok) {
+          const detailData = await resDetails.json();
+          setSelectedRequestDetails(detailData);
+        }
+
+        showToast('Pagamento PAUSADO com sucesso.');
+        fetchData(true);
+      } else {
+        const err = await res.json();
+        alert(err.error || 'Erro ao pausar pagamento.');
+      }
+    } catch (err) {
+      console.error('Erro ao pausar pagamento:', err);
+    } finally {
+      setPauseLoading(false);
+    }
+  };
+
+  // Retomar Pagamento
+  const handleResumePayment = async () => {
+    if (!selectedRequestDetails) return;
+    if (!window.confirm('Deseja retomar o pagamento desta solicitação? O fluxo seguirá normalmente.')) return;
+    setPauseLoading(true);
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/compras/requisicoes/${selectedRequestDetails.id}/retomar-pagamento`, {
+        method: 'POST',
+        headers: {
+          ...getAuthHeaders(),
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ motivo: 'Retomado pelo usuário' })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setSelectedRequestDetails(prev => prev ? { ...prev, ...data.requisicao } : null);
+
+        // Recarrega detalhes
+        const resDetails = await fetch(`${API_BASE_URL}/api/compras/requisicoes/${selectedRequestDetails.id}`, {
+          headers: getAuthHeaders()
+        });
+        if (resDetails.ok) {
+          const detailData = await resDetails.json();
+          setSelectedRequestDetails(detailData);
+        }
+
+        showToast('Pagamento RETOMADO com sucesso!');
+        fetchData(true);
+      } else {
+        const err = await res.json();
+        alert(err.error || 'Erro ao retomar pagamento.');
+      }
+    } catch (err) {
+      console.error('Erro ao retomar pagamento:', err);
+    } finally {
+      setPauseLoading(false);
     }
   };
 
@@ -922,13 +1012,40 @@ export const FinancePaymentCalendar: React.FC = () => {
                   {selectedRequestDetails.status === 'PAGAMENTO_PAUSADO' ? 'PAGAMENTO PAUSADO' : (selectedRequestDetails.status === 'SOLICITACAO_CONCLUIDA' ? 'Concluída' : 'Aprovada')}
                 </span>
               </div>
-              <button
-                type="button"
-                className="pa-modal-close"
-                onClick={() => setSelectedRequestDetails(null)}
-              >
-                <X size={20} />
-              </button>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                {selectedRequestDetails.status !== 'SOLICITACAO_CONCLUIDA' && selectedRequestDetails.status !== 'PAGO' && selectedRequestDetails.status !== 'PAGAMENTO_PAUSADO' && (
+                  <button
+                    type="button"
+                    className="pa-btn-action-deny"
+                    onClick={() => {
+                      setPauseReason('');
+                      setIsPauseModalOpen(true);
+                    }}
+                    style={{
+                      background: 'rgba(245, 158, 11, 0.15)',
+                      color: '#fbbf24',
+                      borderColor: '#f59e0b',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                      padding: '5px 12px',
+                      fontSize: '0.8rem',
+                      borderRadius: '8px',
+                      fontWeight: 650
+                    }}
+                    title="Pausar Pagamento com justificativa obrigatória"
+                  >
+                    <PauseCircle size={14} /> Pausar Pagamento
+                  </button>
+                )}
+                <button
+                  type="button"
+                  className="pa-modal-close"
+                  onClick={() => setSelectedRequestDetails(null)}
+                >
+                  <X size={20} />
+                </button>
+              </div>
             </div>
 
             <div className="pa-modal-body">
@@ -938,21 +1055,48 @@ export const FinancePaymentCalendar: React.FC = () => {
                   background: 'rgba(245, 158, 11, 0.12)',
                   border: '1px solid #f59e0b',
                   borderRadius: '12px',
-                  padding: '12px 16px',
+                  padding: '14px 18px',
                   marginBottom: '1rem',
                   display: 'flex',
+                  justifyContent: 'space-between',
                   alignItems: 'center',
+                  flexWrap: 'wrap',
                   gap: '12px'
                 }}>
-                  <PauseCircle size={24} color="#f59e0b" />
-                  <div>
-                    <div style={{ fontWeight: 800, color: '#fbbf24', fontSize: '0.92rem' }}>
-                      PAGAMENTO PAUSADO
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                    <div style={{ background: 'rgba(245, 158, 11, 0.2)', padding: '8px', borderRadius: '50%', color: '#f59e0b' }}>
+                      <PauseCircle size={22} />
                     </div>
-                    <div style={{ fontSize: '0.82rem', color: '#e2e8f0' }}>
-                      Pausado por <strong style={{ color: '#fbbf24' }}>{selectedRequestDetails.pausado_por_nome || 'Usuário'}</strong>: <em>"{selectedRequestDetails.motivo_pausa || 'Não informado'}"</em>
+                    <div>
+                      <div style={{ fontWeight: 800, color: '#fbbf24', fontSize: '0.92rem' }}>
+                        PAGAMENTO PAUSADO
+                      </div>
+                      <div style={{ fontSize: '0.82rem', color: '#e2e8f0', marginTop: '2px' }}>
+                        Pausado por <strong style={{ color: '#fbbf24' }}>{selectedRequestDetails.pausado_por_nome || 'Usuário'}</strong>: <em>"{selectedRequestDetails.motivo_pausa || 'Não informado'}"</em>
+                      </div>
                     </div>
                   </div>
+
+                  <button
+                    type="button"
+                    className="pa-btn-approve"
+                    onClick={handleResumePayment}
+                    disabled={pauseLoading}
+                    style={{
+                      background: '#10b981',
+                      color: '#0f172a',
+                      fontWeight: 750,
+                      padding: '8px 16px',
+                      fontSize: '0.82rem',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px'
+                    }}
+                    title="Retomar fluxo normal de pagamento"
+                  >
+                    {pauseLoading ? <RefreshCw size={14} className="pwc-spinner" /> : <PlayCircle size={14} />}
+                    {pauseLoading ? 'Retomando...' : 'Retomar Pagamento'}
+                  </button>
                 </div>
               )}
 
@@ -1240,6 +1384,82 @@ export const FinancePaymentCalendar: React.FC = () => {
                   </div>
                 </div>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL DE PAUSAR PAGAMENTO */}
+      {isPauseModalOpen && selectedRequestDetails && (
+        <div className="pa-modal-overlay" style={{ zIndex: 2050 }} onClick={() => setIsPauseModalOpen(false)}>
+          <div className="pa-modal-card" style={{ maxWidth: '520px', zIndex: 2051 }} onClick={e => e.stopPropagation()}>
+            <div className="pa-modal-header">
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <PauseCircle size={22} color="#f59e0b" />
+                <h3 style={{ margin: 0, color: '#f8fafc' }}>Pausar Pagamento</h3>
+              </div>
+              <button
+                type="button"
+                className="pa-modal-close"
+                onClick={() => setIsPauseModalOpen(false)}
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="pa-modal-body">
+              <p style={{ color: '#cbd5e1', fontSize: '0.88rem', margin: '0 0 12px 0' }}>
+                Ao pausar o pagamento da solicitação <strong style={{ color: '#38bdf8' }}>{selectedRequestDetails.id}</strong>, o status passará para <strong style={{ color: '#fbbf24' }}>PAGAMENTO PAUSADO</strong> e todas as parcelas e datas posteriores ficarão destacadas como pausadas no calendário.
+              </p>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                <label style={{ fontSize: '0.85rem', fontWeight: 700, color: '#f8fafc' }}>
+                  Motivo da Pausa <span style={{ color: '#ef4444' }}>* (Obrigatório)</span>
+                </label>
+                <textarea
+                  className="pa-input"
+                  rows={4}
+                  placeholder="Explique detalhadamente o motivo da pausa no pagamento..."
+                  value={pauseReason}
+                  onChange={e => setPauseReason(e.target.value)}
+                  style={{ width: '100%', boxSizing: 'border-box', resize: 'vertical' }}
+                  autoFocus
+                />
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '1.25rem' }}>
+                <button
+                  type="button"
+                  className="pa-btn-action-deny"
+                  onClick={() => setIsPauseModalOpen(false)}
+                  disabled={pauseLoading}
+                  style={{ padding: '8px 16px', fontSize: '0.85rem' }}
+                >
+                  Cancelar
+                </button>
+
+                <button
+                  type="button"
+                  className="pa-btn-approve"
+                  onClick={handlePausePayment}
+                  disabled={!pauseReason.trim() || pauseLoading}
+                  style={{
+                    background: '#f59e0b',
+                    color: '#0f172a',
+                    fontWeight: 750,
+                    padding: '8px 18px',
+                    fontSize: '0.85rem',
+                    cursor: pauseReason.trim() ? 'pointer' : 'not-allowed',
+                    opacity: pauseReason.trim() ? 1 : 0.5,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px'
+                  }}
+                >
+                  {pauseLoading ? <RefreshCw size={14} className="pwc-spinner" /> : <PauseCircle size={14} />}
+                  {pauseLoading ? 'Pausando...' : 'Confirmar Pausa'}
+                </button>
+              </div>
             </div>
           </div>
         </div>

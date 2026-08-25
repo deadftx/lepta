@@ -5,7 +5,7 @@ import {
   XCircle, Clock, MessageSquare, Send, X, Archive, RotateCcw,
   DollarSign, AlertCircle, RefreshCw, User,
   Eye, HelpCircle, CreditCard, Check, ShieldAlert,
-  Paperclip, Download, Trash2, PauseCircle
+  Paperclip, Download, Trash2, PauseCircle, PlayCircle
 } from 'lucide-react';
 import { API_BASE_URL, getAuthHeaders } from '../../../../config/api';
 import { useAuth } from '../../../core/AuthContext';
@@ -225,6 +225,11 @@ export const PurchaseApproval: React.FC = () => {
   const [deletePassword, setDeletePassword] = useState('');
   const [deleteLoading, setDeleteLoading] = useState(false);
   const [deleteError, setDeleteError] = useState('');
+
+  // Pausa de Pagamento
+  const [isPauseModalOpen, setIsPauseModalOpen] = useState(false);
+  const [pauseReason, setPauseReason] = useState('');
+  const [pauseLoading, setPauseLoading] = useState(false);
 
   // Toast
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -912,6 +917,90 @@ export const PurchaseApproval: React.FC = () => {
       setDeleteError('Erro de conexão ao processar exclusão.');
     } finally {
       setDeleteLoading(false);
+    }
+  };
+
+  // Pausar Pagamento com Motivo Obrigatório
+  const handlePausePayment = async () => {
+    if (!selectedRequest || !pauseReason.trim()) {
+      alert('Por favor, informe o motivo para pausar o pagamento.');
+      return;
+    }
+    setPauseLoading(true);
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/compras/requisicoes/${selectedRequest.id}/pausar-pagamento`, {
+        method: 'POST',
+        headers: {
+          ...getAuthHeaders(),
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ motivo: pauseReason.trim() })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setSelectedRequest(prev => prev ? { ...prev, ...data.requisicao } : null);
+        setIsPauseModalOpen(false);
+        setPauseReason('');
+
+        // Recarrega mensagens e dados completos
+        const resDetails = await fetch(`${API_BASE_URL}/api/compras/requisicoes/${selectedRequest.id}`, {
+          headers: getAuthHeaders()
+        });
+        if (resDetails.ok) {
+          const detailData = await resDetails.json();
+          setSelectedRequest(detailData);
+        }
+
+        showToast('Pagamento PAUSADO com sucesso.');
+        fetchData(true);
+      } else {
+        const err = await res.json();
+        alert(err.error || 'Erro ao pausar pagamento.');
+      }
+    } catch (err) {
+      console.error('Erro ao pausar pagamento:', err);
+    } finally {
+      setPauseLoading(false);
+    }
+  };
+
+  // Retomar Pagamento
+  const handleResumePayment = async () => {
+    if (!selectedRequest) return;
+    if (!window.confirm('Deseja retomar o pagamento desta solicitação? O fluxo seguirá normalmente.')) return;
+    setPauseLoading(true);
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/compras/requisicoes/${selectedRequest.id}/retomar-pagamento`, {
+        method: 'POST',
+        headers: {
+          ...getAuthHeaders(),
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ motivo: 'Retomado pelo usuário' })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setSelectedRequest(prev => prev ? { ...prev, ...data.requisicao } : null);
+
+        // Recarrega mensagens e dados completos
+        const resDetails = await fetch(`${API_BASE_URL}/api/compras/requisicoes/${selectedRequest.id}`, {
+          headers: getAuthHeaders()
+        });
+        if (resDetails.ok) {
+          const detailData = await resDetails.json();
+          setSelectedRequest(detailData);
+        }
+
+        showToast('Pagamento RETOMADO com sucesso!');
+        fetchData(true);
+      } else {
+        const err = await res.json();
+        alert(err.error || 'Erro ao retomar pagamento.');
+      }
+    } catch (err) {
+      console.error('Erro ao retomar pagamento:', err);
+    } finally {
+      setPauseLoading(false);
     }
   };
 
@@ -2075,6 +2164,31 @@ export const PurchaseApproval: React.FC = () => {
                 {renderStatusBadge(selectedRequest.status, selectedRequest.arquivado_manualmente)}
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                {selectedRequest.status === 'APROVADO' && (
+                  <button
+                    type="button"
+                    className="pa-btn-action-deny"
+                    onClick={() => {
+                      setPauseReason('');
+                      setIsPauseModalOpen(true);
+                    }}
+                    style={{
+                      background: 'rgba(245, 158, 11, 0.15)',
+                      color: '#fbbf24',
+                      borderColor: '#f59e0b',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                      padding: '5px 12px',
+                      fontSize: '0.8rem',
+                      borderRadius: '8px',
+                      fontWeight: 650
+                    }}
+                    title="Pausar Pagamento com justificativa obrigatória"
+                  >
+                    <PauseCircle size={14} /> Pausar Pagamento
+                  </button>
+                )}
                 {isMaster && (
                   <button
                     type="button"
@@ -2097,6 +2211,57 @@ export const PurchaseApproval: React.FC = () => {
             </div>
 
             <div className="pa-modal-body">
+              {/* BANNER DE PAGAMENTO PAUSADO */}
+              {selectedRequest.status === 'PAGAMENTO_PAUSADO' && (
+                <div style={{
+                  background: 'rgba(245, 158, 11, 0.12)',
+                  border: '1px solid #f59e0b',
+                  borderRadius: '12px',
+                  padding: '14px 18px',
+                  marginBottom: '1.25rem',
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  flexWrap: 'wrap',
+                  gap: '12px'
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                    <div style={{ background: 'rgba(245, 158, 11, 0.2)', padding: '8px', borderRadius: '50%', color: '#f59e0b' }}>
+                      <PauseCircle size={22} />
+                    </div>
+                    <div>
+                      <div style={{ fontWeight: 800, color: '#fbbf24', fontSize: '0.95rem' }}>
+                        PAGAMENTO PAUSADO
+                      </div>
+                      <div style={{ fontSize: '0.84rem', color: '#f1f5f9', marginTop: '2px' }}>
+                        Pausado por <strong style={{ color: '#fbbf24' }}>{selectedRequest.pausado_por_nome || 'Usuário'}</strong>: <em>"{selectedRequest.motivo_pausa || 'Sem motivo especificado'}"</em>
+                      </div>
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    className="pa-btn-approve"
+                    onClick={handleResumePayment}
+                    disabled={pauseLoading}
+                    style={{
+                      background: '#10b981',
+                      color: '#0f172a',
+                      fontWeight: 750,
+                      padding: '8px 16px',
+                      fontSize: '0.82rem',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px'
+                    }}
+                    title="Retomar fluxo normal de pagamento"
+                  >
+                    {pauseLoading ? <RefreshCw size={14} className="pwc-spinner" /> : <PlayCircle size={14} />}
+                    {pauseLoading ? 'Retomando...' : 'Retomar Pagamento'}
+                  </button>
+                </div>
+              )}
+
               {/* Opção para Editar Proposta caso esteja em REVISAO */}
               {selectedRequest.status === 'REVISAO' && (isApprover || isMaster) && (
                 <div style={{ marginBottom: '1rem', display: 'flex', gap: '8px' }}>
@@ -2828,6 +2993,82 @@ export const PurchaseApproval: React.FC = () => {
                 </div>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL DE PAUSAR PAGAMENTO */}
+      {isPauseModalOpen && selectedRequest && (
+        <div className="pa-modal-overlay" onClick={() => setIsPauseModalOpen(false)}>
+          <div className="pa-modal-card" style={{ maxWidth: '520px' }} onClick={e => e.stopPropagation()}>
+            <div className="pa-modal-header">
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <PauseCircle size={22} color="#f59e0b" />
+                <h3 style={{ margin: 0, color: '#f8fafc' }}>Pausar Pagamento</h3>
+              </div>
+              <button
+                type="button"
+                className="pa-modal-close"
+                onClick={() => setIsPauseModalOpen(false)}
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="pa-modal-body">
+              <p style={{ color: '#cbd5e1', fontSize: '0.88rem', margin: '0 0 12px 0' }}>
+                Ao pausar o pagamento da solicitação <strong style={{ color: '#38bdf8' }}>{selectedRequest.id}</strong>, o status passará para <strong style={{ color: '#fbbf24' }}>PAGAMENTO PAUSADO</strong> e as datas posteriores ficarão destacadas como pausadas no calendário e em todo o sistema.
+              </p>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                <label style={{ fontSize: '0.85rem', fontWeight: 700, color: '#f8fafc' }}>
+                  Motivo da Pausa <span style={{ color: '#ef4444' }}>* (Obrigatório)</span>
+                </label>
+                <textarea
+                  className="pa-input"
+                  rows={4}
+                  placeholder="Explique detalhadamente o motivo da pausa no pagamento..."
+                  value={pauseReason}
+                  onChange={e => setPauseReason(e.target.value)}
+                  style={{ width: '100%', boxSizing: 'border-box', resize: 'vertical' }}
+                  autoFocus
+                />
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '1.25rem' }}>
+                <button
+                  type="button"
+                  className="pa-btn-action-deny"
+                  onClick={() => setIsPauseModalOpen(false)}
+                  disabled={pauseLoading}
+                  style={{ padding: '8px 16px', fontSize: '0.85rem' }}
+                >
+                  Cancelar
+                </button>
+
+                <button
+                  type="button"
+                  className="pa-btn-approve"
+                  onClick={handlePausePayment}
+                  disabled={!pauseReason.trim() || pauseLoading}
+                  style={{
+                    background: '#f59e0b',
+                    color: '#0f172a',
+                    fontWeight: 750,
+                    padding: '8px 18px',
+                    fontSize: '0.85rem',
+                    cursor: pauseReason.trim() ? 'pointer' : 'not-allowed',
+                    opacity: pauseReason.trim() ? 1 : 0.5,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px'
+                  }}
+                >
+                  {pauseLoading ? <RefreshCw size={14} className="pwc-spinner" /> : <PauseCircle size={14} />}
+                  {pauseLoading ? 'Pausando...' : 'Confirmar Pausa'}
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}
