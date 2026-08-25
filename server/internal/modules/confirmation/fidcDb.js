@@ -134,9 +134,15 @@ export function ensureFidcSchema(db) {
       valor_liquido REAL NOT NULL,
       lancado_em TEXT DEFAULT (datetime('now'))
     );
+    CREATE TABLE IF NOT EXISTS receita_mensal (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      fundo_id TEXT NOT NULL,
+      mes TEXT NOT NULL,
+      vop REAL NOT NULL,
+      receita REAL NOT NULL
+    );
     CREATE TABLE IF NOT EXISTS feriados (
-      data TEXT PRIMARY KEY,
-      descricao TEXT
+      data TEXT PRIMARY KEY
     );
     CREATE TABLE IF NOT EXISTS logs (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -181,7 +187,9 @@ export function importBackupIntoMainDb(db, backupFilePath) {
       'cedentes',
       'cedentes_cnpjs',
       'receita_lancamentos',
-      'feriados'
+      'receita_mensal',
+      'feriados',
+      'logs'
     ];
 
     const results = {};

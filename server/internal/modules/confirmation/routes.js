@@ -24,12 +24,25 @@ export function registerConfirmationRoutes(app, {
 
   // Tenta auto-popular se rodando localmente com backup existente
   try {
-    const localBackup = 'C:/Users/ArthurFeltrinDeco/OneDrive - Lepta/Tecnologia/SISTEMA/SISTEMA/SistemaProdutos/BACKUPS/lepta_backup_2026-08-17.db';
-    const currentCount = db.prepare('SELECT COUNT(*) as c FROM fundos').get()?.c || 0;
-    if (currentCount === 0 && fs.existsSync(localBackup)) {
-      console.log('🔄 [FIDC] Populando database.sqlite principal a partir do backup local...');
-      importBackupIntoMainDb(db, localBackup);
-      console.log('✅ [FIDC] database.sqlite populado com sucesso!');
+    const backupCandidatePaths = [
+      'C:/Users/ArthurFeltrinDeco/OneDrive - Lepta/Tecnologia/SISTEMA/SISTEMA/SistemaProdutos/BACKUPS/lepta_backup_2026-08-17.db',
+      'C:/Users/ArthurFeltrinDeco/OneDrive - Lepta/Atalhos/TECNOLOGIA - TECNOLOGIA/lepta_backup_2026-08-17.db',
+      path.join(process.cwd(), 'lepta_backup_2026-08-17.db'),
+      path.join(process.cwd(), 'database.sqlite')
+    ];
+
+    const currentCedentes = db.prepare('SELECT COUNT(*) as c FROM cedentes').get()?.c || 0;
+    const currentReceitas = db.prepare('SELECT COUNT(*) as c FROM receita_lancamentos').get()?.c || 0;
+
+    if (currentCedentes === 0 || currentReceitas === 0) {
+      for (const bPath of backupCandidatePaths) {
+        if (fs.existsSync(bPath) && bPath !== path.resolve('database.sqlite')) {
+          console.log(`🔄 [FIDC] Populando tabelas do FIDC a partir de: ${bPath}`);
+          importBackupIntoMainDb(db, bPath);
+          console.log('✅ [FIDC] database.sqlite populado com sucesso!');
+          break;
+        }
+      }
     }
   } catch (err) {
     console.warn('Aviso no auto-import do FIDC:', err.message);
