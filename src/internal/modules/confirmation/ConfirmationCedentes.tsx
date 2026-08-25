@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Users, Search, Edit2, CheckCircle2, UserCheck, X } from 'lucide-react';
+import { Users, Search, Edit2, CheckCircle2, UserCheck, RefreshCw, X, Building2 } from 'lucide-react';
 import { API_BASE_URL, getAuthHeaders } from '../../../config/api';
 
 export const ConfirmationCedentes: React.FC = () => {
@@ -8,6 +8,7 @@ export const ConfirmationCedentes: React.FC = () => {
   const [setores, setSetores] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
+  const [gerenteFilter, setGerenteFilter] = useState('');
   const [semGerente, setSemGerente] = useState(false);
 
   const [editingCedente, setEditingCedente] = useState<any | null>(null);
@@ -22,7 +23,11 @@ export const ConfirmationCedentes: React.FC = () => {
     setLoading(true);
     try {
       let url = `${API_BASE_URL}/api/confirmacao/cedentes?search=${encodeURIComponent(search)}`;
-      if (semGerente) url += '&sem_gerente=true';
+      if (semGerente) {
+        url += '&sem_gerente=true';
+      } else if (gerenteFilter) {
+        url += `&gerente_id=${encodeURIComponent(gerenteFilter)}`;
+      }
 
       const res = await fetch(url, { headers: getAuthHeaders() });
       if (res.ok) {
@@ -36,7 +41,7 @@ export const ConfirmationCedentes: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [search, semGerente]);
+  }, [search, semGerente, gerenteFilter]);
 
   useEffect(() => {
     fetchCedentes();
@@ -86,26 +91,55 @@ export const ConfirmationCedentes: React.FC = () => {
 
   return (
     <div>
-      <div className="cs-search-row" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
-        <div style={{ position: 'relative', flex: 1, minWidth: '280px' }}>
-          <input
-            type="text"
-            className="cs-search-input"
-            style={{ width: '100%', boxSizing: 'border-box', paddingLeft: '36px' }}
-            placeholder="Buscar por Nome do Cedente ou CNPJ Raiz..."
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-          />
-          <Search size={16} style={{ position: 'absolute', left: '12px', top: '12px', color: '#64748b' }} />
+      {/* ── BARRA DE PESQUISA E FILTROS ── */}
+      <div className="cs-search-row" style={{ justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
+        <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flex: 1, minWidth: '320px', flexWrap: 'wrap' }}>
+          <div style={{ position: 'relative', flex: 1, minWidth: '240px' }}>
+            <input
+              type="text"
+              className="cs-search-input"
+              style={{ width: '100%', boxSizing: 'border-box', paddingLeft: '36px' }}
+              placeholder="Buscar por Nome do Cedente ou CNPJ Raiz..."
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+            />
+            <Search size={16} style={{ position: 'absolute', left: '12px', top: '12px', color: '#64748b' }} />
+          </div>
+
+          <select
+            className="cs-date-input"
+            style={{ minWidth: '180px' }}
+            value={gerenteFilter}
+            disabled={semGerente}
+            onChange={e => setGerenteFilter(e.target.value)}
+          >
+            <option value="">Todos os Gestores</option>
+            {gerentes.map(g => (
+              <option key={g.id} value={g.id}>{g.nome}</option>
+            ))}
+          </select>
+
+          <button
+            className="cs-page-btn"
+            onClick={fetchCedentes}
+            title="Recarregar lista"
+            style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
+          >
+            <RefreshCw size={14} className={loading ? 'pwc-spinner' : ''} />
+            Atualizar
+          </button>
         </div>
 
         <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.85rem', color: '#cbd5e1', cursor: 'pointer' }}>
           <input
             type="checkbox"
             checked={semGerente}
-            onChange={e => setSemGerente(e.target.checked)}
+            onChange={e => {
+              setSemGerente(e.target.checked);
+              if (e.target.checked) setGerenteFilter('');
+            }}
           />
-          Apenas Cedentes Sem Gerente Atribuído
+          Apenas Sem Gestor Atribuído
         </label>
       </div>
 
@@ -115,14 +149,26 @@ export const ConfirmationCedentes: React.FC = () => {
         </div>
       )}
 
+      {/* ── CARD PRINCIPAL DE CEDENTES ── */}
       <div className="cs-card">
-        <h3 className="cs-card-title">
-          <Users size={18} color="#38bdf8" /> Base de Cedentes e Gestores de Conta
-        </h3>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+          <h3 className="cs-card-title" style={{ margin: 0 }}>
+            <Users size={18} color="#38bdf8" /> Base de Cedentes e Gestores de Conta
+          </h3>
+          <span style={{ fontSize: '0.82rem', color: '#94a3b8' }}>
+            Total: <strong style={{ color: '#f8fafc' }}>{cedentes.length}</strong> cedentes cadastrados
+          </span>
+        </div>
 
         {loading ? (
           <div style={{ textAlign: 'center', padding: '3rem', color: '#94a3b8' }}>
+            <RefreshCw size={24} className="pwc-spinner" style={{ marginBottom: '8px', color: '#38bdf8' }} />
             <p>Carregando base de cedentes...</p>
+          </div>
+        ) : cedentes.length === 0 ? (
+          <div style={{ textAlign: 'center', padding: '3rem', color: '#94a3b8' }}>
+            <Building2 size={32} style={{ marginBottom: '8px', color: '#64748b' }} />
+            <p>Nenhum cedente encontrado para os filtros selecionados.</p>
           </div>
         ) : (
           <div className="cs-table-wrapper">

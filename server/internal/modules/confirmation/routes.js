@@ -188,10 +188,11 @@ export function registerConfirmationRoutes(app, {
   // --- 6. BASE DE CEDENTES E GERENTES ---
   app.get('/api/confirmacao/cedentes', requireSession, checkAccess, (req, res) => {
     try {
-      const { search, sem_gerente } = req.query;
+      const { search, sem_gerente, gerente_id } = req.query;
       const data = getCedentesList({
         search,
-        semGerenteOnly: sem_gerente === 'true'
+        semGerenteOnly: sem_gerente === 'true',
+        gerenteId: gerente_id
       });
       return res.json(data);
     } catch (err) {
