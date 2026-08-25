@@ -130,6 +130,11 @@ export const ConfirmationSystem: React.FC = () => {
     }
   };
 
+  const handleFundoChange = (newFundo: 'MULTISETORIAL' | 'SPECIAL') => {
+    setFundoId(newFundo);
+    setDataPosicao('');
+  };
+
   return (
     <div className="cs-container">
       {/* ── HEADER & CONTROLS ── */}
@@ -150,13 +155,13 @@ export const ConfirmationSystem: React.FC = () => {
           <div className="cs-fundo-selector">
             <button
               className={`cs-fundo-btn ${fundoId === 'MULTISETORIAL' ? 'active multi' : ''}`}
-              onClick={() => setFundoId('MULTISETORIAL')}
+              onClick={() => handleFundoChange('MULTISETORIAL')}
             >
               🔵 LEPTA MULTISETORIAL
             </button>
             <button
               className={`cs-fundo-btn ${fundoId === 'SPECIAL' ? 'active special' : ''}`}
-              onClick={() => setFundoId('SPECIAL')}
+              onClick={() => handleFundoChange('SPECIAL')}
             >
               🟡 LEPTA SPECIAL
             </button>
