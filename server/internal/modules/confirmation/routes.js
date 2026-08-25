@@ -185,9 +185,51 @@ export function registerConfirmationRoutes(app, {
     }
   });
 
+  const autoImportIfEmpty = (tableName) => {
+    try {
+      const count = db.prepare(`SELECT COUNT(*) as c FROM "${tableName}"`).get()?.c || 0;
+      if (count === 0) {
+        const root = path.resolve();
+        const searchDirs = [
+          path.join(root, 'server', 'data'),
+          path.join(root, 'server', 'data', 'backups'),
+          path.join(root, 'backups'),
+          root,
+          path.join(root, '..'),
+          '/root',
+          '/tmp',
+          '/tmp/backups',
+          'C:/Users/ArthurFeltrinDeco/OneDrive - Lepta/Atalhos/TECNOLOGIA - TECNOLOGIA',
+          'C:/Users/ArthurFeltrinDeco/OneDrive - Lepta/Tecnologia/SISTEMA/SISTEMA/SistemaProdutos/BACKUPS',
+          ...(process.env.FIDC_BACKUPS_PATH ? [path.resolve(process.env.FIDC_BACKUPS_PATH)] : [])
+        ];
+
+        for (const dir of searchDirs) {
+          if (!fs.existsSync(dir)) continue;
+          try {
+            const files = fs.readdirSync(dir);
+            const dbs = files
+              .filter(f => (f.endsWith('.db') || f.endsWith('.sqlite') || f.endsWith('.db3')) && !f.includes('assembled_') && f !== 'database.sqlite')
+              .map(f => ({ path: path.join(dir, f), mtime: fs.statSync(path.join(dir, f)).mtimeMs }))
+              .sort((a, b) => b.mtime - a.mtime);
+
+            if (dbs.length > 0) {
+              console.log(`🔄 [FIDC] Auto-populando tabela ${tableName} a partir do backup: ${dbs[0].path}`);
+              importBackupIntoMainDb(db, dbs[0].path);
+              break;
+            }
+          } catch (_) {}
+        }
+      }
+    } catch (e) {
+      console.warn('Aviso no auto-import:', e.message);
+    }
+  };
+
   // --- 6. BASE DE CEDENTES E GERENTES ---
   app.get('/api/confirmacao/cedentes', requireSession, checkAccess, (req, res) => {
     try {
+      autoImportIfEmpty('cedentes');
       const { search, sem_gerente, gerente_id } = req.query;
       const data = getCedentesList({
         search,
@@ -214,6 +256,7 @@ export function registerConfirmationRoutes(app, {
   // --- 7. LANÇAMENTOS DE RECEITA ---
   app.get('/api/confirmacao/receitas', requireSession, checkAccess, (req, res) => {
     try {
+      autoImportIfEmpty('receita_lancamentos');
       const { fundo_id, mes, ano } = req.query;
       const data = getReceitas({
         fundoId: fundo_id || 'MULTISETORIAL',
