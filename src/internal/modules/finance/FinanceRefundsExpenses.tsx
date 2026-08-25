@@ -3,7 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import {
   Clock, Send, X, RefreshCw,
   Eye, CreditCard, ArrowDownLeft, CheckSquare, RotateCcw, Paperclip, Trash2, Download, CheckCircle2, User, FileSpreadsheet, CalendarCheck,
-  PauseCircle, PlayCircle, Save
+  PauseCircle, PlayCircle, Save, AlertTriangle
 } from 'lucide-react';
 import { API_BASE_URL, getAuthHeaders } from '../../../config/api';
 import { useAuth } from '../../core/AuthContext';
@@ -41,7 +41,18 @@ export interface PurchaseParcela {
   motivo_pausa?: string | null;
 }
 
-interface PurchaseRequest {
+export interface PurchaseMessage {
+  id: string;
+  requisicao_id: string;
+  autor_id: string;
+  autor_nome: string;
+  autor_role: 'REQUISITANTE' | 'APROVADOR' | 'FINANCEIRO';
+  mensagem: string;
+  tipo?: 'COMENTARIO' | 'SOLICITACAO_REVISAO' | 'REABERTURA' | 'ANEXO';
+  created_at: string;
+}
+
+export interface PurchaseRequest {
   id: string;
   numero: number;
   tipo_destino?: string;
@@ -56,7 +67,8 @@ interface PurchaseRequest {
   valor: number;
   quantidade: number;
   observacoes: string;
-  status: 'PENDENTE' | 'REABERTO' | 'AGUARDANDO_RESPOSTA_SOLICITANTE' | 'AGUARDANDO_RESPOSTA_APROVADOR' | 'APROVADO' | 'PAGAMENTO_PAUSADO' | 'NEGADO' | 'PAGO' | 'REVISAO' | 'SOLICITACAO_CONCLUIDA';
+  status: 'PENDENTE' | 'REABERTO' | 'AGUARDANDO_RESPOSTA_SOLICITANTE' | 'AGUARDANDO_RESPOSTA_APROVADOR' | 'APROVADO' | 'PAGAMENTO_PAUSADO' | 'NEGADO' | 'SOLICITACAO_CONCLUIDA' | 'PAGO' | 'REVISAO';
+  arquivado?: number;
   data_pagamento?: string | null;
   datas_parcelas?: string | null;
   pausado_em?: string | null;
@@ -65,11 +77,6 @@ interface PurchaseRequest {
   motivo_pausa?: string | null;
   status_anterior?: string | null;
   parcelas?: PurchaseParcela[];
-  arquivado?: number;
-  arquivado_manualmente?: number;
-  arquivado_por?: string | null;
-  arquivado_em?: string | null;
-  motivo_arquivamento?: string | null;
   solicitante_id: string;
   solicitante_nome: string;
   solicitante_email: string;
@@ -79,22 +86,10 @@ interface PurchaseRequest {
   decidido_em: string | null;
   created_at: string;
   updated_at: string;
-  total_mensagens?: number;
-  total_itens?: number;
   total_anexos?: number;
+  total_mensagens?: number;
   itens?: PurchaseItem[];
   mensagens?: PurchaseMessage[];
-}
-
-interface PurchaseMessage {
-  id: string;
-  requisicao_id: string;
-  autor_id: string;
-  autor_nome: string;
-  autor_role: 'SOLICITANTE' | 'APROVADOR' | 'SISTEMA' | 'FINANCEIRO';
-  mensagem: string;
-  tipo: 'COMENTARIO' | 'STATUS_CHANGE' | 'PERGUNTA' | 'RESPOSTA';
-  created_at: string;
 }
 
 interface Attachment {
@@ -106,17 +101,18 @@ interface Attachment {
   created_at: string;
 }
 
-type ActiveTab = 'fila' | 'concluidos';
-
 export const FinanceRefundsExpenses: React.FC = () => {
   const { user } = useAuth();
   const isMaster = user?.role === 'MASTER';
 
-  const [activeTab, setActiveTab] = useState<ActiveTab>('fila');
-  const [requests, setRequests] = useState<PurchaseRequest[]>([]);
-  const [loading, setLoading] = useState(true);
+  // Tabs: 'fila' (Aprovadas/Pausadas aguardando pagamento) | 'concluidos' (Pagas)
+  const [activeTab, setActiveTab] = useState<'fila' | 'concluidos'>('fila');
   const [searchQuery, setSearchQuery] = useState('');
   const [filterFormaPagamento, setFilterFormaPagamento] = useState<string>('TODAS');
+
+  // Requests
+  const [requests, setRequests] = useState<PurchaseRequest[]>([]);
+  const [loading, setLoading] = useState(true);
 
   // Modal de Detalhes
   const [selectedRequest, setSelectedRequest] = useState<PurchaseRequest | null>(null);
@@ -131,8 +127,10 @@ export const FinanceRefundsExpenses: React.FC = () => {
   const [scheduleInputDate, setScheduleInputDate] = useState<string>('');
   const [scheduleLoading, setScheduleLoading] = useState(false);
 
-  // Parcelas individuais
+  // Parcelas individuais (datas e valores)
   const [parcelasInput, setParcelasInput] = useState<{ [numero: number]: string }>({});
+  const [parcelasValoresInput, setParcelasValoresInput] = useState<{ [numero: number]: number }>({});
+  const [isDivergenceModalOpen, setIsDivergenceModalOpen] = useState(false);
 
   // Pausa de Pagamento
   const [isPauseModalOpen, setIsPauseModalOpen] = useState(false);
@@ -209,11 +207,18 @@ export const FinanceRefundsExpenses: React.FC = () => {
         setSelectedRequest(data);
         setScheduleInputDate(data.data_pagamento ? data.data_pagamento.substring(0, 10) : '');
         
-        // Inicializa inputs de parcelas
+        // Inicializa inputs de parcelas (datas e valores)
+        const totalParc = Math.max(1, data.quantidade_parcelas || 1);
+        const valorTotalReq = (data.valor || 0) * (data.quantidade || 1);
+        const valorPadrao = Number((valorTotalReq / totalParc).toFixed(2));
+
         const initialParcelas: { [num: number]: string } = {};
+        const initialValores: { [num: number]: number } = {};
+
         if (Array.isArray(data.parcelas) && data.parcelas.length > 0) {
           data.parcelas.forEach((p: any) => {
             initialParcelas[p.numero_parcela] = p.data_pagamento ? p.data_pagamento.substring(0, 10) : '';
+            initialValores[p.numero_parcela] = p.valor != null ? Number(p.valor) : valorPadrao;
           });
         } else if (data.datas_parcelas) {
           try {
@@ -221,17 +226,27 @@ export const FinanceRefundsExpenses: React.FC = () => {
             if (Array.isArray(parsed)) {
               parsed.forEach((p: any) => {
                 initialParcelas[p.numero_parcela] = p.data_pagamento ? p.data_pagamento.substring(0, 10) : '';
+                initialValores[p.numero_parcela] = p.valor != null ? Number(p.valor) : valorPadrao;
               });
             }
           } catch (_) {}
         }
+
+        // Garante que todas as parcelas de 1 até totalParc possuam valor e data inicializados
+        for (let i = 1; i <= totalParc; i++) {
+          if (initialValores[i] === undefined) initialValores[i] = valorPadrao;
+          if (initialParcelas[i] === undefined) initialParcelas[i] = '';
+        }
+
         setParcelasInput(initialParcelas);
+        setParcelasValoresInput(initialValores);
 
         setMessages(data.mensagens || []);
         setActionType(null);
         setActionMotivo('');
         setAttachmentError('');
         setIsPauseModalOpen(false);
+        setIsDivergenceModalOpen(false);
         setPauseReason('');
         fetchAttachments(id);
       }
@@ -297,21 +312,72 @@ export const FinanceRefundsExpenses: React.FC = () => {
     }
   };
 
-  // Salvar cronograma de parcelas individuais
-  const handleSaveParcelasDates = async () => {
+  // Cálculos de totais e validação das parcelas
+  const totalParcelasCount = Math.max(1, selectedRequest?.quantidade_parcelas || 1);
+  const valorTotalSolicitacao = Number(((selectedRequest?.valor || 0) * (selectedRequest?.quantidade || 1)).toFixed(2));
+  
+  const somaParcelasAtual = useMemo(() => {
+    let sum = 0;
+    for (let i = 1; i <= totalParcelasCount; i++) {
+      sum += Number(parcelasValoresInput[i] || 0);
+    }
+    return Number(sum.toFixed(2));
+  }, [parcelasValoresInput, totalParcelasCount]);
+
+  const diferencaParcelas = Number((somaParcelasAtual - valorTotalSolicitacao).toFixed(2));
+  const valoresParcelasBatem = Math.abs(diferencaParcelas) < 0.01;
+
+  // Alteração de valor individual de parcela
+  const handleParcelaValorChange = (numero: number, rawValue: string) => {
+    const sanitized = rawValue.replace(/[^\d.,]/g, '').replace(',', '.');
+    const parsed = parseFloat(sanitized);
+    setParcelasValoresInput(prev => ({
+      ...prev,
+      [numero]: isNaN(parsed) ? 0 : parsed
+    }));
+  };
+
+  // Divide o valor total igualmente entre todas as parcelas
+  const handleResetEqualInstallments = () => {
+    if (!selectedRequest) return;
+    const total = Math.max(1, selectedRequest.quantidade_parcelas || 1);
+    const valorTotal = (selectedRequest.valor || 0) * (selectedRequest.quantidade || 1);
+    const valorPadrao = Number((valorTotal / total).toFixed(2));
+    const newMap: { [num: number]: number } = {};
+    for (let i = 1; i <= total; i++) {
+      newMap[i] = valorPadrao;
+    }
+    setParcelasValoresInput(newMap);
+    showToast('Valores distribuídos igualmente!');
+  };
+
+  // Ao clicar em Salvar: se valores divergirem, abre modal custom; se baterem, salva direto
+  const handleSaveParcelasClick = () => {
+    if (!selectedRequest) return;
+    if (!valoresParcelasBatem) {
+      setIsDivergenceModalOpen(true);
+    } else {
+      executeSaveParcelasDates();
+    }
+  };
+
+  // Salvar cronograma de parcelas individuais (datas e valores)
+  const executeSaveParcelasDates = async () => {
     if (!selectedRequest) return;
     setScheduleLoading(true);
+    setIsDivergenceModalOpen(false);
+
     try {
       const total = Math.max(1, selectedRequest.quantidade_parcelas || 1);
       const valorTotal = (selectedRequest.valor || 0) * (selectedRequest.quantidade || 1);
-      const valorParcela = valorTotal / total;
+      const valorParcelaPadrao = Number((valorTotal / total).toFixed(2));
 
       const payloadParcelas = [];
       for (let i = 1; i <= total; i++) {
         payloadParcelas.push({
           numero_parcela: i,
           total_parcelas: total,
-          valor: valorParcela,
+          valor: parcelasValoresInput[i] != null ? Number(parcelasValoresInput[i]) : valorParcelaPadrao,
           data_pagamento: parcelasInput[i] || null
         });
       }
@@ -338,7 +404,7 @@ export const FinanceRefundsExpenses: React.FC = () => {
           setMessages(detailData.mensagens || []);
         }
 
-        showToast('Cronograma de parcelas salvo com sucesso!');
+        showToast('Cronograma de parcelas e valores salvo com sucesso!');
         fetchData(true);
       } else {
         const err = await res.json();
@@ -1165,32 +1231,107 @@ export const FinanceRefundsExpenses: React.FC = () => {
                 {/* Seletor de Data Programada / Parcelas */}
                 {selectedRequest.quantidade_parcelas > 1 ? (
                   <div className="pa-detail-item" style={{ gridColumn: 'span 2', background: selectedRequest.status === 'PAGAMENTO_PAUSADO' ? 'rgba(245, 158, 11, 0.08)' : 'rgba(56, 189, 248, 0.08)', padding: '16px', borderRadius: '12px', border: selectedRequest.status === 'PAGAMENTO_PAUSADO' ? '1px solid rgba(245, 158, 11, 0.35)' : '1px solid rgba(56, 189, 248, 0.25)' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px', marginBottom: '12px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px', marginBottom: '12px' }}>
                       <div>
                         <span className="pa-detail-label" style={{ color: selectedRequest.status === 'PAGAMENTO_PAUSADO' ? '#fbbf24' : '#38bdf8', fontSize: '0.88rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '6px' }}>
                           <CalendarCheck size={16} /> Cronograma de Pagamento por Parcela ({selectedRequest.quantidade_parcelas}x)
                         </span>
                         <span style={{ fontSize: '0.8rem', color: '#94a3b8' }}>
-                          Defina a data de pagamento programada para cada parcela individualmente:
+                          Defina a data e o valor de cada parcela individualmente:
                         </span>
                       </div>
 
-                      <button
-                        type="button"
-                        className="pa-btn-detail"
-                        onClick={handleAutoFillMonthlyDates}
-                        disabled={selectedRequest.status === 'SOLICITACAO_CONCLUIDA' || scheduleLoading}
-                        style={{ padding: '4px 10px', fontSize: '0.78rem', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
-                        title="Preenche automaticamente datas mensais (D+30) a partir da primeira"
-                      >
-                        ⚡ Preencher Mensal (D+30)
-                      </button>
+                      <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                        <button
+                          type="button"
+                          className="pa-btn-detail"
+                          onClick={handleResetEqualInstallments}
+                          disabled={selectedRequest.status === 'SOLICITACAO_CONCLUIDA' || scheduleLoading}
+                          style={{ padding: '5px 10px', fontSize: '0.78rem', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                          title="Divide o valor total igualmente entre todas as parcelas"
+                        >
+                          ⚖️ Dividir Igualmente
+                        </button>
+                        <button
+                          type="button"
+                          className="pa-btn-detail"
+                          onClick={handleAutoFillMonthlyDates}
+                          disabled={selectedRequest.status === 'SOLICITACAO_CONCLUIDA' || scheduleLoading}
+                          style={{ padding: '5px 10px', fontSize: '0.78rem', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                          title="Preenche automaticamente datas mensais (D+30) a partir da primeira"
+                        >
+                          ⚡ Preencher Mensal (D+30)
+                        </button>
+                      </div>
                     </div>
 
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(210px, 1fr))', gap: '10px' }}>
+                    {/* TOTAL DO PAGAMENTO / CONFERÊNCIA DINÂMICA */}
+                    <div style={{
+                      background: valoresParcelasBatem ? 'rgba(52, 211, 153, 0.08)' : 'rgba(245, 158, 11, 0.08)',
+                      border: valoresParcelasBatem ? '1px solid rgba(52, 211, 153, 0.35)' : '1px solid rgba(245, 158, 11, 0.45)',
+                      borderRadius: '10px',
+                      padding: '10px 14px',
+                      marginBottom: '14px',
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      flexWrap: 'wrap',
+                      gap: '10px'
+                    }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '16px', flexWrap: 'wrap' }}>
+                        <div>
+                          <div style={{ fontSize: '0.72rem', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Valor da Solicitação</div>
+                          <div style={{ fontSize: '0.98rem', fontWeight: 800, color: '#f8fafc' }}>{formatBrl(valorTotalSolicitacao)}</div>
+                        </div>
+                        <div style={{ width: '1px', height: '24px', background: 'rgba(255, 255, 255, 0.1)' }} />
+                        <div>
+                          <div style={{ fontSize: '0.72rem', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Soma das Parcelas</div>
+                          <div style={{ fontSize: '0.98rem', fontWeight: 800, color: valoresParcelasBatem ? '#34d399' : '#fbbf24' }}>
+                            {formatBrl(somaParcelasAtual)}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div>
+                        {valoresParcelasBatem ? (
+                          <span style={{
+                            background: 'rgba(52, 211, 153, 0.15)',
+                            color: '#34d399',
+                            border: '1px solid rgba(52, 211, 153, 0.35)',
+                            padding: '4px 10px',
+                            borderRadius: '6px',
+                            fontSize: '0.78rem',
+                            fontWeight: 700,
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '5px'
+                          }}>
+                            <CheckCircle2 size={13} color="#34d399" />
+                            Soma Total Bate Exatamente
+                          </span>
+                        ) : (
+                          <span style={{
+                            background: 'rgba(245, 158, 11, 0.18)',
+                            color: '#fbbf24',
+                            border: '1px solid rgba(245, 158, 11, 0.45)',
+                            padding: '4px 10px',
+                            borderRadius: '6px',
+                            fontSize: '0.78rem',
+                            fontWeight: 700,
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '5px'
+                          }}>
+                            <AlertTriangle size={13} color="#fbbf24" />
+                            Divergência: {diferencaParcelas > 0 ? '+' : ''}{formatBrl(diferencaParcelas)}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: '10px' }}>
                       {Array.from({ length: selectedRequest.quantidade_parcelas }).map((_, i) => {
                         const num = i + 1;
-                        const valorParcela = ((selectedRequest.valor * selectedRequest.quantidade) / selectedRequest.quantidade_parcelas);
                         const isPaused = selectedRequest.status === 'PAGAMENTO_PAUSADO';
 
                         return (
@@ -1199,44 +1340,76 @@ export const FinanceRefundsExpenses: React.FC = () => {
                             style={{
                               background: isPaused ? 'rgba(245, 158, 11, 0.08)' : 'rgba(15, 23, 42, 0.6)',
                               border: isPaused ? '1px dashed rgba(245, 158, 11, 0.4)' : '1px solid rgba(255, 255, 255, 0.08)',
-                              padding: '10px',
-                              borderRadius: '8px'
+                              padding: '10px 12px',
+                              borderRadius: '8px',
+                              display: 'flex',
+                              flexDirection: 'column',
+                              gap: '8px'
                             }}
                           >
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                               <span style={{ fontWeight: 700, fontSize: '0.82rem', color: isPaused ? '#fbbf24' : '#f8fafc', display: 'flex', alignItems: 'center', gap: '4px' }}>
                                 {isPaused && <PauseCircle size={12} color="#fbbf24" />}
                                 Parcela {num}/{selectedRequest.quantidade_parcelas}
                               </span>
-                              <span style={{ fontWeight: 700, fontSize: '0.82rem', color: '#34d399' }}>
-                                {formatBrl(valorParcela)}
-                              </span>
+                              {isPaused && (
+                                <span style={{ fontSize: '0.68rem', color: '#fbbf24', background: 'rgba(245, 158, 11, 0.15)', padding: '1px 6px', borderRadius: '4px' }}>
+                                  Pausada
+                                </span>
+                              )}
                             </div>
-                            <input
-                              type="date"
-                              className="pa-input"
-                              value={parcelasInput[num] || ''}
-                              onChange={e => setParcelasInput({ ...parcelasInput, [num]: e.target.value })}
-                              style={{ width: '100%', boxSizing: 'border-box', padding: '6px 10px', fontSize: '0.85rem' }}
-                              disabled={selectedRequest.status === 'SOLICITACAO_CONCLUIDA' || scheduleLoading}
-                            />
-                            {isPaused && parcelasInput[num] && (
-                              <div style={{ fontSize: '0.7rem', color: '#fbbf24', marginTop: '4px', fontWeight: 600 }}>
-                                ⏸️ Data Pausada
-                              </div>
-                            )}
+
+                            <div>
+                              <label style={{ fontSize: '0.72rem', color: '#94a3b8', display: 'block', marginBottom: '3px', fontWeight: 600 }}>
+                                Valor da Parcela (R$)
+                              </label>
+                              <input
+                                type="number"
+                                step="0.01"
+                                min="0"
+                                className="pa-input"
+                                value={parcelasValoresInput[num] != null ? parcelasValoresInput[num] : ''}
+                                onChange={e => handleParcelaValorChange(num, e.target.value)}
+                                placeholder="0,00"
+                                style={{ width: '100%', boxSizing: 'border-box', padding: '6px 10px', fontSize: '0.85rem', color: '#34d399', fontWeight: 700 }}
+                                disabled={selectedRequest.status === 'SOLICITACAO_CONCLUIDA' || scheduleLoading}
+                              />
+                            </div>
+
+                            <div>
+                              <label style={{ fontSize: '0.72rem', color: '#94a3b8', display: 'block', marginBottom: '3px', fontWeight: 600 }}>
+                                Data Programada
+                              </label>
+                              <input
+                                type="date"
+                                className="pa-input"
+                                value={parcelasInput[num] || ''}
+                                onChange={e => setParcelasInput({ ...parcelasInput, [num]: e.target.value })}
+                                style={{ width: '100%', boxSizing: 'border-box', padding: '6px 10px', fontSize: '0.85rem' }}
+                                disabled={selectedRequest.status === 'SOLICITACAO_CONCLUIDA' || scheduleLoading}
+                              />
+                            </div>
                           </div>
                         );
                       })}
                     </div>
 
-                    <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '12px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '14px' }}>
                       <button
                         type="button"
                         className="pa-btn-approve"
-                        onClick={handleSaveParcelasDates}
+                        onClick={handleSaveParcelasClick}
                         disabled={scheduleLoading || selectedRequest.status === 'SOLICITACAO_CONCLUIDA'}
-                        style={{ padding: '8px 18px', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '6px' }}
+                        style={{
+                          padding: '8px 18px',
+                          fontSize: '0.85rem',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '6px',
+                          background: valoresParcelasBatem ? '#10b981' : '#f59e0b',
+                          color: '#0f172a',
+                          fontWeight: 750
+                        }}
                       >
                         {scheduleLoading ? <RefreshCw size={14} className="pwc-spinner" /> : <Save size={14} />}
                         {scheduleLoading ? 'Salvando...' : 'Salvar Datas das Parcelas'}
@@ -1578,6 +1751,88 @@ export const FinanceRefundsExpenses: React.FC = () => {
                     <Send size={15} /> Enviar
                   </button>
                 </form>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL CUSTOMIZADO: AVISO DE DIVERGÊNCIA DE VALORES NAS PARCELAS */}
+      {isDivergenceModalOpen && selectedRequest && (
+        <div className="pa-modal-overlay" onClick={() => setIsDivergenceModalOpen(false)}>
+          <div className="pa-modal-card" style={{ maxWidth: '520px', border: '1px solid rgba(245, 158, 11, 0.45)' }} onClick={e => e.stopPropagation()}>
+            <div className="pa-modal-header" style={{ borderBottomColor: 'rgba(245, 158, 11, 0.3)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <div style={{ background: 'rgba(245, 158, 11, 0.15)', padding: '6px', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <AlertTriangle size={20} color="#fbbf24" />
+                </div>
+                <h3 style={{ margin: 0, color: '#fbbf24' }}>Atenção: Divergência de Valores</h3>
+              </div>
+              <button
+                type="button"
+                className="pa-modal-close"
+                onClick={() => setIsDivergenceModalOpen(false)}
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="pa-modal-body">
+              <p style={{ color: '#e2e8f0', fontSize: '0.9rem', lineHeight: 1.5, margin: '0 0 14px 0' }}>
+                O valor total da soma das parcelas está <strong>diferente</strong> do valor requisitado na solicitação.
+              </p>
+
+              <div style={{ background: 'rgba(15, 23, 42, 0.8)', border: '1px solid rgba(255, 255, 255, 0.08)', borderRadius: '10px', padding: '14px 18px', display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '1.25rem' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem' }}>
+                  <span style={{ color: '#94a3b8' }}>Valor Requisitado na Solicitação:</span>
+                  <strong style={{ color: '#f8fafc' }}>{formatBrl(valorTotalSolicitacao)}</strong>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem' }}>
+                  <span style={{ color: '#94a3b8' }}>Soma das {totalParcelasCount} Parcelas:</span>
+                  <strong style={{ color: '#fbbf24' }}>{formatBrl(somaParcelasAtual)}</strong>
+                </div>
+                <div style={{ width: '100%', height: '1px', background: 'rgba(255, 255, 255, 0.08)' }} />
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.88rem' }}>
+                  <span style={{ color: '#94a3b8', fontWeight: 600 }}>Diferença:</span>
+                  <strong style={{ color: diferencaParcelas > 0 ? '#fbbf24' : '#ef4444' }}>
+                    {diferencaParcelas > 0 ? '+' : ''}{formatBrl(diferencaParcelas)}
+                  </strong>
+                </div>
+              </div>
+
+              <p style={{ color: '#cbd5e1', fontSize: '0.85rem', margin: '0 0 1.25rem 0', lineHeight: 1.4 }}>
+                Deseja salvar o cronograma com essa divergência ou voltar para ajustar os valores das parcelas?
+              </p>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
+                <button
+                  type="button"
+                  className="pa-btn-action-deny"
+                  onClick={() => setIsDivergenceModalOpen(false)}
+                  disabled={scheduleLoading}
+                  style={{ padding: '8px 16px', fontSize: '0.85rem' }}
+                >
+                  Voltar e Ajustar
+                </button>
+                <button
+                  type="button"
+                  className="pa-btn-approve"
+                  onClick={executeSaveParcelasDates}
+                  disabled={scheduleLoading}
+                  style={{
+                    background: '#f59e0b',
+                    color: '#0f172a',
+                    fontWeight: 750,
+                    padding: '8px 18px',
+                    fontSize: '0.85rem',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px'
+                  }}
+                >
+                  {scheduleLoading ? <RefreshCw size={14} className="pwc-spinner" /> : <Save size={14} />}
+                  {scheduleLoading ? 'Salvando...' : 'Confirmar e Salvar Assim Mesmo'}
+                </button>
               </div>
             </div>
           </div>
