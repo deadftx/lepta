@@ -39,9 +39,20 @@ export function getFundosAndClasses() {
 export function getDashboardSummary({ fundoId = 'MULTISETORIAL', data }) {
   const db = getFidcDb();
 
-  // Se data não for informada, pega a data máxima existente
+  // Se data informada não tiver cotas gravadas, busca a data válida mais recente (<= data solicitada)
   let targetDate = data;
-  if (!targetDate) {
+  if (targetDate) {
+    const hasCotas = db.prepare('SELECT 1 FROM historico_cotas WHERE fundo_id = ? AND data = ? LIMIT 1').get(fundoId, targetDate);
+    if (!hasCotas) {
+      const closest = db.prepare('SELECT MAX(data) as d FROM historico_cotas WHERE fundo_id = ? AND data <= ?').get(fundoId, targetDate);
+      if (closest?.d) {
+        targetDate = closest.d;
+      } else {
+        const maxAny = db.prepare('SELECT MAX(data) as d FROM historico_cotas WHERE fundo_id = ?').get(fundoId);
+        targetDate = maxAny?.d || new Date().toISOString().substring(0, 10);
+      }
+    }
+  } else {
     const maxDateRow = db.prepare('SELECT MAX(data) as d FROM historico_cotas WHERE fundo_id = ?').get(fundoId);
     targetDate = maxDateRow?.d || new Date().toISOString().substring(0, 10);
   }
