@@ -484,7 +484,7 @@ export function getTitulos({ fundoId = 'MULTISETORIAL', data, search = '', tipo,
 /**
  * Base de Cedentes com vínculo de gerentes e setores
  */
-export function getCedentesList({ search = '', semGerenteOnly = false }) {
+export function getCedentesList({ search = '', semGerenteOnly = false, gerenteId }) {
   const db = getFidcDb();
   let query = `
     SELECT
@@ -495,7 +495,8 @@ export function getCedentesList({ search = '', semGerenteOnly = false }) {
       c.gerente_id,
       c.criado_em,
       g.nome as gerente_nome,
-      s.nome as setor_nome
+      s.nome as setor_nome,
+      (SELECT COUNT(*) FROM cedentes_cnpjs cc WHERE cc.cnpj_raiz = c.cnpj_raiz) as num_filiais
     FROM cedentes c
     LEFT JOIN gerentes g ON g.id = c.gerente_id
     LEFT JOIN setores s ON s.id = c.setor_id
@@ -504,12 +505,15 @@ export function getCedentesList({ search = '', semGerenteOnly = false }) {
   const params = [];
 
   if (search && search.trim()) {
-    query += ' AND (c.nome LIKE ? OR c.cnpj_raiz LIKE ?)';
-    params.push(`%${search.trim()}%`, `%${search.trim()}%`);
+    query += ' AND (c.nome LIKE ? OR c.cnpj_raiz LIKE ? OR g.nome LIKE ?)';
+    params.push(`%${search.trim()}%`, `%${search.trim()}%`, `%${search.trim()}%`);
   }
 
   if (semGerenteOnly) {
     query += ' AND c.gerente_id IS NULL';
+  } else if (gerenteId) {
+    query += ' AND c.gerente_id = ?';
+    params.push(Number(gerenteId));
   }
 
   query += ' ORDER BY c.nome ASC';
