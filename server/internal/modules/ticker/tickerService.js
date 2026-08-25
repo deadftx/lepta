@@ -180,21 +180,12 @@ function parseMovimentoFalimentarHtml(html) {
   return companies;
 }
 
-// 2. Localizar e buscar o Movimento Falimentar diário do Valor Econômico + Casos Recentes
+// 2. Localizar e buscar o Movimento Falimentar diário do Valor Econômico (Estritamente da página do dia)
 async function fetchBankruptcies() {
   const now = Date.now();
   if (cachedBankruptcies && (now - lastBankruptciesFetchTime < BANKRUPTCY_CACHE_TTL_MS)) {
     return cachedBankruptcies;
   }
-
-  const baseActiveCompanies = [
-    { empresa: 'SouthRock (Starbucks)', tipo: 'Recuperação Judicial', info: 'Reestruturação' },
-    { empresa: 'Polishop', tipo: 'Recuperação Judicial', info: 'Reestruturação' },
-    { empresa: 'Dia Brasil', tipo: 'Recuperação Judicial', info: 'Reestruturação' },
-    { empresa: 'Gol Linhas Aéreas', tipo: 'Chapter 11 / RJ', info: 'Reestruturação' },
-    { empresa: '123Milhas', tipo: 'Recuperação Judicial', info: 'Reestruturação' },
-    { empresa: 'Americanas S.A.', tipo: 'Recuperação Judicial', info: 'Plano aprovado' }
-  ];
 
   let dailyExtracted = [];
 
@@ -212,17 +203,13 @@ async function fetchBankruptcies() {
     console.warn('[Ticker] Erro ao buscar Movimento Falimentar do Valor:', err.message);
   }
 
-  // Combina as do dia no topo + casos recentes ativos sem duplicidade
-  const combined = [...dailyExtracted];
-  for (const comp of baseActiveCompanies) {
-    if (!combined.some(c => c.empresa.toLowerCase().includes(comp.empresa.toLowerCase()) || comp.empresa.toLowerCase().includes(c.empresa.toLowerCase()))) {
-      combined.push(comp);
-    }
+  if (dailyExtracted.length > 0) {
+    cachedBankruptcies = dailyExtracted;
+    lastBankruptciesFetchTime = now;
+    return dailyExtracted;
   }
 
-  cachedBankruptcies = combined;
-  lastBankruptciesFetchTime = now;
-  return combined;
+  return cachedBankruptcies || [];
 }
 
 // 3. Obter dados consolidados
@@ -240,9 +227,7 @@ export async function getTickerData() {
 
     cachedTickerData = {
       quotes,
-      bankruptcies: bankruptcies && bankruptcies.length > 0 ? bankruptcies : [
-        { empresa: 'JL Eletrificação Ltda.', tipo: 'Falência Decretada', info: 'Convolada em falência' }
-      ],
+      bankruptcies: Array.isArray(bankruptcies) ? bankruptcies : [],
       updatedAt: new Date().toISOString()
     };
     lastFetchTime = now;
@@ -252,9 +237,7 @@ export async function getTickerData() {
     if (cachedTickerData) return cachedTickerData;
     return {
       quotes: await fetchMarketQuotes(),
-      bankruptcies: [
-        { empresa: 'JL Eletrificação Ltda.', tipo: 'Falência Decretada', info: 'Convolada em falência' }
-      ],
+      bankruptcies: [],
       updatedAt: new Date().toISOString()
     };
   }
