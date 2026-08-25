@@ -1,7 +1,7 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   ClipboardCheck, LayoutDashboard, TrendingUp, Layers,
-  Search, Users, DollarSign, RefreshCw, Calendar, Upload, Database, CheckCircle2, AlertCircle, X
+  Search, Users, DollarSign, RefreshCw, Calendar, Database, CheckCircle2, AlertCircle, X
 } from 'lucide-react';
 import { API_BASE_URL, getAuthHeaders } from '../../../config/api';
 import { useAuth } from '../../core/AuthContext';
@@ -29,12 +29,32 @@ export const ConfirmationSystem: React.FC = () => {
 
   // Modal de Restauração de Banco
   const [isRestoreModalOpen, setIsRestoreModalOpen] = useState(false);
-  const [selectedDbFile, setSelectedDbFile] = useState<File | null>(null);
-  const [uploadProgress, setUploadProgress] = useState(0);
-  const [uploading, setUploading] = useState(false);
+  const [localBackups, setLocalBackups] = useState<any[]>([]);
+  const [loadingBackups, setLoadingBackups] = useState(false);
+  const [restoringPath, setRestoringPath] = useState<string | null>(null);
   const [uploadSuccess, setUploadSuccess] = useState<string | null>(null);
   const [uploadError, setUploadError] = useState<string | null>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const fetchLocalBackups = useCallback(async () => {
+    setLoadingBackups(true);
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/confirmacao/local-backups`, { headers: getAuthHeaders() });
+      if (res.ok) {
+        const json = await res.json();
+        setLocalBackups(json);
+      }
+    } catch (err) {
+      console.error('Erro ao buscar backups locais:', err);
+    } finally {
+      setLoadingBackups(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (isRestoreModalOpen) {
+      fetchLocalBackups();
+    }
+  }, [isRestoreModalOpen, fetchLocalBackups]);
 
   // 1. Carrega Fundos e Classes
   const fetchFundos = useCallback(() => {
@@ -76,96 +96,37 @@ export const ConfirmationSystem: React.FC = () => {
     fetchDashboard();
   }, [fetchDashboard]);
 
-  const [chunkStatusText, setChunkStatusText] = useState('');
-
-  const handleUploadBackup = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!selectedDbFile) return;
-
-    setUploading(true);
-    setUploadProgress(0);
+  const handleRestoreLocalBackup = async (targetPath: string) => {
+    setRestoringPath(targetPath);
     setUploadError(null);
     setUploadSuccess(null);
-    setChunkStatusText('Preparando envio do arquivo...');
-
-    const CHUNK_SIZE = 5 * 1024 * 1024; // 5 MB por pedaço (passa liso por qualquer Cloudflare / Nginx / Hostinger)
-    const totalChunks = Math.ceil(selectedDbFile.size / CHUNK_SIZE);
-    const uploadId = `fidc_${Date.now()}_${Math.random().toString(36).slice(2)}`;
 
     try {
-      for (let i = 0; i < totalChunks; i++) {
-        const start = i * CHUNK_SIZE;
-        const end = Math.min(selectedDbFile.size, start + CHUNK_SIZE);
-        const chunkBlob = selectedDbFile.slice(start, end);
+      const res = await fetch(`${API_BASE_URL}/api/confirmacao/restore-local-backup`, {
+        method: 'POST',
+        headers: {
+          ...getAuthHeaders(),
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ targetPath })
+      });
 
-        setChunkStatusText(`Enviando pedaço ${i + 1} de ${totalChunks}...`);
-
-        let attempts = 0;
-        let success = false;
-        let lastError = '';
-
-        while (attempts < 3 && !success) {
-          attempts++;
-          try {
-            const formData = new FormData();
-            formData.append('chunk', chunkBlob, selectedDbFile.name);
-            formData.append('uploadId', uploadId);
-            formData.append('chunkIndex', String(i));
-            formData.append('totalChunks', String(totalChunks));
-            formData.append('fileName', selectedDbFile.name);
-
-            const headers = getAuthHeaders() as Record<string, string>;
-
-            const res = await fetch(`${API_BASE_URL}/api/confirmacao/upload-chunk`, {
-              method: 'POST',
-              headers,
-              body: formData
-            });
-
-            if (!res.ok) {
-              const errText = await res.text();
-              throw new Error(errText || `Erro HTTP ${res.status}`);
-            }
-
-            const json = await res.json();
-
-            if (json.done) {
-              setUploadProgress(100);
-              setChunkStatusText('Finalizando e integrando ao banco principal...');
-              setUploadSuccess(
-                `✅ ${json.message} (${json.counts?.titulos?.toLocaleString('pt-BR')} títulos, ${json.counts?.cotas?.toLocaleString('pt-BR')} cotas carregadas)`
-              );
-              setSelectedDbFile(null);
-              if (fileInputRef.current) fileInputRef.current.value = '';
-              fetchFundos();
-              fetchDashboard();
-              setTimeout(() => {
-                setIsRestoreModalOpen(false);
-                setUploadSuccess(null);
-              }, 4000);
-            }
-
-            success = true;
-            const pct = Math.round(((i + 1) / totalChunks) * 100);
-            setUploadProgress(pct);
-          } catch (chunkErr: any) {
-            lastError = chunkErr.message;
-            if (attempts < 3) {
-              setChunkStatusText(`Reconectando pedaço ${i + 1}... tentativa ${attempts + 1}/3`);
-              await new Promise(r => setTimeout(r, 1500));
-            }
-          }
-        }
-
-        if (!success) {
-          throw new Error(`Falha ao enviar pedaço ${i + 1} após 3 tentativas: ${lastError}`);
-        }
+      const json = await res.json();
+      if (res.ok && json.success) {
+        setUploadSuccess(`✅ ${json.message}`);
+        fetchFundos();
+        fetchDashboard();
+        setTimeout(() => {
+          setIsRestoreModalOpen(false);
+          setUploadSuccess(null);
+        }, 4000);
+      } else {
+        setUploadError(json.error || 'Erro ao restaurar backup local.');
       }
     } catch (err: any) {
-      console.error('Erro no upload fatiado:', err);
-      setUploadError(err.message || 'Erro durante o envio do arquivo.');
+      setUploadError(err.message || 'Erro de comunicação ao restaurar.');
     } finally {
-      setUploading(false);
+      setRestoringPath(null);
     }
   };
 
@@ -230,7 +191,7 @@ export const ConfirmationSystem: React.FC = () => {
               title="Restaurar / Importar Banco FIDC (.db)"
               style={{ display: 'flex', alignItems: 'center', gap: '6px', background: 'rgba(56, 189, 248, 0.15)', borderColor: '#38bdf8', color: '#38bdf8' }}
             >
-              <Upload size={14} />
+              <Database size={14} />
               Restaurar Banco FIDC
             </button>
           )}
@@ -304,13 +265,13 @@ export const ConfirmationSystem: React.FC = () => {
 
       {/* Modal de Restauração de Banco FIDC */}
       {isRestoreModalOpen && (
-        <div className="cs-modal-overlay" onClick={() => !uploading && setIsRestoreModalOpen(false)}>
+        <div className="cs-modal-overlay" onClick={() => !restoringPath && setIsRestoreModalOpen(false)}>
           <div className="cs-modal" onClick={e => e.stopPropagation()}>
             <div className="cs-modal-header">
               <h3 className="cs-modal-title" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <Database size={20} color="#38bdf8" /> Restaurar / Importar Banco FIDC (.db)
+                <Database size={20} color="#38bdf8" /> Restaurar Banco FIDC da VPS (.db)
               </h3>
-              {!uploading && (
+              {!restoringPath && (
                 <button className="cs-modal-close" onClick={() => setIsRestoreModalOpen(false)}>
                   <X size={20} />
                 </button>
@@ -329,64 +290,94 @@ export const ConfirmationSystem: React.FC = () => {
               </div>
             )}
 
-            <form onSubmit={handleUploadBackup}>
-              <p style={{ color: '#cbd5e1', fontSize: '0.88rem', lineHeight: '1.5', margin: '0 0 1.25rem 0' }}>
-                Selecione o arquivo de banco de dados do FIDC (ex: <code>lepta_backup_2026-08-17.db</code> ou <code>lepta.db</code>).
-                O servidor receberá o arquivo e atualizará todos os fundos, cotas, títulos e dashboards instantaneamente.
-              </p>
-
-              <div style={{ marginBottom: '1.5rem' }}>
-                <input
-                  type="file"
-                  accept=".db,.sqlite,.db3"
-                  ref={fileInputRef}
-                  disabled={uploading}
-                  onChange={e => setSelectedDbFile(e.target.files?.[0] || null)}
-                  className="cs-search-input"
-                  style={{ width: '100%', boxSizing: 'border-box', padding: '10px' }}
-                  required
-                />
-              </div>
-
-              {uploading && (
-                <div style={{ marginBottom: '1.5rem' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem', color: '#94a3b8', marginBottom: '6px' }}>
-                    <span>{chunkStatusText || 'Enviando banco de dados para o servidor...'}</span>
-                    <span style={{ fontWeight: 700, color: '#38bdf8' }}>{uploadProgress}%</span>
-                  </div>
-                  <div style={{ background: 'rgba(255, 255, 255, 0.1)', borderRadius: '10px', height: '10px', overflow: 'hidden' }}>
-                    <div
-                      style={{
-                        background: 'linear-gradient(90deg, #2563eb, #38bdf8)',
-                        height: '100%',
-                        width: `${uploadProgress}%`,
-                        transition: 'width 0.2s ease'
-                      }}
-                    />
-                  </div>
-                </div>
-              )}
-
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
+            {/* Lista de backups encontrados na VPS */}
+            <div style={{ marginBottom: '1.5rem', background: 'rgba(15, 23, 42, 0.6)', padding: '1rem', borderRadius: '8px', border: '1px solid rgba(56, 189, 248, 0.2)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                <span style={{ fontWeight: 600, fontSize: '0.92rem', color: '#f8fafc', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <Database size={16} color="#38bdf8" /> Arquivos de Backup Encontrados na VPS
+                </span>
                 <button
                   type="button"
                   className="cs-page-btn"
-                  disabled={uploading}
-                  onClick={() => setIsRestoreModalOpen(false)}
+                  onClick={fetchLocalBackups}
+                  disabled={loadingBackups}
+                  style={{ padding: '4px 10px', fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '4px' }}
                 >
-                  Cancelar
-                </button>
-                <button
-                  type="submit"
-                  className="cs-btn-save"
-                  disabled={uploading || !selectedDbFile}
-                  style={{ padding: '8px 22px' }}
-                >
-                  {uploading ? <RefreshCw size={16} className="pwc-spinner" /> : <Upload size={16} />}
-                  {uploading ? `Enviando (${uploadProgress}%)...` : 'Iniciar Restauração'}
+                  <RefreshCw size={12} className={loadingBackups ? 'pwc-spinner' : ''} />
+                  Escanear VPS
                 </button>
               </div>
-            </form>
+
+              {loadingBackups ? (
+                <div style={{ padding: '1rem', textAlign: 'center', color: '#94a3b8', fontSize: '0.85rem' }}>
+                  Buscando arquivos de backup no servidor...
+                </div>
+              ) : localBackups.length > 0 ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  {localBackups.map((bk, idx) => (
+                    <div
+                      key={idx}
+                      style={{
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        background: bk.isRecommended ? 'rgba(56, 189, 248, 0.08)' : 'rgba(255, 255, 255, 0.03)',
+                        border: bk.isRecommended ? '1px solid rgba(56, 189, 248, 0.3)' : '1px solid rgba(255, 255, 255, 0.08)',
+                        padding: '10px 14px',
+                        borderRadius: '6px'
+                      }}
+                    >
+                      <div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <span style={{ fontWeight: 600, color: '#f8fafc', fontSize: '0.88rem' }}>{bk.name}</span>
+                          {bk.isRecommended && (
+                            <span style={{ background: '#0369a1', color: '#e0f2fe', padding: '1px 6px', borderRadius: '4px', fontSize: '0.72rem', fontWeight: 600 }}>
+                              Recomendado
+                            </span>
+                          )}
+                        </div>
+                        <div style={{ fontSize: '0.78rem', color: '#94a3b8', marginTop: '3px' }}>
+                          Tamanho: <strong style={{ color: '#cbd5e1' }}>{bk.sizeMb}</strong> • Modificado: {bk.modifiedAt}
+                        </div>
+                      </div>
+
+                      <button
+                        type="button"
+                        className="cs-btn-save"
+                        disabled={restoringPath !== null}
+                        onClick={() => handleRestoreLocalBackup(bk.fullPath)}
+                        style={{ padding: '6px 14px', fontSize: '0.82rem', display: 'flex', alignItems: 'center', gap: '6px' }}
+                      >
+                        {restoringPath === bk.fullPath ? (
+                          <RefreshCw size={14} className="pwc-spinner" />
+                        ) : (
+                          <Database size={14} />
+                        )}
+                        {restoringPath === bk.fullPath ? 'Integrando...' : 'Restaurar Este'}
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div style={{ padding: '1rem', textAlign: 'center', color: '#94a3b8', fontSize: '0.85rem' }}>
+                  Nenhum arquivo <code>.db</code> encontrado nas pastas do servidor ainda.
+                  <p style={{ margin: '6px 0 0 0', fontSize: '0.8rem', color: '#64748b' }}>
+                    Envie o arquivo <code>lepta_backup_2026-08-17.db</code> para a pasta da aplicação na VPS (ex: <code>server/data/</code> ou raiz) e clique em <strong>Escanear VPS</strong>.
+                  </p>
+                </div>
+              )}
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+              <button
+                type="button"
+                className="cs-page-btn"
+                disabled={restoringPath !== null}
+                onClick={() => setIsRestoreModalOpen(false)}
+              >
+                Fechar
+              </button>
+            </div>
           </div>
         </div>
       )}

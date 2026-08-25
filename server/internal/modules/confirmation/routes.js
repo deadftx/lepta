@@ -297,4 +297,100 @@ export function registerConfirmationRoutes(app, {
       return res.status(500).json({ error: `Erro no upload do pedaço: ${err.message}` });
     }
   });
+
+  // --- 10. LISTAR ARQUIVOS DE BACKUP EXISTENTES NA PRÓPRIA VPS/DISCO ---
+  app.get('/api/confirmacao/local-backups', requireSession, checkAccess, (req, res) => {
+    try {
+      const root = path.resolve();
+      const searchDirs = [
+        path.join(root, 'server', 'data'),
+        path.join(root, 'server', 'data', 'backups'),
+        path.join(root, 'backups'),
+        root,
+        path.join(root, '..'),
+        ...(process.env.FIDC_BACKUPS_PATH ? [path.resolve(process.env.FIDC_BACKUPS_PATH)] : [])
+      ];
+
+      const foundFiles = [];
+      const seenPaths = new Set();
+
+      for (const dir of searchDirs) {
+        if (!fs.existsSync(dir)) continue;
+
+        try {
+          const files = fs.readdirSync(dir);
+          for (const file of files) {
+            const fullPath = path.join(dir, file);
+            if (seenPaths.has(fullPath)) continue;
+
+            const isDbFile = (file.endsWith('.db') || file.endsWith('.sqlite') || file.endsWith('.db3')) &&
+                             !file.includes('assembled_') &&
+                             file !== 'database.sqlite'; // Não lista o banco principal em execução
+
+            if (isDbFile) {
+              try {
+                const stats = fs.statSync(fullPath);
+                if (stats.isFile()) {
+                  seenPaths.add(fullPath);
+                  const sizeMb = (stats.size / (1024 * 1024)).toFixed(2);
+                  foundFiles.push({
+                    name: file,
+                    fullPath: fullPath,
+                    sizeMb: `${sizeMb} MB`,
+                    sizeBytes: stats.size,
+                    modifiedAt: stats.mtime.toLocaleString('pt-BR'),
+                    isRecommended: file.includes('lepta_backup_') || file.includes('lepta')
+                  });
+                }
+              } catch (_) {}
+            }
+          }
+        } catch (_) {}
+      }
+
+      // Ordena recomendados primeiro e depois por data de modificação
+      foundFiles.sort((a, b) => {
+        if (a.isRecommended && !b.isRecommended) return -1;
+        if (!a.isRecommended && b.isRecommended) return 1;
+        return b.sizeBytes - a.sizeBytes;
+      });
+
+      return res.json(foundFiles);
+    } catch (err) {
+      console.error('Erro ao listar backups locais:', err);
+      return res.status(500).json({ error: err.message });
+    }
+  });
+
+  // --- 11. RESTAURAR ARQUIVO DE BACKUP LOCAL DO DISCO DA VPS ---
+  app.post('/api/confirmacao/restore-local-backup', requireSession, requireMaster, (req, res) => {
+    try {
+      const { targetPath } = req.body;
+      if (!targetPath || !fs.existsSync(targetPath)) {
+        return res.status(400).json({ error: `Arquivo de backup não encontrado no caminho: ${targetPath}` });
+      }
+
+      console.log(`🚀 [FIDC] Restaurando backup local a partir de: ${targetPath}`);
+      const result = importBackupIntoMainDb(db, targetPath);
+
+      const fundosCount = db.prepare('SELECT COUNT(*) as c FROM fundos').get()?.c || 0;
+      const cotasCount = db.prepare('SELECT COUNT(*) as c FROM historico_cotas').get()?.c || 0;
+      const titulosCount = db.prepare('SELECT COUNT(*) as c FROM estoque_titulos').get()?.c || 0;
+      const cedentesCount = db.prepare('SELECT COUNT(*) as c FROM cedentes').get()?.c || 0;
+
+      return res.json({
+        success: true,
+        message: `Backup restaurado com sucesso! Foram integrados ${titulosCount.toLocaleString('pt-BR')} títulos e ${cotasCount.toLocaleString('pt-BR')} cotas ao banco principal.`,
+        counts: {
+          fundos: fundosCount,
+          cotas: cotasCount,
+          titulos: titulosCount,
+          cedentes: cedentesCount
+        }
+      });
+    } catch (err) {
+      console.error('Erro ao restaurar backup local:', err);
+      return res.status(500).json({ error: `Erro ao importar arquivo: ${err.message}` });
+    }
+  });
 }
