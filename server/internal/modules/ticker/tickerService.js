@@ -180,49 +180,49 @@ function parseMovimentoFalimentarHtml(html) {
   return companies;
 }
 
-// 2. Localizar e buscar o Movimento Falimentar diário do Valor Econômico
+// 2. Localizar e buscar o Movimento Falimentar diário do Valor Econômico + Casos Recentes
 async function fetchBankruptcies() {
   const now = Date.now();
   if (cachedBankruptcies && (now - lastBankruptciesFetchTime < BANKRUPTCY_CACHE_TTL_MS)) {
     return cachedBankruptcies;
   }
 
-  const fallbackCompanies = [
-    { empresa: 'JL Eletrificação Ltda.', tipo: 'Falência Decretada', info: 'Recuperação judicial convolada em falência' },
-    { empresa: 'SouthRock (Starbucks Brasil)', tipo: 'Recuperação Judicial', info: 'Reestruturação' },
+  const baseActiveCompanies = [
+    { empresa: 'SouthRock (Starbucks)', tipo: 'Recuperação Judicial', info: 'Reestruturação' },
     { empresa: 'Polishop', tipo: 'Recuperação Judicial', info: 'Reestruturação' },
-    { empresa: 'Dia Brasil Supermercados', tipo: 'Recuperação Judicial', info: 'Reestruturação' },
-    { empresa: 'Gol Linhas Aéreas', tipo: 'Chapter 11', info: 'Reestruturação' }
+    { empresa: 'Dia Brasil', tipo: 'Recuperação Judicial', info: 'Reestruturação' },
+    { empresa: 'Gol Linhas Aéreas', tipo: 'Chapter 11 / RJ', info: 'Reestruturação' },
+    { empresa: '123Milhas', tipo: 'Recuperação Judicial', info: 'Reestruturação' },
+    { empresa: 'Americanas S.A.', tipo: 'Recuperação Judicial', info: 'Plano aprovado' }
   ];
 
+  let dailyExtracted = [];
+
   try {
-    // 1. Tenta descobrir link recente de movimento falimentar na home de empresas
     const empresasHomeHtml = await fetchText('https://valor.globo.com/empresas/');
     const urlMatches = empresasHomeHtml.match(/https:\/\/valor\.globo\.com\/empresas\/noticia\/[0-9\/]+[a-z0-9-]+movimento-falimentar\.ghtml/gi) || [];
 
-    let targetUrl = urlMatches.length > 0 ? urlMatches[0] : null;
-
-    // Se não encontrou na home de empresas, usa o link direto mais recente conhecido
-    if (!targetUrl) {
-      targetUrl = 'https://valor.globo.com/empresas/noticia/2026/08/25/55fe0b22-movimento-falimentar.ghtml';
-    }
+    let targetUrl = urlMatches.length > 0 ? urlMatches[0] : 'https://valor.globo.com/empresas/noticia/2026/08/25/55fe0b22-movimento-falimentar.ghtml';
 
     const articleHtml = await fetchText(targetUrl);
     if (articleHtml) {
-      const extracted = parseMovimentoFalimentarHtml(articleHtml);
-      if (extracted.length > 0) {
-        cachedBankruptcies = extracted;
-        lastBankruptciesFetchTime = now;
-        return extracted;
-      }
+      dailyExtracted = parseMovimentoFalimentarHtml(articleHtml);
     }
   } catch (err) {
     console.warn('[Ticker] Erro ao buscar Movimento Falimentar do Valor:', err.message);
   }
 
-  cachedBankruptcies = fallbackCompanies;
+  // Combina as do dia no topo + casos recentes ativos sem duplicidade
+  const combined = [...dailyExtracted];
+  for (const comp of baseActiveCompanies) {
+    if (!combined.some(c => c.empresa.toLowerCase().includes(comp.empresa.toLowerCase()) || comp.empresa.toLowerCase().includes(c.empresa.toLowerCase()))) {
+      combined.push(comp);
+    }
+  }
+
+  cachedBankruptcies = combined;
   lastBankruptciesFetchTime = now;
-  return fallbackCompanies;
+  return combined;
 }
 
 // 3. Obter dados consolidados

@@ -181,11 +181,17 @@ export const TopHeaderTicker: React.FC = () => {
             <span className="top-ticker-badge-falencia">
               <AlertTriangle size={13} /> Falências / RJ (Valor):
             </span>
-            <span style={{ color: '#fca5a5', fontWeight: 650 }}>
-              {data.bankruptcies.map(b => b.empresa).join(', ')}
-            </span>
           </div>
-          <span className="top-ticker-separator">•</span>
+          {data.bankruptcies.map((b, idx) => (
+            <React.Fragment key={`bankr-${idx}`}>
+              <div className="top-ticker-item">
+                <span className="top-ticker-company-pill">
+                  {b.empresa}
+                </span>
+              </div>
+              <span className="top-ticker-separator">•</span>
+            </React.Fragment>
+          ))}
         </>
       )}
     </>
