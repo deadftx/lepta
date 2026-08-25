@@ -2,7 +2,8 @@ import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { useSearchParams } from 'react-router-dom';
 import {
   Clock, Send, X, RefreshCw,
-  Eye, CreditCard, ArrowDownLeft, CheckSquare, RotateCcw, Paperclip, Trash2, Download, CheckCircle2, User, FileSpreadsheet, CalendarCheck
+  Eye, CreditCard, ArrowDownLeft, CheckSquare, RotateCcw, Paperclip, Trash2, Download, CheckCircle2, User, FileSpreadsheet, CalendarCheck,
+  PauseCircle, PlayCircle, Save, AlertTriangle
 } from 'lucide-react';
 import { API_BASE_URL, getAuthHeaders } from '../../../config/api';
 import { useAuth } from '../../core/AuthContext';
@@ -27,7 +28,31 @@ export interface PurchaseItem {
   created_at?: string;
 }
 
-interface PurchaseRequest {
+export interface PurchaseParcela {
+  id?: string;
+  requisicao_id?: string;
+  numero_parcela: number;
+  total_parcelas?: number;
+  valor?: number;
+  data_pagamento?: string | null;
+  status?: string;
+  pausado?: number;
+  pausado_em?: string | null;
+  motivo_pausa?: string | null;
+}
+
+export interface PurchaseMessage {
+  id: string;
+  requisicao_id: string;
+  autor_id: string;
+  autor_nome: string;
+  autor_role: 'REQUISITANTE' | 'APROVADOR' | 'FINANCEIRO';
+  mensagem: string;
+  tipo?: 'COMENTARIO' | 'SOLICITACAO_REVISAO' | 'REABERTURA' | 'ANEXO';
+  created_at: string;
+}
+
+export interface PurchaseRequest {
   id: string;
   numero: number;
   tipo_destino?: string;
@@ -42,13 +67,16 @@ interface PurchaseRequest {
   valor: number;
   quantidade: number;
   observacoes: string;
-  status: 'PENDENTE' | 'REABERTO' | 'AGUARDANDO_RESPOSTA_SOLICITANTE' | 'AGUARDANDO_RESPOSTA_APROVADOR' | 'APROVADO' | 'NEGADO' | 'PAGO' | 'REVISAO' | 'SOLICITACAO_CONCLUIDA';
-  data_pagamento?: string | null;
+  status: 'PENDENTE' | 'REABERTO' | 'AGUARDANDO_RESPOSTA_SOLICITANTE' | 'AGUARDANDO_RESPOSTA_APROVADOR' | 'APROVADO' | 'PAGAMENTO_PAUSADO' | 'NEGADO' | 'SOLICITACAO_CONCLUIDA' | 'PAGO' | 'REVISAO';
   arquivado?: number;
-  arquivado_manualmente?: number;
-  arquivado_por?: string | null;
-  arquivado_em?: string | null;
-  motivo_arquivamento?: string | null;
+  data_pagamento?: string | null;
+  datas_parcelas?: string | null;
+  pausado_em?: string | null;
+  pausado_por_id?: string | null;
+  pausado_por_nome?: string | null;
+  motivo_pausa?: string | null;
+  status_anterior?: string | null;
+  parcelas?: PurchaseParcela[];
   solicitante_id: string;
   solicitante_nome: string;
   solicitante_email: string;
@@ -58,22 +86,10 @@ interface PurchaseRequest {
   decidido_em: string | null;
   created_at: string;
   updated_at: string;
-  total_mensagens?: number;
-  total_itens?: number;
   total_anexos?: number;
+  total_mensagens?: number;
   itens?: PurchaseItem[];
   mensagens?: PurchaseMessage[];
-}
-
-interface PurchaseMessage {
-  id: string;
-  requisicao_id: string;
-  autor_id: string;
-  autor_nome: string;
-  autor_role: 'SOLICITANTE' | 'APROVADOR' | 'SISTEMA' | 'FINANCEIRO';
-  mensagem: string;
-  tipo: 'COMENTARIO' | 'STATUS_CHANGE' | 'PERGUNTA' | 'RESPOSTA';
-  created_at: string;
 }
 
 interface Attachment {
@@ -85,17 +101,18 @@ interface Attachment {
   created_at: string;
 }
 
-type ActiveTab = 'fila' | 'concluidos';
-
 export const FinanceRefundsExpenses: React.FC = () => {
   const { user } = useAuth();
   const isMaster = user?.role === 'MASTER';
 
-  const [activeTab, setActiveTab] = useState<ActiveTab>('fila');
-  const [requests, setRequests] = useState<PurchaseRequest[]>([]);
-  const [loading, setLoading] = useState(true);
+  // Tabs: 'fila' (Aprovadas/Pausadas aguardando pagamento) | 'concluidos' (Pagas)
+  const [activeTab, setActiveTab] = useState<'fila' | 'concluidos'>('fila');
   const [searchQuery, setSearchQuery] = useState('');
   const [filterFormaPagamento, setFilterFormaPagamento] = useState<string>('TODAS');
+
+  // Requests
+  const [requests, setRequests] = useState<PurchaseRequest[]>([]);
+  const [loading, setLoading] = useState(true);
 
   // Modal de Detalhes
   const [selectedRequest, setSelectedRequest] = useState<PurchaseRequest | null>(null);
@@ -106,14 +123,30 @@ export const FinanceRefundsExpenses: React.FC = () => {
   const [attachmentError, setAttachmentError] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Agendamento / Reagendamento de Pagamento
+  // Agendamento / Reagendamento de Pagamento (À Vista ou Global)
   const [scheduleInputDate, setScheduleInputDate] = useState<string>('');
   const [scheduleLoading, setScheduleLoading] = useState(false);
+
+  // Parcelas individuais (datas e valores)
+  const [parcelasInput, setParcelasInput] = useState<{ [numero: number]: string }>({});
+  const [parcelasValoresInput, setParcelasValoresInput] = useState<{ [numero: number]: number }>({});
+  const [isDivergenceModalOpen, setIsDivergenceModalOpen] = useState(false);
+
+  // Pausa de Pagamento
+  const [isPauseModalOpen, setIsPauseModalOpen] = useState(false);
+  const [pauseReason, setPauseReason] = useState('');
+  const [pauseLoading, setPauseLoading] = useState(false);
 
   // Ações do Financeiro
   const [actionLoading, setActionLoading] = useState(false);
   const [actionType, setActionType] = useState<'CONCLUIR' | 'REVISAO' | null>(null);
   const [actionMotivo, setActionMotivo] = useState('');
+
+  // Exclusão Permanente Master (com validação de senha do usuário)
+  const [deleteModalRequest, setDeleteModalRequest] = useState<PurchaseRequest | null>(null);
+  const [deletePassword, setDeletePassword] = useState('');
+  const [deleteLoading, setDeleteLoading] = useState(false);
+  const [deleteError, setDeleteError] = useState('');
 
   // Toast
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -173,10 +206,48 @@ export const FinanceRefundsExpenses: React.FC = () => {
         const data = await res.json();
         setSelectedRequest(data);
         setScheduleInputDate(data.data_pagamento ? data.data_pagamento.substring(0, 10) : '');
+        
+        // Inicializa inputs de parcelas (datas e valores)
+        const totalParc = Math.max(1, data.quantidade_parcelas || 1);
+        const valorTotalReq = (data.valor || 0) * (data.quantidade || 1);
+        const valorPadrao = Number((valorTotalReq / totalParc).toFixed(2));
+
+        const initialParcelas: { [num: number]: string } = {};
+        const initialValores: { [num: number]: number } = {};
+
+        if (Array.isArray(data.parcelas) && data.parcelas.length > 0) {
+          data.parcelas.forEach((p: any) => {
+            initialParcelas[p.numero_parcela] = p.data_pagamento ? p.data_pagamento.substring(0, 10) : '';
+            initialValores[p.numero_parcela] = p.valor != null ? Number(p.valor) : valorPadrao;
+          });
+        } else if (data.datas_parcelas) {
+          try {
+            const parsed = JSON.parse(data.datas_parcelas);
+            if (Array.isArray(parsed)) {
+              parsed.forEach((p: any) => {
+                initialParcelas[p.numero_parcela] = p.data_pagamento ? p.data_pagamento.substring(0, 10) : '';
+                initialValores[p.numero_parcela] = p.valor != null ? Number(p.valor) : valorPadrao;
+              });
+            }
+          } catch (_) {}
+        }
+
+        // Garante que todas as parcelas de 1 até totalParc possuam valor e data inicializados
+        for (let i = 1; i <= totalParc; i++) {
+          if (initialValores[i] === undefined) initialValores[i] = valorPadrao;
+          if (initialParcelas[i] === undefined) initialParcelas[i] = '';
+        }
+
+        setParcelasInput(initialParcelas);
+        setParcelasValoresInput(initialValores);
+
         setMessages(data.mensagens || []);
         setActionType(null);
         setActionMotivo('');
         setAttachmentError('');
+        setIsPauseModalOpen(false);
+        setIsDivergenceModalOpen(false);
+        setPauseReason('');
         fetchAttachments(id);
       }
     } catch (err) {
@@ -238,6 +309,214 @@ export const FinanceRefundsExpenses: React.FC = () => {
       console.error('Erro ao agendar data de pagamento:', err);
     } finally {
       setScheduleLoading(false);
+    }
+  };
+
+  // Cálculos de totais e validação das parcelas
+  const totalParcelasCount = Math.max(1, selectedRequest?.quantidade_parcelas || 1);
+  const valorTotalSolicitacao = Number(((selectedRequest?.valor || 0) * (selectedRequest?.quantidade || 1)).toFixed(2));
+  
+  const somaParcelasAtual = useMemo(() => {
+    let sum = 0;
+    for (let i = 1; i <= totalParcelasCount; i++) {
+      sum += Number(parcelasValoresInput[i] || 0);
+    }
+    return Number(sum.toFixed(2));
+  }, [parcelasValoresInput, totalParcelasCount]);
+
+  const diferencaParcelas = Number((somaParcelasAtual - valorTotalSolicitacao).toFixed(2));
+  const valoresParcelasBatem = Math.abs(diferencaParcelas) < 0.01;
+
+  // Alteração de valor individual de parcela
+  const handleParcelaValorChange = (numero: number, rawValue: string) => {
+    const sanitized = rawValue.replace(/[^\d.,]/g, '').replace(',', '.');
+    const parsed = parseFloat(sanitized);
+    setParcelasValoresInput(prev => ({
+      ...prev,
+      [numero]: isNaN(parsed) ? 0 : parsed
+    }));
+  };
+
+  // Divide o valor total igualmente entre todas as parcelas
+  const handleResetEqualInstallments = () => {
+    if (!selectedRequest) return;
+    const total = Math.max(1, selectedRequest.quantidade_parcelas || 1);
+    const valorTotal = (selectedRequest.valor || 0) * (selectedRequest.quantidade || 1);
+    const valorPadrao = Number((valorTotal / total).toFixed(2));
+    const newMap: { [num: number]: number } = {};
+    for (let i = 1; i <= total; i++) {
+      newMap[i] = valorPadrao;
+    }
+    setParcelasValoresInput(newMap);
+    showToast('Valores distribuídos igualmente!');
+  };
+
+  // Ao clicar em Salvar: se valores divergirem, abre modal custom; se baterem, salva direto
+  const handleSaveParcelasClick = () => {
+    if (!selectedRequest) return;
+    if (!valoresParcelasBatem) {
+      setIsDivergenceModalOpen(true);
+    } else {
+      executeSaveParcelasDates();
+    }
+  };
+
+  // Salvar cronograma de parcelas individuais (datas e valores)
+  const executeSaveParcelasDates = async () => {
+    if (!selectedRequest) return;
+    setScheduleLoading(true);
+    setIsDivergenceModalOpen(false);
+
+    try {
+      const total = Math.max(1, selectedRequest.quantidade_parcelas || 1);
+      const valorTotal = (selectedRequest.valor || 0) * (selectedRequest.quantidade || 1);
+      const valorParcelaPadrao = Number((valorTotal / total).toFixed(2));
+
+      const payloadParcelas = [];
+      for (let i = 1; i <= total; i++) {
+        payloadParcelas.push({
+          numero_parcela: i,
+          total_parcelas: total,
+          valor: parcelasValoresInput[i] != null ? Number(parcelasValoresInput[i]) : valorParcelaPadrao,
+          data_pagamento: parcelasInput[i] || null
+        });
+      }
+
+      const res = await fetch(`${API_BASE_URL}/api/compras/requisicoes/${selectedRequest.id}/parcelas-datas`, {
+        method: 'PUT',
+        headers: {
+          ...getAuthHeaders(),
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ parcelas: payloadParcelas })
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        setSelectedRequest(prev => prev ? { ...prev, ...data.requisicao, parcelas: data.parcelas } : null);
+        
+        // Recarrega mensagens
+        const resDetails = await fetch(`${API_BASE_URL}/api/compras/requisicoes/${selectedRequest.id}`, {
+          headers: getAuthHeaders()
+        });
+        if (resDetails.ok) {
+          const detailData = await resDetails.json();
+          setMessages(detailData.mensagens || []);
+        }
+
+        showToast('Cronograma de parcelas e valores salvo com sucesso!');
+        fetchData(true);
+      } else {
+        const err = await res.json();
+        alert(err.error || 'Erro ao salvar parcelas.');
+      }
+    } catch (err) {
+      console.error('Erro ao salvar parcelas:', err);
+    } finally {
+      setScheduleLoading(false);
+    }
+  };
+
+  // Helper para autopreencher datas mensais a partir da primeira
+  const handleAutoFillMonthlyDates = () => {
+    if (!selectedRequest) return;
+    const total = Math.max(1, selectedRequest.quantidade_parcelas || 1);
+    const baseStr = parcelasInput[1] || selectedRequest.data_pagamento?.substring(0, 10) || new Date().toISOString().substring(0, 10);
+    const [bYear, bMonth, bDay] = baseStr.split('-').map(Number);
+
+    const newMap: { [num: number]: string } = {};
+    for (let i = 1; i <= total; i++) {
+      const d = new Date(bYear, (bMonth - 1) + (i - 1), bDay);
+      const y = d.getFullYear();
+      const m = String(d.getMonth() + 1).padStart(2, '0');
+      const day = String(d.getDate()).padStart(2, '0');
+      newMap[i] = `${y}-${m}-${day}`;
+    }
+    setParcelasInput(newMap);
+    showToast('Datas mensais sugeridas! Clique em "Salvar Datas das Parcelas" para confirmar.');
+  };
+
+  // Pausar Pagamento com Motivo Obrigatório
+  const handlePausePayment = async () => {
+    if (!selectedRequest || !pauseReason.trim()) {
+      alert('Por favor, informe o motivo para pausar o pagamento.');
+      return;
+    }
+    setPauseLoading(true);
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/compras/requisicoes/${selectedRequest.id}/pausar-pagamento`, {
+        method: 'POST',
+        headers: {
+          ...getAuthHeaders(),
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ motivo: pauseReason.trim() })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setSelectedRequest(prev => prev ? { ...prev, ...data.requisicao } : null);
+        setIsPauseModalOpen(false);
+        setPauseReason('');
+
+        // Recarrega mensagens
+        const resDetails = await fetch(`${API_BASE_URL}/api/compras/requisicoes/${selectedRequest.id}`, {
+          headers: getAuthHeaders()
+        });
+        if (resDetails.ok) {
+          const detailData = await resDetails.json();
+          setMessages(detailData.mensagens || []);
+        }
+
+        showToast('Pagamento PAUSADO com sucesso.');
+        fetchData(true);
+      } else {
+        const err = await res.json();
+        alert(err.error || 'Erro ao pausar pagamento.');
+      }
+    } catch (err) {
+      console.error('Erro ao pausar pagamento:', err);
+    } finally {
+      setPauseLoading(false);
+    }
+  };
+
+  // Retomar Pagamento
+  const handleResumePayment = async () => {
+    if (!selectedRequest) return;
+    if (!window.confirm('Deseja retomar o pagamento desta solicitação? As datas e parcelas voltarão ao fluxo normal.')) return;
+    setPauseLoading(true);
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/compras/requisicoes/${selectedRequest.id}/retomar-pagamento`, {
+        method: 'POST',
+        headers: {
+          ...getAuthHeaders(),
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ motivo: 'Retomado pelo usuário' })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setSelectedRequest(prev => prev ? { ...prev, ...data.requisicao } : null);
+
+        // Recarrega mensagens
+        const resDetails = await fetch(`${API_BASE_URL}/api/compras/requisicoes/${selectedRequest.id}`, {
+          headers: getAuthHeaders()
+        });
+        if (resDetails.ok) {
+          const detailData = await resDetails.json();
+          setMessages(detailData.mensagens || []);
+        }
+
+        showToast('Pagamento RETOMADO com sucesso!');
+        fetchData(true);
+      } else {
+        const err = await res.json();
+        alert(err.error || 'Erro ao retomar pagamento.');
+      }
+    } catch (err) {
+      console.error('Erro ao retomar pagamento:', err);
+    } finally {
+      setPauseLoading(false);
     }
   };
 
@@ -395,6 +674,44 @@ export const FinanceRefundsExpenses: React.FC = () => {
     }
   };
 
+  // Exclusão Permanente Master (com validação de senha do usuário)
+  const handleConfirmDeleteMaster = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!deleteModalRequest || !deletePassword.trim()) return;
+
+    setDeleteLoading(true);
+    setDeleteError('');
+
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/compras/requisicoes/${deleteModalRequest.id}/excluir-master`, {
+        method: 'POST',
+        headers: {
+          ...getAuthHeaders(),
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ password: deletePassword })
+      });
+
+      const data = await res.json();
+      if (res.ok) {
+        showToast('Solicitação excluída permanentemente com sucesso!');
+        setDeleteModalRequest(null);
+        setDeletePassword('');
+        if (selectedRequest?.id === deleteModalRequest.id) {
+          setSelectedRequest(null);
+        }
+        await fetchData(true);
+      } else {
+        setDeleteError(data.error || 'Senha incorreta ou erro ao excluir solicitação.');
+      }
+    } catch (err) {
+      console.error('Erro ao excluir solicitação:', err);
+      setDeleteError('Erro de conexão ao processar exclusão.');
+    } finally {
+      setDeleteLoading(false);
+    }
+  };
+
   const formatBrl = (val: number) => {
     return Number(val || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
   };
@@ -412,7 +729,7 @@ export const FinanceRefundsExpenses: React.FC = () => {
   // KPIs
   const totalApprovedWaitingPayment = useMemo(() => {
     return requests
-      .filter(r => r.status === 'APROVADO')
+      .filter(r => r.status === 'APROVADO' || r.status === 'PAGAMENTO_PAUSADO')
       .reduce((sum, r) => sum + (r.valor * r.quantidade), 0);
   }, [requests]);
 
@@ -426,6 +743,10 @@ export const FinanceRefundsExpenses: React.FC = () => {
     return requests.filter(r => r.status === 'APROVADO').length;
   }, [requests]);
 
+  const countPaused = useMemo(() => {
+    return requests.filter(r => r.status === 'PAGAMENTO_PAUSADO').length;
+  }, [requests]);
+
   const countCompleted = useMemo(() => {
     return requests.filter(r => r.status === 'SOLICITACAO_CONCLUIDA' || r.status === 'PAGO').length;
   }, [requests]);
@@ -434,7 +755,7 @@ export const FinanceRefundsExpenses: React.FC = () => {
   const filteredQueue = useMemo(() => {
     return requests.filter(r => {
       if (activeTab === 'fila') {
-        if (r.status !== 'APROVADO') return false;
+        if (r.status !== 'APROVADO' && r.status !== 'PAGAMENTO_PAUSADO') return false;
       } else {
         if (r.status !== 'SOLICITACAO_CONCLUIDA' && r.status !== 'PAGO') return false;
       }
@@ -463,6 +784,8 @@ export const FinanceRefundsExpenses: React.FC = () => {
     switch (status) {
       case 'APROVADO':
         return <span className="pa-status-badge approved"><CheckCircle2 size={12} /> Aprovado (Pendente Pagamento)</span>;
+      case 'PAGAMENTO_PAUSADO':
+        return <span className="pa-status-badge" style={{ background: 'rgba(245, 158, 11, 0.15)', color: '#fbbf24', border: '1px solid rgba(245, 158, 11, 0.4)' }}><PauseCircle size={12} /> Pagamento Pausado</span>;
       case 'SOLICITACAO_CONCLUIDA':
       case 'PAGO':
         return <span className="pa-status-badge approved" style={{ background: 'rgba(52, 211, 153, 0.15)', color: '#34d399', border: '1px solid rgba(52, 211, 153, 0.3)' }}><CheckCircle2 size={12} /> Solicitação Concluída</span>;
@@ -551,6 +874,23 @@ export const FinanceRefundsExpenses: React.FC = () => {
             <span>Total liquidado: <strong>{formatBrl(totalCompletedValue)}</strong></span>
           </div>
         </div>
+
+        {countPaused > 0 && (
+          <div className="pa-kpi-card" style={{ borderColor: 'rgba(245, 158, 11, 0.4)', background: 'rgba(245, 158, 11, 0.05)' }}>
+            <div className="pa-kpi-header">
+              <span className="pa-kpi-title" style={{ color: '#fbbf24' }}>Pagamentos Pausados</span>
+              <div className="pa-kpi-icon" style={{ background: 'rgba(245, 158, 11, 0.15)', color: '#fbbf24' }}>
+                <PauseCircle size={20} />
+              </div>
+            </div>
+            <div className="pa-kpi-value" style={{ color: '#fbbf24' }}>
+              {countPaused}
+            </div>
+            <div className="pa-kpi-footer">
+              <span>Requer acompanhamento</span>
+            </div>
+          </div>
+        )}
 
         <div className="pa-kpi-card">
           <div className="pa-kpi-header">
@@ -696,13 +1036,25 @@ export const FinanceRefundsExpenses: React.FC = () => {
                       {renderStatusBadge(item.status)}
                     </td>
                     <td data-label="Ações">
-                      <button
-                        className="pa-btn-detail"
-                        onClick={() => handleOpenDetails(item.id)}
-                        title="Ver Detalhes e Ações"
-                      >
-                        <Eye size={15} /> Detalhes
-                      </button>
+                      <div style={{ display: 'flex', gap: '6px' }}>
+                        <button
+                          className="pa-btn-detail"
+                          onClick={() => handleOpenDetails(item.id)}
+                          title="Ver Detalhes e Ações"
+                        >
+                          <Eye size={15} /> Detalhes
+                        </button>
+                        {isMaster && (
+                          <button
+                            className="pa-btn-archive-master"
+                            style={{ padding: '6px 10px', fontSize: '0.75rem', background: 'rgba(239, 68, 68, 0.15)', color: '#ef4444', border: '1px solid rgba(239, 68, 68, 0.3)' }}
+                            onClick={() => { setDeleteModalRequest(item); setDeletePassword(''); setDeleteError(''); }}
+                            title="Excluir Permanentemente (Exclusivo Master)"
+                          >
+                            <Trash2 size={13} />
+                          </button>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))
@@ -717,21 +1069,101 @@ export const FinanceRefundsExpenses: React.FC = () => {
         <div className="pa-modal-overlay" onClick={() => setSelectedRequest(null)}>
           <div className="pa-modal-card" style={{ maxWidth: '840px' }} onClick={e => e.stopPropagation()}>
             <div className="pa-modal-header">
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
                 <CreditCard size={20} color="#38bdf8" />
                 <h3 style={{ margin: 0 }}>Detalhes da Solicitação: {selectedRequest.id}</h3>
                 {renderStatusBadge(selectedRequest.status)}
               </div>
-              <button
-                type="button"
-                className="pa-modal-close"
-                onClick={() => setSelectedRequest(null)}
-              >
-                <X size={20} />
-              </button>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                {isMaster && (
+                  <button
+                    type="button"
+                    className="pa-btn-archive-master"
+                    style={{ background: 'rgba(239, 68, 68, 0.15)', color: '#ef4444', border: '1px solid rgba(239, 68, 68, 0.3)', padding: '6px 12px', fontSize: '0.78rem', display: 'flex', alignItems: 'center', gap: '5px' }}
+                    onClick={() => { setDeleteModalRequest(selectedRequest); setDeletePassword(''); setDeleteError(''); }}
+                    title="Excluir Solicitação Permanentemente (Exclusivo Master)"
+                  >
+                    <Trash2 size={13} /> Excluir
+                  </button>
+                )}
+                {selectedRequest.status !== 'SOLICITACAO_CONCLUIDA' && selectedRequest.status !== 'PAGO' && selectedRequest.status !== 'PAGAMENTO_PAUSADO' && (
+                  <button
+                    type="button"
+                    className="pa-btn-action-deny"
+                    onClick={() => {
+                      setPauseReason('');
+                      setIsPauseModalOpen(true);
+                    }}
+                    style={{
+                      background: 'rgba(245, 158, 11, 0.15)',
+                      color: '#fbbf24',
+                      borderColor: '#f59e0b',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                      padding: '5px 12px',
+                      fontSize: '0.8rem',
+                      borderRadius: '8px'
+                    }}
+                    title="Pausar Pagamento com justificativa obrigatória"
+                  >
+                    <PauseCircle size={14} /> Pausar Pagamento
+                  </button>
+                )}
+                <button
+                  type="button"
+                  className="pa-modal-close"
+                  onClick={() => setSelectedRequest(null)}
+                >
+                  <X size={20} />
+                </button>
+              </div>
             </div>
 
             <div className="pa-modal-body">
+              {/* BANNER DE PAGAMENTO PAUSADO */}
+              {selectedRequest.status === 'PAGAMENTO_PAUSADO' && (
+                <div style={{
+                  background: 'rgba(245, 158, 11, 0.12)',
+                  border: '1px solid #f59e0b',
+                  borderRadius: '12px',
+                  padding: '14px 18px',
+                  marginBottom: '1.25rem',
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  flexWrap: 'wrap',
+                  gap: '12px'
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                    <div style={{ background: 'rgba(245, 158, 11, 0.2)', padding: '8px', borderRadius: '50%', color: '#f59e0b' }}>
+                      <PauseCircle size={26} />
+                    </div>
+                    <div>
+                      <div style={{ fontWeight: 800, color: '#fbbf24', fontSize: '0.98rem' }}>
+                        PAGAMENTO PAUSADO
+                      </div>
+                      <div style={{ fontSize: '0.84rem', color: '#e2e8f0', marginTop: '2px' }}>
+                        Pausado por <strong style={{ color: '#fbbf24' }}>{selectedRequest.pausado_por_nome || 'Usuário'}</strong> {selectedRequest.pausado_em ? `em ${formatDate(selectedRequest.pausado_em)}` : ''}
+                      </div>
+                      <div style={{ fontSize: '0.82rem', color: '#cbd5e1', marginTop: '4px', fontStyle: 'italic' }}>
+                        Motivo: "{selectedRequest.motivo_pausa || 'Não informado'}"
+                      </div>
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    className="pa-btn-approve"
+                    onClick={handleResumePayment}
+                    disabled={pauseLoading}
+                    style={{ padding: '8px 16px', fontSize: '0.85rem', background: '#10b981', display: 'flex', alignItems: 'center', gap: '6px', borderRadius: '8px' }}
+                  >
+                    <PlayCircle size={15} /> Retomar Pagamento
+                  </button>
+                </div>
+              )}
+
               {/* GRID DE DETALHES */}
               <div className="pa-req-details-grid">
                 <div className="pa-detail-item">
@@ -796,85 +1228,275 @@ export const FinanceRefundsExpenses: React.FC = () => {
                   <span className="pa-detail-val">{selectedRequest.aprovador_nome || '-'} {selectedRequest.decidido_em ? `em ${formatDate(selectedRequest.decidido_em)}` : ''}</span>
                 </div>
 
-                {/* Seletor de Data Programada com Botão Agendar / Reagendar */}
-                <div className="pa-detail-item" style={{ gridColumn: 'span 2', background: 'rgba(56, 189, 248, 0.08)', padding: '16px', borderRadius: '12px', border: '1px solid rgba(56, 189, 248, 0.25)' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
-                    <span className="pa-detail-label" style={{ color: '#38bdf8', fontSize: '0.85rem', fontWeight: 700 }}>
-                      📅 Agendamento de Pagamento (Financeiro)
-                    </span>
-                    {selectedRequest.data_pagamento && (
-                      <span style={{ fontSize: '0.8rem', color: '#fbbf24', background: 'rgba(251, 191, 36, 0.15)', padding: '3px 8px', borderRadius: '6px', border: '1px solid rgba(251, 191, 36, 0.3)' }}>
-                        Agendado para: <strong>{selectedRequest.data_pagamento.substring(0, 10).split('-').reverse().join('/')}</strong>
-                      </span>
-                    )}
-                  </div>
+                {/* Seletor de Data Programada / Parcelas */}
+                {selectedRequest.quantidade_parcelas > 1 ? (
+                  <div className="pa-detail-item" style={{ gridColumn: 'span 2', background: selectedRequest.status === 'PAGAMENTO_PAUSADO' ? 'rgba(245, 158, 11, 0.08)' : 'rgba(56, 189, 248, 0.08)', padding: '16px', borderRadius: '12px', border: selectedRequest.status === 'PAGAMENTO_PAUSADO' ? '1px solid rgba(245, 158, 11, 0.35)' : '1px solid rgba(56, 189, 248, 0.25)' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px', marginBottom: '12px' }}>
+                      <div>
+                        <span className="pa-detail-label" style={{ color: selectedRequest.status === 'PAGAMENTO_PAUSADO' ? '#fbbf24' : '#38bdf8', fontSize: '0.88rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          <CalendarCheck size={16} /> Cronograma de Pagamento por Parcela ({selectedRequest.quantidade_parcelas}x)
+                        </span>
+                        <span style={{ fontSize: '0.8rem', color: '#94a3b8' }}>
+                          Defina a data e o valor de cada parcela individualmente:
+                        </span>
+                      </div>
 
-                  <div style={{ display: 'flex', gap: '10px', alignItems: 'center', marginTop: '10px', flexWrap: 'wrap' }}>
-                    <input
-                      type="date"
-                      className="pa-input"
-                      value={scheduleInputDate}
-                      onChange={(e) => setScheduleInputDate(e.target.value)}
-                      style={{ maxWidth: '200px', padding: '8px 12px', fontSize: '0.9rem' }}
-                      disabled={selectedRequest.status === 'SOLICITACAO_CONCLUIDA' || scheduleLoading}
-                    />
+                      <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                        <button
+                          type="button"
+                          className="pa-btn-detail"
+                          onClick={handleResetEqualInstallments}
+                          disabled={selectedRequest.status === 'SOLICITACAO_CONCLUIDA' || scheduleLoading}
+                          style={{ padding: '5px 10px', fontSize: '0.78rem', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                          title="Divide o valor total igualmente entre todas as parcelas"
+                        >
+                          ⚖️ Dividir Igualmente
+                        </button>
+                        <button
+                          type="button"
+                          className="pa-btn-detail"
+                          onClick={handleAutoFillMonthlyDates}
+                          disabled={selectedRequest.status === 'SOLICITACAO_CONCLUIDA' || scheduleLoading}
+                          style={{ padding: '5px 10px', fontSize: '0.78rem', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                          title="Preenche automaticamente datas mensais (D+30) a partir da primeira"
+                        >
+                          ⚡ Preencher Mensal (D+30)
+                        </button>
+                      </div>
+                    </div>
 
-                    {/* Botão Agendar ou Reagendar */}
-                    {selectedRequest.data_pagamento ? (
+                    {/* TOTAL DO PAGAMENTO / CONFERÊNCIA DINÂMICA */}
+                    <div style={{
+                      background: valoresParcelasBatem ? 'rgba(52, 211, 153, 0.08)' : 'rgba(245, 158, 11, 0.08)',
+                      border: valoresParcelasBatem ? '1px solid rgba(52, 211, 153, 0.35)' : '1px solid rgba(245, 158, 11, 0.45)',
+                      borderRadius: '10px',
+                      padding: '10px 14px',
+                      marginBottom: '14px',
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      flexWrap: 'wrap',
+                      gap: '10px'
+                    }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '16px', flexWrap: 'wrap' }}>
+                        <div>
+                          <div style={{ fontSize: '0.72rem', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Valor da Solicitação</div>
+                          <div style={{ fontSize: '0.98rem', fontWeight: 800, color: '#f8fafc' }}>{formatBrl(valorTotalSolicitacao)}</div>
+                        </div>
+                        <div style={{ width: '1px', height: '24px', background: 'rgba(255, 255, 255, 0.1)' }} />
+                        <div>
+                          <div style={{ fontSize: '0.72rem', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Soma das Parcelas</div>
+                          <div style={{ fontSize: '0.98rem', fontWeight: 800, color: valoresParcelasBatem ? '#34d399' : '#fbbf24' }}>
+                            {formatBrl(somaParcelasAtual)}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div>
+                        {valoresParcelasBatem ? (
+                          <span style={{
+                            background: 'rgba(52, 211, 153, 0.15)',
+                            color: '#34d399',
+                            border: '1px solid rgba(52, 211, 153, 0.35)',
+                            padding: '4px 10px',
+                            borderRadius: '6px',
+                            fontSize: '0.78rem',
+                            fontWeight: 700,
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '5px'
+                          }}>
+                            <CheckCircle2 size={13} color="#34d399" />
+                            Soma Total Bate Exatamente
+                          </span>
+                        ) : (
+                          <span style={{
+                            background: 'rgba(245, 158, 11, 0.18)',
+                            color: '#fbbf24',
+                            border: '1px solid rgba(245, 158, 11, 0.45)',
+                            padding: '4px 10px',
+                            borderRadius: '6px',
+                            fontSize: '0.78rem',
+                            fontWeight: 700,
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '5px'
+                          }}>
+                            <AlertTriangle size={13} color="#fbbf24" />
+                            Divergência: {diferencaParcelas > 0 ? '+' : ''}{formatBrl(diferencaParcelas)}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: '10px' }}>
+                      {Array.from({ length: selectedRequest.quantidade_parcelas }).map((_, i) => {
+                        const num = i + 1;
+                        const isPaused = selectedRequest.status === 'PAGAMENTO_PAUSADO';
+
+                        return (
+                          <div
+                            key={num}
+                            style={{
+                              background: isPaused ? 'rgba(245, 158, 11, 0.08)' : 'rgba(15, 23, 42, 0.6)',
+                              border: isPaused ? '1px dashed rgba(245, 158, 11, 0.4)' : '1px solid rgba(255, 255, 255, 0.08)',
+                              padding: '10px 12px',
+                              borderRadius: '8px',
+                              display: 'flex',
+                              flexDirection: 'column',
+                              gap: '8px'
+                            }}
+                          >
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                              <span style={{ fontWeight: 700, fontSize: '0.82rem', color: isPaused ? '#fbbf24' : '#f8fafc', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                {isPaused && <PauseCircle size={12} color="#fbbf24" />}
+                                Parcela {num}/{selectedRequest.quantidade_parcelas}
+                              </span>
+                              {isPaused && (
+                                <span style={{ fontSize: '0.68rem', color: '#fbbf24', background: 'rgba(245, 158, 11, 0.15)', padding: '1px 6px', borderRadius: '4px' }}>
+                                  Pausada
+                                </span>
+                              )}
+                            </div>
+
+                            <div>
+                              <label style={{ fontSize: '0.72rem', color: '#94a3b8', display: 'block', marginBottom: '3px', fontWeight: 600 }}>
+                                Valor da Parcela (R$)
+                              </label>
+                              <input
+                                type="number"
+                                step="0.01"
+                                min="0"
+                                className="pa-input"
+                                value={parcelasValoresInput[num] != null ? parcelasValoresInput[num] : ''}
+                                onChange={e => handleParcelaValorChange(num, e.target.value)}
+                                placeholder="0,00"
+                                style={{ width: '100%', boxSizing: 'border-box', padding: '6px 10px', fontSize: '0.85rem', color: '#34d399', fontWeight: 700 }}
+                                disabled={selectedRequest.status === 'SOLICITACAO_CONCLUIDA' || scheduleLoading}
+                              />
+                            </div>
+
+                            <div>
+                              <label style={{ fontSize: '0.72rem', color: '#94a3b8', display: 'block', marginBottom: '3px', fontWeight: 600 }}>
+                                Data Programada
+                              </label>
+                              <input
+                                type="date"
+                                className="pa-input"
+                                value={parcelasInput[num] || ''}
+                                onChange={e => setParcelasInput({ ...parcelasInput, [num]: e.target.value })}
+                                style={{ width: '100%', boxSizing: 'border-box', padding: '6px 10px', fontSize: '0.85rem' }}
+                                disabled={selectedRequest.status === 'SOLICITACAO_CONCLUIDA' || scheduleLoading}
+                              />
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '14px' }}>
                       <button
                         type="button"
-                        onClick={() => handleSaveScheduleDate(scheduleInputDate)}
-                        disabled={!scheduleInputDate || scheduleInputDate === selectedRequest.data_pagamento.substring(0, 10) || scheduleLoading}
-                        className="pa-btn-detail"
-                        style={{
-                          background: (scheduleInputDate && scheduleInputDate !== selectedRequest.data_pagamento.substring(0, 10)) ? '#f59e0b' : 'rgba(255,255,255,0.08)',
-                          color: (scheduleInputDate && scheduleInputDate !== selectedRequest.data_pagamento.substring(0, 10)) ? '#0f172a' : '#64748b',
-                          fontWeight: 750,
-                          cursor: (scheduleInputDate && scheduleInputDate !== selectedRequest.data_pagamento.substring(0, 10)) ? 'pointer' : 'not-allowed'
-                        }}
-                      >
-                        {scheduleLoading ? <RefreshCw size={14} className="pwc-spinner" /> : <RotateCcw size={14} />}
-                        {scheduleLoading ? 'Salvando...' : 'Reagendar Pagamento'}
-                      </button>
-                    ) : (
-                      <button
-                        type="button"
-                        onClick={() => handleSaveScheduleDate(scheduleInputDate)}
-                        disabled={!scheduleInputDate || scheduleLoading}
                         className="pa-btn-approve"
+                        onClick={handleSaveParcelasClick}
+                        disabled={scheduleLoading || selectedRequest.status === 'SOLICITACAO_CONCLUIDA'}
                         style={{
-                          padding: '8px 14px',
+                          padding: '8px 18px',
                           fontSize: '0.85rem',
-                          cursor: scheduleInputDate ? 'pointer' : 'not-allowed',
-                          opacity: scheduleInputDate ? 1 : 0.5
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '6px',
+                          background: valoresParcelasBatem ? '#10b981' : '#f59e0b',
+                          color: '#0f172a',
+                          fontWeight: 750
                         }}
                       >
-                        {scheduleLoading ? <RefreshCw size={14} className="pwc-spinner" /> : <CalendarCheck size={14} />}
-                        {scheduleLoading ? 'Agendando...' : 'Agendar Pagamento'}
+                        {scheduleLoading ? <RefreshCw size={14} className="pwc-spinner" /> : <Save size={14} />}
+                        {scheduleLoading ? 'Salvando...' : 'Salvar Datas das Parcelas'}
                       </button>
-                    )}
-
-                    {/* Botão de Cancelar / Remover Agendamento se já houver */}
-                    {selectedRequest.data_pagamento && selectedRequest.status !== 'SOLICITACAO_CONCLUIDA' && (
-                      <button
-                        type="button"
-                        onClick={() => handleSaveScheduleDate(null)}
-                        disabled={scheduleLoading}
-                        className="pa-btn-action-deny"
-                        style={{ padding: '8px 12px', fontSize: '0.82rem', borderRadius: '8px' }}
-                        title="Remover data agendada"
-                      >
-                        <X size={14} /> Cancelar Agendamento
-                      </button>
-                    )}
+                    </div>
                   </div>
+                ) : (
+                  <div className="pa-detail-item" style={{ gridColumn: 'span 2', background: selectedRequest.status === 'PAGAMENTO_PAUSADO' ? 'rgba(245, 158, 11, 0.08)' : 'rgba(56, 189, 248, 0.08)', padding: '16px', borderRadius: '12px', border: selectedRequest.status === 'PAGAMENTO_PAUSADO' ? '1px solid rgba(245, 158, 11, 0.35)' : '1px solid rgba(56, 189, 248, 0.25)' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
+                      <span className="pa-detail-label" style={{ color: selectedRequest.status === 'PAGAMENTO_PAUSADO' ? '#fbbf24' : '#38bdf8', fontSize: '0.85rem', fontWeight: 700 }}>
+                        📅 Agendamento de Pagamento (Financeiro)
+                      </span>
+                      {selectedRequest.data_pagamento && (
+                        <span style={{ fontSize: '0.8rem', color: selectedRequest.status === 'PAGAMENTO_PAUSADO' ? '#fbbf24' : '#60a5fa', background: selectedRequest.status === 'PAGAMENTO_PAUSADO' ? 'rgba(245, 158, 11, 0.15)' : 'rgba(96, 165, 250, 0.15)', padding: '3px 8px', borderRadius: '6px', border: selectedRequest.status === 'PAGAMENTO_PAUSADO' ? '1px solid rgba(245, 158, 11, 0.4)' : '1px solid rgba(96, 165, 250, 0.3)' }}>
+                          {selectedRequest.status === 'PAGAMENTO_PAUSADO' ? '⏸️ Data Pausada: ' : 'Agendado para: '}
+                          <strong>{selectedRequest.data_pagamento.substring(0, 10).split('-').reverse().join('/')}</strong>
+                        </span>
+                      )}
+                    </div>
 
-                  <p style={{ margin: '8px 0 0 0', fontSize: '0.8rem', color: '#94a3b8' }}>
-                    {selectedRequest.data_pagamento
-                      ? 'Escolha uma nova data acima e clique em "Reagendar Pagamento" para alterar a programação financeira.'
-                      : 'Selecione a data no calendário e clique em "Agendar Pagamento" para confirmar.'}
-                  </p>
-                </div>
+                    <div style={{ display: 'flex', gap: '10px', alignItems: 'center', marginTop: '10px', flexWrap: 'wrap' }}>
+                      <input
+                        type="date"
+                        className="pa-input"
+                        value={scheduleInputDate}
+                        onChange={(e) => setScheduleInputDate(e.target.value)}
+                        style={{ maxWidth: '200px', padding: '8px 12px', fontSize: '0.9rem' }}
+                        disabled={selectedRequest.status === 'SOLICITACAO_CONCLUIDA' || scheduleLoading}
+                      />
+
+                      {/* Botão Agendar ou Reagendar */}
+                      {selectedRequest.data_pagamento ? (
+                        <button
+                          type="button"
+                          onClick={() => handleSaveScheduleDate(scheduleInputDate)}
+                          disabled={!scheduleInputDate || scheduleInputDate === selectedRequest.data_pagamento.substring(0, 10) || scheduleLoading}
+                          className="pa-btn-detail"
+                          style={{
+                            background: (scheduleInputDate && scheduleInputDate !== selectedRequest.data_pagamento.substring(0, 10)) ? '#f59e0b' : 'rgba(255,255,255,0.08)',
+                            color: (scheduleInputDate && scheduleInputDate !== selectedRequest.data_pagamento.substring(0, 10)) ? '#0f172a' : '#64748b',
+                            fontWeight: 750,
+                            cursor: (scheduleInputDate && scheduleInputDate !== selectedRequest.data_pagamento.substring(0, 10)) ? 'pointer' : 'not-allowed'
+                          }}
+                        >
+                          {scheduleLoading ? <RefreshCw size={14} className="pwc-spinner" /> : <RotateCcw size={14} />}
+                          {scheduleLoading ? 'Salvando...' : 'Reagendar Pagamento'}
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => handleSaveScheduleDate(scheduleInputDate)}
+                          disabled={!scheduleInputDate || scheduleLoading}
+                          className="pa-btn-approve"
+                          style={{
+                            padding: '8px 14px',
+                            fontSize: '0.85rem',
+                            cursor: scheduleInputDate ? 'pointer' : 'not-allowed',
+                            opacity: scheduleInputDate ? 1 : 0.5
+                          }}
+                        >
+                          {scheduleLoading ? <RefreshCw size={14} className="pwc-spinner" /> : <CalendarCheck size={14} />}
+                          {scheduleLoading ? 'Agendando...' : 'Agendar Pagamento'}
+                        </button>
+                      )}
+
+                      {/* Botão de Cancelar / Remover Agendamento se já houver */}
+                      {selectedRequest.data_pagamento && selectedRequest.status !== 'SOLICITACAO_CONCLUIDA' && (
+                        <button
+                          type="button"
+                          onClick={() => handleSaveScheduleDate(null)}
+                          disabled={scheduleLoading}
+                          className="pa-btn-action-deny"
+                          style={{ padding: '8px 12px', fontSize: '0.82rem', borderRadius: '8px' }}
+                          title="Remover data agendada"
+                        >
+                          <X size={14} /> Cancelar Agendamento
+                        </button>
+                      )}
+                    </div>
+
+                    <p style={{ margin: '8px 0 0 0', fontSize: '0.8rem', color: '#94a3b8' }}>
+                      {selectedRequest.data_pagamento
+                        ? 'Escolha uma nova data acima e clique em "Reagendar Pagamento" para alterar a programação financeira.'
+                        : 'Selecione a data no calendário e clique em "Agendar Pagamento" para confirmar.'}
+                    </p>
+                  </div>
+                )}
 
                 {selectedRequest.observacoes && (
                   <div className="pa-detail-item" style={{ gridColumn: 'span 2' }}>
@@ -1131,6 +1753,248 @@ export const FinanceRefundsExpenses: React.FC = () => {
                 </form>
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL CUSTOMIZADO: AVISO DE DIVERGÊNCIA DE VALORES NAS PARCELAS */}
+      {isDivergenceModalOpen && selectedRequest && (
+        <div className="pa-modal-overlay" onClick={() => setIsDivergenceModalOpen(false)}>
+          <div className="pa-modal-card" style={{ maxWidth: '520px', border: '1px solid rgba(245, 158, 11, 0.45)' }} onClick={e => e.stopPropagation()}>
+            <div className="pa-modal-header" style={{ borderBottomColor: 'rgba(245, 158, 11, 0.3)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <div style={{ background: 'rgba(245, 158, 11, 0.15)', padding: '6px', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <AlertTriangle size={20} color="#fbbf24" />
+                </div>
+                <h3 style={{ margin: 0, color: '#fbbf24' }}>Atenção: Divergência de Valores</h3>
+              </div>
+              <button
+                type="button"
+                className="pa-modal-close"
+                onClick={() => setIsDivergenceModalOpen(false)}
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="pa-modal-body">
+              <p style={{ color: '#e2e8f0', fontSize: '0.9rem', lineHeight: 1.5, margin: '0 0 14px 0' }}>
+                O valor total da soma das parcelas está <strong>diferente</strong> do valor requisitado na solicitação.
+              </p>
+
+              <div style={{ background: 'rgba(15, 23, 42, 0.8)', border: '1px solid rgba(255, 255, 255, 0.08)', borderRadius: '10px', padding: '14px 18px', display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '1.25rem' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem' }}>
+                  <span style={{ color: '#94a3b8' }}>Valor Requisitado na Solicitação:</span>
+                  <strong style={{ color: '#f8fafc' }}>{formatBrl(valorTotalSolicitacao)}</strong>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem' }}>
+                  <span style={{ color: '#94a3b8' }}>Soma das {totalParcelasCount} Parcelas:</span>
+                  <strong style={{ color: '#fbbf24' }}>{formatBrl(somaParcelasAtual)}</strong>
+                </div>
+                <div style={{ width: '100%', height: '1px', background: 'rgba(255, 255, 255, 0.08)' }} />
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.88rem' }}>
+                  <span style={{ color: '#94a3b8', fontWeight: 600 }}>Diferença:</span>
+                  <strong style={{ color: diferencaParcelas > 0 ? '#fbbf24' : '#ef4444' }}>
+                    {diferencaParcelas > 0 ? '+' : ''}{formatBrl(diferencaParcelas)}
+                  </strong>
+                </div>
+              </div>
+
+              <p style={{ color: '#cbd5e1', fontSize: '0.85rem', margin: '0 0 1.25rem 0', lineHeight: 1.4 }}>
+                Deseja salvar o cronograma com essa divergência ou voltar para ajustar os valores das parcelas?
+              </p>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
+                <button
+                  type="button"
+                  className="pa-btn-action-deny"
+                  onClick={() => setIsDivergenceModalOpen(false)}
+                  disabled={scheduleLoading}
+                  style={{ padding: '8px 16px', fontSize: '0.85rem' }}
+                >
+                  Voltar e Ajustar
+                </button>
+                <button
+                  type="button"
+                  className="pa-btn-approve"
+                  onClick={executeSaveParcelasDates}
+                  disabled={scheduleLoading}
+                  style={{
+                    background: '#f59e0b',
+                    color: '#0f172a',
+                    fontWeight: 750,
+                    padding: '8px 18px',
+                    fontSize: '0.85rem',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px'
+                  }}
+                >
+                  {scheduleLoading ? <RefreshCw size={14} className="pwc-spinner" /> : <Save size={14} />}
+                  {scheduleLoading ? 'Salvando...' : 'Confirmar e Salvar Assim Mesmo'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL DE PAUSAR PAGAMENTO */}
+      {isPauseModalOpen && selectedRequest && (
+        <div className="pa-modal-overlay" onClick={() => setIsPauseModalOpen(false)}>
+          <div className="pa-modal-card" style={{ maxWidth: '520px' }} onClick={e => e.stopPropagation()}>
+            <div className="pa-modal-header">
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <PauseCircle size={22} color="#f59e0b" />
+                <h3 style={{ margin: 0, color: '#f8fafc' }}>Pausar Pagamento</h3>
+              </div>
+              <button
+                type="button"
+                className="pa-modal-close"
+                onClick={() => setIsPauseModalOpen(false)}
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="pa-modal-body">
+              <p style={{ color: '#cbd5e1', fontSize: '0.88rem', margin: '0 0 12px 0' }}>
+                Ao pausar o pagamento da solicitação <strong style={{ color: '#38bdf8' }}>{selectedRequest.id}</strong>, o status passará para <strong style={{ color: '#fbbf24' }}>PAGAMENTO PAUSADO</strong> e as datas posteriores ficarão destacadas como pausadas no calendário.
+              </p>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                <label style={{ fontSize: '0.85rem', fontWeight: 700, color: '#f8fafc' }}>
+                  Motivo da Pausa <span style={{ color: '#ef4444' }}>* (Obrigatório)</span>
+                </label>
+                <textarea
+                  className="pa-input"
+                  rows={4}
+                  placeholder="Explique detalhadamente o motivo da pausa no pagamento..."
+                  value={pauseReason}
+                  onChange={e => setPauseReason(e.target.value)}
+                  style={{ width: '100%', boxSizing: 'border-box', resize: 'vertical' }}
+                />
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '1.25rem' }}>
+                <button
+                  type="button"
+                  className="pa-btn-action-deny"
+                  onClick={() => setIsPauseModalOpen(false)}
+                  disabled={pauseLoading}
+                  style={{ padding: '8px 16px', fontSize: '0.85rem' }}
+                >
+                  Cancelar
+                </button>
+
+                <button
+                  type="button"
+                  className="pa-btn-approve"
+                  onClick={handlePausePayment}
+                  disabled={!pauseReason.trim() || pauseLoading}
+                  style={{
+                    background: '#f59e0b',
+                    color: '#0f172a',
+                    fontWeight: 750,
+                    padding: '8px 18px',
+                    fontSize: '0.85rem',
+                    cursor: pauseReason.trim() ? 'pointer' : 'not-allowed',
+                    opacity: pauseReason.trim() ? 1 : 0.5,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px'
+                  }}
+                >
+                  {pauseLoading ? <RefreshCw size={14} className="pwc-spinner" /> : <PauseCircle size={14} />}
+                  {pauseLoading ? 'Pausando...' : 'Confirmar Pausa'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL DE EXCLUSÃO DEFINITIVA (EXCLUSIVO MASTER COM CONFIRMAÇÃO DE SENHA) */}
+      {deleteModalRequest && (
+        <div className="pa-modal-overlay" onClick={() => { if (!deleteLoading) setDeleteModalRequest(null); }}>
+          <div className="pa-modal-card" style={{ maxWidth: '520px', border: '1px solid rgba(239, 68, 68, 0.4)' }} onClick={e => e.stopPropagation()}>
+            <div className="pa-modal-header" style={{ borderBottomColor: 'rgba(239, 68, 68, 0.3)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <div style={{ background: 'rgba(239, 68, 68, 0.2)', padding: '6px', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <Trash2 size={20} color="#ef4444" />
+                </div>
+                <h3 style={{ margin: 0, color: '#f87171' }}>Excluir Solicitação Definitivamente</h3>
+              </div>
+              <button
+                type="button"
+                className="pa-modal-close"
+                disabled={deleteLoading}
+                onClick={() => setDeleteModalRequest(null)}
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <form onSubmit={handleConfirmDeleteMaster}>
+              <div className="pa-modal-body">
+                <div style={{ background: 'rgba(239, 68, 68, 0.08)', border: '1px solid rgba(239, 68, 68, 0.25)', borderRadius: '10px', padding: '12px 14px', marginBottom: '1rem' }}>
+                  <p style={{ color: '#fca5a5', fontSize: '0.88rem', margin: 0, lineHeight: 1.5 }}>
+                    ⚠️ <strong>Atenção Master:</strong> Esta ação é <strong>irreversível</strong>. A solicitação <strong style={{ color: '#ffffff' }}>{deleteModalRequest.id}</strong> ({deleteModalRequest.produto_servico}), todos os seus anexos, parcelas e mensagens serão apagados permanentemente do banco de dados.
+                  </p>
+                </div>
+
+                <div className="pa-form-group">
+                  <label style={{ color: '#f8fafc', fontWeight: 700, fontSize: '0.88rem' }}>
+                    Confirme sua Senha de Usuário <span style={{ color: '#ef4444' }}>*</span>
+                  </label>
+                  <input
+                    type="password"
+                    className="pa-input"
+                    placeholder="Digite sua senha de login para confirmar..."
+                    value={deletePassword}
+                    onChange={e => { setDeletePassword(e.target.value); setDeleteError(''); }}
+                    autoFocus
+                    required
+                    style={{ width: '100%', boxSizing: 'border-box', marginTop: '6px' }}
+                  />
+                  {deleteError && (
+                    <div style={{ color: '#f87171', fontSize: '0.82rem', marginTop: '6px', fontWeight: 600 }}>
+                      ⚠️ {deleteError}
+                    </div>
+                  )}
+                </div>
+
+                <div className="pa-confirm-actions" style={{ marginTop: '1.5rem', display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
+                  <button
+                    type="button"
+                    className="pa-btn-cancel"
+                    disabled={deleteLoading}
+                    onClick={() => setDeleteModalRequest(null)}
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={deleteLoading || !deletePassword.trim()}
+                    className="pa-btn-archive-master"
+                    style={{
+                      background: '#ef4444',
+                      color: '#ffffff',
+                      fontWeight: 700,
+                      padding: '8px 18px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                      cursor: (!deletePassword.trim() || deleteLoading) ? 'not-allowed' : 'pointer',
+                      opacity: (!deletePassword.trim() || deleteLoading) ? 0.5 : 1
+                    }}
+                  >
+                    {deleteLoading ? <RefreshCw size={15} className="pwc-spinner" /> : <Trash2 size={15} />}
+                    {deleteLoading ? 'Excluindo...' : 'Confirmar Exclusão'}
+                  </button>
+                </div>
+              </div>
+            </form>
           </div>
         </div>
       )}

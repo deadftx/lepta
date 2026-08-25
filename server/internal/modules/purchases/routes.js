@@ -40,6 +40,7 @@ function checkUserPermission(user, permission) {
 
 export function registerPurchaseRoutes(app, {
   db,
+  verifyPassword,
   requireSession,
   requirePermission,
   requireMaster
@@ -125,6 +126,23 @@ export function registerPurchaseRoutes(app, {
       enviado_por_nome TEXT NOT NULL,
       created_at TEXT NOT NULL
     );
+
+    CREATE TABLE IF NOT EXISTS compras_requisicoes_parcelas (
+      id TEXT PRIMARY KEY,
+      requisicao_id TEXT NOT NULL,
+      numero_parcela INTEGER NOT NULL,
+      total_parcelas INTEGER NOT NULL,
+      valor REAL NOT NULL,
+      data_pagamento TEXT,
+      status TEXT NOT NULL DEFAULT 'PENDENTE', -- 'PENDENTE', 'PAGO', 'PAUSADO'
+      pausado INTEGER DEFAULT 0,
+      pausado_em TEXT,
+      pausado_por_id TEXT,
+      pausado_por_nome TEXT,
+      motivo_pausa TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
   `);
 
   // Migration automática para garantir colunas existentes no banco SQLite
@@ -145,6 +163,12 @@ export function registerPurchaseRoutes(app, {
       { name: 'arquivado_em', sql: 'ALTER TABLE compras_requisicoes ADD COLUMN arquivado_em TEXT' },
       { name: 'motivo_arquivamento', sql: 'ALTER TABLE compras_requisicoes ADD COLUMN motivo_arquivamento TEXT' },
       { name: 'data_pagamento', sql: 'ALTER TABLE compras_requisicoes ADD COLUMN data_pagamento TEXT' },
+      { name: 'datas_parcelas', sql: 'ALTER TABLE compras_requisicoes ADD COLUMN datas_parcelas TEXT' },
+      { name: 'pausado_em', sql: 'ALTER TABLE compras_requisicoes ADD COLUMN pausado_em TEXT' },
+      { name: 'pausado_por_id', sql: 'ALTER TABLE compras_requisicoes ADD COLUMN pausado_por_id TEXT' },
+      { name: 'pausado_por_nome', sql: 'ALTER TABLE compras_requisicoes ADD COLUMN pausado_por_nome TEXT' },
+      { name: 'motivo_pausa', sql: 'ALTER TABLE compras_requisicoes ADD COLUMN motivo_pausa TEXT' },
+      { name: 'status_anterior', sql: 'ALTER TABLE compras_requisicoes ADD COLUMN status_anterior TEXT' },
     ];
     for (const col of requiredCols) {
       if (!cols.includes(col.name)) {
@@ -613,10 +637,17 @@ export function registerPurchaseRoutes(app, {
         ORDER BY created_at ASC
       `).all(req.params.id);
 
+      const parcelas = db.prepare(`
+        SELECT * FROM compras_requisicoes_parcelas
+        WHERE requisicao_id = ?
+        ORDER BY numero_parcela ASC
+      `).all(req.params.id);
+
       return res.json({
         ...requisicao,
         itens,
-        mensagens
+        mensagens,
+        parcelas
       });
     } catch (error) {
       console.error('Erro ao consultar detalhes da solicitação:', error.message);
@@ -1076,15 +1107,23 @@ export function registerPurchaseRoutes(app, {
           COALESCE((SELECT COUNT(*) FROM compras_requisicoes_itens i WHERE i.requisicao_id = r.id), 1) as total_itens,
           COALESCE((SELECT COUNT(*) FROM compras_anexos a WHERE a.requisicao_id = r.id), 0) as total_anexos
         FROM compras_requisicoes r
-        WHERE r.status IN ('APROVADO', 'SOLICITACAO_CONCLUIDA', 'PAGO')
+        WHERE r.status IN ('APROVADO', 'PAGAMENTO_PAUSADO', 'SOLICITACAO_CONCLUIDA', 'PAGO')
         ORDER BY 
           CASE 
             WHEN r.status = 'APROVADO' THEN 0
-            ELSE 1
+            WHEN r.status = 'PAGAMENTO_PAUSADO' THEN 1
+            ELSE 2
           END,
           r.updated_at DESC
       `).all();
-      return res.json(rows);
+
+      const stmtParcelas = db.prepare(`SELECT * FROM compras_requisicoes_parcelas WHERE requisicao_id = ? ORDER BY numero_parcela ASC`);
+      const enriched = rows.map(r => ({
+        ...r,
+        parcelas: stmtParcelas.all(r.id)
+      }));
+
+      return res.json(enriched);
     } catch (error) {
       console.error('Erro ao listar fila do financeiro:', error.message);
       return res.status(500).json({ error: 'Erro ao carregar fila do financeiro.' });
@@ -1252,6 +1291,229 @@ export function registerPurchaseRoutes(app, {
     }
   });
 
+  // --- ROTA: AGENDAR DATAS DAS PARCELAS INDIVIDUAIS ---
+  app.put('/api/compras/requisicoes/:id/parcelas-datas', requireSession, requirePermission(['7.4', '7.5', '7']), (req, res) => {
+    const { id } = req.params;
+    const { parcelas } = req.body; // Array de { numero_parcela: 1, data_pagamento: 'YYYY-MM-DD', valor: 100 }
+
+    if (!Array.isArray(parcelas) || parcelas.length === 0) {
+      return res.status(400).json({ error: 'Lista de parcelas inválida ou vazia.' });
+    }
+
+    try {
+      const requisicao = db.prepare(`SELECT * FROM compras_requisicoes WHERE id = ?`).get(id);
+      if (!requisicao) return res.status(404).json({ error: 'Solicitação não encontrada.' });
+
+      const now = new Date().toISOString();
+      const financeName = req.authUser.username || req.authUser.id;
+      const totalParcelas = Math.max(parcelas.length, requisicao.quantidade_parcelas || 1);
+      const valorTotal = (requisicao.valor || 0) * (requisicao.quantidade || 1);
+      const valorParcelaPadrao = valorTotal / totalParcelas;
+
+      // 1. Grava no banco transacionalmente na tabela compras_requisicoes_parcelas
+      db.transaction(() => {
+        // Remove parcelas anteriores se houver reconfiguração
+        db.prepare(`DELETE FROM compras_requisicoes_parcelas WHERE requisicao_id = ?`).run(id);
+
+        const insertParcela = db.prepare(`
+          INSERT INTO compras_requisicoes_parcelas (
+            id, requisicao_id, numero_parcela, total_parcelas, valor, data_pagamento, status, created_at, updated_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `);
+
+        for (const p of parcelas) {
+          const num = Number(p.numero_parcela) || 1;
+          const dt = p.data_pagamento ? String(p.data_pagamento).trim().substring(0, 10) : null;
+          const val = Number(p.valor) || valorParcelaPadrao;
+          insertParcela.run(randomUUID(), id, num, totalParcelas, val, dt, 'PENDENTE', now, now);
+        }
+
+        // 2. Atualiza a coluna datas_parcelas e primeira data_pagamento na requisição
+        const serialized = JSON.stringify(parcelas);
+        const primeiraData = parcelas.find(p => p.data_pagamento)?.data_pagamento || null;
+
+        db.prepare(`
+          UPDATE compras_requisicoes
+          SET datas_parcelas = ?,
+              data_pagamento = COALESCE(?, data_pagamento),
+              quantidade_parcelas = ?,
+              updated_at = ?
+          WHERE id = ?
+        `).run(serialized, primeiraData, totalParcelas, now, id);
+
+        // 3. Registra mensagem no histórico
+        const resumoDatas = parcelas.map(p => `P${p.numero_parcela}: ${p.data_pagamento ? p.data_pagamento.split('-').reverse().join('/') : 'A definir'}`).join(' | ');
+        const msgTexto = `📅 Cronograma de ${totalParcelas} parcelas definido por ${financeName}: ${resumoDatas}`;
+
+        db.prepare(`
+          INSERT INTO compras_mensagens (id, requisicao_id, autor_id, autor_nome, autor_role, mensagem, created_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?)
+        `).run(randomUUID(), id, req.authUser.id, financeName, 'FINANCEIRO', msgTexto, now);
+      })();
+
+      const atualizado = db.prepare(`SELECT * FROM compras_requisicoes WHERE id = ?`).get(id);
+      const parcelasSalvas = db.prepare(`SELECT * FROM compras_requisicoes_parcelas WHERE requisicao_id = ? ORDER BY numero_parcela ASC`).all(id);
+
+      return res.json({
+        success: true,
+        requisicao: atualizado,
+        parcelas: parcelasSalvas
+      });
+    } catch (error) {
+      console.error('Erro ao salvar parcelas de pagamento:', error.message);
+      return res.status(500).json({ error: 'Erro ao salvar datas das parcelas.' });
+    }
+  });
+
+  // --- ROTA: PAUSAR PAGAMENTO (SOLICITANTE, APROVADOR OU FINANCEIRO) ---
+  app.post('/api/compras/requisicoes/:id/pausar-pagamento', requireSession, (req, res) => {
+    const { id } = req.params;
+    const motivo = String(req.body?.motivo || '').trim();
+
+    if (!motivo) {
+      return res.status(400).json({ error: 'O motivo para pausar o pagamento é obrigatório.' });
+    }
+
+    try {
+      const requisicao = db.prepare(`SELECT * FROM compras_requisicoes WHERE id = ?`).get(id);
+      if (!requisicao) return res.status(404).json({ error: 'Solicitação não encontrada.' });
+
+      if (requisicao.status === 'SOLICITACAO_CONCLUIDA' || requisicao.status === 'PAGO') {
+        return res.status(400).json({ error: 'Não é possível pausar uma solicitação já concluída ou paga.' });
+      }
+
+      const userRole = getUserRoleInPurchases(req.authUser.id, req.authUser.role);
+      const isOwner = requisicao.solicitante_id === req.authUser.id || req.authUser.username === requisicao.solicitante_nome;
+      const isApprover = userRole === 'APROVADOR' || req.authUser.role === 'MASTER';
+      const hasFinanceAccess = req.authUser.role === 'MASTER' || checkUserPermission(req.authUser, '7') || checkUserPermission(req.authUser, '7.3') || checkUserPermission(req.authUser, '7.4') || checkUserPermission(req.authUser, '7.5') || checkUserPermission(req.authUser, '11') || checkUserPermission(req.authUser, '11.1');
+
+      if (!isOwner && !isApprover && !hasFinanceAccess) {
+        return res.status(403).json({ error: 'Você não tem permissão para pausar o pagamento desta solicitação.' });
+      }
+
+      const now = new Date().toISOString();
+      const userName = req.authUser.username || req.authUser.id;
+      const autorRole = isOwner ? 'SOLICITANTE' : isApprover ? 'APROVADOR' : 'FINANCEIRO';
+
+      db.transaction(() => {
+        // 1. Atualiza a solicitação
+        db.prepare(`
+          UPDATE compras_requisicoes
+          SET status_anterior = COALESCE(status_anterior, status),
+              status = 'PAGAMENTO_PAUSADO',
+              pausado_em = ?,
+              pausado_por_id = ?,
+              pausado_por_nome = ?,
+              motivo_pausa = ?,
+              updated_at = ?
+          WHERE id = ?
+        `).run(now, req.authUser.id, userName, motivo, now, id);
+
+        // 2. Marca as parcelas pendentes como pausadas
+        db.prepare(`
+          UPDATE compras_requisicoes_parcelas
+          SET pausado = 1,
+              pausado_em = ?,
+              pausado_por_id = ?,
+              pausado_por_nome = ?,
+              motivo_pausa = ?,
+              updated_at = ?
+          WHERE requisicao_id = ? AND status != 'PAGO'
+        `).run(now, req.authUser.id, userName, motivo, now, id);
+
+        // 3. Registra mensagem no histórico
+        const msgTexto = `⏸️ PAGAMENTO PAUSADO por ${userName} (${autorRole}): "${motivo}"`;
+        db.prepare(`
+          INSERT INTO compras_mensagens (id, requisicao_id, autor_id, autor_nome, autor_role, mensagem, created_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?)
+        `).run(randomUUID(), id, req.authUser.id, userName, autorRole, msgTexto, now);
+      })();
+
+      const atualizado = db.prepare(`SELECT * FROM compras_requisicoes WHERE id = ?`).get(id);
+      return res.json({
+        success: true,
+        message: 'Pagamento pausado com sucesso.',
+        requisicao: atualizado
+      });
+    } catch (error) {
+      console.error('Erro ao pausar pagamento:', error.message);
+      return res.status(500).json({ error: 'Erro ao pausar pagamento.' });
+    }
+  });
+
+  // --- ROTA: RETOMAR PAGAMENTO ---
+  app.post('/api/compras/requisicoes/:id/retomar-pagamento', requireSession, (req, res) => {
+    const { id } = req.params;
+    const motivo = String(req.body?.motivo || '').trim();
+
+    try {
+      const requisicao = db.prepare(`SELECT * FROM compras_requisicoes WHERE id = ?`).get(id);
+      if (!requisicao) return res.status(404).json({ error: 'Solicitação não encontrada.' });
+
+      if (requisicao.status !== 'PAGAMENTO_PAUSADO') {
+        return res.status(400).json({ error: 'A solicitação não está com status de pagamento pausado.' });
+      }
+
+      const userRole = getUserRoleInPurchases(req.authUser.id, req.authUser.role);
+      const isOwner = requisicao.solicitante_id === req.authUser.id || req.authUser.username === requisicao.solicitante_nome;
+      const isApprover = userRole === 'APROVADOR' || req.authUser.role === 'MASTER';
+      const hasFinanceAccess = req.authUser.role === 'MASTER' || checkUserPermission(req.authUser, '7') || checkUserPermission(req.authUser, '7.3') || checkUserPermission(req.authUser, '7.4') || checkUserPermission(req.authUser, '7.5') || checkUserPermission(req.authUser, '11') || checkUserPermission(req.authUser, '11.1');
+
+      if (!isOwner && !isApprover && !hasFinanceAccess) {
+        return res.status(403).json({ error: 'Você não tem permissão para retomar o pagamento desta solicitação.' });
+      }
+
+      const now = new Date().toISOString();
+      const userName = req.authUser.username || req.authUser.id;
+      const autorRole = isOwner ? 'SOLICITANTE' : isApprover ? 'APROVADOR' : 'FINANCEIRO';
+      const restoredStatus = requisicao.status_anterior || 'APROVADO';
+
+      db.transaction(() => {
+        // 1. Atualiza a solicitação
+        db.prepare(`
+          UPDATE compras_requisicoes
+          SET status = ?,
+              status_anterior = NULL,
+              pausado_em = NULL,
+              pausado_por_id = NULL,
+              pausado_por_nome = NULL,
+              motivo_pausa = NULL,
+              updated_at = ?
+          WHERE id = ?
+        `).run(restoredStatus, now, id);
+
+        // 2. Despausa as parcelas
+        db.prepare(`
+          UPDATE compras_requisicoes_parcelas
+          SET pausado = 0,
+              pausado_em = NULL,
+              pausado_por_id = NULL,
+              pausado_por_nome = NULL,
+              motivo_pausa = NULL,
+              updated_at = ?
+          WHERE requisicao_id = ?
+        `).run(now, id);
+
+        // 3. Registra mensagem no histórico
+        const msgTexto = `▶️ PAGAMENTO RETOMADO por ${userName} (${autorRole})${motivo ? `: "${motivo}"` : '.'}`;
+        db.prepare(`
+          INSERT INTO compras_mensagens (id, requisicao_id, autor_id, autor_nome, autor_role, mensagem, created_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?)
+        `).run(randomUUID(), id, req.authUser.id, userName, autorRole, msgTexto, now);
+      })();
+
+      const atualizado = db.prepare(`SELECT * FROM compras_requisicoes WHERE id = ?`).get(id);
+      return res.json({
+        success: true,
+        message: 'Pagamento retomado com sucesso.',
+        requisicao: atualizado
+      });
+    } catch (error) {
+      console.error('Erro ao retomar pagamento:', error.message);
+      return res.status(500).json({ error: 'Erro ao retomar pagamento.' });
+    }
+  });
+
   // --- ROTA: ENVIAR ANEXO(S) (SUPORTA 1 OU ATÉ 5 ANEXOS DE ATÉ 20MB CADA) ---
   app.post('/api/compras/requisicoes/:id/anexos', requireSession, requireAccess, upload.any(), (req, res) => {
     const { id } = req.params;
@@ -1337,7 +1599,7 @@ export function registerPurchaseRoutes(app, {
   });
 
   // --- ROTA: LISTAR ANEXOS ---
-  app.get('/api/compras/requisicoes/:id/anexos', requireSession, requireAccess, (req, res) => {
+  app.get('/api/compras/requisicoes/:id/anexos', requireSession, (req, res) => {
     const { id } = req.params;
     try {
       const reqInfo = db.prepare(`SELECT * FROM compras_requisicoes WHERE id = ?`).get(id);
@@ -1346,7 +1608,15 @@ export function registerPurchaseRoutes(app, {
       const userRole = getUserRoleInPurchases(req.authUser.id, req.authUser.role);
       const isOwner = reqInfo.solicitante_id === req.authUser.id;
       const isApprover = userRole === 'APROVADOR' || req.authUser.role === 'MASTER';
-      const hasFinanceAccess = req.authUser.role === 'MASTER' || checkUserPermission(req.authUser, '7') || checkUserPermission(req.authUser, '7.3') || checkUserPermission(req.authUser, '7.4') || checkUserPermission(req.authUser, '7.5') || checkUserPermission(req.authUser, '11') || checkUserPermission(req.authUser, '11.1');
+      const hasFinanceAccess = req.authUser.role === 'MASTER' || 
+        checkUserPermission(req.authUser, '7') || 
+        checkUserPermission(req.authUser, '7.1') || 
+        checkUserPermission(req.authUser, '7.2') || 
+        checkUserPermission(req.authUser, '7.3') || 
+        checkUserPermission(req.authUser, '7.4') || 
+        checkUserPermission(req.authUser, '7.5') || 
+        checkUserPermission(req.authUser, '11') || 
+        checkUserPermission(req.authUser, '11.1');
 
       if (!isOwner && !isApprover && !hasFinanceAccess) {
         return res.status(403).json({ error: 'Sem permissão para visualizar anexos desta solicitação.' });
@@ -1366,8 +1636,8 @@ export function registerPurchaseRoutes(app, {
     }
   });
 
-  // --- ROTA: BAIXAR ANEXO (SEGURO) ---
-  app.get('/api/compras/requisicoes/:id/anexos/:anexoId', requireSession, requireAccess, (req, res) => {
+  // --- ROTA: BAIXAR ANEXO (SEGURO PARA SOLICITANTE, APROVADORES E FINANCEIRO) ---
+  app.get('/api/compras/requisicoes/:id/anexos/:anexoId', requireSession, (req, res) => {
     const { id, anexoId } = req.params;
     try {
       const reqInfo = db.prepare(`SELECT * FROM compras_requisicoes WHERE id = ?`).get(id);
@@ -1376,7 +1646,15 @@ export function registerPurchaseRoutes(app, {
       const userRole = getUserRoleInPurchases(req.authUser.id, req.authUser.role);
       const isOwner = reqInfo.solicitante_id === req.authUser.id;
       const isApprover = userRole === 'APROVADOR' || req.authUser.role === 'MASTER';
-      const hasFinanceAccess = req.authUser.role === 'MASTER' || checkUserPermission(req.authUser, '7') || checkUserPermission(req.authUser, '7.3') || checkUserPermission(req.authUser, '7.4') || checkUserPermission(req.authUser, '7.5') || checkUserPermission(req.authUser, '11') || checkUserPermission(req.authUser, '11.1');
+      const hasFinanceAccess = req.authUser.role === 'MASTER' || 
+        checkUserPermission(req.authUser, '7') || 
+        checkUserPermission(req.authUser, '7.1') || 
+        checkUserPermission(req.authUser, '7.2') || 
+        checkUserPermission(req.authUser, '7.3') || 
+        checkUserPermission(req.authUser, '7.4') || 
+        checkUserPermission(req.authUser, '7.5') || 
+        checkUserPermission(req.authUser, '11') || 
+        checkUserPermission(req.authUser, '11.1');
 
       if (!isOwner && !isApprover && !hasFinanceAccess) {
         return res.status(403).json({ error: 'Sem permissão para baixar este anexo.' });
@@ -1388,9 +1666,54 @@ export function registerPurchaseRoutes(app, {
 
       if (!anexo) return res.status(404).json({ error: 'Anexo não encontrado.' });
 
-      const filePath = path.join(uploadDir, anexo.caminho_arquivo);
+      const filePath = path.isAbsolute(anexo.caminho_arquivo)
+        ? anexo.caminho_arquivo
+        : path.join(uploadDir, anexo.caminho_arquivo);
+
       if (!fs.existsSync(filePath)) {
-        return res.status(404).json({ error: 'Arquivo não encontrado no disco.' });
+        return res.status(404).json({ error: 'Arquivo físico não encontrado no disco.' });
+      }
+
+      return res.download(filePath, anexo.nome_arquivo);
+    } catch (error) {
+      console.error('Erro ao baixar anexo:', error.message);
+      return res.status(500).json({ error: 'Erro ao baixar anexo.' });
+    }
+  });
+
+  // Rota direta por ID de anexo (para download universal por qualquer integrante da solicitação)
+  app.get('/api/compras/anexos/:anexoId/download', requireSession, (req, res) => {
+    const { anexoId } = req.params;
+    try {
+      const anexo = db.prepare(`SELECT * FROM compras_anexos WHERE id = ?`).get(anexoId);
+      if (!anexo) return res.status(404).json({ error: 'Anexo não encontrado.' });
+
+      const reqInfo = db.prepare(`SELECT * FROM compras_requisicoes WHERE id = ?`).get(anexo.requisicao_id);
+      if (!reqInfo) return res.status(404).json({ error: 'Solicitação não encontrada.' });
+
+      const userRole = getUserRoleInPurchases(req.authUser.id, req.authUser.role);
+      const isOwner = reqInfo.solicitante_id === req.authUser.id;
+      const isApprover = userRole === 'APROVADOR' || req.authUser.role === 'MASTER';
+      const hasFinanceAccess = req.authUser.role === 'MASTER' || 
+        checkUserPermission(req.authUser, '7') || 
+        checkUserPermission(req.authUser, '7.1') || 
+        checkUserPermission(req.authUser, '7.2') || 
+        checkUserPermission(req.authUser, '7.3') || 
+        checkUserPermission(req.authUser, '7.4') || 
+        checkUserPermission(req.authUser, '7.5') || 
+        checkUserPermission(req.authUser, '11') || 
+        checkUserPermission(req.authUser, '11.1');
+
+      if (!isOwner && !isApprover && !hasFinanceAccess) {
+        return res.status(403).json({ error: 'Sem permissão para baixar este anexo.' });
+      }
+
+      const filePath = path.isAbsolute(anexo.caminho_arquivo)
+        ? anexo.caminho_arquivo
+        : path.join(uploadDir, anexo.caminho_arquivo);
+
+      if (!fs.existsSync(filePath)) {
+        return res.status(404).json({ error: 'Arquivo físico não encontrado no disco.' });
       }
 
       return res.download(filePath, anexo.nome_arquivo);
@@ -1401,7 +1724,7 @@ export function registerPurchaseRoutes(app, {
   });
 
   // --- ROTA: REMOVER ANEXO ---
-  app.delete('/api/compras/requisicoes/:id/anexos/:anexoId', requireSession, requireAccess, (req, res) => {
+  app.delete('/api/compras/requisicoes/:id/anexos/:anexoId', requireSession, (req, res) => {
     const { id, anexoId } = req.params;
     try {
       const reqInfo = db.prepare(`SELECT * FROM compras_requisicoes WHERE id = ?`).get(id);
@@ -1447,5 +1770,82 @@ export function registerPurchaseRoutes(app, {
       console.error('Erro ao deletar anexo:', error.message);
       return res.status(500).json({ error: 'Erro ao remover anexo.' });
     }
+  });
+
+  // --- ROTA: EXCLUIR SOLICITAÇÃO PERMANENTEMENTE (EXCLUSIVO LEPTA MASTER COM CONFIRMAÇÃO DE SENHA) ---
+  app.post('/api/compras/requisicoes/:id/excluir-master', requireSession, requireMaster, (req, res) => {
+    const { id } = req.params;
+    const { password } = req.body;
+
+    if (!password || typeof password !== 'string' || !password.trim()) {
+      return res.status(400).json({ error: 'A confirmação de senha é obrigatória para excluir a solicitação.' });
+    }
+
+    try {
+      // 1. Busca o usuário Master autenticado no banco SQLite para validação da senha
+      const masterUser = db.prepare(`SELECT * FROM usuarios_lepta WHERE id = ?`).get(req.authUser.id);
+      if (!masterUser || !masterUser.password) {
+        return res.status(403).json({ error: 'Usuário administrador não encontrado.' });
+      }
+
+      // 2. Valida a senha fornecida
+      const isPasswordCorrect = verifyPassword
+        ? verifyPassword(password, masterUser.password)
+        : false;
+
+      if (!isPasswordCorrect) {
+        return res.status(401).json({ error: 'Senha incorreta. A exclusão definitiva não foi autorizada.' });
+      }
+
+      // 3. Verifica se a solicitação existe
+      const requisicao = db.prepare(`SELECT * FROM compras_requisicoes WHERE id = ?`).get(id);
+      if (!requisicao) {
+        return res.status(404).json({ error: 'Solicitação não encontrada.' });
+      }
+
+      // 4. Remove anexos físicos do disco
+      const anexos = db.prepare(`SELECT * FROM compras_anexos WHERE requisicao_id = ?`).all(id);
+      for (const anexo of anexos) {
+        if (anexo.caminho_arquivo) {
+          const filePath = path.isAbsolute(anexo.caminho_arquivo) 
+            ? anexo.caminho_arquivo 
+            : path.join(uploadDir, anexo.caminho_arquivo);
+          if (fs.existsSync(filePath)) {
+            try {
+              fs.unlinkSync(filePath);
+            } catch (e) {
+              console.warn('Aviso ao excluir arquivo físico de anexo:', e.message);
+            }
+          }
+        }
+      }
+
+      // 5. Exclui em cascata transacionalmente
+      db.transaction(() => {
+        db.prepare(`DELETE FROM compras_anexos WHERE requisicao_id = ?`).run(id);
+        db.prepare(`DELETE FROM compras_mensagens WHERE requisicao_id = ?`).run(id);
+        db.prepare(`DELETE FROM compras_requisicoes_itens WHERE requisicao_id = ?`).run(id);
+        db.prepare(`DELETE FROM compras_requisicoes_parcelas WHERE requisicao_id = ?`).run(id);
+        db.prepare(`DELETE FROM compras_requisicoes WHERE id = ?`).run(id);
+      })();
+
+      console.log(`[COMPRAS] Solicitação ${id} foi excluída permanentemente pelo Master ${req.authUser.username || req.authUser.id}.`);
+
+      return res.json({
+        success: true,
+        message: `Solicitação ${id} excluída com sucesso.`
+      });
+    } catch (error) {
+      console.error('Erro ao excluir solicitação (Master):', error.message);
+      return res.status(500).json({ error: 'Erro ao excluir solicitação.' });
+    }
+  });
+
+  // Alias para DELETE padrão
+  app.delete('/api/compras/requisicoes/:id', requireSession, requireMaster, (req, res) => {
+    // Redireciona para o handler de exclusão com senha se enviada no body ou headers
+    const password = req.body?.password || req.headers['x-confirm-password'];
+    req.body = { password };
+    return app._router.handle(req, res);
   });
 }

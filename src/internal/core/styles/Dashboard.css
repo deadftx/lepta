@@ -3,18 +3,89 @@
   height: 100vh; /* Lock height */
   overflow: hidden; /* Prevent body scroll */
   background-color: var(--bg-dark);
+  position: relative;
 }
 
+/* Sidebar no Desktop: Fina e Recolhível (Hover-Expand Overlay) */
 .internal-sidebar {
-  width: 280px;
   display: flex;
   flex-direction: column;
   border-right: 1px solid var(--glass-border);
   border-radius: 0;
-  /* Removed sticky since parent is fixed height */
   height: 100vh;
   background: rgba(15, 18, 25, 0.8);
   flex-shrink: 0;
+}
+
+@media (min-width: 1025px) {
+  .internal-sidebar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    height: 100vh;
+    width: 14px;
+    background: linear-gradient(180deg, #1e293b 0%, #0f172a 100%);
+    border-right: 2px solid rgba(56, 189, 248, 0.5);
+    box-shadow: 2px 0 12px rgba(0, 0, 0, 0.5), 0 0 10px rgba(56, 189, 248, 0.25);
+    z-index: 1050;
+    transition: width 0.28s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.28s ease, background 0.28s ease;
+    overflow: hidden;
+    cursor: pointer;
+  }
+
+  /* Indicador vertical visual na barra fina */
+  .internal-sidebar::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 3px;
+    transform: translateY(-50%);
+    width: 6px;
+    height: 48px;
+    background: linear-gradient(180deg, #38bdf8 0%, #0284c7 100%);
+    border-radius: 999px;
+    box-shadow: 0 0 10px rgba(56, 189, 248, 0.7);
+    transition: opacity 0.2s ease;
+  }
+
+  .internal-sidebar:hover::after {
+    opacity: 0;
+  }
+
+  /* Expansão Flutuante (Overlay) ao passar o mouse */
+  .internal-sidebar:hover {
+    width: 280px;
+    background: rgba(11, 15, 23, 0.97);
+    backdrop-filter: blur(24px);
+    -webkit-backdrop-filter: blur(24px);
+    border-right: 1px solid rgba(56, 189, 248, 0.4);
+    box-shadow: 20px 0 50px rgba(0, 0, 0, 0.85), 0 0 30px rgba(56, 189, 248, 0.2);
+    overflow-y: auto;
+    cursor: default;
+  }
+
+  /* Conteúdo interno da sidebar esconde/mostra suavemente */
+  .internal-sidebar > * {
+    min-width: 280px;
+    width: 280px;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.2s ease;
+  }
+
+  .internal-sidebar:hover > * {
+    opacity: 1;
+    pointer-events: auto;
+    transition: opacity 0.25s ease 0.05s;
+  }
+
+  /* Conteúdo Principal aproveita todo o espaço da tela */
+  .internal-content {
+    margin-left: 14px;
+    width: calc(100vw - 14px);
+    flex-grow: 1;
+    min-width: 0;
+  }
 }
 
 .sidebar-brand {
@@ -151,17 +222,27 @@
 }
 
 .internal-header {
-  height: 70px;
+  height: 64px;
+  min-height: 64px;
+  flex-shrink: 0;
   border-bottom: 1px solid var(--glass-border);
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 40px;
+  padding: 0 32px;
   background: rgba(15, 18, 25, 0.85); /* Slightly darker for contrast */
   backdrop-filter: blur(10px);
   position: sticky;
   top: 0;
-  z-index: 10;
+  z-index: 100;
+  box-sizing: border-box;
+}
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
 }
 
 .search-input {
@@ -184,18 +265,21 @@
 }
 
 .internal-body {
-  padding: 40px;
+  padding: 24px 32px;
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
 }
 
 .welcome-banner {
-  padding: 40px;
-  border-radius: 12px;
-  margin-bottom: 40px;
+  padding: 30px 36px;
+  border-radius: 14px;
+  margin-bottom: 24px;
   background: linear-gradient(135deg, rgba(230, 32, 32, 0.1) 0%, rgba(25, 27, 36, 0.6) 100%);
 }
 
 .welcome-banner h2 {
-  font-size: 2rem;
+  font-size: 1.85rem;
   margin-bottom: 8px;
 }
 
@@ -203,6 +287,7 @@
   display: grid;
   grid-template-columns: 2fr 1fr;
   gap: 24px;
+  width: 100%;
 }
 
 .internal-card {

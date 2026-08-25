@@ -1,4 +1,4 @@
-.database-page { display: flex; flex-direction: column; gap: 1.35rem; padding-bottom: 2rem; }
+.database-page { display: flex; flex-direction: column; gap: 1.35rem; padding-bottom: 2rem; width: 100%; max-width: 100%; box-sizing: border-box; }
 .database-loading { min-height: 420px; align-items: center; justify-content: center; color: #94a3b8; }
 .database-header { display: flex; justify-content: space-between; align-items: flex-end; gap: 1rem; }
 .database-header h2 { margin: .45rem 0 .3rem; color: #f8fafc; font-size: 1.8rem; }

@@ -1,4 +1,4 @@
-.risk-analysis-page { display: flex; flex-direction: column; gap: 1.25rem; padding-bottom: 2rem; color: #e5e7eb; }
+.risk-analysis-page { display: flex; flex-direction: column; gap: 1.25rem; padding-bottom: 2rem; color: #e5e7eb; width: 100%; max-width: 100%; box-sizing: border-box; }
 .risk-page-header, .risk-detail-header { display: flex; align-items: center; justify-content: space-between; gap: 1.25rem; }
 .risk-page-header h1, .risk-detail-header h1 { margin: .3rem 0 .35rem; color: #fff; font-size: clamp(1.55rem, 3vw, 2.25rem); }
 .risk-page-header p, .risk-detail-header p { margin: 0; color: #94a3b8; }

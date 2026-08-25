@@ -5,7 +5,7 @@ import {
   XCircle, Clock, MessageSquare, Send, X, Archive, RotateCcw,
   DollarSign, AlertCircle, RefreshCw, User,
   Eye, HelpCircle, CreditCard, Check, ShieldAlert,
-  Paperclip, Download, Trash2
+  Paperclip, Download, Trash2, PauseCircle, PlayCircle
 } from 'lucide-react';
 import { API_BASE_URL, getAuthHeaders } from '../../../../config/api';
 import { useAuth } from '../../../core/AuthContext';
@@ -107,8 +107,15 @@ interface PurchaseRequest {
   valor: number;
   quantidade: number;
   observacoes: string;
-  status: 'PENDENTE' | 'REABERTO' | 'AGUARDANDO_RESPOSTA_SOLICITANTE' | 'AGUARDANDO_RESPOSTA_APROVADOR' | 'APROVADO' | 'NEGADO' | 'PAGO' | 'REVISAO' | 'SOLICITACAO_CONCLUIDA';
+  status: 'PENDENTE' | 'REABERTO' | 'AGUARDANDO_RESPOSTA_SOLICITANTE' | 'AGUARDANDO_RESPOSTA_APROVADOR' | 'APROVADO' | 'PAGAMENTO_PAUSADO' | 'NEGADO' | 'PAGO' | 'REVISAO' | 'SOLICITACAO_CONCLUIDA';
   data_pagamento?: string | null;
+  datas_parcelas?: string | null;
+  pausado_em?: string | null;
+  pausado_por_id?: string | null;
+  pausado_por_nome?: string | null;
+  motivo_pausa?: string | null;
+  status_anterior?: string | null;
+  parcelas?: any[];
   arquivado?: number;
   arquivado_manualmente?: number;
   arquivado_por?: string | null;
@@ -212,6 +219,17 @@ export const PurchaseApproval: React.FC = () => {
   const [manualArchiveType, setManualArchiveType] = useState<'ARCHIVE' | 'UNARCHIVE'>('ARCHIVE');
   const [manualArchiveMotivo, setManualArchiveMotivo] = useState('');
   const [manualArchiveLoading, setManualArchiveLoading] = useState(false);
+
+  // Master Permanent Delete State (Exclusão definitiva com senha)
+  const [deleteModalRequest, setDeleteModalRequest] = useState<PurchaseRequest | null>(null);
+  const [deletePassword, setDeletePassword] = useState('');
+  const [deleteLoading, setDeleteLoading] = useState(false);
+  const [deleteError, setDeleteError] = useState('');
+
+  // Pausa de Pagamento
+  const [isPauseModalOpen, setIsPauseModalOpen] = useState(false);
+  const [pauseReason, setPauseReason] = useState('');
+  const [pauseLoading, setPauseLoading] = useState(false);
 
   // Toast
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -864,6 +882,128 @@ export const PurchaseApproval: React.FC = () => {
     }
   };
 
+  // Exclusão Permanente Master (com validação de senha do usuário)
+  const handleConfirmDeleteMaster = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!deleteModalRequest || !deletePassword.trim()) return;
+
+    setDeleteLoading(true);
+    setDeleteError('');
+
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/compras/requisicoes/${deleteModalRequest.id}/excluir-master`, {
+        method: 'POST',
+        headers: {
+          ...getAuthHeaders(),
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ password: deletePassword })
+      });
+
+      const data = await res.json();
+      if (res.ok) {
+        showToast('Solicitação excluída permanentemente com sucesso!');
+        setDeleteModalRequest(null);
+        setDeletePassword('');
+        if (selectedRequest?.id === deleteModalRequest.id) {
+          setSelectedRequest(null);
+        }
+        await fetchData(true);
+      } else {
+        setDeleteError(data.error || 'Senha incorreta ou erro ao excluir solicitação.');
+      }
+    } catch (err) {
+      console.error('Erro ao excluir solicitação:', err);
+      setDeleteError('Erro de conexão ao processar exclusão.');
+    } finally {
+      setDeleteLoading(false);
+    }
+  };
+
+  // Pausar Pagamento com Motivo Obrigatório
+  const handlePausePayment = async () => {
+    if (!selectedRequest || !pauseReason.trim()) {
+      alert('Por favor, informe o motivo para pausar o pagamento.');
+      return;
+    }
+    setPauseLoading(true);
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/compras/requisicoes/${selectedRequest.id}/pausar-pagamento`, {
+        method: 'POST',
+        headers: {
+          ...getAuthHeaders(),
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ motivo: pauseReason.trim() })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setSelectedRequest(prev => prev ? { ...prev, ...data.requisicao } : null);
+        setIsPauseModalOpen(false);
+        setPauseReason('');
+
+        // Recarrega mensagens e dados completos
+        const resDetails = await fetch(`${API_BASE_URL}/api/compras/requisicoes/${selectedRequest.id}`, {
+          headers: getAuthHeaders()
+        });
+        if (resDetails.ok) {
+          const detailData = await resDetails.json();
+          setSelectedRequest(detailData);
+        }
+
+        showToast('Pagamento PAUSADO com sucesso.');
+        fetchData(true);
+      } else {
+        const err = await res.json();
+        alert(err.error || 'Erro ao pausar pagamento.');
+      }
+    } catch (err) {
+      console.error('Erro ao pausar pagamento:', err);
+    } finally {
+      setPauseLoading(false);
+    }
+  };
+
+  // Retomar Pagamento
+  const handleResumePayment = async () => {
+    if (!selectedRequest) return;
+    if (!window.confirm('Deseja retomar o pagamento desta solicitação? O fluxo seguirá normalmente.')) return;
+    setPauseLoading(true);
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/compras/requisicoes/${selectedRequest.id}/retomar-pagamento`, {
+        method: 'POST',
+        headers: {
+          ...getAuthHeaders(),
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ motivo: 'Retomado pelo usuário' })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setSelectedRequest(prev => prev ? { ...prev, ...data.requisicao } : null);
+
+        // Recarrega mensagens e dados completos
+        const resDetails = await fetch(`${API_BASE_URL}/api/compras/requisicoes/${selectedRequest.id}`, {
+          headers: getAuthHeaders()
+        });
+        if (resDetails.ok) {
+          const detailData = await resDetails.json();
+          setSelectedRequest(detailData);
+        }
+
+        showToast('Pagamento RETOMADO com sucesso!');
+        fetchData(true);
+      } else {
+        const err = await res.json();
+        alert(err.error || 'Erro ao retomar pagamento.');
+      }
+    } catch (err) {
+      console.error('Erro ao retomar pagamento:', err);
+    } finally {
+      setPauseLoading(false);
+    }
+  };
+
   // Enviar Mensagem na Solicitação
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -999,6 +1139,8 @@ export const PurchaseApproval: React.FC = () => {
         return <span className="pa-status-badge waiting-approver"><MessageSquare size={12} /> Aguardando Aprovador</span>;
       case 'APROVADO':
         return <span className="pa-status-badge approved"><CheckCircle2 size={12} /> Aprovado</span>;
+      case 'PAGAMENTO_PAUSADO':
+        return <span className="pa-status-badge" style={{ background: 'rgba(245, 158, 11, 0.15)', color: '#fbbf24', border: '1px solid rgba(245, 158, 11, 0.4)' }}><PauseCircle size={12} /> Pagamento Pausado</span>;
       case 'NEGADO':
         return <span className="pa-status-badge denied"><XCircle size={12} /> Negado</span>;
       case 'PAGO':
@@ -1302,14 +1444,24 @@ export const PurchaseApproval: React.FC = () => {
                             <Eye size={15} /> Analisar
                           </button>
                           {isMaster && (
-                            <button
-                              className="pa-btn-archive-master"
-                              style={{ padding: '6px 10px', fontSize: '0.75rem' }}
-                              onClick={() => handleOpenManualArchive(item, true)}
-                              title="Arquivar Manualmente (Exclusivo Master)"
-                            >
-                              <Archive size={13} />
-                            </button>
+                            <>
+                              <button
+                                className="pa-btn-archive-master"
+                                style={{ padding: '6px 10px', fontSize: '0.75rem' }}
+                                onClick={() => handleOpenManualArchive(item, true)}
+                                title="Arquivar Manualmente (Exclusivo Master)"
+                              >
+                                <Archive size={13} />
+                              </button>
+                              <button
+                                className="pa-btn-archive-master"
+                                style={{ padding: '6px 10px', fontSize: '0.75rem', background: 'rgba(239, 68, 68, 0.15)', color: '#ef4444', border: '1px solid rgba(239, 68, 68, 0.3)' }}
+                                onClick={() => { setDeleteModalRequest(item); setDeletePassword(''); setDeleteError(''); }}
+                                title="Excluir Permanentemente (Exclusivo Master)"
+                              >
+                                <Trash2 size={13} />
+                              </button>
+                            </>
                           )}
                         </div>
                       </td>
@@ -1823,14 +1975,24 @@ export const PurchaseApproval: React.FC = () => {
                             <Eye size={15} /> Detalhes
                           </button>
                           {isMaster && (
-                            <button
-                              className="pa-btn-archive-master"
-                              style={{ padding: '6px 10px', fontSize: '0.75rem' }}
-                              onClick={() => handleOpenManualArchive(item, true)}
-                              title="Arquivar Manualmente (Exclusivo Master)"
-                            >
-                              <Archive size={13} />
-                            </button>
+                            <>
+                              <button
+                                className="pa-btn-archive-master"
+                                style={{ padding: '6px 10px', fontSize: '0.75rem' }}
+                                onClick={() => handleOpenManualArchive(item, true)}
+                                title="Arquivar Manualmente (Exclusivo Master)"
+                              >
+                                <Archive size={13} />
+                              </button>
+                              <button
+                                className="pa-btn-archive-master"
+                                style={{ padding: '6px 10px', fontSize: '0.75rem', background: 'rgba(239, 68, 68, 0.15)', color: '#ef4444', border: '1px solid rgba(239, 68, 68, 0.3)' }}
+                                onClick={() => { setDeleteModalRequest(item); setDeletePassword(''); setDeleteError(''); }}
+                                title="Excluir Permanentemente (Exclusivo Master)"
+                              >
+                                <Trash2 size={13} />
+                              </button>
+                            </>
                           )}
                         </div>
                       </td>
@@ -1958,16 +2120,26 @@ export const PurchaseApproval: React.FC = () => {
                               </button>
                             )}
 
-                            {/* Se Master -> Desarquivar Manualmente */}
+                            {/* Se Master -> Desarquivar Manualmente ou Excluir Definitivo */}
                             {isMaster && (
-                              <button
-                                className="pa-btn-unarchive-master"
-                                style={{ padding: '6px 10px', fontSize: '0.75rem' }}
-                                onClick={() => handleOpenManualArchive(item, false)}
-                                title="Desarquivar Solicitação (Master)"
-                              >
-                                <RotateCcw size={13} /> Desarquivar
-                              </button>
+                              <>
+                                <button
+                                  className="pa-btn-unarchive-master"
+                                  style={{ padding: '6px 10px', fontSize: '0.75rem' }}
+                                  onClick={() => handleOpenManualArchive(item, false)}
+                                  title="Desarquivar Solicitação (Master)"
+                                >
+                                  <RotateCcw size={13} /> Desarquivar
+                                </button>
+                                <button
+                                  className="pa-btn-archive-master"
+                                  style={{ padding: '6px 10px', fontSize: '0.75rem', background: 'rgba(239, 68, 68, 0.15)', color: '#ef4444', border: '1px solid rgba(239, 68, 68, 0.3)' }}
+                                  onClick={() => { setDeleteModalRequest(item); setDeletePassword(''); setDeleteError(''); }}
+                                  title="Excluir Permanentemente (Exclusivo Master)"
+                                >
+                                  <Trash2 size={13} />
+                                </button>
+                              </>
                             )}
                           </div>
                         </td>
@@ -1986,22 +2158,110 @@ export const PurchaseApproval: React.FC = () => {
         <div className="pa-modal-overlay" onClick={() => setSelectedRequest(null)}>
           <div className="pa-modal-card" onClick={e => e.stopPropagation()}>
             <div className="pa-modal-header">
-              <h3>
-                <CreditCard size={20} color="#3b82f6" /> Solicitação: {selectedRequest.id}
-                <div style={{ marginLeft: '8px' }}>
-                  {renderStatusBadge(selectedRequest.status, selectedRequest.arquivado_manualmente)}
-                </div>
-              </h3>
-              <button
-                type="button"
-                className="pa-modal-close"
-                onClick={() => setSelectedRequest(null)}
-              >
-                <X size={20} />
-              </button>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                <CreditCard size={20} color="#3b82f6" />
+                <h3 style={{ margin: 0 }}>Solicitação: {selectedRequest.id}</h3>
+                {renderStatusBadge(selectedRequest.status, selectedRequest.arquivado_manualmente)}
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                {selectedRequest.status === 'APROVADO' && (
+                  <button
+                    type="button"
+                    className="pa-btn-action-deny"
+                    onClick={() => {
+                      setPauseReason('');
+                      setIsPauseModalOpen(true);
+                    }}
+                    style={{
+                      background: 'rgba(245, 158, 11, 0.15)',
+                      color: '#fbbf24',
+                      borderColor: '#f59e0b',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                      padding: '5px 12px',
+                      fontSize: '0.8rem',
+                      borderRadius: '8px',
+                      fontWeight: 650
+                    }}
+                    title="Pausar Pagamento com justificativa obrigatória"
+                  >
+                    <PauseCircle size={14} /> Pausar Pagamento
+                  </button>
+                )}
+                {isMaster && (
+                  <button
+                    type="button"
+                    className="pa-btn-archive-master"
+                    style={{ background: 'rgba(239, 68, 68, 0.15)', color: '#ef4444', border: '1px solid rgba(239, 68, 68, 0.3)', padding: '6px 12px', fontSize: '0.78rem', display: 'flex', alignItems: 'center', gap: '5px' }}
+                    onClick={() => { setDeleteModalRequest(selectedRequest); setDeletePassword(''); setDeleteError(''); }}
+                    title="Excluir Solicitação Permanentemente (Exclusivo Master)"
+                  >
+                    <Trash2 size={13} /> Excluir
+                  </button>
+                )}
+                <button
+                  type="button"
+                  className="pa-modal-close"
+                  onClick={() => setSelectedRequest(null)}
+                >
+                  <X size={20} />
+                </button>
+              </div>
             </div>
 
             <div className="pa-modal-body">
+              {/* BANNER DE PAGAMENTO PAUSADO */}
+              {selectedRequest.status === 'PAGAMENTO_PAUSADO' && (
+                <div style={{
+                  background: 'rgba(245, 158, 11, 0.12)',
+                  border: '1px solid #f59e0b',
+                  borderRadius: '12px',
+                  padding: '14px 18px',
+                  marginBottom: '1.25rem',
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  flexWrap: 'wrap',
+                  gap: '12px'
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                    <div style={{ background: 'rgba(245, 158, 11, 0.2)', padding: '8px', borderRadius: '50%', color: '#f59e0b' }}>
+                      <PauseCircle size={22} />
+                    </div>
+                    <div>
+                      <div style={{ fontWeight: 800, color: '#fbbf24', fontSize: '0.95rem' }}>
+                        PAGAMENTO PAUSADO
+                      </div>
+                      <div style={{ fontSize: '0.84rem', color: '#f1f5f9', marginTop: '2px' }}>
+                        Pausado por <strong style={{ color: '#fbbf24' }}>{selectedRequest.pausado_por_nome || 'Usuário'}</strong>: <em>"{selectedRequest.motivo_pausa || 'Sem motivo especificado'}"</em>
+                      </div>
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    className="pa-btn-approve"
+                    onClick={handleResumePayment}
+                    disabled={pauseLoading}
+                    style={{
+                      background: '#10b981',
+                      color: '#0f172a',
+                      fontWeight: 750,
+                      padding: '8px 16px',
+                      fontSize: '0.82rem',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px'
+                    }}
+                    title="Retomar fluxo normal de pagamento"
+                  >
+                    {pauseLoading ? <RefreshCw size={14} className="pwc-spinner" /> : <PlayCircle size={14} />}
+                    {pauseLoading ? 'Retomando...' : 'Retomar Pagamento'}
+                  </button>
+                </div>
+              )}
+
               {/* Opção para Editar Proposta caso esteja em REVISAO */}
               {selectedRequest.status === 'REVISAO' && (isApprover || isMaster) && (
                 <div style={{ marginBottom: '1rem', display: 'flex', gap: '8px' }}>
@@ -2311,30 +2571,35 @@ export const PurchaseApproval: React.FC = () => {
                     <p style={{ color: '#64748b', fontSize: '0.8rem', fontStyle: 'italic', margin: 0 }}>Nenhum documento anexado.</p>
                   ) : (
                     attachments.map(att => (
-                      <div key={att.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 12px', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '8px' }}>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', maxWidth: '75%' }}>
-                          <strong style={{ fontSize: '0.8rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{att.nome_arquivo}</strong>
-                          <span style={{ fontSize: '0.7rem', color: '#64748b' }}>
-                            {(att.tamanho_bytes / 1024 / 1024).toFixed(2)} MB • Por {att.enviado_por_nome}
-                          </span>
+                      <div key={att.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 14px', background: 'rgba(15, 23, 42, 0.6)', border: '1px solid #1e293b', borderRadius: '10px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', maxWidth: '75%' }}>
+                          <Paperclip size={16} color="#38bdf8" />
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                            <strong style={{ fontSize: '0.85rem', color: '#f8fafc', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{att.nome_arquivo}</strong>
+                            <span style={{ fontSize: '0.72rem', color: '#94a3b8' }}>
+                              {(att.tamanho_bytes / 1024 / 1024).toFixed(2)} MB • Enviado por {att.enviado_por_nome}
+                            </span>
+                          </div>
                         </div>
-                        <div style={{ display: 'flex', gap: '4px' }}>
+                        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
                           <button
                             type="button"
+                            className="pa-btn-detail"
                             onClick={() => handleDownloadAttachment(att.id, att.nome_arquivo)}
-                            style={{ background: 'none', border: 'none', color: '#38bdf8', cursor: 'pointer', padding: '4px' }}
+                            style={{ padding: '6px 12px', fontSize: '0.78rem', display: 'flex', alignItems: 'center', gap: '5px' }}
                             title="Baixar Arquivo"
                           >
-                            <Download size={14} />
+                            <Download size={13} /> Baixar
                           </button>
-                          {(att.enviado_por_id === user?.id || isMaster) && (
+                          {(att.enviado_por_id === user?.id || isMaster || isApprover) && (
                             <button
                               type="button"
+                              className="pa-btn-archive-master"
                               onClick={() => handleDeleteAttachment(att.id)}
-                              style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', padding: '4px' }}
+                              style={{ padding: '6px 8px', fontSize: '0.75rem', background: 'rgba(239, 68, 68, 0.15)', color: '#ef4444', border: '1px solid rgba(239, 68, 68, 0.3)' }}
                               title="Remover Arquivo"
                             >
-                              <Trash2 size={14} />
+                              <Trash2 size={13} />
                             </button>
                           )}
                         </div>
@@ -2724,6 +2989,167 @@ export const PurchaseApproval: React.FC = () => {
                   >
                     {manualArchiveLoading ? <RefreshCw size={16} className="pwc-spinner" /> : <Check size={16} />}
                     {manualArchiveLoading ? 'Processando...' : (manualArchiveType === 'ARCHIVE' ? 'Confirmar Arquivamento' : 'Confirmar Desarquivamento')}
+                  </button>
+                </div>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL DE PAUSAR PAGAMENTO */}
+      {isPauseModalOpen && selectedRequest && (
+        <div className="pa-modal-overlay" onClick={() => setIsPauseModalOpen(false)}>
+          <div className="pa-modal-card" style={{ maxWidth: '520px' }} onClick={e => e.stopPropagation()}>
+            <div className="pa-modal-header">
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <PauseCircle size={22} color="#f59e0b" />
+                <h3 style={{ margin: 0, color: '#f8fafc' }}>Pausar Pagamento</h3>
+              </div>
+              <button
+                type="button"
+                className="pa-modal-close"
+                onClick={() => setIsPauseModalOpen(false)}
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="pa-modal-body">
+              <p style={{ color: '#cbd5e1', fontSize: '0.88rem', margin: '0 0 12px 0' }}>
+                Ao pausar o pagamento da solicitação <strong style={{ color: '#38bdf8' }}>{selectedRequest.id}</strong>, o status passará para <strong style={{ color: '#fbbf24' }}>PAGAMENTO PAUSADO</strong> e as datas posteriores ficarão destacadas como pausadas no calendário e em todo o sistema.
+              </p>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                <label style={{ fontSize: '0.85rem', fontWeight: 700, color: '#f8fafc' }}>
+                  Motivo da Pausa <span style={{ color: '#ef4444' }}>* (Obrigatório)</span>
+                </label>
+                <textarea
+                  className="pa-input"
+                  rows={4}
+                  placeholder="Explique detalhadamente o motivo da pausa no pagamento..."
+                  value={pauseReason}
+                  onChange={e => setPauseReason(e.target.value)}
+                  style={{ width: '100%', boxSizing: 'border-box', resize: 'vertical' }}
+                  autoFocus
+                />
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '1.25rem' }}>
+                <button
+                  type="button"
+                  className="pa-btn-action-deny"
+                  onClick={() => setIsPauseModalOpen(false)}
+                  disabled={pauseLoading}
+                  style={{ padding: '8px 16px', fontSize: '0.85rem' }}
+                >
+                  Cancelar
+                </button>
+
+                <button
+                  type="button"
+                  className="pa-btn-approve"
+                  onClick={handlePausePayment}
+                  disabled={!pauseReason.trim() || pauseLoading}
+                  style={{
+                    background: '#f59e0b',
+                    color: '#0f172a',
+                    fontWeight: 750,
+                    padding: '8px 18px',
+                    fontSize: '0.85rem',
+                    cursor: pauseReason.trim() ? 'pointer' : 'not-allowed',
+                    opacity: pauseReason.trim() ? 1 : 0.5,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px'
+                  }}
+                >
+                  {pauseLoading ? <RefreshCw size={14} className="pwc-spinner" /> : <PauseCircle size={14} />}
+                  {pauseLoading ? 'Pausando...' : 'Confirmar Pausa'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL DE EXCLUSÃO DEFINITIVA (EXCLUSIVO MASTER COM CONFIRMAÇÃO DE SENHA) */}
+      {deleteModalRequest && (
+        <div className="pa-modal-overlay" onClick={() => { if (!deleteLoading) setDeleteModalRequest(null); }}>
+          <div className="pa-modal-card" style={{ maxWidth: '520px', border: '1px solid rgba(239, 68, 68, 0.4)' }} onClick={e => e.stopPropagation()}>
+            <div className="pa-modal-header" style={{ borderBottomColor: 'rgba(239, 68, 68, 0.3)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <div style={{ background: 'rgba(239, 68, 68, 0.2)', padding: '6px', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <Trash2 size={20} color="#ef4444" />
+                </div>
+                <h3 style={{ margin: 0, color: '#f87171' }}>Excluir Solicitação Definitivamente</h3>
+              </div>
+              <button
+                type="button"
+                className="pa-modal-close"
+                disabled={deleteLoading}
+                onClick={() => setDeleteModalRequest(null)}
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <form onSubmit={handleConfirmDeleteMaster}>
+              <div className="pa-modal-body">
+                <div style={{ background: 'rgba(239, 68, 68, 0.08)', border: '1px solid rgba(239, 68, 68, 0.25)', borderRadius: '10px', padding: '12px 14px', marginBottom: '1rem' }}>
+                  <p style={{ color: '#fca5a5', fontSize: '0.88rem', margin: 0, lineHeight: 1.5 }}>
+                    ⚠️ <strong>Atenção Master:</strong> Esta ação é <strong>irreversível</strong>. A solicitação <strong style={{ color: '#ffffff' }}>{deleteModalRequest.id}</strong> ({deleteModalRequest.produto_servico}), todos os seus anexos, parcelas e mensagens serão apagados permanentemente do banco de dados.
+                  </p>
+                </div>
+
+                <div className="pa-form-group">
+                  <label style={{ color: '#f8fafc', fontWeight: 700, fontSize: '0.88rem' }}>
+                    Confirme sua Senha de Usuário <span style={{ color: '#ef4444' }}>*</span>
+                  </label>
+                  <input
+                    type="password"
+                    className="pa-input"
+                    placeholder="Digite sua senha de login para confirmar..."
+                    value={deletePassword}
+                    onChange={e => { setDeletePassword(e.target.value); setDeleteError(''); }}
+                    autoFocus
+                    required
+                    style={{ width: '100%', boxSizing: 'border-box', marginTop: '6px' }}
+                  />
+                  {deleteError && (
+                    <div style={{ color: '#f87171', fontSize: '0.82rem', marginTop: '6px', fontWeight: 600 }}>
+                      ⚠️ {deleteError}
+                    </div>
+                  )}
+                </div>
+
+                <div className="pa-confirm-actions" style={{ marginTop: '1.5rem', display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
+                  <button
+                    type="button"
+                    className="pa-btn-cancel"
+                    disabled={deleteLoading}
+                    onClick={() => setDeleteModalRequest(null)}
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={deleteLoading || !deletePassword.trim()}
+                    className="pa-btn-archive-master"
+                    style={{
+                      background: '#ef4444',
+                      color: '#ffffff',
+                      fontWeight: 700,
+                      padding: '8px 18px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                      cursor: (!deletePassword.trim() || deleteLoading) ? 'not-allowed' : 'pointer',
+                      opacity: (!deletePassword.trim() || deleteLoading) ? 0.5 : 1
+                    }}
+                  >
+                    {deleteLoading ? <RefreshCw size={15} className="pwc-spinner" /> : <Trash2 size={15} />}
+                    {deleteLoading ? 'Excluindo...' : 'Confirmar Exclusão'}
                   </button>
                 </div>
               </div>

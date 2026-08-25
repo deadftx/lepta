@@ -4,6 +4,9 @@
   display: flex;
   flex-direction: column;
   gap: 1.25rem;
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
 }
 
 /* Header & Controls */
@@ -232,6 +235,15 @@
   white-space: nowrap;
 }
 
+.event-chip.paused {
+  background: rgba(245, 158, 11, 0.18);
+  border-left: 3px solid #f59e0b;
+  color: #fbbf24;
+  border: 1px dashed rgba(245, 158, 11, 0.4);
+  border-left-width: 3px;
+  border-left-style: solid;
+}
+
 .event-chip-title {
   overflow: hidden;
   text-overflow: ellipsis;
@@ -242,6 +254,20 @@
   font-weight: 700;
   color: #34d399;
   font-size: 0.7rem;
+}
+
+.event-chip.paused .event-chip-val {
+  color: #fbbf24;
+}
+
+.event-chip-paused-badge {
+  background: #f59e0b;
+  color: #0f172a;
+  font-size: 0.6rem;
+  font-weight: 800;
+  padding: 1px 4px;
+  border-radius: 3px;
+  margin-left: 2px;
 }
 
 .day-footer-total {
@@ -529,4 +555,41 @@
   .popover-header h3 {
     font-size: 0.98rem;
   }
+}
+
+/* Scrollbars customizadas do calendário */
+.popover-day-modal,
+.pwc-events-list,
+.pwc-calendar-wrapper {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(56, 189, 248, 0.35) rgba(15, 23, 42, 0.6);
+}
+
+.popover-day-modal::-webkit-scrollbar,
+.pwc-events-list::-webkit-scrollbar,
+.pwc-calendar-wrapper::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.popover-day-modal::-webkit-scrollbar-track,
+.pwc-events-list::-webkit-scrollbar-track,
+.pwc-calendar-wrapper::-webkit-scrollbar-track {
+  background: rgba(15, 23, 42, 0.6);
+  border-radius: 999px;
+}
+
+.popover-day-modal::-webkit-scrollbar-thumb,
+.pwc-events-list::-webkit-scrollbar-thumb,
+.pwc-calendar-wrapper::-webkit-scrollbar-thumb {
+  background: rgba(56, 189, 248, 0.3);
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  transition: background 0.2s ease;
+}
+
+.popover-day-modal::-webkit-scrollbar-thumb:hover,
+.pwc-events-list::-webkit-scrollbar-thumb:hover,
+.pwc-calendar-wrapper::-webkit-scrollbar-thumb:hover {
+  background: rgba(56, 189, 248, 0.65);
 }
