@@ -1,4 +1,4 @@
-import { getFidcDb } from './fidcDb.js';
+import { getFidcDb, ensureFidcSchema } from './fidcDb.js';
 
 // Helpers de datas e números
 export function cleanCnpj(val) {
@@ -486,6 +486,19 @@ export function getTitulos({ fundoId = 'MULTISETORIAL', data, search = '', tipo,
  */
 export function getCedentesList({ search = '', semGerenteOnly = false, gerenteId }) {
   const db = getFidcDb();
+  ensureFidcSchema(db);
+
+  // Garante sincronização se fidc_cedentes estiver vazia mas cedentes tiver dados
+  try {
+    const checkFidc = db.prepare('SELECT COUNT(*) as c FROM fidc_cedentes').get()?.c || 0;
+    if (checkFidc === 0) {
+      const cols = db.prepare('PRAGMA table_info("cedentes")').all().map(c => c.name.toLowerCase());
+      if (cols.includes('cnpj_raiz')) {
+        db.exec('INSERT OR REPLACE INTO fidc_cedentes (cnpj_raiz, nome, estado, setor_id, gerente_id, criado_em) SELECT cnpj_raiz, nome, estado, setor_id, gerente_id, criado_em FROM cedentes');
+      }
+    }
+  } catch (_) {}
+
   let query = `
     SELECT
       c.cnpj_raiz,
@@ -496,8 +509,8 @@ export function getCedentesList({ search = '', semGerenteOnly = false, gerenteId
       c.criado_em,
       g.nome as gerente_nome,
       s.nome as setor_nome,
-      (SELECT COUNT(*) FROM cedentes_cnpjs cc WHERE cc.cnpj_raiz = c.cnpj_raiz) as num_filiais
-    FROM cedentes c
+      (SELECT COUNT(*) FROM fidc_cedentes_cnpjs cc WHERE cc.cnpj_raiz = c.cnpj_raiz) as num_filiais
+    FROM fidc_cedentes c
     LEFT JOIN gerentes g ON g.id = c.gerente_id
     LEFT JOIN setores s ON s.id = c.setor_id
     WHERE 1=1
@@ -530,11 +543,12 @@ export function getCedentesList({ search = '', semGerenteOnly = false, gerenteId
  */
 export function saveCedente({ cnpj_raiz, nome, estado, setor_id, gerente_id }) {
   const db = getFidcDb();
+  ensureFidcSchema(db);
   const cleanRaiz = cleanCnpj(cnpj_raiz)?.substring(0, 8);
   if (!cleanRaiz) throw new Error('CNPJ raiz inválido.');
 
   db.prepare(`
-    INSERT INTO cedentes (cnpj_raiz, nome, estado, setor_id, gerente_id, criado_em)
+    INSERT INTO fidc_cedentes (cnpj_raiz, nome, estado, setor_id, gerente_id, criado_em)
     VALUES (?, ?, ?, ?, ?, datetime('now'))
     ON CONFLICT(cnpj_raiz) DO UPDATE SET
       nome = excluded.nome,

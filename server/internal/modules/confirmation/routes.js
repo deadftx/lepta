@@ -229,7 +229,7 @@ export function registerConfirmationRoutes(app, {
   // --- 6. BASE DE CEDENTES E GERENTES ---
   app.get('/api/confirmacao/cedentes', requireSession, checkAccess, (req, res) => {
     try {
-      autoImportIfEmpty('cedentes');
+      autoImportIfEmpty('fidc_cedentes');
       const { search, sem_gerente, gerente_id } = req.query;
       const data = getCedentesList({
         search,
@@ -469,11 +469,17 @@ export function registerConfirmationRoutes(app, {
       const fundosCount = db.prepare('SELECT COUNT(*) as c FROM fundos').get()?.c || 0;
       const cotasCount = db.prepare('SELECT COUNT(*) as c FROM historico_cotas').get()?.c || 0;
       const titulosCount = db.prepare('SELECT COUNT(*) as c FROM estoque_titulos').get()?.c || 0;
-      const cedentesCount = db.prepare('SELECT COUNT(*) as c FROM cedentes').get()?.c || 0;
+      let cedentesCount = 0;
+      try {
+        cedentesCount = db.prepare('SELECT COUNT(*) as c FROM fidc_cedentes').get()?.c || 0;
+        if (cedentesCount === 0) {
+          cedentesCount = db.prepare('SELECT COUNT(*) as c FROM cedentes').get()?.c || 0;
+        }
+      } catch (_) {}
 
       return res.json({
         success: true,
-        message: `Backup restaurado com sucesso! Foram integrados ${titulosCount.toLocaleString('pt-BR')} títulos e ${cotasCount.toLocaleString('pt-BR')} cotas ao banco principal.`,
+        message: `Backup restaurado com sucesso! Foram integrados ${titulosCount.toLocaleString('pt-BR')} títulos, ${cotasCount.toLocaleString('pt-BR')} cotas e ${cedentesCount} cedentes ao banco principal.`,
         counts: {
           fundos: fundosCount,
           cotas: cotasCount,
