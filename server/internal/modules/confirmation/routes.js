@@ -22,26 +22,58 @@ export function registerConfirmationRoutes(app, {
 }) {
   setFidcDb(db);
 
-  // Tenta auto-popular se rodando localmente com backup existente
+  // Tenta auto-popular se o banco principal estiver zerado e houver backups no disco da VPS/local
   try {
-    const backupCandidatePaths = [
-      'C:/Users/ArthurFeltrinDeco/OneDrive - Lepta/Tecnologia/SISTEMA/SISTEMA/SistemaProdutos/BACKUPS/lepta_backup_2026-08-17.db',
-      'C:/Users/ArthurFeltrinDeco/OneDrive - Lepta/Atalhos/TECNOLOGIA - TECNOLOGIA/lepta_backup_2026-08-17.db',
-      path.join(process.cwd(), 'lepta_backup_2026-08-17.db'),
-      path.join(process.cwd(), 'database.sqlite')
-    ];
-
     const currentCedentes = db.prepare('SELECT COUNT(*) as c FROM cedentes').get()?.c || 0;
     const currentReceitas = db.prepare('SELECT COUNT(*) as c FROM receita_lancamentos').get()?.c || 0;
 
     if (currentCedentes === 0 || currentReceitas === 0) {
-      for (const bPath of backupCandidatePaths) {
-        if (fs.existsSync(bPath) && bPath !== path.resolve('database.sqlite')) {
-          console.log(`🔄 [FIDC] Populando tabelas do FIDC a partir de: ${bPath}`);
-          importBackupIntoMainDb(db, bPath);
-          console.log('✅ [FIDC] database.sqlite populado com sucesso!');
-          break;
-        }
+      const root = path.resolve();
+      const searchDirs = [
+        path.join(root, 'server', 'data'),
+        path.join(root, 'server', 'data', 'backups'),
+        path.join(root, 'backups'),
+        root,
+        path.join(root, '..'),
+        '/root',
+        '/tmp',
+        '/tmp/backups',
+        'C:/Users/ArthurFeltrinDeco/OneDrive - Lepta/Atalhos/TECNOLOGIA - TECNOLOGIA',
+        'C:/Users/ArthurFeltrinDeco/OneDrive - Lepta/Tecnologia/SISTEMA/SISTEMA/SistemaProdutos/BACKUPS',
+        ...(process.env.FIDC_BACKUPS_PATH ? [path.resolve(process.env.FIDC_BACKUPS_PATH)] : [])
+      ];
+
+      const foundBackups = [];
+      for (const dir of searchDirs) {
+        if (!fs.existsSync(dir)) continue;
+        try {
+          const files = fs.readdirSync(dir);
+          for (const file of files) {
+            const fullPath = path.join(dir, file);
+            if (
+              (file.endsWith('.db') || file.endsWith('.sqlite') || file.endsWith('.db3')) &&
+              !file.includes('assembled_') &&
+              file !== 'database.sqlite'
+            ) {
+              try {
+                const st = fs.statSync(fullPath);
+                if (st.isFile()) {
+                  foundBackups.push({ fullPath, mtime: st.mtimeMs, size: st.size });
+                }
+              } catch (_) {}
+            }
+          }
+        } catch (_) {}
+      }
+
+      // Ordena pelo mais recente
+      foundBackups.sort((a, b) => b.mtime - a.mtime);
+
+      if (foundBackups.length > 0) {
+        const latestBackup = foundBackups[0].fullPath;
+        console.log(`🔄 [FIDC] Populando tabelas do FIDC a partir do backup mais recente: ${latestBackup}`);
+        importBackupIntoMainDb(db, latestBackup);
+        console.log('✅ [FIDC] database.sqlite populado com sucesso a partir do backup mais recente!');
       }
     }
   } catch (err) {
@@ -50,7 +82,7 @@ export function registerConfirmationRoutes(app, {
 
   const checkAccess = (req, res, next) => {
     // Permissão 10.1 / 10 é Confirmação
-    if (req.authSession?.role === 'MASTER') return next();
+    if (req.authSession?.role === 'MASTER' || req.authSession?.role === 'ADMIN') return next();
     return requirePermission(['10.1', '10'])(req, res, next);
   };
 
@@ -380,7 +412,7 @@ export function registerConfirmationRoutes(app, {
   });
 
   // --- 11. RESTAURAR ARQUIVO DE BACKUP LOCAL DO DISCO DA VPS ---
-  app.post('/api/confirmacao/restore-local-backup', requireSession, requireMaster, (req, res) => {
+  app.post('/api/confirmacao/restore-local-backup', requireSession, checkAccess, (req, res) => {
     try {
       const { targetPath } = req.body;
       if (!targetPath || !fs.existsSync(targetPath)) {
