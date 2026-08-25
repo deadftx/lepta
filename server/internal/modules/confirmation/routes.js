@@ -12,6 +12,7 @@ import {
   getReceitas
 } from './fidcService.js';
 import { setFidcDb, getFidcDb, importBackupIntoMainDb } from './fidcDb.js';
+import { generateRelatorioDiarioHtml } from './reportService.js';
 
 export function registerConfirmationRoutes(app, {
   db,
@@ -394,6 +395,34 @@ export function registerConfirmationRoutes(app, {
     } catch (err) {
       console.error('Erro ao restaurar backup local:', err);
       return res.status(500).json({ error: `Erro ao importar arquivo: ${err.message}` });
+    }
+  });
+
+  // --- 12. EMISSÃO DO RELATÓRIO DIÁRIO INTERATIVO EM HTML ---
+  app.post('/api/confirmacao/relatorio-diario/html', requireSession, checkAccess, (req, res) => {
+    try {
+      const options = req.body || {};
+      const html = generateRelatorioDiarioHtml(options);
+      return res.json({ success: true, html });
+    } catch (err) {
+      console.error('Erro ao gerar relatório diário HTML:', err);
+      return res.status(500).json({ error: `Erro ao gerar relatório: ${err.message}` });
+    }
+  });
+
+  app.get('/api/confirmacao/relatorio-diario/preview', requireSession, checkAccess, (req, res) => {
+    try {
+      const { data_referencia, data_receita, fundo } = req.query;
+      const html = generateRelatorioDiarioHtml({
+        dataReferencia: data_referencia,
+        dataReceita: data_receita,
+        fundo: fundo || 'AMBOS'
+      });
+      res.setHeader('Content-Type', 'text/html; charset=utf-8');
+      return res.send(html);
+    } catch (err) {
+      console.error('Erro no preview do relatório diário:', err);
+      return res.status(500).send(`<h1>Erro ao gerar relatório</h1><p>${err.message}</p>`);
     }
   });
 }

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   ClipboardCheck, LayoutDashboard, TrendingUp, Layers,
-  Search, Users, DollarSign, RefreshCw, Calendar, Database, CheckCircle2, AlertCircle, X
+  Search, Users, DollarSign, RefreshCw, Calendar, Database, CheckCircle2, AlertCircle, X, FileText
 } from 'lucide-react';
 import { API_BASE_URL, getAuthHeaders } from '../../../config/api';
 import { useAuth } from '../../core/AuthContext';
@@ -11,9 +11,10 @@ import ConfirmationCarteira from './ConfirmationCarteira';
 import ConfirmationTitulos from './ConfirmationTitulos';
 import ConfirmationCedentes from './ConfirmationCedentes';
 import ConfirmationReceitas from './ConfirmationReceitas';
+import ConfirmationRelatorioDiario from './ConfirmationRelatorioDiario';
 import './ConfirmationSystem.css';
 
-type ActiveTab = 'dashboard' | 'cotas' | 'carteira' | 'titulos' | 'cedentes' | 'receitas';
+type ActiveTab = 'dashboard' | 'cotas' | 'carteira' | 'titulos' | 'cedentes' | 'receitas' | 'relatorio';
 
 export const ConfirmationSystem: React.FC = () => {
   const { user } = useAuth();
@@ -241,6 +242,12 @@ export const ConfirmationSystem: React.FC = () => {
         >
           <DollarSign size={18} /> Lançamentos de Receita
         </button>
+        <button
+          className={`cs-tab-btn ${activeTab === 'relatorio' ? 'active' : ''}`}
+          onClick={() => setActiveTab('relatorio')}
+        >
+          <FileText size={18} /> Relatório Diário
+        </button>
       </div>
 
       {/* ── CONTEÚDO DA ABA ATIVA ── */}
@@ -266,6 +273,10 @@ export const ConfirmationSystem: React.FC = () => {
 
       {activeTab === 'receitas' && (
         <ConfirmationReceitas fundoId={fundoId} />
+      )}
+
+      {activeTab === 'relatorio' && (
+        <ConfirmationRelatorioDiario initialData={dataPosicao} />
       )}
 
       {/* Modal de Restauração de Banco FIDC */}
