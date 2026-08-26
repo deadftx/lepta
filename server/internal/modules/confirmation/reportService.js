@@ -468,7 +468,7 @@ export function generateRelatorioDiarioHtml(options = {}) {
     .sub-grid {
       display: grid;
       grid-template-columns: 1fr 1fr;
-      gap: 8px;
+      gap: 10px;
     }
 
     /* ── FOOTER ── */
@@ -481,27 +481,35 @@ export function generateRelatorioDiarioHtml(options = {}) {
       padding-top: 1rem;
     }
 
-    /* ── RESPONSIVIDADE MOBILE & TELAS MENORES ── */
-    @media (max-width: 1100px) {
+    /* ── CELULAR NA VERTICAL (PORTRAIT / TELAS ESTREITAS): 1 COLUNA ── */
+    @media screen and (max-width: 768px) and (orientation: portrait), screen and (max-width: 600px) {
       .funds-split-grid {
-        grid-template-columns: 1fr;
-        gap: 1.5rem;
+        grid-template-columns: 1fr !important;
+        gap: 1.25rem;
       }
       body {
-        padding: 0.75rem 0.75rem 1.5rem 0.75rem;
+        padding: 0.6rem 0.4rem 1.5rem 0.4rem;
       }
       .sub-grid {
-        grid-template-columns: 1fr;
+        grid-template-columns: 1fr !important;
       }
       .consolidated-bar {
         grid-template-columns: repeat(2, 1fr);
       }
-      .controls-bar {
-        width: 100%;
-        justify-content: space-between;
+      .section-card {
+        padding: 0.75rem 0.6rem;
       }
-      .search-input {
-        width: 100%;
+    }
+
+    /* ── CELULAR NA HORIZONTAL (LANDSCAPE) E DESKTOP: 2 COLUNAS LADO A LADO ── */
+    @media screen and (orientation: landscape) and (min-width: 580px), screen and (min-width: 769px) {
+      .funds-split-grid {
+        display: grid !important;
+        grid-template-columns: 1fr 1fr !important;
+        gap: 1rem;
+      }
+      .sub-grid {
+        grid-template-columns: 1fr;
       }
     }
 
@@ -794,7 +802,7 @@ export function generateRelatorioDiarioHtml(options = {}) {
         <div class="section-card">
           <div class="section-header">
             <span class="section-title">🎯 Concentração de Carteira</span>
-            <span class="section-count-badge">Top ${topCed.length} Cedentes / ${topSac.length} Sacados</span>
+            <span class="section-count-badge">Top ${topCed.length} Ced. / ${topSac.length} Sac.</span>
           </div>
 
           <div class="sub-grid">
@@ -817,15 +825,16 @@ export function generateRelatorioDiarioHtml(options = {}) {
         `;
 
         for (const ced of topCed) {
+          const pct = plTotal > 0 ? (ced.valor / plTotal) * 100 : (ced.pctPL || 0);
           html += `
                     <tr>
-                      <td>
-                        <div style="font-weight: 600; color: #fff; max-width: 140px; overflow: hidden; text-overflow: ellipsis;" title="${ced.nome}">${ced.nome}</div>
-                        <div style="font-size: 0.65rem; color: var(--text-dim);">${fmtCnpj(ced.cnpj)}</div>
+                      <td style="min-width: 125px; white-space: normal;">
+                        <div style="font-weight: 600; color: #fff; line-height: 1.25; word-break: break-word;">${ced.nome}</div>
+                        <div style="font-size: 0.65rem; color: var(--text-dim); margin-top: 2px;">${fmtCnpj(ced.cnpj)}</div>
                       </td>
                       <td class="num">${ced.titulos}</td>
                       <td class="num" style="font-weight: 600;">${formatBrl(ced.valor)}</td>
-                      <td class="num" style="font-weight: 700; color: var(--primary);">${formatPct(ced.pctPL)}</td>
+                      <td class="num" style="font-weight: 700; color: var(--primary);">${formatPct(pct)}</td>
                     </tr>
           `;
         }
@@ -855,15 +864,16 @@ export function generateRelatorioDiarioHtml(options = {}) {
         `;
 
         for (const sac of topSac) {
+          const pct = plTotal > 0 ? (sac.valor / plTotal) * 100 : (sac.pctPL || 0);
           html += `
                     <tr>
-                      <td>
-                        <div style="font-weight: 600; color: #fff; max-width: 140px; overflow: hidden; text-overflow: ellipsis;" title="${sac.nome}">${sac.nome}</div>
-                        <div style="font-size: 0.65rem; color: var(--text-dim);">${fmtCnpj(sac.cnpj)}</div>
+                      <td style="min-width: 125px; white-space: normal;">
+                        <div style="font-weight: 600; color: #fff; line-height: 1.25; word-break: break-word;">${sac.nome}</div>
+                        <div style="font-size: 0.65rem; color: var(--text-dim); margin-top: 2px;">${fmtCnpj(sac.cnpj)}</div>
                       </td>
                       <td class="num">${sac.titulos}</td>
                       <td class="num" style="font-weight: 600;">${formatBrl(sac.valor)}</td>
-                      <td class="num" style="font-weight: 700; color: var(--primary);">${formatPct(sac.pctPL)}</td>
+                      <td class="num" style="font-weight: 700; color: var(--primary);">${formatPct(pct)}</td>
                     </tr>
           `;
         }

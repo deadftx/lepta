@@ -283,8 +283,11 @@ export function getCarteiraSummary({ fundoId = 'MULTISETORIAL', data }) {
 
   // PL da data correspondente
   const plRow = db.prepare(`
-    SELECT SUM(pl) as total FROM historico_cotas WHERE fundo_id = ? AND data <= ? ORDER BY data DESC LIMIT 1
-  `).get(fundoId, snap.data);
+    SELECT SUM(pl) as total FROM historico_cotas
+    WHERE fundo_id = ? AND data = (
+      SELECT MAX(data) FROM historico_cotas WHERE fundo_id = ? AND data <= ?
+    )
+  `).get(fundoId, fundoId, snap.data);
   const plTotal = plRow?.total || 0;
 
   // 1. Totais Gerais
