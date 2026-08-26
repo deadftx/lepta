@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { LogOut, User, ShieldAlert, Shield, UserPlus, Users, ChevronDown, ChevronRight, LayoutDashboard, Sliders, Home, Calendar, Menu, X, Wallet, FileSpreadsheet, BrainCircuit, Database, ClipboardCheck, ContactRound, ShieldCheck, Landmark, Briefcase, ShoppingCart, SlidersHorizontal, DollarSign, Mail } from 'lucide-react';
+import { LogOut, User, ShieldAlert, Shield, UserPlus, Users, ChevronDown, ChevronRight, LayoutDashboard, Sliders, Home, Calendar, Menu, X, Wallet, FileSpreadsheet, BrainCircuit, Database, ClipboardCheck, ContactRound, ShieldCheck, Landmark, Briefcase, ShoppingCart, SlidersHorizontal, DollarSign, Mail, Search } from 'lucide-react';
 import { useNavigate, Outlet, Link, useLocation } from 'react-router-dom';
 import { useAuth } from './AuthContext';
 import NotificationBell from './NotificationBell';
@@ -220,6 +220,11 @@ const InternalLayout = () => {
                   {(hasAccess('10.1') || hasAccess('10')) && (
                     <Link to="/confirmacao/sistema" className={navItemClass('/confirmacao/sistema')}>
                       <ClipboardCheck size={18} /> Sistema de Confirmação
+                    </Link>
+                  )}
+                  {(hasAccess('10.2') || hasAccess('10.1') || hasAccess('10')) && (
+                    <Link to="/confirmacao/analise" className={navItemClass('/confirmacao/analise')}>
+                      <Search size={18} /> Análise de Confirmação
                     </Link>
                   )}
                 </div>

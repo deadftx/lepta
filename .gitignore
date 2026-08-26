@@ -67,3 +67,6 @@ server/data/*.db
 
 # Arquivos de Dados e Banco
 *.csv
+*.zip
+Lepta *.csv
+Exportacao - *.zip

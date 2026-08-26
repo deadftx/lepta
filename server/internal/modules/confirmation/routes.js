@@ -16,12 +16,21 @@ import {
 } from './fidcService.js';
 import { setFidcDb, getFidcDb, importBackupIntoMainDb } from './fidcDb.js';
 import { generateRelatorioDiarioHtml } from './reportService.js';
+import {
+  fetchTitulosAnaliseByDate,
+  generateTitulosCsv,
+  generateTitulosExcel,
+  createShareToken,
+  getSharedDataByToken,
+  generateAnaliseHtmlReport
+} from './analiseService.js';
 
 export function registerConfirmationRoutes(app, {
   db,
   requireSession,
   requirePermission,
-  requireMaster
+  requireMaster,
+  unltdToken
 }) {
   setFidcDb(db);
 
@@ -589,6 +598,171 @@ export function registerConfirmationRoutes(app, {
     } catch (err) {
       console.error('Erro no preview do relatório diário:', err);
       return res.status(500).send(`<h1>Erro ao gerar relatório</h1><p>${err.message}</p>`);
+    }
+  });
+
+  // --- 13. ANÁLISE DE CONFIRMAÇÃO (API UNLTD / BITFIN) ---
+
+  // Consulta títulos por Data de Cadastro na API UNLTD
+  app.get('/api/confirmacao/analise/consultar', requireSession, checkAccess, async (req, res) => {
+    try {
+      const { data } = req.query;
+      const token = unltdToken || process.env.UNLTD_API_TOKEN;
+      if (!token) {
+        return res.status(400).json({ error: 'UNLTD_API_TOKEN não configurado no servidor.' });
+      }
+
+      const dataCadastro = data || new Date().toISOString().substring(0, 10);
+      const result = await fetchTitulosAnaliseByDate({ dataCadastro, unltdToken: token });
+      return res.json({ success: true, ...result });
+    } catch (err) {
+      console.error('Erro ao consultar análise de títulos UNLTD:', err);
+      return res.status(500).json({ error: `Erro ao consultar API UNLTD: ${err.message}` });
+    }
+  });
+
+  // Exporta CSV idêntico (Geral ou por Fundo)
+  app.post('/api/confirmacao/analise/exportar/csv', requireSession, checkAccess, async (req, res) => {
+    try {
+      let { dataCadastro, fundo, titulos } = req.body || {};
+      fundo = fundo || 'AMBOS';
+      dataCadastro = dataCadastro || new Date().toISOString().substring(0, 10);
+
+      if (!titulos || !titulos.length) {
+        const token = unltdToken || process.env.UNLTD_API_TOKEN;
+        const fetched = await fetchTitulosAnaliseByDate({ dataCadastro, unltdToken: token });
+        titulos = fetched.titulos;
+      }
+
+      const csvContent = generateTitulosCsv({ titulos, fundo });
+      const prefix = fundo === 'SPECIAL' ? 'Lepta Special FIDC - Titulos' : fundo === 'MULTISETORIAL' ? 'Lepta MS FIDC - Titulos' : 'Lepta Geral FIDC - Titulos';
+      const filename = `${prefix} - ${dataCadastro} - ${dataCadastro}.csv`;
+
+      res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+      res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+      return res.send(csvContent);
+    } catch (err) {
+      console.error('Erro ao exportar CSV de análise:', err);
+      return res.status(500).json({ error: `Erro ao gerar CSV: ${err.message}` });
+    }
+  });
+
+  // Exporta Excel XLSX (Geral ou por Fundo)
+  app.post('/api/confirmacao/analise/exportar/xlsx', requireSession, checkAccess, async (req, res) => {
+    try {
+      let { dataCadastro, fundo, titulos } = req.body || {};
+      fundo = fundo || 'AMBOS';
+      dataCadastro = dataCadastro || new Date().toISOString().substring(0, 10);
+
+      if (!titulos || !titulos.length) {
+        const token = unltdToken || process.env.UNLTD_API_TOKEN;
+        const fetched = await fetchTitulosAnaliseByDate({ dataCadastro, unltdToken: token });
+        titulos = fetched.titulos;
+      }
+
+      const buffer = await generateTitulosExcel({ titulos, fundo, dataCadastro });
+      const prefix = fundo === 'SPECIAL' ? 'Lepta_Special_FIDC_Titulos' : fundo === 'MULTISETORIAL' ? 'Lepta_MS_FIDC_Titulos' : 'Lepta_Geral_FIDC_Titulos';
+      const filename = `${prefix}_${dataCadastro}.xlsx`;
+
+      res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+      return res.send(buffer);
+    } catch (err) {
+      console.error('Erro ao exportar Excel de análise:', err);
+      return res.status(500).json({ error: `Erro ao gerar Excel: ${err.message}` });
+    }
+  });
+
+  // Gera link público compartilhável
+  app.post('/api/confirmacao/analise/share-link', requireSession, checkAccess, async (req, res) => {
+    try {
+      let { dataCadastro, fundo, titulos } = req.body || {};
+      fundo = fundo || 'AMBOS';
+      dataCadastro = dataCadastro || new Date().toISOString().substring(0, 10);
+
+      if (!titulos || !titulos.length) {
+        const token = unltdToken || process.env.UNLTD_API_TOKEN;
+        const fetched = await fetchTitulosAnaliseByDate({ dataCadastro, unltdToken: token });
+        titulos = fetched.titulos;
+      }
+
+      const token = createShareToken({ dataCadastro, fundo, titulos });
+      const host = req.get('host') || 'lepta.com.br';
+      const protocol = req.protocol === 'https' || req.get('x-forwarded-proto') === 'https' ? 'https' : 'http';
+      const shareUrl = `/api/confirmacao/analise/public/${token}`;
+      const fullUrl = `${protocol}://${host}${shareUrl}`;
+
+      return res.json({
+        success: true,
+        token,
+        shareUrl,
+        fullUrl
+      });
+    } catch (err) {
+      console.error('Erro ao gerar share link:', err);
+      return res.status(500).json({ error: `Erro ao gerar link: ${err.message}` });
+    }
+  });
+
+  // Rota pública para visualização em HTML ou download direto
+  app.get('/api/confirmacao/analise/public/:token', async (req, res) => {
+    try {
+      const { token } = req.params;
+      const { download } = req.query;
+      const data = getSharedDataByToken(token);
+
+      if (!data) {
+        return res.status(404).send(`
+          <!DOCTYPE html>
+          <html lang="pt-BR">
+          <head><meta charset="UTF-8"><title>Link Expirado — LEPTA</title></head>
+          <body style="background:#090d16; color:#f8fafc; font-family:sans-serif; text-align:center; padding:4rem 1rem;">
+            <h1 style="color:#ef4444; margin-bottom:1rem;">Link Não Encontrado ou Expirado</h1>
+            <p style="color:#94a3b8;">O link de compartilhamento solicitado não existe mais ou atingiu o limite de validade de 7 dias.</p>
+          </body>
+          </html>
+        `);
+      }
+
+      // Download direto de XLSX
+      if (download === 'xlsx') {
+        const buffer = await generateTitulosExcel({
+          titulos: data.titulos,
+          fundo: data.fundo,
+          dataCadastro: data.dataCadastro
+        });
+        const prefix = data.fundo === 'SPECIAL' ? 'Lepta_Special_FIDC_Titulos' : data.fundo === 'MULTISETORIAL' ? 'Lepta_MS_FIDC_Titulos' : 'Lepta_Geral_FIDC_Titulos';
+        const filename = `${prefix}_${data.dataCadastro}.xlsx`;
+
+        res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+        res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+        return res.send(buffer);
+      }
+
+      // Download direto de CSV
+      if (download === 'csv') {
+        const csv = generateTitulosCsv({ titulos: data.titulos, fundo: data.fundo });
+        const prefix = data.fundo === 'SPECIAL' ? 'Lepta Special FIDC - Titulos' : data.fundo === 'MULTISETORIAL' ? 'Lepta MS FIDC - Titulos' : 'Lepta Geral FIDC - Titulos';
+        const filename = `${prefix} - ${data.dataCadastro} - ${data.dataCadastro}.csv`;
+
+        res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+        res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+        return res.send(csv);
+      }
+
+      // Visualização padrão em HTML interativo
+      const html = generateAnaliseHtmlReport({
+        titulos: data.titulos,
+        dataCadastro: data.dataCadastro,
+        fundo: data.fundo,
+        shareToken: token
+      });
+
+      res.setHeader('Content-Type', 'text/html; charset=utf-8');
+      return res.send(html);
+    } catch (err) {
+      console.error('Erro na rota pública de análise:', err);
+      return res.status(500).send(`<h1>Erro ao renderizar relatório</h1><p>${err.message}</p>`);
     }
   });
 }

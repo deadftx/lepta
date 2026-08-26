@@ -2791,7 +2791,8 @@ registerConfirmationRoutes(app, {
   db,
   requireSession,
   requirePermission,
-  requireMaster
+  requireMaster,
+  unltdToken: UNLTD_TOKEN
 });
 
 registerTickerRoutes(app);
