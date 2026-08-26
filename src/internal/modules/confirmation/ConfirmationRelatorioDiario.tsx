@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import {
   FileText, Calendar, CheckSquare, Square, ChevronUp, ChevronDown,
-  RefreshCw, Layers, ShieldAlert, AlertTriangle, TrendingUp, DollarSign, Download
+  RefreshCw, Layers, ShieldAlert, AlertTriangle, TrendingUp, DollarSign, Download, ExternalLink
 } from 'lucide-react';
 import { API_BASE_URL, getAuthHeaders } from '../../../config/api';
 
@@ -93,7 +93,7 @@ export const ConfirmationRelatorioDiario: React.FC<RelatorioDiarioProps> = ({ in
     setSectionOrder(newOrder);
   };
 
-  const handleGenerateReport = async () => {
+  const handleGenerateReport = async (action: 'download' | 'preview' = 'download') => {
     setGenerating(true);
     try {
       const payload = {
@@ -113,29 +113,40 @@ export const ConfirmationRelatorioDiario: React.FC<RelatorioDiarioProps> = ({ in
         body: JSON.stringify(payload)
       });
 
-      if (res.ok) {
-        const json = await res.json();
-        if (json.html) {
-          const blob = new Blob([json.html], { type: 'text/html;charset=utf-8' });
-          const url = URL.createObjectURL(blob);
+      if (!res.ok) {
+        throw new Error('Falha ao gerar relatório no servidor.');
+      }
 
-          // 1. Dispara o download automático direto do arquivo .html
-          const a = document.createElement('a');
-          const cleanDate = (dataReferencia || new Date().toISOString().substring(0, 10)).replace(/[/\\.]/g, '-');
-          a.href = url;
-          a.download = `Relatorio_Diario_Lepta_${cleanDate}.html`;
-          document.body.appendChild(a);
-          a.click();
-          document.body.removeChild(a);
+      const json = await res.json();
+      if (json.html) {
+        const blob = new Blob([json.html], { type: 'text/html;charset=utf-8' });
+        const cleanDate = (dataReferencia || new Date().toISOString().substring(0, 10)).replace(/[/\\.]/g, '-');
+        const filename = `Relatorio_Diario_Lepta_${cleanDate}.html`;
 
-          // 2. Abre a visualização em nova aba
+        if (action === 'download') {
+          // Download direto do arquivo HTML
+          const url = window.URL.createObjectURL(blob);
+          const link = document.createElement('a');
+          link.href = url;
+          link.download = filename;
+          link.style.display = 'none';
+          document.body.appendChild(link);
+          link.click();
+          
+          setTimeout(() => {
+            document.body.removeChild(link);
+            window.URL.revokeObjectURL(url);
+          }, 1000);
+        } else {
+          // Apenas visualização em nova aba
+          const url = window.URL.createObjectURL(blob);
           window.open(url, '_blank');
-
-          setTimeout(() => URL.revokeObjectURL(url), 10000);
+          setTimeout(() => window.URL.revokeObjectURL(url), 10000);
         }
       }
-    } catch (err) {
-      console.error('Erro ao exportar relatório diário:', err);
+    } catch (err: any) {
+      console.error('Erro ao processar relatório diário:', err);
+      alert('Erro ao processar relatório: ' + (err?.message || err));
     } finally {
       setGenerating(false);
     }
@@ -465,9 +476,26 @@ export const ConfirmationRelatorioDiario: React.FC<RelatorioDiarioProps> = ({ in
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '1.5rem', borderTop: '1px solid rgba(255, 255, 255, 0.08)', paddingTop: '1.25rem', flexWrap: 'wrap' }}>
           <button
             type="button"
+            className="cs-page-btn"
+            disabled={generating}
+            onClick={() => handleGenerateReport('preview')}
+            style={{
+              padding: '10px 18px',
+              fontSize: '0.9rem',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px'
+            }}
+          >
+            <ExternalLink size={15} />
+            Visualizar Prévia
+          </button>
+
+          <button
+            type="button"
             className="cs-btn-save"
             disabled={generating}
-            onClick={() => handleGenerateReport()}
+            onClick={() => handleGenerateReport('download')}
             style={{
               padding: '10px 24px',
               fontSize: '0.92rem',
@@ -480,7 +508,7 @@ export const ConfirmationRelatorioDiario: React.FC<RelatorioDiarioProps> = ({ in
             }}
           >
             {generating ? <RefreshCw size={16} className="pwc-spinner" /> : <Download size={16} />}
-            {generating ? 'Gerando Relatório...' : 'Exportar Relatório'}
+            {generating ? 'Exportando Relatório...' : 'Exportar Relatório'}
           </button>
         </div>
       </div>
