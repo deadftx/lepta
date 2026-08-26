@@ -233,10 +233,10 @@ export function generateRelatorioDiarioHtml(options = {}) {
       width: 210px;
     }
     
-    .btn-print {
-      background: linear-gradient(135deg, #2563eb, #1d4ed8);
+    .btn-export {
+      background: linear-gradient(135deg, #10b981, #059669);
       color: #ffffff;
-      border: 1px solid #3b82f6;
+      border: 1px solid #34d399;
       padding: 7px 16px;
       border-radius: 6px;
       font-size: 0.82rem;
@@ -245,12 +245,31 @@ export function generateRelatorioDiarioHtml(options = {}) {
       display: inline-flex;
       align-items: center;
       gap: 6px;
-      box-shadow: 0 2px 8px rgba(37, 99, 235, 0.35);
+      box-shadow: 0 2px 8px rgba(16, 185, 129, 0.35);
+      transition: all 0.15s ease;
+    }
+    .btn-export:hover {
+      background: linear-gradient(135deg, #059669, #047857);
+      transform: translateY(-1px);
+    }
+
+    .btn-print {
+      background: var(--card-inner);
+      color: var(--text-muted);
+      border: 1px solid var(--card-border);
+      padding: 7px 14px;
+      border-radius: 6px;
+      font-size: 0.82rem;
+      font-weight: 600;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
       transition: all 0.15s ease;
     }
     .btn-print:hover {
-      background: linear-gradient(135deg, #1d4ed8, #1e40af);
-      transform: translateY(-1px);
+      background: var(--card-border);
+      color: #fff;
     }
 
     /* ── CONSOLIDATED HEADER SUMMARY ── */
@@ -694,8 +713,12 @@ export function generateRelatorioDiarioHtml(options = {}) {
             oninput="handleLiveFilter(this.value)"
           />
 
+          <button type="button" class="btn-export" onclick="exportHtmlReport()">
+            💾 Exportar Relatório
+          </button>
+
           <button type="button" class="btn-print" onclick="window.print()">
-            🖨️ Imprimir / Salvar PDF
+            🖨️ Imprimir / PDF
           </button>
         </div>
       </div>
@@ -1175,6 +1198,21 @@ export function generateRelatorioDiarioHtml(options = {}) {
 
   <!-- Interactive Logic -->
   <script>
+    function exportHtmlReport() {
+      // Captura o HTML integral do documento atual com toda interatividade e estilos
+      const htmlContent = '<!DOCTYPE html>\\n' + document.documentElement.outerHTML;
+      const blob = new Blob([htmlContent], { type: 'text/html;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      const cleanDate = '${refDateFormatted}'.replace(/[/\\\\.]/g, '-');
+      a.href = url;
+      a.download = 'Relatorio_Diario_Lepta_' + cleanDate + '.html';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(function() { URL.revokeObjectURL(url); }, 3000);
+    }
+
     function showFundView(view) {
       const grid = document.getElementById('fundsGrid');
       const colMulti = document.getElementById('col-MULTISETORIAL');

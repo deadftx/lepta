@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import {
   FileText, Calendar, CheckSquare, Square, ChevronUp, ChevronDown,
-  RefreshCw, Layers, ShieldAlert, AlertTriangle, TrendingUp, DollarSign, Printer
+  RefreshCw, Layers, ShieldAlert, AlertTriangle, TrendingUp, DollarSign, Download
 } from 'lucide-react';
 import { API_BASE_URL, getAuthHeaders } from '../../../config/api';
 
@@ -450,7 +450,7 @@ export const ConfirmationRelatorioDiario: React.FC<RelatorioDiarioProps> = ({ in
           })}
         </div>
 
-        {/* ── BOTÃO DE EMISSÃO ── */}
+        {/* ── BOTÃO DE EMISSÃO / EXPORTAÇÃO ── */}
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '1.5rem', borderTop: '1px solid rgba(255, 255, 255, 0.08)', paddingTop: '1.25rem', flexWrap: 'wrap' }}>
           <button
             type="button"
@@ -463,13 +463,13 @@ export const ConfirmationRelatorioDiario: React.FC<RelatorioDiarioProps> = ({ in
               display: 'flex',
               alignItems: 'center',
               gap: '8px',
-              background: 'linear-gradient(135deg, #2563eb, #1d4ed8)',
-              border: '1px solid #3b82f6',
-              boxShadow: '0 2px 10px rgba(37, 99, 235, 0.3)'
+              background: 'linear-gradient(135deg, #10b981, #059669)',
+              border: '1px solid #34d399',
+              boxShadow: '0 2px 10px rgba(16, 185, 129, 0.3)'
             }}
           >
-            {generating ? <RefreshCw size={16} className="pwc-spinner" /> : <Printer size={16} />}
-            {generating ? 'Gerando Relatório...' : 'Imprimir / Salvar PDF (HTML Interativo)'}
+            {generating ? <RefreshCw size={16} className="pwc-spinner" /> : <Download size={16} />}
+            {generating ? 'Gerando Relatório...' : 'Exportar Relatório'}
           </button>
         </div>
       </div>
