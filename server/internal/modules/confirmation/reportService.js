@@ -128,17 +128,12 @@ export function generateRelatorioDiarioHtml(options = {}) {
       margin: 0 auto;
     }
     
-    /* ── STICKY TOPBAR ── */
+    /* ── TOPBAR ── */
     .topbar {
-      position: sticky;
-      top: 0;
-      z-index: 100;
-      background: rgba(9, 13, 22, 0.94);
-      backdrop-filter: blur(12px);
-      -webkit-backdrop-filter: blur(12px);
+      position: relative;
       border-bottom: 1px solid var(--card-border);
-      padding: 0.85rem 0;
-      margin-bottom: 1.25rem;
+      padding: 0.5rem 0 0.75rem 0;
+      margin-bottom: 1rem;
     }
     
     .topbar-content {
@@ -146,7 +141,7 @@ export function generateRelatorioDiarioHtml(options = {}) {
       justify-content: space-between;
       align-items: center;
       flex-wrap: wrap;
-      gap: 12px;
+      gap: 10px;
     }
     
     .brand-section {
@@ -481,20 +476,25 @@ export function generateRelatorioDiarioHtml(options = {}) {
       padding-top: 1rem;
     }
 
-    /* ── CELULAR NA VERTICAL (PORTRAIT / TELAS ESTREITAS): 1 COLUNA ── */
-    @media screen and (max-width: 768px) and (orientation: portrait), screen and (max-width: 600px) {
+    /* ── CELULAR NA VERTICAL (PORTRAIT / TELAS ESTREITAS <= 768px): 1 COLUNA EMPILHADA ── */
+    @media screen and (max-width: 768px) and (orientation: portrait), screen and (max-width: 580px) {
       .funds-split-grid {
-        grid-template-columns: 1fr !important;
-        gap: 1.25rem;
+        display: flex !important;
+        flex-direction: column !important;
+        gap: 1.25rem !important;
       }
       body {
         padding: 0.6rem 0.4rem 1.5rem 0.4rem;
       }
       .sub-grid {
-        grid-template-columns: 1fr !important;
+        display: flex !important;
+        flex-direction: column !important;
+        gap: 10px !important;
       }
       .consolidated-bar {
         grid-template-columns: repeat(2, 1fr);
+        gap: 6px;
+        padding: 8px 10px;
       }
       .section-card {
         padding: 0.75rem 0.6rem;
@@ -502,14 +502,43 @@ export function generateRelatorioDiarioHtml(options = {}) {
     }
 
     /* ── CELULAR NA HORIZONTAL (LANDSCAPE) E DESKTOP: 2 COLUNAS LADO A LADO ── */
-    @media screen and (orientation: landscape) and (min-width: 580px), screen and (min-width: 769px) {
+    @media screen and (orientation: landscape), screen and (min-width: 769px) {
       .funds-split-grid {
         display: grid !important;
         grid-template-columns: 1fr 1fr !important;
-        gap: 1rem;
+        gap: 0.85rem !important;
       }
       .sub-grid {
-        grid-template-columns: 1fr;
+        display: flex !important;
+        flex-direction: column !important;
+        gap: 8px !important;
+      }
+      body {
+        padding: 0.5rem 0.65rem 1.5rem 0.65rem;
+      }
+      .section-card {
+        padding: 0.65rem 0.75rem;
+      }
+      .scroll-box, .scroll-box-lg {
+        max-height: 190px;
+      }
+      .consolidated-bar {
+        grid-template-columns: repeat(auto-fit, minmax(135px, 1fr));
+        gap: 6px;
+        padding: 6px 10px;
+        margin-bottom: 0.75rem;
+      }
+      .c-kpi-lbl {
+        font-size: 0.62rem;
+      }
+      .c-kpi-val {
+        font-size: 0.95rem;
+      }
+      .mini-kpi {
+        padding: 6px 8px;
+      }
+      .mini-kpi-val {
+        font-size: 0.92rem;
       }
     }
 
@@ -828,9 +857,13 @@ export function generateRelatorioDiarioHtml(options = {}) {
           const pct = plTotal > 0 ? (ced.valor / plTotal) * 100 : (ced.pctPL || 0);
           html += `
                     <tr>
-                      <td style="min-width: 125px; white-space: normal;">
-                        <div style="font-weight: 600; color: #fff; line-height: 1.25; word-break: break-word;">${ced.nome}</div>
-                        <div style="font-size: 0.65rem; color: var(--text-dim); margin-top: 2px;">${fmtCnpj(ced.cnpj)}</div>
+                      <td style="min-width: 110px; max-width: 160px; white-space: normal;">
+                        <div style="font-weight: 600; color: #fff; line-height: 1.2; font-size: 0.73rem; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;" title="${ced.nome}">
+                          ${ced.nome}
+                        </div>
+                        <div style="font-size: 0.63rem; color: var(--text-dim); margin-top: 1px; white-space: nowrap;">
+                          ${fmtCnpj(ced.cnpj)}
+                        </div>
                       </td>
                       <td class="num">${ced.titulos}</td>
                       <td class="num" style="font-weight: 600;">${formatBrl(ced.valor)}</td>
@@ -867,9 +900,13 @@ export function generateRelatorioDiarioHtml(options = {}) {
           const pct = plTotal > 0 ? (sac.valor / plTotal) * 100 : (sac.pctPL || 0);
           html += `
                     <tr>
-                      <td style="min-width: 125px; white-space: normal;">
-                        <div style="font-weight: 600; color: #fff; line-height: 1.25; word-break: break-word;">${sac.nome}</div>
-                        <div style="font-size: 0.65rem; color: var(--text-dim); margin-top: 2px;">${fmtCnpj(sac.cnpj)}</div>
+                      <td style="min-width: 110px; max-width: 160px; white-space: normal;">
+                        <div style="font-weight: 600; color: #fff; line-height: 1.2; font-size: 0.73rem; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;" title="${sac.nome}">
+                          ${sac.nome}
+                        </div>
+                        <div style="font-size: 0.63rem; color: var(--text-dim); margin-top: 1px; white-space: nowrap;">
+                          ${fmtCnpj(sac.cnpj)}
+                        </div>
                       </td>
                       <td class="num">${sac.titulos}</td>
                       <td class="num" style="font-weight: 600;">${formatBrl(sac.valor)}</td>
