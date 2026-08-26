@@ -3,29 +3,16 @@ import {
   Wallet, ShieldAlert, CheckCircle2, AlertTriangle,
   BarChart3, PieChart, Users, ArrowUpRight, ArrowDownRight, Layers
 } from 'lucide-react';
+import ConfirmationImportStatus from './ConfirmationImportStatus';
 
 interface DashboardProps {
   data: any;
   loading: boolean;
+  dataPosicao?: string;
+  onNavigateTab?: (tab: any, fundo?: 'MULTISETORIAL' | 'SPECIAL') => void;
 }
 
-export const ConfirmationDashboard: React.FC<DashboardProps> = ({ data, loading }) => {
-  if (loading) {
-    return (
-      <div style={{ textAlign: 'center', padding: '4rem', color: '#94a3b8' }}>
-        <p>Carregando indicadores do FIDC...</p>
-      </div>
-    );
-  }
-
-  if (!data) {
-    return (
-      <div className="cs-card" style={{ textAlign: 'center', padding: '3rem' }}>
-        <p style={{ color: '#94a3b8' }}>Nenhum dado encontrado para a data e fundo selecionados.</p>
-      </div>
-    );
-  }
-
+export const ConfirmationDashboard: React.FC<DashboardProps> = ({ data, loading, dataPosicao, onNavigateTab }) => {
   const formatBrl = (v: number) => {
     return (v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
   };
@@ -35,9 +22,26 @@ export const ConfirmationDashboard: React.FC<DashboardProps> = ({ data, loading 
   };
 
   return (
-    <div>
-      {/* ── KPI GRID ── */}
-      <div className="cs-kpi-grid">
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+      {/* ── PAINEL DE VALIDAÇÃO DE IMPORTAÇÕES ("O QUE FALTA HOJE") NO TOPO DO DASHBOARD ── */}
+      <ConfirmationImportStatus initialDate={dataPosicao} onNavigateTab={onNavigateTab} />
+
+      {loading && (
+        <div style={{ textAlign: 'center', padding: '3rem', color: '#94a3b8' }}>
+          <p>Carregando indicadores do FIDC...</p>
+        </div>
+      )}
+
+      {!loading && !data && (
+        <div className="cs-card" style={{ textAlign: 'center', padding: '3rem' }}>
+          <p style={{ color: '#94a3b8' }}>Nenhum dado encontrado para a data e fundo selecionados.</p>
+        </div>
+      )}
+
+      {!loading && data && (
+        <>
+          {/* ── KPI GRID ── */}
+          <div className="cs-kpi-grid">
         <div className="cs-kpi-card">
           <div className="cs-kpi-card-header">
             <span className="cs-kpi-label">Patrimônio Líquido (PL)</span>
@@ -228,6 +232,8 @@ export const ConfirmationDashboard: React.FC<DashboardProps> = ({ data, loading 
           </div>
         </div>
       </div>
+        </>
+      )}
     </div>
   );
 };

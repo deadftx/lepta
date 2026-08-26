@@ -1,8 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   ClipboardCheck, LayoutDashboard, TrendingUp, Layers,
-  Search, Users, DollarSign, RefreshCw, Calendar, Database, CheckCircle2, AlertCircle, X, FileText,
-  ShieldCheck
+  Search, Users, DollarSign, RefreshCw, Calendar, Database, CheckCircle2, AlertCircle, X, FileText
 } from 'lucide-react';
 import { API_BASE_URL, getAuthHeaders } from '../../../config/api';
 import { useAuth } from '../../core/AuthContext';
@@ -13,17 +12,17 @@ import ConfirmationTitulos from './ConfirmationTitulos';
 import ConfirmationCedentes from './ConfirmationCedentes';
 import ConfirmationReceitas from './ConfirmationReceitas';
 import ConfirmationRelatorioDiario from './ConfirmationRelatorioDiario';
-import ConfirmationImportStatus from './ConfirmationImportStatus';
 import './ConfirmationSystem.css';
 
-type ActiveTab = 'dashboard' | 'status_import' | 'cotas' | 'carteira' | 'titulos' | 'cedentes' | 'receitas' | 'relatorio';
+type ActiveTab = 'dashboard' | 'cotas' | 'carteira' | 'titulos' | 'cedentes' | 'receitas' | 'relatorio';
 
 export const ConfirmationSystem: React.FC = () => {
   const { user } = useAuth();
   const isMaster = user?.role === 'MASTER';
 
+  const todayStr = new Date().toISOString().substring(0, 10);
   const [fundoId, setFundoId] = useState<'MULTISETORIAL' | 'SPECIAL'>('MULTISETORIAL');
-  const [dataPosicao, setDataPosicao] = useState<string>('');
+  const [dataPosicao, setDataPosicao] = useState<string>(todayStr);
   const [activeTab, setActiveTab] = useState<ActiveTab>('dashboard');
 
   const [fundosData, setFundosData] = useState<{ fundos: any[]; classes: any[] }>({ fundos: [], classes: [] });
@@ -101,9 +100,6 @@ export const ConfirmationSystem: React.FC = () => {
       if (res.ok) {
         const data = await res.json();
         setDashboardData(data);
-        if (!dataPosicao && data.data) {
-          setDataPosicao(data.data);
-        }
       }
     } catch (err) {
       console.error('Erro ao buscar dashboard:', err);
@@ -152,7 +148,6 @@ export const ConfirmationSystem: React.FC = () => {
 
   const handleFundoChange = (newFundo: 'MULTISETORIAL' | 'SPECIAL') => {
     setFundoId(newFundo);
-    setDataPosicao('');
   };
 
   return (
@@ -201,7 +196,10 @@ export const ConfirmationSystem: React.FC = () => {
 
           <button
             className="cs-page-btn"
-            onClick={fetchDashboard}
+            onClick={() => {
+              fetchDashboard();
+              fetchImportStatus();
+            }}
             title="Atualizar Dados"
             style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
           >
@@ -230,14 +228,6 @@ export const ConfirmationSystem: React.FC = () => {
           onClick={() => setActiveTab('dashboard')}
         >
           <LayoutDashboard size={18} /> Dashboard FIDC
-        </button>
-        <button
-          className={`cs-tab-btn ${activeTab === 'status_import' ? 'active' : ''}`}
-          onClick={() => setActiveTab('status_import')}
-          style={{ position: 'relative' }}
-        >
-          <ShieldCheck size={18} color={importStatus?.diaValido ? '#4ade80' : '#fbbf24'} />
-          O Que Falta Hoje
           {importStatus && (
             <span
               style={{
@@ -295,12 +285,10 @@ export const ConfirmationSystem: React.FC = () => {
 
       {/* ── CONTEÚDO DA ABA ATIVA ── */}
       {activeTab === 'dashboard' && (
-        <ConfirmationDashboard data={dashboardData} loading={loadingDashboard} />
-      )}
-
-      {activeTab === 'status_import' && (
-        <ConfirmationImportStatus
-          initialDate={dataPosicao}
+        <ConfirmationDashboard
+          data={dashboardData}
+          loading={loadingDashboard}
+          dataPosicao={dataPosicao}
           onNavigateTab={(tab, targetFundo) => {
             if (targetFundo) setFundoId(targetFundo);
             setActiveTab(tab as ActiveTab);
