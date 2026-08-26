@@ -9,7 +9,10 @@ import {
   getTitulos,
   getCedentesList,
   saveCedente,
-  getReceitas
+  getReceitas,
+  getImportacoesStatus,
+  importReceitasFromExcel,
+  importEstoqueFile
 } from './fidcService.js';
 import { setFidcDb, getFidcDb, importBackupIntoMainDb } from './fidcDb.js';
 import { generateRelatorioDiarioHtml } from './reportService.js';
@@ -282,6 +285,74 @@ export function registerConfirmationRoutes(app, {
       return res.json({ success: true, message: 'Receita lançada com sucesso!' });
     } catch (err) {
       console.error('Erro ao lançar receita:', err);
+      return res.status(500).json({ error: err.message });
+    }
+  });
+
+  // --- 7.1 IMPORTAÇÃO DE RECEITAS VIA EXCEL (.XLSX) ---
+  const memoryUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 * 1024 * 1024 } });
+
+  app.post('/api/confirmacao/receitas/import-excel', requireSession, checkAccess, memoryUpload.single('file'), (req, res) => {
+    try {
+      if (!req.file || !req.file.buffer) {
+        return res.status(400).json({ error: 'Nenhum arquivo de planilha enviado.' });
+      }
+
+      const { fundo_id, data } = req.body;
+      const result = importReceitasFromExcel({
+        fundoId: fundo_id || 'MULTISETORIAL',
+        data,
+        fileBuffer: req.file.buffer,
+        filename: req.file.originalname
+      });
+
+      return res.json({
+        success: true,
+        message: `Planilha de receitas importada com sucesso! Foram incluídos ${result.count} lançamentos no banco de dados.`,
+        ...result
+      });
+    } catch (err) {
+      console.error('Erro ao importar planilha de receitas:', err);
+      return res.status(500).json({ error: err.message || 'Erro ao processar planilha de receitas.' });
+    }
+  });
+
+  // --- 7.2 IMPORTAÇÃO DE ESTOQUE (.CSV / .XLSX) ---
+  app.post('/api/confirmacao/estoque/import', requireSession, checkAccess, memoryUpload.single('file'), (req, res) => {
+    try {
+      if (!req.file || !req.file.buffer) {
+        return res.status(400).json({ error: 'Nenhum arquivo de estoque enviado.' });
+      }
+
+      const { fundo_id, data } = req.body;
+      const isCsv = (req.file.originalname || '').toLowerCase().endsWith('.csv');
+      const result = importEstoqueFile({
+        fundoId: fundo_id || 'MULTISETORIAL',
+        data,
+        fileBuffer: req.file.buffer,
+        filename: req.file.originalname,
+        isCsv
+      });
+
+      return res.json({
+        success: true,
+        message: `Estoque importado com sucesso! Foram salvos ${result.count.toLocaleString('pt-BR')} títulos no banco de dados.`,
+        ...result
+      });
+    } catch (err) {
+      console.error('Erro ao importar estoque:', err);
+      return res.status(500).json({ error: err.message || 'Erro ao processar arquivo de estoque.' });
+    }
+  });
+
+  // --- 7.3 STATUS DE VALIDAÇÃO DAS IMPORTAÇÕES DIÁRIAS ("O QUE FALTA HOJE") ---
+  app.get('/api/confirmacao/importacoes/status', requireSession, checkAccess, (req, res) => {
+    try {
+      const { data } = req.query;
+      const statusInfo = getImportacoesStatus({ data });
+      return res.json(statusInfo);
+    } catch (err) {
+      console.error('Erro ao consultar status de importações:', err);
       return res.status(500).json({ error: err.message });
     }
   });

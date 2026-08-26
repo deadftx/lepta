@@ -157,6 +157,17 @@ export function ensureFidcSchema(db) {
     CREATE TABLE IF NOT EXISTS feriados (
       data TEXT PRIMARY KEY
     );
+    CREATE TABLE IF NOT EXISTS importacoes_status (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      fundo_id TEXT NOT NULL,
+      tipo TEXT NOT NULL,
+      data_referencia TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'IMPORTADO',
+      registros_importados INTEGER DEFAULT 0,
+      arquivo_origem TEXT,
+      atualizado_em TEXT DEFAULT (datetime('now')),
+      UNIQUE(fundo_id, tipo, data_referencia)
+    );
     CREATE TABLE IF NOT EXISTS logs (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       usuario TEXT,

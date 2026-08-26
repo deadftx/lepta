@@ -15,6 +15,9 @@ export const ConfirmationRelatorioDiario: React.FC<RelatorioDiarioProps> = ({ in
   const [fundo, setFundo] = useState<'AMBOS' | 'MULTISETORIAL' | 'SPECIAL'>('AMBOS');
 
   const [generating, setGenerating] = useState(false);
+  const [isWarningModalOpen, setIsWarningModalOpen] = useState(false);
+  const [pendingValidation, setPendingValidation] = useState<any>(null);
+  const [queuedAction, setQueuedAction] = useState<'download' | 'preview'>('download');
 
   // Seções configuráveis e opções
   const [sections, setSections] = useState({
@@ -94,6 +97,28 @@ export const ConfirmationRelatorioDiario: React.FC<RelatorioDiarioProps> = ({ in
   };
 
   const handleGenerateReport = async (action: 'download' | 'preview' = 'download') => {
+    // 1. Verifica se existem pendências de importação para a data selecionada
+    try {
+      const statusRes = await fetch(`${API_BASE_URL}/api/confirmacao/importacoes/status?data=${dataReferencia}`, {
+        headers: getAuthHeaders()
+      });
+      if (statusRes.ok) {
+        const statusJson = await statusRes.json();
+        if (!statusJson.diaValido && statusJson.totalPendencias > 0) {
+          setPendingValidation(statusJson);
+          setQueuedAction(action);
+          setIsWarningModalOpen(true);
+          return;
+        }
+      }
+    } catch (_) {}
+
+    // Se tudo estiver validado, gera diretamente
+    executeGenerateReport(action);
+  };
+
+  const executeGenerateReport = async (action: 'download' | 'preview') => {
+    setIsWarningModalOpen(false);
     setGenerating(true);
     try {
       const payload = {
@@ -154,6 +179,59 @@ export const ConfirmationRelatorioDiario: React.FC<RelatorioDiarioProps> = ({ in
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+      {/* ── MODAL DE ALERTA DE IMPORTAÇÕES PENDENTES ── */}
+      {isWarningModalOpen && pendingValidation && (
+        <div className="cs-modal-overlay">
+          <div className="cs-modal-card" style={{ maxWidth: '480px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', color: '#fbbf24', marginBottom: '8px' }}>
+              <AlertTriangle size={24} />
+              <h3 style={{ margin: 0, fontSize: '1.15rem', fontWeight: 800, color: '#f8fafc' }}>
+                Importações Pendentes para {pendingValidation.dataFormatada}
+              </h3>
+            </div>
+
+            <p style={{ fontSize: '0.84rem', color: '#cbd5e1', lineHeight: 1.4, margin: '8px 0' }}>
+              Para que a data de posição do relatório seja 100% válida e consolidada, é necessário importar todas as 6 posições do dia.
+            </p>
+
+            <div style={{ background: '#090d16', border: '1px solid rgba(251, 191, 36, 0.3)', borderRadius: '8px', padding: '10px 14px', margin: '10px 0' }}>
+              <div style={{ fontSize: '0.75rem', fontWeight: 700, color: '#fbbf24', textTransform: 'uppercase', marginBottom: '6px' }}>
+                Itens pendentes a importar ({pendingValidation.totalPendencias}):
+              </div>
+              <ul style={{ margin: 0, paddingLeft: '18px', fontSize: '0.82rem', color: '#f8fafc' }}>
+                {pendingValidation.pendencias?.map((item: string, idx: number) => (
+                  <li key={idx} style={{ marginBottom: '3px' }}>
+                    <strong>{item}</strong>
+                  </li>
+                ))}
+              </ul>
+            </div>
+
+            <p style={{ fontSize: '0.78rem', color: '#94a3b8', margin: '8px 0 16px 0' }}>
+              Deseja exportar o relatório com os dados parciais atuais ou prefere realizar as importações pendentes primeiro?
+            </p>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', flexWrap: 'wrap' }}>
+              <button
+                type="button"
+                className="cs-page-btn"
+                onClick={() => setIsWarningModalOpen(false)}
+              >
+                Voltar e Importar
+              </button>
+              <button
+                type="button"
+                className="cs-page-btn"
+                onClick={() => executeGenerateReport(queuedAction)}
+                style={{ background: '#d97706', borderColor: '#f59e0b', color: '#fff', fontWeight: 700 }}
+              >
+                Gerar Mesmo Assim
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ── CARD DE CONFIGURAÇÕES ── */}
       <div className="cs-card">
         <h3 className="cs-card-title">

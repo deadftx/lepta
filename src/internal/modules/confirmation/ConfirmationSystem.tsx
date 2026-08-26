@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   ClipboardCheck, LayoutDashboard, TrendingUp, Layers,
-  Search, Users, DollarSign, RefreshCw, Calendar, Database, CheckCircle2, AlertCircle, X, FileText
+  Search, Users, DollarSign, RefreshCw, Calendar, Database, CheckCircle2, AlertCircle, X, FileText,
+  ShieldCheck
 } from 'lucide-react';
 import { API_BASE_URL, getAuthHeaders } from '../../../config/api';
 import { useAuth } from '../../core/AuthContext';
@@ -12,9 +13,10 @@ import ConfirmationTitulos from './ConfirmationTitulos';
 import ConfirmationCedentes from './ConfirmationCedentes';
 import ConfirmationReceitas from './ConfirmationReceitas';
 import ConfirmationRelatorioDiario from './ConfirmationRelatorioDiario';
+import ConfirmationImportStatus from './ConfirmationImportStatus';
 import './ConfirmationSystem.css';
 
-type ActiveTab = 'dashboard' | 'cotas' | 'carteira' | 'titulos' | 'cedentes' | 'receitas' | 'relatorio';
+type ActiveTab = 'dashboard' | 'status_import' | 'cotas' | 'carteira' | 'titulos' | 'cedentes' | 'receitas' | 'relatorio';
 
 export const ConfirmationSystem: React.FC = () => {
   const { user } = useAuth();
@@ -27,6 +29,7 @@ export const ConfirmationSystem: React.FC = () => {
   const [fundosData, setFundosData] = useState<{ fundos: any[]; classes: any[] }>({ fundos: [], classes: [] });
   const [dashboardData, setDashboardData] = useState<any>(null);
   const [loadingDashboard, setLoadingDashboard] = useState(false);
+  const [importStatus, setImportStatus] = useState<any>(null);
 
   // Modal de Restauração de Banco
   const [isRestoreModalOpen, setIsRestoreModalOpen] = useState(false);
@@ -35,6 +38,22 @@ export const ConfirmationSystem: React.FC = () => {
   const [restoringPath, setRestoringPath] = useState<string | null>(null);
   const [uploadSuccess, setUploadSuccess] = useState<string | null>(null);
   const [uploadError, setUploadError] = useState<string | null>(null);
+
+  const fetchImportStatus = useCallback(async () => {
+    try {
+      let url = `${API_BASE_URL}/api/confirmacao/importacoes/status`;
+      if (dataPosicao) url += `?data=${dataPosicao}`;
+      const res = await fetch(url, { headers: getAuthHeaders() });
+      if (res.ok) {
+        const json = await res.json();
+        setImportStatus(json);
+      }
+    } catch (_) {}
+  }, [dataPosicao]);
+
+  useEffect(() => {
+    fetchImportStatus();
+  }, [fetchImportStatus]);
 
   const fetchLocalBackups = useCallback(async () => {
     setLoadingBackups(true);
@@ -213,6 +232,30 @@ export const ConfirmationSystem: React.FC = () => {
           <LayoutDashboard size={18} /> Dashboard FIDC
         </button>
         <button
+          className={`cs-tab-btn ${activeTab === 'status_import' ? 'active' : ''}`}
+          onClick={() => setActiveTab('status_import')}
+          style={{ position: 'relative' }}
+        >
+          <ShieldCheck size={18} color={importStatus?.diaValido ? '#4ade80' : '#fbbf24'} />
+          O Que Falta Hoje
+          {importStatus && (
+            <span
+              style={{
+                marginLeft: '6px',
+                background: importStatus.diaValido ? 'rgba(74, 222, 128, 0.2)' : 'rgba(251, 191, 36, 0.25)',
+                color: importStatus.diaValido ? '#4ade80' : '#fbbf24',
+                border: `1px solid ${importStatus.diaValido ? '#4ade80' : '#fbbf24'}`,
+                borderRadius: '10px',
+                padding: '1px 6px',
+                fontSize: '0.68rem',
+                fontWeight: 800
+              }}
+            >
+              {importStatus.diaValido ? '✓ OK' : `⚠️ ${importStatus.totalPendencias}`}
+            </span>
+          )}
+        </button>
+        <button
           className={`cs-tab-btn ${activeTab === 'cotas' ? 'active' : ''}`}
           onClick={() => setActiveTab('cotas')}
         >
@@ -253,6 +296,16 @@ export const ConfirmationSystem: React.FC = () => {
       {/* ── CONTEÚDO DA ABA ATIVA ── */}
       {activeTab === 'dashboard' && (
         <ConfirmationDashboard data={dashboardData} loading={loadingDashboard} />
+      )}
+
+      {activeTab === 'status_import' && (
+        <ConfirmationImportStatus
+          initialDate={dataPosicao}
+          onNavigateTab={(tab, targetFundo) => {
+            if (targetFundo) setFundoId(targetFundo);
+            setActiveTab(tab as ActiveTab);
+          }}
+        />
       )}
 
       {activeTab === 'cotas' && (

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { DollarSign, Plus, CheckCircle2, RefreshCw, X } from 'lucide-react';
+import { DollarSign, Plus, CheckCircle2, RefreshCw, X, Upload, FileSpreadsheet } from 'lucide-react';
 import { API_BASE_URL, getAuthHeaders } from '../../../config/api';
 
 interface ReceitasProps {
@@ -18,6 +18,13 @@ export const ConfirmationReceitas: React.FC<ReceitasProps> = ({ fundoId }) => {
   const [modalLiquido, setModalLiquido] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [toastMsg, setToastMsg] = useState<string | null>(null);
+
+  // Modal de Importação Excel (.xlsx)
+  const [isExcelModalOpen, setIsExcelModalOpen] = useState(false);
+  const [excelFile, setExcelFile] = useState<File | null>(null);
+  const [excelDataPosicao, setExcelDataPosicao] = useState(new Date().toISOString().substring(0, 10));
+  const [uploadingExcel, setUploadingExcel] = useState(false);
+  const [excelFeedback, setExcelFeedback] = useState<{ type: 'success' | 'error'; msg: string } | null>(null);
 
   const fetchReceitas = useCallback(async () => {
     setLoading(true);
@@ -78,6 +85,45 @@ export const ConfirmationReceitas: React.FC<ReceitasProps> = ({ fundoId }) => {
     }
   };
 
+  const handleImportExcel = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!excelFile) return;
+
+    setUploadingExcel(true);
+    setExcelFeedback(null);
+
+    const formData = new FormData();
+    formData.append('file', excelFile);
+    formData.append('fundo_id', fundoId);
+    formData.append('data', excelDataPosicao);
+
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/confirmacao/receitas/import-excel`, {
+        method: 'POST',
+        headers: getAuthHeaders(),
+        body: formData
+      });
+
+      const json = await res.json();
+      if (res.ok && json.success) {
+        setExcelFeedback({ type: 'success', msg: json.message || 'Planilha importada com sucesso!' });
+        setToastMsg(`Planilha importada com sucesso! (${json.count} lançamentos adicionados)`);
+        fetchReceitas();
+        setTimeout(() => {
+          setIsExcelModalOpen(false);
+          setExcelFeedback(null);
+          setExcelFile(null);
+        }, 2000);
+      } else {
+        setExcelFeedback({ type: 'error', msg: json.error || 'Erro ao importar planilha.' });
+      }
+    } catch (err: any) {
+      setExcelFeedback({ type: 'error', msg: err.message || 'Falha de conexão com o servidor.' });
+    } finally {
+      setUploadingExcel(false);
+    }
+  };
+
   const formatBrl = (v: number) => {
     return (v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
   };
@@ -87,7 +133,7 @@ export const ConfirmationReceitas: React.FC<ReceitasProps> = ({ fundoId }) => {
 
   return (
     <div>
-      <div className="cs-search-row" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
+      <div className="cs-search-row" style={{ justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
         <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
           <label style={{ fontSize: '0.85rem', color: '#94a3b8' }}>Filtrar Ano/Mês:</label>
           <input
@@ -122,10 +168,129 @@ export const ConfirmationReceitas: React.FC<ReceitasProps> = ({ fundoId }) => {
           </button>
         </div>
 
-        <button className="cs-btn-save" onClick={() => setIsModalOpen(true)} style={{ padding: '8px 18px', fontSize: '0.88rem' }}>
-          <Plus size={16} /> Lançar Receita
-        </button>
+        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+          <button
+            className="cs-page-btn"
+            onClick={() => setIsExcelModalOpen(true)}
+            style={{
+              padding: '8px 14px',
+              fontSize: '0.85rem',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              background: 'rgba(56, 189, 248, 0.15)',
+              borderColor: '#38bdf8',
+              color: '#38bdf8',
+              fontWeight: 700
+            }}
+          >
+            <Upload size={16} /> Importar Planilha (.xlsx)
+          </button>
+
+          <button className="cs-btn-save" onClick={() => setIsModalOpen(true)} style={{ padding: '8px 18px', fontSize: '0.88rem' }}>
+            <Plus size={16} /> Novo Lançamento Manual
+          </button>
+        </div>
       </div>
+
+      {/* Modal de Importação Excel de Receita */}
+      {isExcelModalOpen && (
+        <div className="cs-modal-overlay">
+          <div className="cs-modal-card" style={{ maxWidth: '500px' }}>
+            <div className="cs-modal-header">
+              <h3 style={{ margin: 0, fontSize: '1.15rem', fontWeight: 800, color: '#f8fafc', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <FileSpreadsheet size={20} color="#38bdf8" /> Importar Receita via Planilha Excel
+              </h3>
+              <button
+                className="cs-icon-btn"
+                onClick={() => setIsExcelModalOpen(false)}
+                style={{ background: 'transparent', border: 'none', color: '#94a3b8', cursor: 'pointer' }}
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <form onSubmit={handleImportExcel} style={{ display: 'flex', flexDirection: 'column', gap: '1rem', marginTop: '1rem' }}>
+              <div>
+                <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 700, color: '#cbd5e1', marginBottom: '4px' }}>
+                  Data de Lançamento / Posição:
+                </label>
+                <input
+                  type="date"
+                  className="cs-date-input"
+                  value={excelDataPosicao}
+                  onChange={e => setExcelDataPosicao(e.target.value)}
+                  style={{ width: '100%' }}
+                  required
+                />
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 700, color: '#cbd5e1', marginBottom: '4px' }}>
+                  Arquivo Excel (.xlsx padrão):
+                </label>
+                <input
+                  type="file"
+                  accept=".xlsx"
+                  onChange={e => setExcelFile(e.target.files?.[0] || null)}
+                  style={{
+                    width: '100%',
+                    padding: '10px',
+                    background: '#090d16',
+                    border: '1px dashed rgba(56, 189, 248, 0.4)',
+                    borderRadius: '6px',
+                    color: '#f8fafc',
+                    fontSize: '0.85rem'
+                  }}
+                  required
+                />
+                <div style={{ fontSize: '0.72rem', color: '#94a3b8', marginTop: '6px', lineHeight: 1.4 }}>
+                  ✓ O sistema lê automaticamente as colunas da planilha padrão:
+                  <ul style={{ margin: '4px 0 0 16px', padding: 0 }}>
+                    <li><strong>CedenteNome</strong> (Nome do Cedente)</li>
+                    <li><strong>ValorNominalOriginal</strong> (Valor Bruto)</li>
+                    <li><strong>ValorAquisicao</strong> (Valor Líquido)</li>
+                  </ul>
+                </div>
+              </div>
+
+              {excelFeedback && (
+                <div
+                  style={{
+                    padding: '10px 14px',
+                    borderRadius: '6px',
+                    fontSize: '0.85rem',
+                    background: excelFeedback.type === 'success' ? 'rgba(74, 222, 128, 0.15)' : 'rgba(248, 113, 113, 0.15)',
+                    color: excelFeedback.type === 'success' ? '#4ade80' : '#f87171',
+                    border: `1px solid ${excelFeedback.type === 'success' ? 'rgba(74, 222, 128, 0.3)' : 'rgba(248, 113, 113, 0.3)'}`
+                  }}
+                >
+                  {excelFeedback.msg}
+                </div>
+              )}
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '0.5rem' }}>
+                <button
+                  type="button"
+                  className="cs-page-btn"
+                  onClick={() => setIsExcelModalOpen(false)}
+                  disabled={uploadingExcel}
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  className="cs-page-btn"
+                  disabled={uploadingExcel || !excelFile}
+                  style={{ background: '#0284c7', borderColor: '#38bdf8', color: '#fff', fontWeight: 700 }}
+                >
+                  {uploadingExcel ? 'Importando...' : 'Salvar no Banco'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {toastMsg && (
         <div className="cs-badge success" style={{ padding: '10px 16px', marginBottom: '1rem', width: '100%', boxSizing: 'border-box' }}>

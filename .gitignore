@@ -63,6 +63,7 @@ dist-ssr
 *.db-wal
 server/data/*.db
 *.xlsx
+20260824_multi_clean.xlsx
 
 # Arquivos de Dados e Banco
 *.csv

@@ -1,6 +1,18 @@
+import * as XLSX from 'xlsx';
 import { getFidcDb, ensureFidcSchema } from './fidcDb.js';
 
 // Helpers de datas e números
+export function formatDatePt(d) {
+  if (!d) return '-';
+  const parts = String(d).split('-');
+  if (parts.length === 3) return `${parts[2]}/${parts[1]}/${parts[0]}`;
+  return d;
+}
+
+export function formatBrl(v) {
+  return (v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+}
+
 export function cleanCnpj(val) {
   if (!val) return null;
   return String(val).replace(/\D/g, '') || null;
@@ -629,3 +641,312 @@ export function getReceitas({ fundoId = 'MULTISETORIAL', mes, ano }) {
 
   return { fundoId, lancamentos, porCedente };
 }
+
+/**
+ * Consulta o status das 6 importações diárias (Cotas, Estoque, Receita para Multi e Special)
+ */
+export function getImportacoesStatus({ data } = {}) {
+  const db = getFidcDb();
+  ensureFidcSchema(db);
+
+  const targetDate = data || new Date().toISOString().substring(0, 10);
+  const fundos = [
+    { id: 'MULTISETORIAL', nome: 'MULTI', label: 'LEPTA MULTISETORIAL FIDC' },
+    { id: 'SPECIAL', nome: 'SPECIAL', label: 'LEPTA SPECIAL OPPORTUNITIES FIDC' }
+  ];
+
+  const itens = [];
+
+  for (const f of fundos) {
+    // 1. Cotas
+    const cotasRows = db.prepare('SELECT COUNT(*) as c, MAX(id) as max_id FROM historico_cotas WHERE fundo_id = ? AND data = ?').get(f.id, targetDate);
+    const cotasCount = cotasRows?.c || 0;
+    const cotasStatusRow = db.prepare('SELECT status, atualizado_em, registros_importados FROM importacoes_status WHERE fundo_id = ? AND tipo = ? AND data_referencia = ?').get(f.id, 'COTAS', targetDate);
+
+    const isCotasOk = cotasCount > 0;
+    itens.push({
+      id: `cotas_${f.nome.toLowerCase()}`,
+      fundoId: f.id,
+      fundoNome: f.nome,
+      tipo: 'COTAS',
+      titulo: `Cotas ${f.nome}`,
+      status: isCotasOk ? 'IMPORTADO' : 'PENDENTE',
+      detalhe: isCotasOk ? `${cotasCount} classe(s) importada(s)` : `Esperado: ${formatDatePt(targetDate)}`,
+      registros: cotasCount,
+      atualizadoEm: cotasStatusRow?.atualizado_em || null
+    });
+
+    // 2. Estoque
+    const snap = db.prepare('SELECT id, total_titulos, importado_em FROM estoque_snapshots WHERE fundo_id = ? AND data = ?').get(f.id, targetDate);
+    const estoqueCount = snap?.total_titulos || 0;
+    const estStatusRow = db.prepare('SELECT status, atualizado_em, registros_importados FROM importacoes_status WHERE fundo_id = ? AND tipo = ? AND data_referencia = ?').get(f.id, 'ESTOQUE', targetDate);
+
+    const isEstoqueOk = !!snap && estoqueCount > 0;
+    itens.push({
+      id: `estoque_${f.nome.toLowerCase()}`,
+      fundoId: f.id,
+      fundoNome: f.nome,
+      tipo: 'ESTOQUE',
+      titulo: `Estoque ${f.nome}`,
+      status: isEstoqueOk ? 'IMPORTADO' : 'PENDENTE',
+      detalhe: isEstoqueOk ? `${estoqueCount.toLocaleString('pt-BR')} títulos ativos` : `Esperado: ${formatDatePt(targetDate)}`,
+      registros: estoqueCount,
+      atualizadoEm: snap?.importado_em || estStatusRow?.atualizado_em || null
+    });
+
+    // 3. Receita
+    const recRow = db.prepare('SELECT COUNT(*) as c, SUM(valor_liquido) as liq, MAX(lancado_em) as ultimo FROM receita_lancamentos WHERE fundo_id = ? AND data = ?').get(f.id, targetDate);
+    const recCount = recRow?.c || 0;
+    const recStatusRow = db.prepare('SELECT status, atualizado_em, registros_importados FROM importacoes_status WHERE fundo_id = ? AND tipo = ? AND data_referencia = ?').get(f.id, 'RECEITA', targetDate);
+
+    const isRecOk = recCount > 0;
+    itens.push({
+      id: `receita_${f.nome.toLowerCase()}`,
+      fundoId: f.id,
+      fundoNome: f.nome,
+      tipo: 'RECEITA',
+      titulo: `Receita ${f.nome}`,
+      status: isRecOk ? 'IMPORTADO' : 'PENDENTE',
+      detalhe: isRecOk ? `${recCount} lançamento(s) — ${formatBrl(recRow?.liq || 0)}` : 'Nenhum lançamento hoje',
+      registros: recCount,
+      atualizadoEm: recRow?.ultimo || recStatusRow?.atualizado_em || null
+    });
+  }
+
+  const pendencias = itens.filter(i => i.status === 'PENDENTE');
+  const diaValido = pendencias.length === 0;
+
+  return {
+    data: targetDate,
+    dataFormatada: formatDatePt(targetDate),
+    diaValido,
+    totalPendencias: pendencias.length,
+    itens,
+    pendencias: pendencias.map(p => p.titulo)
+  };
+}
+
+/**
+ * Importa lançamentos de receita a partir de planilha XLSX (Padrão 20260824_multi_clean.xlsx)
+ * Colunas utilizadas:
+ * - CedenteNome -> cedente_nome
+ * - ValorNominalOriginal -> valor_bruto
+ * - ValorAquisicao -> valor_liquido
+ */
+export function importReceitasFromExcel({ fundoId = 'MULTISETORIAL', data, fileBuffer, filename = 'receita.xlsx' }) {
+  const db = getFidcDb();
+  ensureFidcSchema(db);
+
+  if (!fileBuffer || fileBuffer.length === 0) {
+    throw new Error('Arquivo de planilha não fornecido ou vazio.');
+  }
+
+  const wb = XLSX.read(fileBuffer, { type: 'buffer' });
+  const sheetName = wb.SheetNames[0];
+  if (!sheetName) {
+    throw new Error('Nenhuma aba encontrada na planilha.');
+  }
+
+  const sheet = wb.Sheets[sheetName];
+  const rows = XLSX.utils.sheet_to_json(sheet, { defval: null });
+
+  if (!rows || rows.length === 0) {
+    throw new Error('A planilha está vazia.');
+  }
+
+  const parseNumber = (val) => {
+    if (val === null || val === undefined || val === '') return 0;
+    if (typeof val === 'number') return val;
+    let s = String(val).trim().replace(/[R$\s]/g, '');
+    if (s.includes(',') && s.includes('.')) {
+      s = s.replace(/\./g, '').replace(',', '.');
+    } else if (s.includes(',')) {
+      s = s.replace(',', '.');
+    }
+    const num = parseFloat(s);
+    return isNaN(num) ? 0 : num;
+  };
+
+  const targetDate = data || new Date().toISOString().substring(0, 10);
+  let totalBruto = 0;
+  let totalLiquido = 0;
+  let count = 0;
+
+  const insertStmt = db.prepare(`
+    INSERT INTO receita_lancamentos (fundo_id, data, cedente_nome, valor_bruto, valor_liquido, lancado_em)
+    VALUES (?, ?, ?, ?, ?, datetime('now'))
+  `);
+
+  const tx = db.transaction(() => {
+    for (const r of rows) {
+      const cedente = r['CedenteNome'] || r['Cedente'] || r['CEDENTE'] || r['cedente_nome'] || r['NomeCedente'] || r['Cedente Nome'];
+      if (!cedente) continue;
+
+      const bruto = parseNumber(r['ValorNominalOriginal'] ?? r['Valor Bruto'] ?? r['VALOR BRUTO'] ?? r['valor_bruto'] ?? r['ValorNominal'] ?? 0);
+      const liquido = parseNumber(r['ValorAquisicao'] ?? r['Valor Liquido'] ?? r['VALOR LIQUIDO'] ?? r['valor_liquido'] ?? r['ValorAquisição'] ?? 0);
+
+      insertStmt.run(fundoId, targetDate, String(cedente).trim(), bruto, liquido);
+      totalBruto += bruto;
+      totalLiquido += liquido;
+      count++;
+    }
+
+    // Registra na tabela importacoes_status
+    db.prepare(`
+      INSERT INTO importacoes_status (fundo_id, tipo, data_referencia, status, registros_importados, arquivo_origem, atualizado_em)
+      VALUES (?, 'RECEITA', ?, 'IMPORTADO', ?, ?, datetime('now'))
+      ON CONFLICT(fundo_id, tipo, data_referencia) DO UPDATE SET
+        status = 'IMPORTADO',
+        registros_importados = registros_importados + excluded.registros_importados,
+        arquivo_origem = excluded.arquivo_origem,
+        atualizado_em = datetime('now')
+    `).run(fundoId, targetDate, count, filename);
+  });
+
+  tx();
+
+  return {
+    success: true,
+    count,
+    totalBruto,
+    totalLiquido,
+    fundoId,
+    data: targetDate
+  };
+}
+
+/**
+ * Importa títulos de estoque a partir de arquivo CSV ou XLSX
+ */
+export function importEstoqueFile({ fundoId = 'MULTISETORIAL', data, fileBuffer, filename = 'estoque.csv', isCsv = false }) {
+  const db = getFidcDb();
+  ensureFidcSchema(db);
+
+  if (!fileBuffer || fileBuffer.length === 0) {
+    throw new Error('Arquivo de estoque não fornecido ou vazio.');
+  }
+
+  const wb = XLSX.read(fileBuffer, { type: 'buffer' });
+  const sheetName = wb.SheetNames[0];
+  if (!sheetName) throw new Error('Nenhuma aba encontrada no arquivo de estoque.');
+
+  const sheet = wb.Sheets[sheetName];
+  const rows = XLSX.utils.sheet_to_json(sheet, { defval: null });
+  if (!rows || rows.length === 0) throw new Error('Arquivo de estoque vazio.');
+
+  const targetDate = data || new Date().toISOString().substring(0, 10);
+
+  const parseNum = (val) => {
+    if (val === null || val === undefined || val === '') return 0;
+    if (typeof val === 'number') return val;
+    let s = String(val).trim().replace(/[R$\s]/g, '');
+    if (s.includes(',') && s.includes('.')) s = s.replace(/\./g, '').replace(',', '.');
+    else if (s.includes(',')) s = s.replace(',', '.');
+    const n = parseFloat(s);
+    return isNaN(n) ? 0 : n;
+  };
+
+  const parseDate = (val) => {
+    if (!val) return targetDate;
+    if (typeof val === 'number') {
+      const d = XLSX.SSF.parse_date_code(val);
+      if (d) return `${d.y}-${String(d.m).padStart(2, '0')}-${String(d.d).padStart(2, '0')}`;
+    }
+    const s = String(val).trim();
+    if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.substring(0, 10);
+    if (/^\d{2}\/\d{2}\/\d{4}/.test(s)) {
+      const parts = s.split('/');
+      return `${parts[2]}-${parts[1]}-${parts[0]}`;
+    }
+    return targetDate;
+  };
+
+  let totalVp = 0;
+  let count = 0;
+
+  const tx = db.transaction(() => {
+    // Cria ou atualiza snapshot
+    db.prepare('DELETE FROM estoque_titulos WHERE snapshot_id IN (SELECT id FROM estoque_snapshots WHERE fundo_id = ? AND data = ?)').run(fundoId, targetDate);
+    db.prepare('DELETE FROM estoque_snapshots WHERE fundo_id = ? AND data = ?').run(fundoId, targetDate);
+
+    const snapResult = db.prepare(`
+      INSERT INTO estoque_snapshots (fundo_id, data, total_titulos, importado_em)
+      VALUES (?, ?, ?, datetime('now'))
+    `).run(fundoId, targetDate, rows.length);
+
+    const snapshotId = snapResult.lastInsertRowid;
+
+    const insertTitle = db.prepare(`
+      INSERT INTO estoque_titulos (
+        snapshot_id, fundo_id, data_posicao,
+        cedente_cnpj, cedente_nome,
+        sacado_cnpj, sacado_nome,
+        tipo_ativo, data_emissao, data_aquisicao, data_vencimento,
+        numero_titulo, valor_aquisicao, valor_nominal_original, valor_nominal_atual,
+        valor_presente, pdd_nota, pdd_vencido, nota_pdd, campo_chave
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+
+    for (const r of rows) {
+      const cedNome = r['CedenteNome'] || r['Cedente'] || r['cedente_nome'] || 'Não Identificado';
+      const cedCnpj = r['CedenteCnpjCpf'] || r['CedenteCnpj'] || r['cedente_cnpj'] || null;
+      const sacNome = r['SacadoNome'] || r['Sacado'] || r['sacado_nome'] || 'Não Identificado';
+      const sacCnpj = r['SacadoCnpjCpf'] || r['SacadoCnpj'] || r['sacado_cnpj'] || null;
+      const tipoAtivo = r['TipoAtivo'] || r['tipo_ativo'] || 'Outros';
+
+      const dEmissao = parseDate(r['DataEmissao']);
+      const dAquisicao = parseDate(r['DataAquisicao']);
+      const dVencimento = parseDate(r['DataVencimento']);
+      const numTitulo = r['NumeroTitulo'] || r['IdTituloVx'] || r['numero_titulo'] || null;
+
+      const vAquisicao = parseNum(r['ValorAquisicao'] || r['valor_aquisicao']);
+      const vNomOriginal = parseNum(r['ValorNominalOriginal'] || r['valor_nominal_original']);
+      const vNomAtual = parseNum(r['ValorNominalAtual'] || r['valor_nominal_atual'] || vNomOriginal);
+      const vPresente = parseNum(r['ValorPresente'] || r['valor_presente'] || vNomAtual);
+
+      const pddNota = parseNum(r['PDDNota'] || r['pdd_nota']);
+      const pddVenc = parseNum(r['PDDVencido'] || r['pdd_vencido']);
+      const notaPdd = r['NotaPDD'] || r['nota_pdd'] || 'AA';
+      const campoChave = r['CampoChave'] || r['campo_chave'] || null;
+
+      insertTitle.run(
+        snapshotId, fundoId, targetDate,
+        cedCnpj, String(cedNome).trim(),
+        sacCnpj, String(sacNome).trim(),
+        String(tipoAtivo).trim(), dEmissao, dAquisicao, dVencimento,
+        numTitulo ? String(numTitulo) : null,
+        vAquisicao, vNomOriginal, vNomAtual, vPresente,
+        pddNota, pddVenc, String(notaPdd).trim(),
+        campoChave ? String(campoChave) : null
+      );
+
+      totalVp += vPresente;
+      count++;
+    }
+
+    // Atualiza total_titulos no snapshot
+    db.prepare('UPDATE estoque_snapshots SET total_titulos = ? WHERE id = ?').run(count, snapshotId);
+
+    // Registra na tabela importacoes_status
+    db.prepare(`
+      INSERT INTO importacoes_status (fundo_id, tipo, data_referencia, status, registros_importados, arquivo_origem, atualizado_em)
+      VALUES (?, 'ESTOQUE', ?, 'IMPORTADO', ?, ?, datetime('now'))
+      ON CONFLICT(fundo_id, tipo, data_referencia) DO UPDATE SET
+        status = 'IMPORTADO',
+        registros_importados = excluded.registros_importados,
+        arquivo_origem = excluded.arquivo_origem,
+        atualizado_em = datetime('now')
+    `).run(fundoId, targetDate, count, filename);
+  });
+
+  tx();
+
+  return {
+    success: true,
+    count,
+    totalVp,
+    fundoId,
+    data: targetDate
+  };
+}
+
