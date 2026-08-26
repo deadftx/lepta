@@ -71,7 +71,7 @@ function App() {
               <Route path="/administrativo/compras" element={<AccessRoute permission="11.1"><PurchaseApproval /></AccessRoute>} />
               <Route path="/administrativo/configuracao-compras" element={<AccessRoute permission="11.2"><PurchaseWorkflowConfig /></AccessRoute>} />
               <Route path="/confirmacao/sistema" element={<AccessRoute permission="10.1"><ConfirmationSystem /></AccessRoute>} />
-              <Route path="/confirmacao/analise" element={<AccessRoute permission="10.1"><ConfirmationAnalise /></AccessRoute>} />
+              <Route path="/confirmacao/analise" element={<AccessRoute permission="10.2"><ConfirmationAnalise /></AccessRoute>} />
               <Route path="/banco-de-dados" element={<AccessRoute permission="9"><DatabaseManagement /></AccessRoute>} />
               <Route path="/permissions" element={<AccessRoute masterOnly><Permissions /></AccessRoute>} />
               <Route path="/permissions/create-user" element={<AccessRoute masterOnly><CreateUser /></AccessRoute>} />
