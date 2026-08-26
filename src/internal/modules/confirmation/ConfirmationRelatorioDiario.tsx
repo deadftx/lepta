@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import {
   FileText, Calendar, CheckSquare, Square, ChevronUp, ChevronDown,
-  ExternalLink, RefreshCw, Layers, ShieldAlert, AlertTriangle, TrendingUp, DollarSign
+  RefreshCw, Layers, ShieldAlert, AlertTriangle, TrendingUp, DollarSign, Printer
 } from 'lucide-react';
 import { API_BASE_URL, getAuthHeaders } from '../../../config/api';
 
@@ -451,16 +451,25 @@ export const ConfirmationRelatorioDiario: React.FC<RelatorioDiarioProps> = ({ in
         </div>
 
         {/* ── BOTÃO DE EMISSÃO ── */}
-        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '1.5rem', borderTop: '1px solid rgba(255, 255, 255, 0.08)', paddingTop: '1.25rem' }}>
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '1.5rem', borderTop: '1px solid rgba(255, 255, 255, 0.08)', paddingTop: '1.25rem', flexWrap: 'wrap' }}>
           <button
             type="button"
             className="cs-btn-save"
             disabled={generating}
             onClick={() => handleGenerateReport(true)}
-            style={{ padding: '10px 24px', fontSize: '0.92rem', display: 'flex', alignItems: 'center', gap: '8px' }}
+            style={{
+              padding: '10px 24px',
+              fontSize: '0.92rem',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              background: 'linear-gradient(135deg, #2563eb, #1d4ed8)',
+              border: '1px solid #3b82f6',
+              boxShadow: '0 2px 10px rgba(37, 99, 235, 0.3)'
+            }}
           >
-            {generating ? <RefreshCw size={16} className="pwc-spinner" /> : <ExternalLink size={16} />}
-            {generating ? 'Gerando Relatório...' : 'Emitir Relatório Interativo HTML'}
+            {generating ? <RefreshCw size={16} className="pwc-spinner" /> : <Printer size={16} />}
+            {generating ? 'Gerando Relatório...' : 'Imprimir / Salvar PDF (HTML Interativo)'}
           </button>
         </div>
       </div>
