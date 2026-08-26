@@ -185,93 +185,6 @@ export function generateRelatorioDiarioHtml(options = {}) {
       font-weight: 700;
     }
 
-    /* ── ACTION CONTROLS ── */
-    .controls-bar {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      flex-wrap: wrap;
-    }
-    
-    .view-btn {
-      background: var(--card-inner);
-      border: 1px solid var(--card-border);
-      color: var(--text-muted);
-      padding: 6px 12px;
-      border-radius: 6px;
-      font-size: 0.8rem;
-      font-weight: 600;
-      cursor: pointer;
-      transition: all 0.15s ease;
-      display: inline-flex;
-      align-items: center;
-      gap: 5px;
-    }
-    .view-btn:hover {
-      background: var(--card-border);
-      color: #fff;
-    }
-    .view-btn.active {
-      background: rgba(56, 189, 248, 0.15);
-      border-color: var(--primary);
-      color: #fff;
-    }
-
-    .search-input {
-      background: var(--card-inner);
-      border: 1px solid var(--card-border);
-      color: #fff;
-      padding: 6px 12px;
-      border-radius: 6px;
-      font-size: 0.8rem;
-      width: 170px;
-      outline: none;
-      transition: all 0.2s;
-    }
-    .search-input:focus {
-      border-color: var(--primary);
-      width: 210px;
-    }
-    
-    .btn-export {
-      background: linear-gradient(135deg, #10b981, #059669);
-      color: #ffffff;
-      border: 1px solid #34d399;
-      padding: 7px 16px;
-      border-radius: 6px;
-      font-size: 0.82rem;
-      font-weight: 700;
-      cursor: pointer;
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-      box-shadow: 0 2px 8px rgba(16, 185, 129, 0.35);
-      transition: all 0.15s ease;
-    }
-    .btn-export:hover {
-      background: linear-gradient(135deg, #059669, #047857);
-      transform: translateY(-1px);
-    }
-
-    .btn-print {
-      background: var(--card-inner);
-      color: var(--text-muted);
-      border: 1px solid var(--card-border);
-      padding: 7px 14px;
-      border-radius: 6px;
-      font-size: 0.82rem;
-      font-weight: 600;
-      cursor: pointer;
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-      transition: all 0.15s ease;
-    }
-    .btn-print:hover {
-      background: var(--card-border);
-      color: #fff;
-    }
-
     /* ── CONSOLIDATED HEADER SUMMARY ── */
     .consolidated-bar {
       display: grid;
@@ -681,7 +594,7 @@ export function generateRelatorioDiarioHtml(options = {}) {
       </div>
     </div>
 
-    <!-- Top Sticky Action Bar -->
+    <!-- Top Executive Header -->
     <header class="topbar">
       <div class="topbar-content">
         <div class="brand-section">
@@ -689,37 +602,11 @@ export function generateRelatorioDiarioHtml(options = {}) {
             <div class="brand-logo">LEPTA <span>CAPITAL</span></div>
             <div class="brand-subtitle">Relatório Diário Consolidado de Gestão & Monitoramento</div>
           </div>
-          <span class="date-badge">📅 Posição: ${refDateFormatted}</span>
         </div>
 
-        <div class="controls-bar">
-          <div style="display: flex; gap: 4px;">
-            <button type="button" class="view-btn active" id="btn-view-all" onclick="showFundView('ALL')">
-              📊 Ambos (Lado a Lado)
-            </button>
-            <button type="button" class="view-btn" id="btn-view-multi" onclick="showFundView('MULTISETORIAL')">
-              🏢 Multisetorial
-            </button>
-            <button type="button" class="view-btn" id="btn-view-special" onclick="showFundView('SPECIAL')">
-              💎 Special
-            </button>
-          </div>
-
-          <input
-            type="text"
-            id="tableFilterInput"
-            class="search-input"
-            placeholder="🔍 Filtrar cedente, sacado..."
-            oninput="handleLiveFilter(this.value)"
-          />
-
-          <button type="button" class="btn-export" onclick="exportHtmlReport()">
-            💾 Exportar Relatório
-          </button>
-
-          <button type="button" class="btn-print" onclick="window.print()">
-            🖨️ Imprimir / PDF
-          </button>
+        <div style="text-align: right; display: flex; flex-direction: column; align-items: flex-end; gap: 3px;">
+          <span class="date-badge">📅 Posição: ${refDateFormatted}</span>
+          <span style="font-size: 0.72rem; color: var(--text-dim);">Emissão: ${emittedAt}</span>
         </div>
       </div>
     </header>
@@ -1195,106 +1082,6 @@ export function generateRelatorioDiarioHtml(options = {}) {
       <div style="margin-top: 4px; color: var(--text-dim);">Documento confidencial para uso exclusivo da gestão e comitê de crédito.</div>
     </footer>
   </div>
-
-  <!-- Interactive Logic -->
-  <script>
-    function exportHtmlReport() {
-      // Captura o HTML integral do documento atual com toda interatividade e estilos
-      const htmlContent = '<!DOCTYPE html>\\n' + document.documentElement.outerHTML;
-      const blob = new Blob([htmlContent], { type: 'text/html;charset=utf-8' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      const cleanDate = '${refDateFormatted}'.replace(/[/\\\\.]/g, '-');
-      a.href = url;
-      a.download = 'Relatorio_Diario_Lepta_' + cleanDate + '.html';
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      setTimeout(function() { URL.revokeObjectURL(url); }, 3000);
-    }
-
-    function showFundView(view) {
-      const grid = document.getElementById('fundsGrid');
-      const colMulti = document.getElementById('col-MULTISETORIAL');
-      const colSpecial = document.getElementById('col-SPECIAL');
-      
-      const btnAll = document.getElementById('btn-view-all');
-      const btnMulti = document.getElementById('btn-view-multi');
-      const btnSpecial = document.getElementById('btn-view-special');
-      
-      if (btnAll) btnAll.classList.remove('active');
-      if (btnMulti) btnMulti.classList.remove('active');
-      if (btnSpecial) btnSpecial.classList.remove('active');
-
-      if (view === 'ALL') {
-        if (btnAll) btnAll.classList.add('active');
-        if (colMulti) {
-          colMulti.classList.remove('hidden', 'full-width');
-        }
-        if (colSpecial) {
-          colSpecial.classList.remove('hidden', 'full-width');
-        }
-        grid.style.gridTemplateColumns = window.innerWidth > 1100 ? '1fr 1fr' : '1fr';
-      } else if (view === 'MULTISETORIAL') {
-        if (btnMulti) btnMulti.classList.add('active');
-        if (colMulti) {
-          colMulti.classList.remove('hidden');
-          colMulti.classList.add('full-width');
-        }
-        if (colSpecial) {
-          colSpecial.classList.add('hidden');
-          colSpecial.classList.remove('full-width');
-        }
-        grid.style.gridTemplateColumns = '1fr';
-      } else if (view === 'SPECIAL') {
-        if (btnSpecial) btnSpecial.classList.add('active');
-        if (colSpecial) {
-          colSpecial.classList.remove('hidden');
-          colSpecial.classList.add('full-width');
-        }
-        if (colMulti) {
-          colMulti.classList.add('hidden');
-          colMulti.classList.remove('full-width');
-        }
-        grid.style.gridTemplateColumns = '1fr';
-      }
-    }
-
-    function handleLiveFilter(query) {
-      const term = (query || '').toLowerCase().trim();
-      const tables = document.querySelectorAll('.filterable-table');
-      
-      tables.forEach(table => {
-        const rows = table.querySelectorAll('tbody tr');
-        rows.forEach(row => {
-          if (!term) {
-            row.style.display = '';
-          } else {
-            const text = row.textContent.toLowerCase();
-            row.style.display = text.includes(term) ? '' : 'none';
-          }
-        });
-      });
-    }
-
-    // Auto-adapt grid column style on window resize
-    window.addEventListener('resize', () => {
-      const btnAll = document.getElementById('btn-view-all');
-      if (btnAll && btnAll.classList.contains('active')) {
-        const grid = document.getElementById('fundsGrid');
-        if (grid) {
-          grid.style.gridTemplateColumns = window.innerWidth > 1100 ? '1fr 1fr' : '1fr';
-        }
-      }
-    });
-
-    // Support keyboard shortcut Ctrl+P / Cmd+P
-    window.addEventListener('keydown', (e) => {
-      if ((e.ctrlKey || e.metaKey) && e.key === 'p') {
-        // native window.print() will fire
-      }
-    });
-  </script>
 </body>
 </html>`;
 

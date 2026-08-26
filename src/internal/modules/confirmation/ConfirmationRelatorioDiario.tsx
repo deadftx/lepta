@@ -93,7 +93,7 @@ export const ConfirmationRelatorioDiario: React.FC<RelatorioDiarioProps> = ({ in
     setSectionOrder(newOrder);
   };
 
-  const handleGenerateReport = async (openDirectly = true) => {
+  const handleGenerateReport = async () => {
     setGenerating(true);
     try {
       const payload = {
@@ -116,15 +116,26 @@ export const ConfirmationRelatorioDiario: React.FC<RelatorioDiarioProps> = ({ in
       if (res.ok) {
         const json = await res.json();
         if (json.html) {
-          if (openDirectly) {
-            const blob = new Blob([json.html], { type: 'text/html;charset=utf-8' });
-            const url = URL.createObjectURL(blob);
-            window.open(url, '_blank');
-          }
+          const blob = new Blob([json.html], { type: 'text/html;charset=utf-8' });
+          const url = URL.createObjectURL(blob);
+
+          // 1. Dispara o download automático direto do arquivo .html
+          const a = document.createElement('a');
+          const cleanDate = (dataReferencia || new Date().toISOString().substring(0, 10)).replace(/[/\\.]/g, '-');
+          a.href = url;
+          a.download = `Relatorio_Diario_Lepta_${cleanDate}.html`;
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+
+          // 2. Abre a visualização em nova aba
+          window.open(url, '_blank');
+
+          setTimeout(() => URL.revokeObjectURL(url), 10000);
         }
       }
     } catch (err) {
-      console.error('Erro ao emitir relatório diário:', err);
+      console.error('Erro ao exportar relatório diário:', err);
     } finally {
       setGenerating(false);
     }
@@ -456,7 +467,7 @@ export const ConfirmationRelatorioDiario: React.FC<RelatorioDiarioProps> = ({ in
             type="button"
             className="cs-btn-save"
             disabled={generating}
-            onClick={() => handleGenerateReport(true)}
+            onClick={() => handleGenerateReport()}
             style={{
               padding: '10px 24px',
               fontSize: '0.92rem',
