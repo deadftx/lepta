@@ -37,6 +37,9 @@ function formatDatePtBr(dateVal) {
     return d.toLocaleDateString('pt-BR', { timeZone: 'UTC' });
   } catch {
     return '';
+  }
+}
+
 function normalizeStr(str) {
   return String(str || '')
     .normalize('NFD')

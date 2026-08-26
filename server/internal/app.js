@@ -172,16 +172,49 @@ const sessionCleanupTimer = setInterval(() => {
 }, 15 * 60 * 1000);
 sessionCleanupTimer.unref();
 
+function ensureUsuariosLeptaTable() {
+  try {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS usuarios_lepta (
+        id TEXT PRIMARY KEY,
+        username TEXT,
+        email TEXT,
+        password TEXT,
+        role TEXT DEFAULT 'USER',
+        permissions TEXT DEFAULT '[]',
+        secret_question TEXT,
+        secret_answer TEXT,
+        login_attempts INTEGER NOT NULL DEFAULT 0,
+        secret_attempts INTEGER NOT NULL DEFAULT 0,
+        access_locked INTEGER NOT NULL DEFAULT 0,
+        fully_locked INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT,
+        updated_at TEXT
+      )
+    `);
+  } catch (err) {
+    console.error('Erro ao inicializar tabela usuarios_lepta:', err.message);
+  }
+}
+
 function ensureUserSecurityColumns() {
   try {
+    ensureUsuariosLeptaTable();
     const columns = new Set(db.prepare(`PRAGMA table_info(usuarios_lepta)`).all().map(column => column.name));
     const additions = [
+      ['username', 'TEXT'],
+      ['email', 'TEXT'],
+      ['password', 'TEXT'],
+      ['role', "TEXT DEFAULT 'USER'"],
+      ['permissions', "TEXT DEFAULT '[]'"],
       ['secret_question', 'TEXT'],
       ['secret_answer', 'TEXT'],
       ['login_attempts', 'INTEGER NOT NULL DEFAULT 0'],
       ['secret_attempts', 'INTEGER NOT NULL DEFAULT 0'],
       ['access_locked', 'INTEGER NOT NULL DEFAULT 0'],
-      ['fully_locked', 'INTEGER NOT NULL DEFAULT 0']
+      ['fully_locked', 'INTEGER NOT NULL DEFAULT 0'],
+      ['created_at', 'TEXT'],
+      ['updated_at', 'TEXT']
     ];
     for (const [name, definition] of additions) {
       if (!columns.has(name)) db.exec(`ALTER TABLE usuarios_lepta ADD COLUMN ${name} ${definition}`);
@@ -189,7 +222,23 @@ function ensureUserSecurityColumns() {
     // Garante que o administrador Master nunca fique bloqueado por tentativas anteriores
     db.prepare(`UPDATE usuarios_lepta SET access_locked = 0, fully_locked = 0, login_attempts = 0 WHERE role = 'MASTER'`).run();
   } catch (error) {
-    if (!String(error.message).includes('no such table')) throw error;
+    console.error('Erro em ensureUserSecurityColumns:', error.message);
+  }
+}
+
+function ensureTableColumns(table, keys) {
+  try {
+    const existingCols = new Set(
+      db.prepare(`PRAGMA table_info("${table}")`).all().map(c => c.name)
+    );
+    for (const key of keys) {
+      if (!existingCols.has(key)) {
+        console.log(`[DB Migration] Adicionando coluna "${key}" à tabela "${table}"`);
+        db.exec(`ALTER TABLE "${table}" ADD COLUMN "${key}" TEXT`);
+      }
+    }
+  } catch (err) {
+    console.error(`Erro ao verificar/adicionar colunas na tabela ${table}:`, err.message);
   }
 }
 
@@ -211,6 +260,7 @@ function ensureAccessAreas() {
     ['9', 'Banco de Dados'],
     ['10', 'Confirmação'],
     ['10.1', 'Confirmação > Sistema de Confirmação'],
+    ['10.2', 'Confirmação > Análise de Confirmação'],
     ['11', 'Administrativo'],
     ['11.1', 'Administrativo > Solicitações Financeiras'],
     ['11.2', 'Administrativo > Configuração de Esteira de Compras']
@@ -2508,7 +2558,7 @@ const ASSIGNABLE_PERMISSION_IDS = new Set([
   '7', '7.1', '7.2', '7.3', '7.4', '7.5',
   '8', '8.1', '8.2', '8.3',
   '9',
-  '10', '10.1',
+  '10', '10.1', '10.2',
   '11', '11.1', '11.2'
 ]);
 
@@ -2517,6 +2567,56 @@ function normalizeAssignablePermissions(value) {
   return Array.from(new Set(value.map(String)))
     .filter(permission => ASSIGNABLE_PERMISSION_IDS.has(permission));
 }
+
+app.post('/api/admin/users', requireSession, requireMaster, (req, res) => {
+  try {
+    const { username, email, role, permissions, id } = req.body || {};
+    const trimmedUsername = String(username || '').trim();
+    const trimmedEmail = String(email || '').trim().toLowerCase();
+
+    if (!trimmedUsername) {
+      return res.status(400).json({ error: 'Nome de usuário é obrigatório.' });
+    }
+    if (!trimmedEmail) {
+      return res.status(400).json({ error: 'E-mail é obrigatório.' });
+    }
+
+    ensureUserSecurityColumns();
+
+    // Verifica se e-mail ou username já existe
+    const existing = db.prepare(`SELECT id, username, email FROM usuarios_lepta WHERE lower(username) = ? OR lower(email) = ?`).get(trimmedUsername.toLowerCase(), trimmedEmail);
+    if (existing) {
+      if (existing.email?.toLowerCase() === trimmedEmail) {
+        return res.status(400).json({ error: 'Já existe um usuário cadastrado com este e-mail.' });
+      }
+      return res.status(400).json({ error: 'Já existe um usuário cadastrado com este nome de usuário.' });
+    }
+
+    const userId = id || `user_${Date.now()}`;
+    const userRole = role === 'MASTER' ? 'MASTER' : 'USER';
+    const userPermissions = userRole === 'MASTER' ? '[]' : JSON.stringify(normalizeAssignablePermissions(permissions) || []);
+
+    const stmt = db.prepare(`
+      INSERT INTO usuarios_lepta (id, username, email, password, role, permissions, login_attempts, secret_attempts, access_locked, fully_locked, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, 0, 0, 0, 0, datetime('now'))
+    `);
+    stmt.run(userId, trimmedUsername, trimmedEmail, '', userRole, userPermissions);
+
+    const created = db.prepare(`SELECT * FROM usuarios_lepta WHERE id = ?`).get(userId);
+    if (!created) {
+      return res.status(500).json({ error: 'Erro ao confirmar usuário cadastrado no banco de dados.' });
+    }
+
+    return res.status(201).json({
+      success: true,
+      message: `Usuário "${trimmedUsername}" cadastrado com sucesso!`,
+      user: sanitizeUser(created)
+    });
+  } catch (err) {
+    console.error('Erro ao cadastrar usuário:', err);
+    return res.status(500).json({ error: `Erro no banco de dados: ${err.message}` });
+  }
+});
 
 app.put('/api/admin/users/:id/permissions', requireSession, requireMaster, (req, res) => {
   const permissions = normalizeAssignablePermissions(req.body?.permissions);
@@ -2935,7 +3035,7 @@ app.post('/:table', resolveGenericTable, requireSession, authorizeGenericTable, 
   const data = { ...req.body };
   if (table === 'usuarios_lepta') {
     restrictUserWriteFields(data);
-    data.password = '';
+    data.password = data.password || '';
   }
   if (!data.id) data.id = Date.now().toString();
 
@@ -2954,11 +3054,14 @@ app.post('/:table', resolveGenericTable, requireSession, authorizeGenericTable, 
     const createCols = keys.map(k => `"${k}" TEXT`).join(', ');
     db.exec(`CREATE TABLE IF NOT EXISTS "${table}" (${createCols})`);
 
+    // Ensure all columns exist dynamically (auto-migration)
+    ensureTableColumns(table, keys);
+
     db.prepare(`INSERT INTO "${table}" (${colsSql}) VALUES (${placeholders})`).run(values);
     res.status(201).json(table === 'usuarios_lepta' ? sanitizeUser(data) : data);
   } catch (err) {
-    console.error('Erro ao criar registro:', err.message);
-    res.status(500).json({ error: 'Não foi possível criar o registro.' });
+    console.error('Erro ao criar registro na tabela', table, ':', err.message);
+    res.status(500).json({ error: `Erro ao criar registro: ${err.message}` });
   }
 });
 
@@ -2981,6 +3084,9 @@ app.put('/:table/:id', resolveGenericTable, requireSession, authorizeGenericTabl
     const placeholders = keys.map(() => '?').join(', ');
     const values = keys.map(k => typeof data[k] === 'object' ? JSON.stringify(data[k]) : data[k]);
 
+    // Ensure all columns exist dynamically
+    ensureTableColumns(table, keys);
+
     if (table === 'usuarios_lepta') {
       const setSql = keys.filter(k => k !== 'id').map(k => `"${k}" = ?`).join(', ');
       const updateKeys = keys.filter(k => k !== 'id');
@@ -2992,8 +3098,8 @@ app.put('/:table/:id', resolveGenericTable, requireSession, authorizeGenericTabl
     db.prepare(`REPLACE INTO "${table}" (${colsSql}) VALUES (${placeholders})`).run(values);
     res.json(data);
   } catch (err) {
-    console.error('Erro ao atualizar registro:', err.message);
-    res.status(500).json({ error: 'Não foi possível atualizar o registro.' });
+    console.error('Erro ao atualizar registro na tabela', table, ':', err.message);
+    res.status(500).json({ error: `Erro ao atualizar registro: ${err.message}` });
   }
 });
 
@@ -3013,16 +3119,15 @@ app.patch('/:table/:id', resolveGenericTable, requireSession, authorizeGenericTa
       return res.json(updated);
     }
     const keys = validateGenericData(data);
+    ensureTableColumns(table, keys);
     const setSql = keys.map(k => `"${k}" = ?`).join(', ');
     const values = keys.map(k => typeof data[k] === 'object' ? JSON.stringify(data[k]) : data[k]);
-    values.push(id);
-
-    db.prepare(`UPDATE "${table}" SET ${setSql} WHERE id = ?`).run(values);
+    db.prepare(`UPDATE "${table}" SET ${setSql} WHERE id = ?`).run(...values, id);
     const row = db.prepare(`SELECT * FROM "${table}" WHERE id = ?`).get(id);
-    res.json(table === 'usuarios_lepta' ? sanitizeUser(row) : parseRow(row));
+    return res.json(table === 'usuarios_lepta' ? sanitizeUser(row) : parseRow(row));
   } catch (err) {
-    console.error('Erro ao alterar registro:', err.message);
-    res.status(500).json({ error: 'Não foi possível alterar o registro.' });
+    console.error('Erro ao modificar registro na tabela', table, ':', err.message);
+    res.status(500).json({ error: `Erro ao modificar registro: ${err.message}` });
   }
 });
 

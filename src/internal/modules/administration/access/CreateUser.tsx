@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { UserPlus, Save, ArrowLeft, CheckCircle2, AlertCircle, Mail, User } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
-import { API_BASE_URL } from '../../../../config/api';
+import { API_BASE_URL, getAuthHeaders } from '../../../../config/api';
 import '../../../core/styles/Permissions.css';
 import PermissionSelector from '../../../core/PermissionSelector';
 import { allPermissionIds } from '../../../core/permissions';
@@ -36,7 +36,7 @@ const CreateUser = () => {
     if (selectedPermissions.length === allPermissionIds.length) {
       setSelectedPermissions([]);
     } else {
-      setSelectedPermissions(allPermissionIds);
+      setSelectedPermissions([...allPermissionIds]);
     }
   };
 
@@ -60,18 +60,20 @@ const CreateUser = () => {
     try {
       setSubmitting(true);
 
-      // Check existing users in database
-      const authHeaders = { Authorization: `Bearer ${localStorage.getItem('lepta_auth_token')}` };
+      const authHeaders = getAuthHeaders();
       const usersRes = await fetch(`${API_BASE_URL}/users`, { headers: authHeaders });
-      const existingUsers = await usersRes.json();
-
-      const emailExists = existingUsers.some(
-        (u: any) => u.email?.toLowerCase() === trimmedEmail
-      );
-      if (emailExists) {
-        setMessage({ type: 'error', text: 'Já existe um usuário cadastrado com este e-mail.' });
-        setSubmitting(false);
-        return;
+      if (usersRes.ok) {
+        const existingUsers = await usersRes.json();
+        if (Array.isArray(existingUsers)) {
+          const emailExists = existingUsers.some(
+            (u: any) => u.email?.toLowerCase() === trimmedEmail
+          );
+          if (emailExists) {
+            setMessage({ type: 'error', text: 'Já existe um usuário cadastrado com este e-mail.' });
+            setSubmitting(false);
+            return;
+          }
+        }
       }
 
       const newUser = {
@@ -83,11 +85,23 @@ const CreateUser = () => {
         permissions: role === 'MASTER' ? allPermissionIds : selectedPermissions
       };
 
-      const saveRes = await fetch(`${API_BASE_URL}/users`, {
+      // Tenta a rota administrativa dedicada com validação robusta
+      let saveRes = await fetch(`${API_BASE_URL}/api/admin/users`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...authHeaders },
         body: JSON.stringify(newUser)
       });
+
+      // Fallback para rota genérica caso necessário
+      if (!saveRes.ok && saveRes.status === 404) {
+        saveRes = await fetch(`${API_BASE_URL}/users`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', ...authHeaders },
+          body: JSON.stringify(newUser)
+        });
+      }
+
+      const resData = await saveRes.json().catch(() => ({}));
 
       if (saveRes.ok) {
         setMessage({
@@ -99,11 +113,14 @@ const CreateUser = () => {
         setSelectedPermissions([]);
         setRole('USER');
       } else {
-        setMessage({ type: 'error', text: 'Falha ao salvar usuário no banco de dados.' });
+        setMessage({
+          type: 'error',
+          text: resData.error || 'Falha ao salvar usuário no banco de dados.'
+        });
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error('Erro ao cadastrar usuário:', err);
-      setMessage({ type: 'error', text: 'Erro de conexão com o servidor.' });
+      setMessage({ type: 'error', text: err.message || 'Erro de conexão com o servidor.' });
     } finally {
       setSubmitting(false);
     }
