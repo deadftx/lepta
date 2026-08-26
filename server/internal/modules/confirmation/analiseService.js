@@ -37,7 +37,55 @@ function formatDatePtBr(dateVal) {
     return d.toLocaleDateString('pt-BR', { timeZone: 'UTC' });
   } catch {
     return '';
+function normalizeStr(str) {
+  return String(str || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim()
+    .toLowerCase();
+}
+
+const ALLOWED_SIGLAS = new Set(['DM', 'DS']);
+
+// Manifestos bloqueados (desmarcados / roxos na tela do Bitfin)
+const DISALLOWED_MANIFESTOS = [
+  'transacao desconhecida',
+  'lastro inconsistente',
+  'transacao nao concluida',
+  'protestado'
+];
+
+/**
+ * Valida se o título atende a todos os critérios restritivos do módulo de confirmação
+ */
+export function isTituloValidoParaAnalise(t) {
+  // 1. SIGLA: somente DM (Duplicata Mercantil) e DS (Duplicata de Serviço)
+  const rawSigla = (t.tipoDocumento?.sigla || t.especie?.sigla || t.sigla || t.tipo || '').trim().toUpperCase();
+  if (rawSigla && !ALLOWED_SIGLAS.has(rawSigla)) {
+    return false;
   }
+
+  // 2. PRODUTO: somente FAT (Faturização)
+  const rawProduto = (t.produto?.sigla || t.produto || '').trim().toUpperCase();
+  if (rawProduto && !rawProduto.includes('FAT')) {
+    return false;
+  }
+
+  // 3. SITUAÇÃO: somente Em Aberto / Aberto
+  const situacao = normalizeStr(t.situacao || 'em aberto');
+  if (!situacao.includes('aberto') || situacao.includes('liquidado') || situacao.includes('baixado')) {
+    return false;
+  }
+
+  // 4. MANIFESTO: somente os manifestos ativos (rejeita os roxos/desmarcados)
+  const manifesto = normalizeStr(t.manifesto || t.situacaoManifesto || 'sem atuacao');
+  for (const disallowed of DISALLOWED_MANIFESTOS) {
+    if (manifesto.includes(disallowed)) {
+      return false;
+    }
+  }
+
+  return true;
 }
 
 /**
@@ -72,8 +120,8 @@ export function normalizeTituloRecord(t) {
   const pagto = t.pagamentoOperacional?.id || t.pagamentoId || t.pagto || '';
   const cliente = (t.contaOperacional?.cliente?.entidade?.nome || t.cliente?.nome || t.cedente_nome || '').trim();
   const sacado = (t.sacado?.entidade?.nome || t.sacado?.nome || t.sacado_nome || '').trim();
-  const produto = t.produto?.sigla || t.produto || 'FAT';
-  const sigla = t.tipoDocumento?.sigla || t.especie?.sigla || t.sigla || 'DM';
+  const produto = (t.produto?.sigla || t.produto || 'FAT').toUpperCase();
+  const sigla = (t.tipoDocumento?.sigla || t.especie?.sigla || t.sigla || 'DM').toUpperCase();
   const numero = String(t.numero || t.numero_titulo || '').trim();
 
   const cadastro = formatDatePtBr(t.dataDeCadastro || t.cadastro || t.data_cadastro);
@@ -147,7 +195,7 @@ export function normalizeTituloRecord(t) {
 }
 
 /**
- * Consulta a API UNLTD para a data de cadastro informada
+ * Consulta a API UNLTD para a data de cadastro informada aplicando os filtros estritos
  */
 export async function fetchTitulosAnaliseByDate({ dataCadastro, unltdToken }) {
   if (!unltdToken) {
@@ -161,7 +209,8 @@ export async function fetchTitulosAnaliseByDate({ dataCadastro, unltdToken }) {
   const payload = {
     tipoDeData: 'Cadastro',
     dataInicial: `${dataCadastro}T00:00:00.000Z`,
-    dataFinal: `${dataCadastro}T23:59:59.999Z`
+    dataFinal: `${dataCadastro}T23:59:59.999Z`,
+    situacoes: ['Em Aberto']
   };
 
   const response = await fetch(`${API_BASE_URL}/recebiveis/titulos`, {
@@ -180,7 +229,12 @@ export async function fetchTitulosAnaliseByDate({ dataCadastro, unltdToken }) {
 
   const data = await response.json();
   const rawTitulos = Array.isArray(data) ? data : [];
-  const normalized = rawTitulos.map(normalizeTituloRecord);
+  
+  // 1. Aplica filtros estritos de negócio
+  const filteredRaw = rawTitulos.filter(isTituloValidoParaAnalise);
+  
+  // 2. Normaliza para o modelo canônico de 36 colunas
+  const normalized = filteredRaw.map(normalizeTituloRecord);
 
   // Calcula estatísticas gerais
   const totalTitulos = normalized.length;

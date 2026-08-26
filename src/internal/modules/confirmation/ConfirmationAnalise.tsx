@@ -336,6 +336,26 @@ export const ConfirmationAnalise: React.FC = () => {
         </div>
       </div>
 
+      {/* ── CRITÉRIOS DE NEGÓCIO ATIVOS ── */}
+      <div style={{
+        background: '#090d16',
+        border: '1px solid #1e293b',
+        borderRadius: '10px',
+        padding: '0.65rem 1rem',
+        display: 'flex',
+        alignItems: 'center',
+        gap: '12px',
+        fontSize: '0.78rem',
+        color: '#94a3b8',
+        flexWrap: 'wrap'
+      }}>
+        <span style={{ color: '#38bdf8', fontWeight: 700 }}>📌 Critérios Estritos Bitfin:</span>
+        <span>Sigla: <strong style={{ color: '#f8fafc' }}>DM / DS</strong></span>
+        <span>• Produto: <strong style={{ color: '#f8fafc' }}>FAT</strong></span>
+        <span>• Situação: <strong style={{ color: '#4ade80' }}>Em Aberto</strong></span>
+        <span>• Manifestos Permitidos: <strong style={{ color: '#fbbf24' }}>Sem Atuação, Inacessível, Sacado não Confirma, Promessa Pgto, Ciência, Em Andamento, Concluída</strong></span>
+      </div>
+
       {error && (
         <div style={{ background: 'rgba(239, 68, 68, 0.15)', border: '1px solid #ef4444', color: '#fca5a5', padding: '1rem', borderRadius: '10px', fontSize: '0.85rem' }}>
           <strong>⚠️ Atenção:</strong> {error}
