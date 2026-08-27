@@ -85,48 +85,51 @@ function getUnidadeAdministrativaInfo(t) {
 }
 
 /**
- * Valida se o título atende a todos os critérios dos filtros estritos da Bitfin (Prints 1, 2 e 3)
+ * Checa se produto é Faturização (FAT)
  */
-export function isTituloValidoParaAnalise(t) {
-  // 1. UNIDADE ADMINISTRATIVA (Print 1: aceita apenas MS FIDC e Special FIDC; descarta Gestora e Securitizadora)
-  const uaInfo = getUnidadeAdministrativaInfo(t);
-  if (!uaInfo) {
-    return false;
-  }
-
-  // 2. PRODUTO (Print 1: aceita apenas Faturização / FAT)
+function isProdutoValido(t) {
   const prodStr = extractText(t.produto?.sigla || t.produto?.nome || t.produto);
-  const normProd = normalizeStr(prodStr);
-  if (normProd) {
-    if (normProd.includes('ccb') || normProd.includes('cobranca') || normProd.includes('comissaria') ||
-        normProd.includes('confissao') || normProd.includes('custodia') || normProd.includes('domicilio') ||
-        normProd.includes('fomento') || normProd.includes('intercompany') || normProd.includes('nota')) {
-      return false;
-    }
+  const norm = normalizeStr(prodStr);
+  if (!norm) return true;
+  if (norm.includes('ccb') || norm.includes('cobranca') || norm.includes('comissaria') ||
+      norm.includes('confissao') || norm.includes('custodia') || norm.includes('domicilio') ||
+      norm.includes('fomento') || norm.includes('intercompany') || norm.includes('nota')) {
+    return false;
   }
+  return norm.includes('fat') || norm.includes('faturizacao');
+}
 
-  // 3. TÍTULO / ESPÉCIE (Print 2: aceita apenas Duplicata Mercantil / DM e Duplicata de Serviço / DS)
+/**
+ * Checa se sigla/espécie é Duplicata Mercantil (DM) ou Duplicata de Serviço (DS)
+ */
+function isSiglaValida(t) {
   const siglaStr = extractText(t.tipoDocumento || t.especie || t.sigla || t.tipo);
-  const normSigla = normalizeStr(siglaStr);
-  if (normSigla) {
-    if (normSigla.includes('contrato') || normSigla.includes('cheque')) {
-      return false;
-    }
+  const norm = normalizeStr(siglaStr);
+  if (!norm) return true;
+  if (norm.includes('contrato') || norm.includes('cheque')) {
+    return false;
   }
+  return norm.includes('dm') || norm.includes('ds') || norm.includes('duplicata');
+}
 
-  // 4. SITUAÇÃO (Print 2: aceita apenas Em Aberto)
+/**
+ * Checa se situação é Em Aberto
+ */
+function isSituacaoValida(t) {
   const sitStr = extractText(t.situacao || 'Em Aberto');
-  const normSit = normalizeStr(sitStr);
-  if (normSit.includes('liquidado') || normSit.includes('baixado') || normSit.includes('recomprado') ||
-      normSit.includes('cartorio') || normSit.includes('perda') || normSit.includes('pro solvendo') ||
-      normSit.includes('credito')) {
+  const norm = normalizeStr(sitStr);
+  if (norm.includes('liquidado') || norm.includes('baixado') || norm.includes('recomprado') ||
+      norm.includes('cartorio') || norm.includes('perda') || norm.includes('pro solvendo') ||
+      norm.includes('credito')) {
     return false;
   }
-  if (!normSit.includes('aberto')) {
-    return false;
-  }
+  return norm.includes('aberto');
+}
 
-  // 5. MANIFESTO (Print 3: rejeita os 4 desmarcados / roxos)
+/**
+ * Checa se manifesto é um dos 7 ativos (descarta os 4 roxos/desmarcados)
+ */
+function isManifestoValido(t) {
   const valManifesto = t.situacaoManifesto || t.manifesto || t.situacao_manifesto || 'Sem Atuacao';
   const manStr = extractText(valManifesto);
   const normMan = normalizeStr(manStr);
@@ -148,6 +151,18 @@ export function isTituloValidoParaAnalise(t) {
     }
   }
 
+  return true;
+}
+
+/**
+ * Valida se o título atende a todos os critérios dos filtros estritos da Bitfin (Prints 1, 2 e 3)
+ */
+export function isTituloValidoParaAnalise(t) {
+  if (!getUnidadeAdministrativaInfo(t)) return false;
+  if (!isProdutoValido(t)) return false;
+  if (!isSiglaValida(t)) return false;
+  if (!isSituacaoValida(t)) return false;
+  if (!isManifestoValido(t)) return false;
   return true;
 }
 
@@ -253,20 +268,10 @@ export async function fetchTitulosAnaliseByDate({ dataCadastro, unltdToken }) {
     throw new Error('Data de cadastro inválida. Use o formato AAAA-MM-DD.');
   }
 
-  // Horário de Brasília (UTC-3):
-  // 00:00:00 BRT = 03:00:00.000Z UTC
-  // 23:59:59.999 BRT = 02:59:59.999Z UTC do dia seguinte
-  const startUtc = `${dataCadastro}T03:00:00.000Z`;
-
-  const dateObj = new Date(`${dataCadastro}T00:00:00.000Z`);
-  dateObj.setUTCDate(dateObj.getUTCDate() + 1);
-  const nextDayStr = dateObj.toISOString().substring(0, 10);
-  const endUtc = `${nextDayStr}T02:59:59.999Z`;
-
   const payload = {
     tipoDeData: 'Cadastro',
-    dataInicial: startUtc,
-    dataFinal: endUtc,
+    dataInicial: `${dataCadastro}T00:00:00`,
+    dataFinal: `${dataCadastro}T23:59:59`,
     situacoes: ['Em Aberto']
   };
 
@@ -286,6 +291,43 @@ export async function fetchTitulosAnaliseByDate({ dataCadastro, unltdToken }) {
 
   const data = await response.json();
   const rawTitulos = Array.isArray(data) ? data : [];
+
+  // Análise diagnóstica detalhada
+  let totalNominalBruto = 0;
+  const rejectedReasons = { ua: 0, produto: 0, sigla: 0, situacao: 0, manifesto: 0 };
+  const rawUas = {};
+  const rawProds = {};
+  const rawSiglas = {};
+  const rawManifs = {};
+
+  rawTitulos.forEach(t => {
+    const v = Number(t.valorNominal || t.valor_nominal_original || t.valor || 0);
+    totalNominalBruto += v;
+
+    const uaStr = extractText(t.contaOperacional?.unidadeAdministrativa || t.unidadeAdministrativa || t.ua || t.fundo || 'VAZIO');
+    rawUas[uaStr] = (rawUas[uaStr] || 0) + v;
+
+    const prodStr = extractText(t.produto?.sigla || t.produto?.nome || t.produto || 'VAZIO');
+    rawProds[prodStr] = (rawProds[prodStr] || 0) + v;
+
+    const sigStr = extractText(t.tipoDocumento || t.especie || t.sigla || t.tipo || 'VAZIO');
+    rawSiglas[sigStr] = (rawSiglas[sigStr] || 0) + v;
+
+    const manStr = extractText(t.situacaoManifesto || t.manifesto || 'VAZIO');
+    rawManifs[manStr] = (rawManifs[manStr] || 0) + v;
+
+    if (!getUnidadeAdministrativaInfo(t)) rejectedReasons.ua += v;
+    else if (!isProdutoValido(t)) rejectedReasons.produto += v;
+    else if (!isSiglaValida(t)) rejectedReasons.sigla += v;
+    else if (!isSituacaoValida(t)) rejectedReasons.situacao += v;
+    else if (!isManifestoValido(t)) rejectedReasons.manifesto += v;
+  });
+
+  console.log(`\n=================== DIAGNÓSTICO CONFIRMAÇÃO (${dataCadastro}) ===================`);
+  console.log(`[UNLTD API] Total títulos brutos retornados: ${rawTitulos.length}`);
+  console.log(`[UNLTD API] Valor Nominal Bruto total: R$ ${totalNominalBruto.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`);
+  console.log('[UNLTD API] Rejeitados por categoria (Valores Nominais):', JSON.stringify(rejectedReasons, null, 2));
+  console.log('========================================================================\n');
 
   // 1. Aplica filtros estritos das prints do Bitfin
   const filteredRaw = rawTitulos.filter(isTituloValidoParaAnalise);
@@ -312,6 +354,15 @@ export async function fetchTitulosAnaliseByDate({ dataCadastro, unltdToken }) {
     valorMs: msTitulos.reduce((acc, t) => acc + t.valorNominal, 0),
     qtdSpecial: specialTitulos.length,
     valorSpecial: specialTitulos.reduce((acc, t) => acc + t.valorNominal, 0),
+    debugInfo: {
+      rawCount: rawTitulos.length,
+      totalNominalBruto,
+      rawUas,
+      rawProds,
+      rawSiglas,
+      rawManifs,
+      rejectedReasons
+    },
     titulos: normalized
   };
 }
