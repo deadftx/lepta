@@ -24,6 +24,7 @@ import PurchaseWorkflowConfig from './internal/modules/administrative/purchases/
 import EmailConfig from './internal/modules/administration/access/EmailConfig';
 import ConfirmationSystem from './internal/modules/confirmation/ConfirmationSystem';
 import ConfirmationAnalise from './internal/modules/confirmation/ConfirmationAnalise';
+import MonitorDashboard from './internal/modules/monitor/MonitorDashboard';
 import ProtectedRoute from './internal/core/ProtectedRoute';
 import InternalLayout from './internal/core/InternalLayout';
 import AccessRoute from './internal/core/AccessRoute';
@@ -77,6 +78,7 @@ function App() {
               <Route path="/permissions/create-user" element={<AccessRoute masterOnly><CreateUser /></AccessRoute>} />
               <Route path="/permissions/groups" element={<AccessRoute masterOnly><Groups /></AccessRoute>} />
               <Route path="/permissions/email-config" element={<AccessRoute masterOnly><EmailConfig /></AccessRoute>} />
+              <Route path="/monitor" element={<AccessRoute masterOnly><MonitorDashboard /></AccessRoute>} />
             </Route>
           </Route>
         </Routes>

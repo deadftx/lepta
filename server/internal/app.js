@@ -15,6 +15,8 @@ import { registerNotificationRoutes } from './modules/notifications/routes.js';
 import { registerEmailConfigRoutes } from './modules/administration/emailRoutes.js';
 import { registerConfirmationRoutes } from './modules/confirmation/routes.js';
 import { registerTickerRoutes } from './modules/ticker/routes.js';
+import { registerMonitorRoutes } from './modules/monitor/routes.js';
+import { recordDatabaseEvent, recordSystemError } from './modules/monitor/monitorService.js';
 import { ensureCedentesTableSchema, consolidateCedentesTable, syncAllCedentesFromUnltdApi } from './modules/database/unltdSync.js';
 
 const app = express();
@@ -111,6 +113,31 @@ db.pragma('busy_timeout = 60000');
 db.pragma('synchronous = NORMAL');
 db.pragma('temp_store = MEMORY');
 db.pragma('cache_size = -64000');
+
+// Interceptador leve de auditoria de banco para o Monitoramento em Tempo Real
+const rawPrepare = db.prepare.bind(db);
+db.prepare = function (sql) {
+  const stmt = rawPrepare(sql);
+  const rawRun = stmt.run.bind(stmt);
+
+  stmt.run = function (...params) {
+    const start = Date.now();
+    try {
+      const res = rawRun(...params);
+      const durationMs = Date.now() - start;
+      const match = String(sql).match(/^(INSERT|UPDATE|DELETE|CREATE|ALTER)\s+(INTO|FROM|TABLE)?\s*"?([a-zA-Z0-9_]+)"?/i);
+      if (match) {
+        recordDatabaseEvent({ action: match[1], table: match[3], durationMs });
+      }
+      return res;
+    } catch (err) {
+      recordDatabaseEvent({ action: 'ERROR', table: 'sqlite', durationMs: Date.now() - start, error: err.message });
+      throw err;
+    }
+  };
+
+  return stmt;
+};
 
 const authSecretPath = path.join(projectRoot, '.auth-secret');
 if (!process.env.AUTH_ENCRYPTION_KEY && !fs.existsSync(authSecretPath)) {
@@ -2896,6 +2923,12 @@ registerConfirmationRoutes(app, {
 });
 
 registerTickerRoutes(app);
+
+registerMonitorRoutes(app, {
+  db,
+  requireSession,
+  requireMaster
+});
 
 function dropLegacyBases() {
   try {
