@@ -16,7 +16,7 @@ import { registerEmailConfigRoutes } from './modules/administration/emailRoutes.
 import { registerConfirmationRoutes } from './modules/confirmation/routes.js';
 import { registerTickerRoutes } from './modules/ticker/routes.js';
 import { registerMonitorRoutes } from './modules/monitor/routes.js';
-import { recordDatabaseEvent, recordSystemError } from './modules/monitor/monitorService.js';
+import { recordDatabaseEvent, recordSystemError, recordUserHeartbeat } from './modules/monitor/monitorService.js';
 import { ensureCedentesTableSchema, consolidateCedentesTable, syncAllCedentesFromUnltdApi } from './modules/database/unltdSync.js';
 
 const app = express();
@@ -439,6 +439,19 @@ function requireSessionPurpose(allowedPurposes = ['auth']) {
     }
     req.authSession = { ...session, role: user.role };
     req.authUser = user;
+
+    // Atualiza presence e last_seen_at do usuário no SQLite em tempo real para o Monitor
+    try {
+      recordUserHeartbeat(db, {
+        userId: user.id,
+        username: user.username || user.id,
+        email: user.email || '',
+        role: user.role || 'USER',
+        path: req.path || '/',
+        moduleName: 'Sistema'
+      });
+    } catch {}
+
     next();
   };
 }

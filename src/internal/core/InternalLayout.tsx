@@ -6,6 +6,7 @@ import NotificationBell from './NotificationBell';
 import TopHeaderTicker from './TopHeaderTicker';
 import './styles/Dashboard.css';
 import { hasAnyPermission, hasPermission } from './permissions';
+import { API_BASE_URL, getAuthHeaders } from '../../config/api';
 
 const InternalLayout = () => {
   const navigate = useNavigate();
@@ -46,6 +47,22 @@ const InternalLayout = () => {
       document.body.style.overflow = '';
     };
   }, [isMobileSidebarOpen]);
+
+  // Envia heartbeat de presença para o monitor a cada 30s e na troca de módulo
+  useEffect(() => {
+    if (!user) return;
+    const sendHeartbeat = () => {
+      fetch(`${API_BASE_URL}/api/monitor/heartbeat`, {
+        method: 'POST',
+        headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ path: location.pathname, moduleName: document.title || 'Lepta System' })
+      }).catch(() => {});
+    };
+
+    sendHeartbeat();
+    const interval = setInterval(sendHeartbeat, 30000);
+    return () => clearInterval(interval);
+  }, [location.pathname, user]);
 
   const handleLogout = () => {
     logout();

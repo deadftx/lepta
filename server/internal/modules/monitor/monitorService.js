@@ -54,7 +54,6 @@ export function getHomologDb(defaultDb) {
   }
 
   try {
-    console.log(`[MONITOR] Conectando ao banco de dados do HOMOLOG da VPS (readonly): ${targetPath}`);
     cachedHomologDb = new Database(targetPath, { readonly: true, timeout: 5000 });
     cachedHomologDb.pragma('journal_mode = WAL');
     cachedHomologPath = targetPath;
@@ -66,11 +65,25 @@ export function getHomologDb(defaultDb) {
 }
 
 /**
- * Garante a criação da tabela de logs de telemetria no SQLite (se permissão permitir)
+ * Garante a criação da tabela de logs de telemetria no SQLite
  */
 export function ensureMonitorSchema(db) {
   try {
     db.exec(`
+      CREATE TABLE IF NOT EXISTS monitor_user_sessions (
+        user_id TEXT PRIMARY KEY,
+        username TEXT NOT NULL,
+        email TEXT,
+        role TEXT,
+        status TEXT NOT NULL DEFAULT 'online',
+        current_module TEXT DEFAULT 'Home',
+        current_path TEXT DEFAULT '/',
+        last_seen_at TEXT NOT NULL,
+        login_at TEXT,
+        total_session_seconds INTEGER DEFAULT 0,
+        module_time_json TEXT DEFAULT '{}'
+      );
+
       CREATE TABLE IF NOT EXISTS monitor_telemetry_logs (
         id TEXT PRIMARY KEY,
         user_id TEXT NOT NULL,
@@ -85,7 +98,7 @@ export function ensureMonitorSchema(db) {
 
       CREATE TABLE IF NOT EXISTS monitor_system_errors (
         id TEXT PRIMARY KEY,
-        level TEXT NOT NULL DEFAULT 'ERROR', -- 'ERROR', 'WARN', 'CRITICAL'
+        level TEXT NOT NULL DEFAULT 'ERROR',
         source TEXT NOT NULL,
         message TEXT NOT NULL,
         stack TEXT,
@@ -95,7 +108,7 @@ export function ensureMonitorSchema(db) {
       );
     `);
   } catch (err) {
-    // Se for banco em modo readonly (ex: lendo o HOMOLOG direto na VPS), ignora o erro de escrita
+    // Modo readonly
   }
 }
 
@@ -234,9 +247,9 @@ export async function getGitCommitsComparison() {
 }
 
 /**
- * Atualiza o heartbeat de presença e tempo por módulo do usuário
+ * Atualiza o heartbeat de presença e tempo por módulo do usuário no SQLite e memória
  */
-export function recordUserHeartbeat(db, { userId, username, email, path: currentPath, moduleName }) {
+export function recordUserHeartbeat(db, { userId, username, email, role, path: currentPath, moduleName }) {
   const now = Date.now();
   const isoNow = new Date().toISOString();
 
@@ -247,6 +260,7 @@ export function recordUserHeartbeat(db, { userId, username, email, path: current
       userId,
       username,
       email,
+      role: role || 'USER',
       loginAt: isoNow,
       lastSeenAt: isoNow,
       currentPath: currentPath || '/dashboard',
@@ -271,6 +285,40 @@ export function recordUserHeartbeat(db, { userId, username, email, path: current
   }
 
   userSessionsMap.set(userId, session);
+
+  // Persiste a sessão no SQLite para leitura entre processos (DEV <-> HOMOLOG)
+  try {
+    ensureMonitorSchema(db);
+    db.prepare(`
+      INSERT INTO monitor_user_sessions (
+        user_id, username, email, role, status, current_module, current_path,
+        last_seen_at, login_at, total_session_seconds, module_time_json
+      ) VALUES (?, ?, ?, ?, 'online', ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(user_id) DO UPDATE SET
+        username = excluded.username,
+        email = excluded.email,
+        role = excluded.role,
+        status = 'online',
+        current_module = excluded.current_module,
+        current_path = excluded.current_path,
+        last_seen_at = excluded.last_seen_at,
+        total_session_seconds = excluded.total_session_seconds,
+        module_time_json = excluded.module_time_json
+    `).run(
+      userId,
+      username,
+      email,
+      role || 'USER',
+      session.currentModule,
+      session.currentPath,
+      isoNow,
+      session.loginAt,
+      session.totalSessionSeconds,
+      JSON.stringify(session.moduleTimeSeconds)
+    );
+  } catch (err) {
+    // Ignora erro se for readonly
+  }
 
   monitorEvents.emit('presence_update', {
     userId,
@@ -298,7 +346,6 @@ export function getActiveUsers(defaultDb) {
       ORDER BY username ASC
     `).all();
   } catch (err) {
-    console.error('[MONITOR] Erro ao consultar usuarios_lepta do HOMOLOG:', err.message);
     try {
       allUsers = defaultDb.prepare(`
         SELECT id, username, email, role, created_at, updated_at
@@ -310,10 +357,18 @@ export function getActiveUsers(defaultDb) {
     }
   }
 
+  // Busca presença persistida no SQLite do HOMOLOG
+  let dbSessionsMap = new Map();
+  try {
+    const dbSessions = targetDb.prepare(`SELECT * FROM monitor_user_sessions`).all();
+    dbSessions.forEach(s => dbSessionsMap.set(s.user_id, s));
+  } catch {}
+
   const now = Date.now();
 
   return allUsers.map(u => {
-    const session = userSessionsMap.get(u.id);
+    const memorySession = userSessionsMap.get(u.id);
+    const dbSession = dbSessionsMap.get(u.id);
 
     let status = 'offline';
     let lastSeenAt = u.updated_at || u.created_at;
@@ -323,19 +378,27 @@ export function getActiveUsers(defaultDb) {
     let totalSessionSeconds = 0;
     let moduleTimeSeconds = {};
 
-    if (session) {
-      const msSinceLastSeen = now - new Date(session.lastSeenAt).getTime();
-      if (msSinceLastSeen <= 90000) {
+    const activeLastSeen = memorySession?.lastSeenAt || dbSession?.last_seen_at;
+
+    if (activeLastSeen) {
+      const msSinceLastSeen = now - new Date(activeLastSeen).getTime();
+      if (msSinceLastSeen <= 90000) { // <= 1.5 min
         status = 'online';
-      } else if (msSinceLastSeen <= 300000) {
+      } else if (msSinceLastSeen <= 300000) { // <= 5 min
         status = 'idle';
       }
-      lastSeenAt = session.lastSeenAt;
-      loginAt = session.loginAt;
-      currentModule = session.currentModule;
-      currentPath = session.currentPath;
-      totalSessionSeconds = session.totalSessionSeconds;
-      moduleTimeSeconds = session.moduleTimeSeconds;
+
+      lastSeenAt = activeLastSeen;
+      loginAt = memorySession?.loginAt || dbSession?.login_at || null;
+      currentModule = memorySession?.currentModule || dbSession?.current_module || 'Sistema';
+      currentPath = memorySession?.currentPath || dbSession?.current_path || '/';
+      totalSessionSeconds = memorySession?.totalSessionSeconds || dbSession?.total_session_seconds || 0;
+
+      try {
+        moduleTimeSeconds = memorySession?.moduleTimeSeconds || JSON.parse(dbSession?.module_time_json || '{}');
+      } catch {
+        moduleTimeSeconds = {};
+      }
     }
 
     return {
