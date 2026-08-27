@@ -55,7 +55,10 @@ function extractText(val) {
   if (typeof val === 'string') return val.trim();
   if (typeof val === 'number') return String(val);
   if (typeof val === 'object') {
-    return (val.sigla || val.nome || val.descricao || val.alias || val.codigo || val.label || '').trim();
+    return Object.values(val)
+      .filter(v => v !== null && v !== undefined && (typeof v === 'string' || typeof v === 'number'))
+      .map(v => String(v).trim())
+      .join(' ');
   }
   return String(val).trim();
 }
@@ -90,10 +93,21 @@ function getUnidadeAdministrativaInfo(t) {
 }
 
 /**
+ * Garante que o título pertença a uma operação realizada/paga (Relação de títulos da carteira)
+ */
+function hasPagamentoOperacional(t) {
+  const pagto = t.pagamentoOperacional?.id || t.pagamentoId || t.pagto || t.pagamentoOperacional;
+  if (!pagto || pagto === '0' || pagto === 0 || pagto === '') {
+    return false;
+  }
+  return true;
+}
+
+/**
  * Checa se produto é Faturização (FAT)
  */
 function isProdutoValido(t) {
-  const prodStr = extractText(t.produto?.sigla || t.produto?.nome || t.produto);
+  const prodStr = extractText(t.produto);
   const norm = normalizeStr(prodStr);
   if (!norm) return true;
   if (norm.includes('ccb') || norm.includes('cobranca') || norm.includes('comissaria') ||
@@ -108,10 +122,10 @@ function isProdutoValido(t) {
  * Checa se sigla/espécie é Duplicata Mercantil (DM) ou Duplicata de Serviço (DS)
  */
 function isSiglaValida(t) {
-  const siglaStr = extractText(t.tipoDocumento || t.especie || t.sigla || t.tipo);
+  const siglaStr = extractText(t.tipoDocumento) + ' ' + extractText(t.especie) + ' ' + extractText(t.sigla) + ' ' + extractText(t.tipo);
   const norm = normalizeStr(siglaStr);
-  if (!norm) return true;
-  if (norm.includes('contrato') || norm.includes('cheque')) {
+  if (!norm.trim()) return true;
+  if (norm.includes('contrato') || norm.includes('cheque') || norm.includes('ccb')) {
     return false;
   }
   return norm.includes('dm') || norm.includes('ds') || norm.includes('duplicata');
@@ -121,11 +135,12 @@ function isSiglaValida(t) {
  * Checa se situação é Em Aberto
  */
 function isSituacaoValida(t) {
-  const sitStr = extractText(t.situacao || 'Em Aberto');
+  const sitStr = extractText(t.situacao);
   const norm = normalizeStr(sitStr);
+  if (!norm) return true;
   if (norm.includes('liquidado') || norm.includes('baixado') || norm.includes('recomprado') ||
       norm.includes('cartorio') || norm.includes('perda') || norm.includes('pro solvendo') ||
-      norm.includes('credito')) {
+      norm.includes('credito') || norm.includes('cancelad') || norm.includes('rejeitad')) {
     return false;
   }
   return norm.includes('aberto');
@@ -135,9 +150,9 @@ function isSituacaoValida(t) {
  * Checa se manifesto é um dos 7 ativos (descarta os 4 roxos/desmarcados)
  */
 function isManifestoValido(t) {
-  const valManifesto = t.situacaoManifesto || t.manifesto || t.situacao_manifesto || 'Sem Atuacao';
-  const manStr = extractText(valManifesto);
-  const normMan = normalizeStr(manStr);
+  const manStr = extractText(t.situacaoManifesto) + ' ' + extractText(t.manifesto) + ' ' + extractText(t.situacao_manifesto);
+  const norm = normalizeStr(manStr);
+  if (!norm.trim()) return true;
 
   const DISALLOWED_MANIFESTOS = [
     'transacao desconhecida',
@@ -151,7 +166,7 @@ function isManifestoValido(t) {
   ];
 
   for (const disallowed of DISALLOWED_MANIFESTOS) {
-    if (normMan.includes(disallowed)) {
+    if (norm.includes(disallowed)) {
       return false;
     }
   }
@@ -160,10 +175,11 @@ function isManifestoValido(t) {
 }
 
 /**
- * Valida se o título atende a todos os critérios dos filtros estritos da Bitfin (Prints 1, 2 e 3)
+ * Valida se o título atende a todos os critérios dos filtros estritos da Bitfin (Prints 1, 2, 3 e Carteira)
  */
 export function isTituloValidoParaAnalise(t) {
   if (!getUnidadeAdministrativaInfo(t)) return false;
+  if (!hasPagamentoOperacional(t)) return false;
   if (!isProdutoValido(t)) return false;
   if (!isSiglaValida(t)) return false;
   if (!isSituacaoValida(t)) return false;
