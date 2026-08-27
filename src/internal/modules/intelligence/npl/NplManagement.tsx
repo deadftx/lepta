@@ -20,7 +20,8 @@ import {
   Filter,
   RefreshCw,
   Briefcase,
-  AlertCircle
+  AlertCircle,
+  Download
 } from 'lucide-react';
 import { API_BASE_URL, getAuthHeaders } from '../../../../config/api';
 import './NplManagement.css';
@@ -401,6 +402,59 @@ const NplManagement: React.FC = () => {
     );
   }, [cedenteRecords]);
 
+  const handleExportExcel = async () => {
+    try {
+      const ExcelJS = (await import('exceljs')).default || (await import('exceljs'));
+      const workbook = new ExcelJS.Workbook();
+      const worksheet = workbook.addWorksheet('Carteira NPL');
+
+      worksheet.columns = [
+        { header: 'Cedente / Cliente', key: 'cedente', width: 35 },
+        { header: 'CNPJ', key: 'cedenteCnpj', width: 20 },
+        { header: 'Qtd. Casos', key: 'totalCasos', width: 12 },
+        { header: 'Valor Considerado (R$)', key: 'totalValorConsiderado', width: 25 },
+        { header: 'Crédito RJ (R$)', key: 'totalCreditoRj', width: 25 },
+        { header: 'Crédito Execução (R$)', key: 'totalCreditoExecucao', width: 25 },
+        { header: 'Proposta Real (R$)', key: 'totalPropostaReal', width: 25 },
+        { header: 'Resultado Líquido (R$)', key: 'totalResultadoLiquido', width: 25 },
+        { header: 'Gestor(es)', key: 'gestores', width: 25 },
+        { header: 'Status Recente', key: 'status', width: 20 },
+        { header: 'Estados (UF)', key: 'estados', width: 15 },
+        { header: 'Credores de Interesse', key: 'credores', width: 35 },
+        { header: 'Observações', key: 'observacoes', width: 45 }
+      ];
+
+      clients.forEach(client => {
+        worksheet.addRow({
+          cedente: client.cedente,
+          cedenteCnpj: client.cedenteCnpj,
+          totalCasos: client.totalCasos,
+          totalValorConsiderado: client.totalValorConsiderado,
+          totalCreditoRj: client.totalCreditoRj,
+          totalCreditoExecucao: client.totalCreditoExecucao,
+          totalPropostaReal: client.totalPropostaReal,
+          totalResultadoLiquido: client.totalResultadoLiquido,
+          gestores: client.gestores.join(', '),
+          status: client.statusList.join(', '),
+          estados: client.estados.join(', '),
+          credores: client.credores.join(', '),
+          observacoes: client.observacoes
+        });
+      });
+
+      const buffer = await workbook.xlsx.writeBuffer();
+      const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `Lepta_NPL_Carteira_${new Date().toISOString().slice(0, 10)}.xlsx`;
+      a.click();
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error('Erro ao exportar Excel:', err);
+    }
+  };
+
   return (
     <div className="npl-management-page">
       {/* Header com Ações Rápidas */}
@@ -415,6 +469,9 @@ const NplManagement: React.FC = () => {
           </div>
         </div>
         <div className="npl-header-actions">
+          <button className="npl-btn-secondary" onClick={handleExportExcel} title="Exportar para Excel">
+            <Download size={17} /> Exportar Excel
+          </button>
           <button className="npl-btn-secondary" onClick={fetchData} title="Atualizar dados">
             <RefreshCw size={17} className={loading ? 'spin' : ''} /> Atualizar
           </button>
@@ -568,8 +625,20 @@ const NplManagement: React.FC = () => {
                     onClick={e => handleCedenteClick(e, client.cedente)}
                     title="Clique para ver opções do cedente"
                   >
-                    <strong>{client.cedente}</strong>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+                      <strong>{client.cedente}</strong>
+                      {client.estados.length > 0 && (
+                        <span className="status-pill" style={{ fontSize: '0.68rem', padding: '1px 5px', background: 'rgba(245, 158, 11, 0.15)', color: '#f59e0b', borderColor: 'rgba(245, 158, 11, 0.3)' }}>
+                          {client.estados.join(', ')}
+                        </span>
+                      )}
+                    </div>
                     {client.cedenteCnpj && <small>{client.cedenteCnpj}</small>}
+                    {client.credores.length > 0 && (
+                      <small style={{ color: '#94a3b8', fontSize: '0.74rem' }}>
+                        Credores: {client.credores.slice(0, 2).join(', ')}{client.credores.length > 2 ? '...' : ''}
+                      </small>
+                    )}
                   </td>
                   <td>
                     <span className="badge-cases">{client.totalCasos}</span>

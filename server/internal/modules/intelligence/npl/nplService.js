@@ -1,3 +1,7 @@
+import fs from 'fs';
+import path from 'path';
+import ExcelJS from 'exceljs';
+
 /**
  * Service para Gestão de NPL (Non-Performing Loans / Base NPL)
  */
@@ -79,6 +83,173 @@ export function ensureBaseNplTable(db) {
     }
   } catch (err) {
     console.error('[BASE_NPL] Erro ao verificar schema:', err.message);
+  }
+}
+
+export async function autoImportNplIfEmpty(db) {
+  try {
+    ensureBaseNplTable(db);
+    const count = db.prepare('SELECT COUNT(*) as c FROM BASE_NPL').get()?.c || 0;
+    if (count > 0) return;
+
+    const root = path.resolve();
+    const candidatePaths = [
+      path.join(root, 'PIPELINE PROPOSTAS - PIETRA.xlsx'),
+      path.join(root, 'server', 'data', 'PIPELINE PROPOSTAS - PIETRA.xlsx'),
+      path.join(root, '..', 'PIPELINE PROPOSTAS - PIETRA.xlsx'),
+      '/root/lepta/PIPELINE PROPOSTAS - PIETRA.xlsx'
+    ];
+
+    let foundPath = null;
+    for (const p of candidatePaths) {
+      if (fs.existsSync(p)) {
+        foundPath = p;
+        break;
+      }
+    }
+
+    if (!foundPath) return;
+
+    console.log(`[BASE_NPL] Auto-importando base NPL de ${foundPath}...`);
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.readFile(foundPath);
+
+    let total = 0;
+    workbook.eachSheet((worksheet) => {
+      const sheetName = worksheet.name.trim();
+      let headerRowNumber = -1;
+      let headers = [];
+
+      worksheet.eachRow((row, rowNumber) => {
+        if (headerRowNumber !== -1) return;
+        const values = [];
+        row.eachCell((cell, colNumber) => {
+          let val = cell.value;
+          if (typeof val === 'object' && val !== null) {
+            val = val.result || val.text || '';
+          }
+          values[colNumber] = String(val || '').trim();
+        });
+
+        if (values.some(v => v.toUpperCase().includes('CLIENTE') || v.toUpperCase().includes('CREDORES') || v.toUpperCase().includes('PROCESSO'))) {
+          headerRowNumber = rowNumber;
+          headers = values;
+        }
+      });
+
+      if (headerRowNumber === -1) return;
+
+      worksheet.eachRow((row, rowNumber) => {
+        if (rowNumber <= headerRowNumber) return;
+        const rowValues = [];
+        row.eachCell((cell, colNumber) => {
+          let val = cell.value;
+          if (typeof val === 'object' && val !== null) {
+            if (val instanceof Date) {
+              val = val.toISOString().slice(0, 10);
+            } else {
+              val = val.result !== undefined ? val.result : (val.text || val.hyperlink || '');
+            }
+          }
+          rowValues[colNumber] = val;
+        });
+
+        const getColVal = (colNames) => {
+          for (const name of colNames) {
+            const idx = headers.findIndex(h => h && h.toUpperCase().includes(name.toUpperCase()));
+            if (idx !== -1 && rowValues[idx] !== undefined && rowValues[idx] !== null) {
+              return rowValues[idx];
+            }
+          }
+          return '';
+        };
+
+        const rawCliente = String(getColVal(['CLIENTE', 'DEVEDOR', 'CEDENTE', 'EMPRESA']) || '').trim();
+        if (!rawCliente || rawCliente === '-' || rawCliente.toUpperCase().startsWith('TOTAL') || rawCliente.length < 2) {
+          return;
+        }
+
+        let cedente = rawCliente;
+        let cnpj = '';
+        const cnpjMatch = rawCliente.match(/(\d{2}\.\d{3}\.\d{3}\/\d{4}-\d{2})/);
+        if (cnpjMatch) {
+          cnpj = cnpjMatch[1];
+          cedente = rawCliente.replace(cnpjMatch[0], '').replace(/[\n\r]+/g, ' ').trim();
+        }
+
+        let entradaVal = getColVal(['ENTRADA', 'DATA']);
+        if (entradaVal instanceof Date) {
+          entradaVal = entradaVal.toISOString().slice(0, 10);
+        } else {
+          entradaVal = String(entradaVal || '').replace(/^"|"$/g, '').trim();
+        }
+
+        let dataRetornoVal = getColVal(['RETORNO', 'DATA RETORNO']);
+        if (dataRetornoVal instanceof Date) {
+          dataRetornoVal = dataRetornoVal.toISOString().slice(0, 10);
+        } else {
+          dataRetornoVal = String(dataRetornoVal || '').replace(/^"|"$/g, '').trim();
+        }
+
+        let statusVal = String(getColVal(['STATUS DA NEGOCIAÇÃO', 'STATUS NEGOCIAÇÃO', 'STATUS']) || '').trim();
+        if (!statusVal || statusVal === '-') {
+          statusVal = sheetName.replace(/[()]/g, '').trim();
+        }
+
+        const rec = {
+          cedente: cedente || rawCliente,
+          cedenteCnpj: cnpj,
+          credoresDeInteresse: String(getColVal(['CREDORES DE INTERESSE', 'CREDOR']) || '').trim(),
+          creditoRj: parseNumber(getColVal(['CRÉDITO RJ', 'CREDITO RJ'])),
+          classe: String(getColVal(['CLASSE']) || '').trim(),
+          creditoExecucao: parseNumber(getColVal(['CRÉDITO EXECUÇÃO', 'CREDITO EXECUCAO', 'EXECUÇÃO'])),
+          extraconcursalNaoAjuizado: parseNumber(getColVal(['EXTRACONCURSAL NÃO AJUIZADO', 'EXTRACONCURSAL'])),
+          vpl: parseNumber(getColVal(['VPL'])),
+          porcentagemDeQuorum: parseNumber(getColVal(['PORCENTAGEM DE QUÓRUM', 'QUÓRUM', 'QUORUM', 'POPCENTAGEM'])),
+          valorConsiderado: parseNumber(getColVal(['VALOR CONSIDERADO', 'CONSIDERADO'])),
+          observacoes: String(getColVal(['OBSERVAÇÕES', 'OBSERVACOES', 'OBS']) || '').trim(),
+          entrada: entradaVal,
+          processo: String(getColVal(['PROCESSO', 'Nº PROCESSO']) || '').trim(),
+          estado: String(getColVal(['ESTADO', 'UF']) || '').trim(),
+          indicacao: String(getColVal(['INDICAÇÃO', 'INDICACAO']) || '').trim(),
+          contatoBancoFornecedor: String(getColVal(['CONTATO BANCO/ FORNECEDOR', 'CONTATO BANCO', 'FORNECEDOR']) || '').trim(),
+          advDaEmpresa: String(getColVal(['ADV. DA EMPRESA', 'ADVOGADO EMPRESA', 'ADV EMPRESA']) || '').trim(),
+          telefoneDoAdvogado: String(getColVal(['TELEFONE DO ADVOGADO', 'TEL ADVOGADO']) || '').trim(),
+          telefoneDoDevedor: String(getColVal(['TELEFONE DO DEVEDOR', 'TEL DEVEDOR']) || '').trim(),
+          advDoCredor: String(getColVal(['ADV. DO CREDOR', 'ADVOGADO CREDOR', 'ADV CREDOR']) || '').trim(),
+          administradorJudicial: String(getColVal(['ADMINISTRADOR JUDICIAL', 'AJ']) || '').trim(),
+          faseDoProcesso: String(getColVal(['FASE DO PROCESSO', 'FASE']) || '').trim(),
+          contatoDevedor: String(getColVal(['CONTATO DEVEDOR']) || '').trim(),
+          propostaReal: parseNumber(getColVal(['PROPOSTA (REAL)', 'PROPOSTA REAL'])),
+          propostaParceiro: parseNumber(getColVal(['PROPOSTA (PARCEIRO)', 'PROPOSTA PARCEIRO'])),
+          valorDeSaidaCliente: parseNumber(getColVal(['VALOR DE SAÍDA (CLIENTE)', 'VALOR DE SAÍDA', 'SAÍDA (CLIENTE)']) || 0),
+          resultadoBruto: parseNumber(getColVal(['RESULTADO BRUTO'])),
+          imposto: parseNumber(getColVal(['IMPOSTO'])),
+          valorParceiro: parseNumber(getColVal(['VALOR PARCEIRO'])),
+          resultadoLiquido: parseNumber(getColVal(['RESULTADO LÍQUIDO', 'RESULTADO LIQUIDO'])),
+          statusDaNegociacao: statusVal,
+          dataRetorno: dataRetornoVal,
+          gestor: String(getColVal(['GESTOR', 'RESPONSÁVEL']) || '').trim(),
+          observacoes1: String(getColVal(['OBSERVAÇÕES.1', 'OBS.1', 'OBSERVAÇÕES 1']) || '').trim(),
+          hiperlink: String(getColVal(['HIPERLINK', 'LINK']) || '').trim(),
+          ramoDeAtividade: String(getColVal(['RAMO DE ATIVIDADE', 'RAMO']) || '').trim(),
+          socios: String(getColVal(['SOCIOS', 'SÓCIOS']) || '').trim(),
+          garantia: String(getColVal(['GARANTIA']) || '').trim(),
+          fluxoDePagamento: String(getColVal(['FLUXO DE PAGAMENTO', 'FLUXO']) || '').trim(),
+          valorFinalDaOperacao: parseNumber(getColVal(['VALOR FINAL DA OPERAÇÃO', 'VALOR FINAL'])),
+          valorRetidoFidc: parseNumber(getColVal(['VALOR RETIDO FIDC', 'RETIDO FIDC']))
+        };
+
+        try {
+          createNplRecord(db, rec, { username: 'auto_import' });
+          total++;
+        } catch {}
+      });
+    });
+
+    console.log(`[BASE_NPL] ${total} registros auto-importados em BASE_NPL.`);
+  } catch (err) {
+    console.warn('[BASE_NPL] Aviso na auto-importação:', err.message);
   }
 }
 

@@ -4,6 +4,7 @@
 
 import {
   ensureBaseNplTable,
+  autoImportNplIfEmpty,
   getNplSummary,
   getNplClients,
   getNplRecordsByCedente,
@@ -19,8 +20,9 @@ export function registerNplRoutes(app, {
   requirePermission,
   getAuthenticatedUser
 }) {
-  // Garante a tabela inicializada
+  // Garante a tabela inicializada e auto-importa se vazia
   ensureBaseNplTable(db);
+  void autoImportNplIfEmpty(db);
 
   /**
    * Resumo de KPIs do NPL

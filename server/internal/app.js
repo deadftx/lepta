@@ -2119,13 +2119,15 @@ app.get('/api/analise-clientes', requireSession, requirePermission('8.1'), async
     let rowsNpl = [];
     try {
       rowsNpl = db.prepare(`
-        SELECT Sacado as sacado, SUM(Valor_do_Credito_Face) as valorNpl
+        SELECT 
+          COALESCE(NULLIF(cedente, ''), Sacado) as sacado, 
+          SUM(COALESCE(NULLIF(valor_considerado, 0), NULLIF(credito_rj, 0), NULLIF(Valor_do_Credito_Face, 0), 0)) as valorNpl
         FROM BASE_NPL
-        WHERE Sacado IS NOT NULL AND Sacado != ''
-        GROUP BY Sacado
+        WHERE (cedente IS NOT NULL AND TRIM(cedente) != '') OR (Sacado IS NOT NULL AND TRIM(Sacado) != '')
+        GROUP BY COALESCE(NULLIF(cedente, ''), Sacado)
       `).all();
     } catch (e) {
-      console.log("Aviso: BASE_NPL indisponível.");
+      console.log("Aviso: BASE_NPL indisponível.", e.message);
     }
 
     // Global deduplication array
@@ -2358,7 +2360,21 @@ app.get('/api/analise-ua/:cedente', requireSession, requirePermission('8.1'), as
     }
 
     // Inject NPL Cessionarios into the UA list
-    const allNpl = db.prepare(`SELECT Sacado, Cedente, Cessionario, SUM(Valor_do_Credito_Face) as valorNpl FROM BASE_NPL WHERE Sacado IS NOT NULL AND Sacado != '' GROUP BY Sacado, Cedente, Cessionario`).all();
+    let allNpl = [];
+    try {
+      allNpl = db.prepare(`
+        SELECT 
+          COALESCE(NULLIF(cedente, ''), Sacado) as Sacado,
+          credores_de_interesse as Cedente,
+          COALESCE(NULLIF(gestor, ''), NULLIF(ramo_de_atividade, ''), Cessionario, 'NPL') as Cessionario,
+          SUM(COALESCE(NULLIF(valor_considerado, 0), NULLIF(credito_rj, 0), NULLIF(Valor_do_Credito_Face, 0), 0)) as valorNpl
+        FROM BASE_NPL
+        WHERE (cedente IS NOT NULL AND TRIM(cedente) != '') OR (Sacado IS NOT NULL AND TRIM(Sacado) != '')
+        GROUP BY Sacado, Cedente, Cessionario
+      `).all();
+    } catch (e) {
+      console.log("Aviso: BASE_NPL em UA indisponível.", e.message);
+    }
     const normCedente = normCedenteParams;
     let nplUAs = [];
     for (const npl of allNpl) {
@@ -2400,7 +2416,16 @@ app.get('/api/analise-un/:cedente', requireSession, requirePermission('8.1'), (r
     const cedente = req.params.cedente;
     let rowsNpl = [];
     try {
-      const allNpl = db.prepare(`SELECT Sacado, Cedente, Cessionario, SUM(Valor_do_Credito_Face) as valorNpl FROM BASE_NPL WHERE Sacado IS NOT NULL AND Sacado != '' GROUP BY Sacado, Cedente, Cessionario`).all();
+      const allNpl = db.prepare(`
+        SELECT 
+          COALESCE(NULLIF(cedente, ''), Sacado) as Sacado,
+          credores_de_interesse as Cedente,
+          COALESCE(NULLIF(credores_de_interesse, ''), NULLIF(gestor, ''), Cessionario, 'Operação NPL') as Cessionario,
+          SUM(COALESCE(NULLIF(valor_considerado, 0), NULLIF(credito_rj, 0), NULLIF(Valor_do_Credito_Face, 0), 0)) as valorNpl
+        FROM BASE_NPL
+        WHERE (cedente IS NOT NULL AND TRIM(cedente) != '') OR (Sacado IS NOT NULL AND TRIM(Sacado) != '')
+        GROUP BY Sacado, Cedente, Cessionario
+      `).all();
       const normCedente = normalizeStr(cedente);
 
       for (const npl of allNpl) {
