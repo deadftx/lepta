@@ -298,35 +298,35 @@ export const MonitorDashboard: React.FC = () => {
       <div className="monitor-kpi-grid">
         <div className="kpi-card vps-card">
           <div className="kpi-header">
-            <Server size={20} />
+            <Server size={18} />
             <span>CPU VPS</span>
           </div>
           <div className="kpi-value">
-            {vps?.cpu.usagePercent || 0}%
+            {vps?.cpu.usagePercent ?? 0}%
           </div>
           <div className="kpi-progress">
-            <div className="progress-bar" style={{ width: `${vps?.cpu.usagePercent || 0}%` }}></div>
+            <div className="progress-bar" style={{ width: `${Math.min(100, Math.max(0, vps?.cpu.usagePercent || 0))}%` }}></div>
           </div>
-          <small>{vps?.cpu.cores || 1} Cores | Load: {vps?.loadAverage?.join(', ') || '0.0'}</small>
+          <small className="kpi-subtext">{vps?.cpu.cores || 1} Cores | Load: {vps?.loadAverage?.join(', ') || '0.0'}</small>
         </div>
 
         <div className="kpi-card ram-card">
           <div className="kpi-header">
-            <Cpu size={20} />
+            <Cpu size={18} />
             <span>Memória RAM VPS</span>
           </div>
           <div className="kpi-value">
-            {vps?.memory.usagePercent || 0}%
+            {vps?.memory.usagePercent ?? 0}%
           </div>
           <div className="kpi-progress">
-            <div className="progress-bar ram" style={{ width: `${vps?.memory.usagePercent || 0}%` }}></div>
+            <div className="progress-bar ram" style={{ width: `${Math.min(100, Math.max(0, vps?.memory.usagePercent || 0))}%` }}></div>
           </div>
-          <small>{formatBytes(vps?.memory.usedBytes || 0)} / {formatBytes(vps?.memory.totalBytes || 0)}</small>
+          <small className="kpi-subtext">{formatBytes(vps?.memory.usedBytes || 0)} / {formatBytes(vps?.memory.totalBytes || 0)}</small>
         </div>
 
         <div className="kpi-card users-card">
           <div className="kpi-header">
-            <Users size={20} />
+            <Users size={18} />
             <span>Usuários Logados</span>
           </div>
           <div className="kpi-value text-green">
@@ -340,10 +340,10 @@ export const MonitorDashboard: React.FC = () => {
 
         <div className="kpi-card git-card">
           <div className="kpi-header">
-            <GitBranch size={20} />
+            <GitBranch size={18} />
             <span>Status Git DEV x HOMOLOG</span>
           </div>
-          <div className="kpi-value text-purple">
+          <div className={`git-status-tag ${git?.isSynced ? 'synced' : 'ahead'}`}>
             {git?.isSynced ? 'Sincronizado' : 'DEV à Frente'}
           </div>
           <small className="git-hash-summary">
