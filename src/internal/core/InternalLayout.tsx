@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { LogOut, User, ShieldAlert, Shield, UserPlus, Users, ChevronDown, ChevronRight, LayoutDashboard, Sliders, Home, Calendar, Menu, X, Wallet, FileSpreadsheet, BrainCircuit, Database, ClipboardCheck, ContactRound, ShieldCheck, Landmark, Briefcase, ShoppingCart, SlidersHorizontal, DollarSign, Mail, Search } from 'lucide-react';
+import { LogOut, User, ShieldAlert, Shield, UserPlus, Users, ChevronDown, ChevronRight, LayoutDashboard, Sliders, Home, Calendar, Menu, X, Wallet, FileSpreadsheet, BrainCircuit, Database, ClipboardCheck, ContactRound, ShieldCheck, Landmark, Briefcase, ShoppingCart, SlidersHorizontal, DollarSign, Mail, Search, TrendingUp } from 'lucide-react';
 import { useNavigate, Outlet, Link, useLocation } from 'react-router-dom';
 import { useAuth } from './AuthContext';
 import NotificationBell from './NotificationBell';
@@ -156,7 +156,7 @@ const InternalLayout = () => {
               )}
             </div>
           )}
-          {hasAnyPermission(user, ['8.1', '8.2', '8.3']) && (
+          {hasAnyPermission(user, ['8.1', '8.2', '8.3', '8.4']) && (
             <div className="nav-menu-group">
               <div 
                 className={`nav-item nav-item-parent ${isIntelligenceActive ? 'active' : ''}`}
@@ -184,6 +184,11 @@ const InternalLayout = () => {
                   {hasAccess('8.3') && (
                     <Link to="/intelligence/analise-riscos" className={navItemClass('/intelligence/analise-riscos')}>
                       <ShieldCheck size={18} /> Análise de Riscos
+                    </Link>
+                  )}
+                  {hasAccess('8.4') && (
+                    <Link to="/intelligence/npl" className={navItemClass('/intelligence/npl')}>
+                      <TrendingUp size={18} /> NPL
                     </Link>
                   )}
                 </div>

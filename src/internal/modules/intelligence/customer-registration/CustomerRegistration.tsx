@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import {
   ArrowLeft,
   Building2,
@@ -51,6 +52,8 @@ interface Entity {
   nome?: string | null;
   email?: string | null;
   telefone?: string | null;
+  gerente?: string | null;
+  superintendente?: string | null;
   contatos?: Contact[] | null;
   tipo?: string | null;
   endereco?: Address | null;
@@ -101,6 +104,8 @@ interface ClientSummary {
   telefone: string;
   email: string;
   tipo: string;
+  gerente?: string;
+  superintendente?: string;
   grupoEconomico: string;
   source: 'api' | 'api+local' | 'local';
   hasLocalData: boolean;
@@ -115,6 +120,8 @@ const emptyClient = (): ClientData => ({
     nome: '',
     email: '',
     telefone: '',
+    gerente: '',
+    superintendente: '',
     contatos: [{ nome: '', telefone: '', fonte: 'local' }],
     tipo: 'PJ',
     valido: true,
@@ -171,6 +178,7 @@ const sourceLabel = (source: ComposedClient['source']) => {
 };
 
 const CustomerRegistration = () => {
+  const [searchParams] = useSearchParams();
   const [searchTerm, setSearchTerm] = useState('');
   const [results, setResults] = useState<ClientSummary[]>([]);
   const [selectedClient, setSelectedClient] = useState<ComposedClient | null>(null);
@@ -202,6 +210,43 @@ const CustomerRegistration = () => {
     }
     return payload;
   };
+
+  useEffect(() => {
+    const docParam = searchParams.get('documento') || searchParams.get('cnpj') || searchParams.get('cpf');
+    const searchParam = searchParams.get('search') || searchParams.get('cliente') || searchParams.get('cedente');
+
+    if (docParam) {
+      void openClient(docParam.replace(/\D/g, ''));
+    } else if (searchParam && searchParam.trim().length >= 2) {
+      setSearchTerm(searchParam.trim());
+      void (async () => {
+        setLoading(true);
+        setError('');
+        setWarning('');
+        setSearched(true);
+        try {
+          const response = await fetch(clientSearchUrl(searchParam.trim()), {
+            headers: authHeaders()
+          });
+          const payload = await readSearchResponse(response);
+          const list: ClientSummary[] = payload.results || [];
+          setResults(list);
+          if (list.length === 1) {
+            void openClient(list[0].documento);
+          } else if (list.length > 1) {
+            const exact = list.find(c => c.nome.toLowerCase() === searchParam.trim().toLowerCase());
+            if (exact) {
+              void openClient(exact.documento);
+            }
+          }
+        } catch (requestError) {
+          setError(requestError instanceof Error ? requestError.message : 'Não foi possível buscar os clientes.');
+        } finally {
+          setLoading(false);
+        }
+      })();
+    }
+  }, [searchParams]);
 
   useEffect(() => {
     const query = searchTerm.trim();
@@ -580,6 +625,8 @@ const CustomerRegistration = () => {
                 </div>
               </div>
               <DetailField label="Tipo" value={entity.tipo} editing={editing} onChange={value => updateEntity('tipo', value)} />
+              <DetailField icon={<UserRound size={17} />} label="Gerente (Gestor)" value={entity.gerente} editing={editing} onChange={value => updateEntity('gerente', value)} placeholder="Nome do gerente de contas" />
+              <DetailField icon={<UserRound size={17} />} label="Superintendente" value={entity.superintendente} editing={editing} onChange={value => updateEntity('superintendente', value)} placeholder="Nome do superintendente" />
               <DetailField label="ID na UNLTD" value={entity.id?.toString()} />
               <DetailField label="ID do cliente" value={data.id?.toString()} />
               <DetailField label="Última alteração interna" value={selectedClient.updatedAt ? new Date(selectedClient.updatedAt).toLocaleString('pt-BR') : 'Sem alteração interna'} />
@@ -790,7 +837,8 @@ const DetailField = ({
   editing = false,
   onChange,
   wide = false,
-  linkHref = ''
+  linkHref = '',
+  placeholder = ''
 }: {
   icon?: React.ReactNode;
   label: string;
@@ -799,11 +847,12 @@ const DetailField = ({
   onChange?: (value: string) => void;
   wide?: boolean;
   linkHref?: string;
+  placeholder?: string;
 }) => (
   <div className={`detail-field ${wide ? 'wide' : ''}`}>
     <span>{icon}{label}</span>
     {editing && onChange ? (
-      <input value={value || ''} onChange={event => onChange(event.target.value)} />
+      <input value={value || ''} placeholder={placeholder || label} onChange={event => onChange(event.target.value)} />
     ) : value && linkHref ? (
       <a className="detail-field-link phone-call-link" href={linkHref} aria-label={`Ligar para ${value}`} title="Ligar pelo aplicativo padrão">
         <Phone size={15} />{value}

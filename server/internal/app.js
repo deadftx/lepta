@@ -16,6 +16,7 @@ import { registerEmailConfigRoutes } from './modules/administration/emailRoutes.
 import { registerConfirmationRoutes } from './modules/confirmation/routes.js';
 import { registerTickerRoutes } from './modules/ticker/routes.js';
 import { registerMonitorRoutes } from './modules/monitor/routes.js';
+import { registerNplRoutes } from './modules/intelligence/npl/routes.js';
 import { recordDatabaseEvent, recordSystemError, recordUserHeartbeat } from './modules/monitor/monitorService.js';
 import { ensureCedentesTableSchema, consolidateCedentesTable, syncAllCedentesFromUnltdApi } from './modules/database/unltdSync.js';
 
@@ -798,6 +799,28 @@ async function fetchLiquidacoesDaAPI(req) {
   return unltdLiquidacoesCache.pending;
 }
 
+function enrichClientWithManagers(payload) {
+  if (!payload || typeof payload !== 'object') return payload;
+  const entidade = payload.entidade || {};
+  
+  if (entidade.gerente === undefined || entidade.gerente === null) {
+    const fromAccounts = (payload.contasOperacionais || [])
+      .map(acc => acc?.gerente?.nome || acc?.gerente || acc?.colaborador?.nome || acc?.colaborador)
+      .find(Boolean);
+    entidade.gerente = fromAccounts || payload.gerente || '';
+  }
+  
+  if (entidade.superintendente === undefined || entidade.superintendente === null) {
+    const fromAccounts = (payload.contasOperacionais || [])
+      .map(acc => acc?.superintendente?.nome || acc?.superintendente)
+      .find(Boolean);
+    entidade.superintendente = fromAccounts || payload.superintendente || 'Sebastiao Neto';
+  }
+  
+  payload.entidade = entidade;
+  return payload;
+}
+
 async function fetchUnltdClientDetails(document, forceRefresh = false) {
   const normalizedDocument = normalizeEntityDocument(document);
   if (![11, 14].includes(normalizedDocument.length)) return null;
@@ -814,7 +837,8 @@ async function fetchUnltdClientDetails(document, forceRefresh = false) {
     if (response.status === 404) return null;
     if (!response.ok) throw new Error(`UNLTD (cliente) respondeu ${response.status}`);
     const payload = await response.json();
-    return Array.isArray(payload) ? (payload[0] || null) : payload;
+    const data = Array.isArray(payload) ? (payload[0] || null) : payload;
+    return enrichClientWithManagers(data);
   }).then(data => {
     unltdClientDetailsCache.set(normalizedDocument, { data, updatedAt: Date.now(), pending: null });
     return data;
@@ -939,6 +963,8 @@ function composeClientRegistration(apiData, localRow) {
       ...mergedData.entidade,
       documento: normalizeEntityDocument(mergedData.entidade.documento || localRow?.documento),
       telefone: contacts[0]?.telefone || mergedData.entidade.telefone || '',
+      gerente: mergedData.entidade.gerente !== undefined ? mergedData.entidade.gerente : (base.entidade?.gerente || ''),
+      superintendente: mergedData.entidade.superintendente !== undefined ? mergedData.entidade.superintendente : (base.entidade?.superintendente || 'Sebastiao Neto'),
       contatos: contacts
     }
   } : mergedData;
@@ -961,6 +987,8 @@ function clientRegistrationSummary(composed) {
     telefone: entidade.telefone || '',
     email: entidade.email || '',
     tipo: entidade.tipo || '',
+    gerente: entidade.gerente || '',
+    superintendente: entidade.superintendente || '',
     grupoEconomico: entidade.grupoEconomico?.nome || '',
     source: composed.source,
     hasLocalData: composed.hasLocalData,
@@ -2941,6 +2969,13 @@ registerMonitorRoutes(app, {
   db,
   requireSession,
   requireMaster
+});
+
+registerNplRoutes(app, {
+  db,
+  requireSession,
+  requirePermission,
+  getAuthenticatedUser
 });
 
 function dropLegacyBases() {

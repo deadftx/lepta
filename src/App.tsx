@@ -19,6 +19,7 @@ import FinancePaymentCalendar from './internal/modules/finance/FinancePaymentCal
 import CustomerAnalysis from './internal/modules/intelligence/customer-analysis/CustomerAnalysis';
 import CustomerRegistration from './internal/modules/intelligence/customer-registration/CustomerRegistration';
 import RiskAnalysis from './internal/modules/intelligence/risk-analysis/RiskAnalysis';
+import NplManagement from './internal/modules/intelligence/npl/NplManagement';
 import DatabaseManagement from './internal/modules/database/DatabaseManagement';
 import PurchaseApproval from './internal/modules/administrative/purchases/PurchaseApproval';
 import PurchaseWorkflowConfig from './internal/modules/administrative/purchases/PurchaseWorkflowConfig';
@@ -92,6 +93,7 @@ function App() {
               <Route path="/intelligence/analise-clientes" element={<AccessRoute permission="8.1"><CustomerAnalysis /></AccessRoute>} />
               <Route path="/intelligence/cadastro-clientes" element={<AccessRoute permission="8.2"><CustomerRegistration /></AccessRoute>} />
               <Route path="/intelligence/analise-riscos" element={<AccessRoute permission="8.3"><RiskAnalysis /></AccessRoute>} />
+              <Route path="/intelligence/npl" element={<AccessRoute permission="8.4"><NplManagement /></AccessRoute>} />
               <Route path="/administrativo/compras" element={<AccessRoute permission="11.1"><PurchaseApproval /></AccessRoute>} />
               <Route path="/administrativo/configuracao-compras" element={<AccessRoute permission="11.2"><PurchaseWorkflowConfig /></AccessRoute>} />
               <Route path="/confirmacao/sistema" element={<AccessRoute permission="10.1"><ConfirmationSystem /></AccessRoute>} />

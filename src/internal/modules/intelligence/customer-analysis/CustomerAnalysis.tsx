@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { Users, Search, BrainCircuit, Database, TrendingUp, AlertTriangle, ArrowLeft, Building2, User, CheckCircle, Clock, ArrowUpDown, ArrowUp, ArrowDown, Wifi, X, Network } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { Users, Search, BrainCircuit, Database, TrendingUp, AlertTriangle, ArrowLeft, Building2, User, CheckCircle, Clock, ArrowUpDown, ArrowUp, ArrowDown, Wifi, X, Network, ContactRound } from 'lucide-react';
 import './CustomerAnalysis.css';
 import '../../../core/styles/Operations.css';
 import { getAuthHeaders } from '../../../../config/api';
@@ -49,6 +50,7 @@ const TruncatedName = ({ value }: { value: string }) => {
 };
 
 const CustomerAnalysis = () => {
+  const navigate = useNavigate();
   const [searchTerm, setSearchTerm] = useState('');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
@@ -783,6 +785,18 @@ const CustomerAnalysis = () => {
                 <TrendingUp size={18} /> Unidade de Negócio (UN)
               </button>
             )}
+
+            <button 
+              className="btn-primary" 
+              style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', justifyContent: 'flex-start', padding: '0.75rem 1rem', background: '#3b82f6', color: '#fff' }}
+              onClick={() => {
+                const cedente = popover.cedente;
+                setPopover(null);
+                navigate(`/intelligence/cadastro-clientes?search=${encodeURIComponent(cedente)}`);
+              }}
+            >
+              <ContactRound size={18} /> Informações do Cedente
+            </button>
           </div>
         );
       })(), document.body)}

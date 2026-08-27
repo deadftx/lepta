@@ -93,6 +93,21 @@ const Finance = () => {
     return `${day}/${month}/${year}`;
   };
 
+  const parseDateToTime = (dateStr: string): number => {
+    if (!dateStr) return 0;
+    const parts = dateStr.trim().split('/');
+    if (parts.length === 3) {
+      const day = parseInt(parts[0], 10);
+      const month = parseInt(parts[1], 10);
+      const year = parseInt(parts[2], 10);
+      if (!isNaN(day) && !isNaN(month) && !isNaN(year)) {
+        return new Date(year, month - 1, day).getTime();
+      }
+    }
+    const d = new Date(dateStr);
+    return isNaN(d.getTime()) ? 0 : d.getTime();
+  };
+
   const handleFile = async (file: File) => {
     setError(null);
     setIsSaved(false);
@@ -221,6 +236,9 @@ const Finance = () => {
         });
       }
 
+      // Ordena por data de A a Z (crescente: começando no dia 01)
+      formatted.sort((a, b) => parseDateToTime(a.Data) - parseDateToTime(b.Data));
+
       setProcessedData(formatted);
       setStatementMetadata(parsedMetadata);
     } catch (err: any) {
@@ -245,6 +263,9 @@ const Finance = () => {
 
   const generateAndDownloadExcel = async (data: TargetTransaction[]) => {
     try {
+      // Ordena os registros por data de A a Z (crescente: do dia 01 em diante)
+      const sortedData = [...data].sort((a, b) => parseDateToTime(a.Data) - parseDateToTime(b.Data));
+
       // @ts-ignore
       const ExcelJS = (await import('exceljs/dist/exceljs.min.js')).default || window.ExcelJS || await import('exceljs/dist/exceljs.min.js');
       const wb = new ExcelJS.Workbook();
@@ -272,11 +293,9 @@ const Finance = () => {
       ws.getCell('A2').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: darkRed } };
       ws.getRow(2).height = 30;
 
-      const totalCreditos = data.reduce((sum, item) => sum + (item.Créditos || 0), 0);
-      const totalDebitos = data.reduce((sum, item) => sum + (item.Débitos || 0), 0);
-      const saldoDisponivel = data.length > 0
-        ? (data[data.length - 1].Saldo ?? statementMetadata.saldoAnterior)
-        : statementMetadata.saldoAnterior;
+      const totalCreditos = sortedData.reduce((sum, item) => sum + (item.Créditos || 0), 0);
+      const totalDebitos = sortedData.reduce((sum, item) => sum + (item.Débitos || 0), 0);
+      const saldoDisponivel = 0; // Saldo Disponível zerado por padrão na exportação
 
       const metadataRows: Array<Array<string | number>> = [
         ['Banco', statementMetadata.banco, 'Agência', statementMetadata.agencia, 'Conta', statementMetadata.conta],
