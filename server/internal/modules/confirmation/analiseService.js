@@ -393,6 +393,8 @@ export async function fetchTitulosAnaliseByDate({ dataCadastro, unltdToken }) {
     debugInfo: {
       rawCount: rawTitulos.length,
       totalNominalBruto,
+      sampleOfficial: rawTitulos.find(t => t.id === 135891 || t.id === '135891'),
+      sampleExtra: rawTitulos.find(t => t.id === 136242 || t.id === '136242' || t.id === 136238 || t.id === '136238'),
       rawUas,
       rawProds,
       rawSiglas,
