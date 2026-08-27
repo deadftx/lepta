@@ -1,4 +1,7 @@
 import os from 'os';
+import fs from 'fs';
+import path from 'path';
+import Database from 'better-sqlite3';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import EventEmitter from 'events';
@@ -12,8 +15,58 @@ monitorEvents.setMaxListeners(100);
 // Armazenamento em memória de presença e tempo por módulo dos usuários
 const userSessionsMap = new Map(); // userId -> sessionData
 
+let cachedHomologDb = null;
+let cachedHomologPath = null;
+
 /**
- * Garante a criação da tabela de logs de telemetria no SQLite
+ * Conecta ao banco de dados oficial do HOMOLOG na VPS (/var/www/lepta/database.sqlite) em readonly.
+ * Se o arquivo do HOMOLOG não for encontrado, usa o banco atual como fallback.
+ */
+export function getHomologDb(defaultDb) {
+  const configuredPath = String(process.env.LEPTA_HOMOLOG_DB_PATH || '').trim();
+  const possiblePaths = [
+    configuredPath,
+    '/var/www/lepta/database.sqlite',
+    '/var/www/html/lepta/database.sqlite',
+    'C:/var/www/lepta/database.sqlite'
+  ].filter(Boolean);
+
+  let targetPath = null;
+  for (const p of possiblePaths) {
+    if (fs.existsSync(p)) {
+      targetPath = path.resolve(p);
+      break;
+    }
+  }
+
+  // Se o banco do HOMOLOG não for encontrado no disco, usa o banco default
+  if (!targetPath) {
+    return defaultDb;
+  }
+
+  if (cachedHomologDb && cachedHomologPath === targetPath) {
+    try {
+      cachedHomologDb.prepare('SELECT 1').get();
+      return cachedHomologDb;
+    } catch {
+      cachedHomologDb = null;
+    }
+  }
+
+  try {
+    console.log(`[MONITOR] Conectando ao banco de dados do HOMOLOG da VPS (readonly): ${targetPath}`);
+    cachedHomologDb = new Database(targetPath, { readonly: true, timeout: 5000 });
+    cachedHomologDb.pragma('journal_mode = WAL');
+    cachedHomologPath = targetPath;
+    return cachedHomologDb;
+  } catch (err) {
+    console.warn('[MONITOR] Falha ao abrir banco do HOMOLOG em readonly, usando base local:', err.message);
+    return defaultDb;
+  }
+}
+
+/**
+ * Garante a criação da tabela de logs de telemetria no SQLite (se permissão permitir)
  */
 export function ensureMonitorSchema(db) {
   try {
@@ -42,7 +95,7 @@ export function ensureMonitorSchema(db) {
       );
     `);
   } catch (err) {
-    console.error('Erro ao inicializar schema do monitoramento:', err.message);
+    // Se for banco em modo readonly (ex: lendo o HOMOLOG direto na VPS), ignora o erro de escrita
   }
 }
 
@@ -56,7 +109,6 @@ export function getVpsMetrics() {
   const usedMem = totalMem - freeMem;
   const memUsagePercent = Math.round((usedMem / totalMem) * 100);
 
-  // Calcula carga aproximada de CPU
   let userCpu = 0;
   let sysCpu = 0;
   let idleCpu = 0;
@@ -69,7 +121,7 @@ export function getVpsMetrics() {
   const totalTimes = userCpu + sysCpu + idleCpu;
   const cpuUsagePercent = Math.min(100, Math.round(((userCpu + sysCpu) / (totalTimes || 1)) * 100));
 
-  const loadAvg = os.loadavg(); // [1min, 5min, 15min]
+  const loadAvg = os.loadavg();
 
   return {
     hostname: os.hostname(),
@@ -137,7 +189,6 @@ export async function getPm2Status() {
       };
     });
   } catch (err) {
-    // Se o pm2 não estiver rodando na máquina local Windows de dev, retorna mock seguro
     return [
       { name: 'lepta-dev', environment: 'DEV', port: 3005, status: 'online', uptimeSeconds: 3600, restarts: 0, memoryBytes: 145000000, cpuPercent: 1.2, pmId: 0 },
       { name: 'lepta-homolog', environment: 'HOMOLOG', port: 3000, status: 'online', uptimeSeconds: 86400, restarts: 2, memoryBytes: 168000000, cpuPercent: 0.5, pmId: 1 }
@@ -150,7 +201,6 @@ export async function getPm2Status() {
  */
 export async function getGitCommitsComparison() {
   try {
-    // Tenta consultar git local
     const { stdout: devLog } = await execAsync('git log -1 --format="%h|%s|%an|%cI" origin/DEV').catch(() => ({ stdout: '' }));
     const { stdout: homologLog } = await execAsync('git log -1 --format="%h|%s|%an|%cI" origin/HOMOLOG').catch(() => ({ stdout: '' }));
 
@@ -202,11 +252,10 @@ export function recordUserHeartbeat(db, { userId, username, email, path: current
       currentPath: currentPath || '/dashboard',
       currentModule: moduleName || 'Home',
       status: 'online',
-      moduleTimeSeconds: {}, // moduleName -> seconds
+      moduleTimeSeconds: {},
       totalSessionSeconds: 0
     };
   } else {
-    // Calcula o tempo decorrido desde o último heartbeat (máx 60s por pulso)
     const elapsedSeconds = Math.min(60, Math.floor((now - new Date(session.lastSeenAt).getTime()) / 1000));
     const activeModule = moduleName || session.currentModule || 'Home';
 
@@ -223,7 +272,6 @@ export function recordUserHeartbeat(db, { userId, username, email, path: current
 
   userSessionsMap.set(userId, session);
 
-  // Emite evento de presença no barramento
   monitorEvents.emit('presence_update', {
     userId,
     username,
@@ -236,17 +284,31 @@ export function recordUserHeartbeat(db, { userId, username, email, path: current
 }
 
 /**
- * Obtém a lista consolidada de usuários e status de presença (Online / Offline)
+ * Obtém a lista de usuários e status de presença LENDO DIRETO DO BANCO DE DADOS DO HOMOLOG DA VPS
  */
-export function getActiveUsers(db) {
-  ensureMonitorSchema(db);
+export function getActiveUsers(defaultDb) {
+  const targetDb = getHomologDb(defaultDb);
+  ensureMonitorSchema(defaultDb);
 
-  // Consulta todos os usuários cadastrados
-  const allUsers = db.prepare(`
-    SELECT id, username, email, role, created_at, updated_at
-    FROM usuarios_lepta
-    ORDER BY username ASC
-  `).all();
+  let allUsers = [];
+  try {
+    allUsers = targetDb.prepare(`
+      SELECT id, username, email, role, created_at, updated_at
+      FROM usuarios_lepta
+      ORDER BY username ASC
+    `).all();
+  } catch (err) {
+    console.error('[MONITOR] Erro ao consultar usuarios_lepta do HOMOLOG:', err.message);
+    try {
+      allUsers = defaultDb.prepare(`
+        SELECT id, username, email, role, created_at, updated_at
+        FROM usuarios_lepta
+        ORDER BY username ASC
+      `).all();
+    } catch {
+      allUsers = [];
+    }
+  }
 
   const now = Date.now();
 
@@ -263,11 +325,10 @@ export function getActiveUsers(db) {
 
     if (session) {
       const msSinceLastSeen = now - new Date(session.lastSeenAt).getTime();
-      // Considera online se enviou heartbeat nos últimos 90 segundos
       if (msSinceLastSeen <= 90000) {
         status = 'online';
       } else if (msSinceLastSeen <= 300000) {
-        status = 'idle'; // Ausente
+        status = 'idle';
       }
       lastSeenAt = session.lastSeenAt;
       loginAt = session.loginAt;
@@ -343,17 +404,26 @@ export function recordSystemError(db, { level = 'ERROR', source = 'API', message
 }
 
 /**
- * Obtém o histórico recente de erros do sistema
+ * Obtém o histórico recente de erros do sistema LENDO DO HOMOLOG (ou base local)
  */
-export function getRecentSystemErrors(db, { limit = 20 } = {}) {
-  ensureMonitorSchema(db);
+export function getRecentSystemErrors(defaultDb, { limit = 20 } = {}) {
+  const targetDb = getHomologDb(defaultDb);
+  ensureMonitorSchema(defaultDb);
   try {
-    return db.prepare(`
+    return targetDb.prepare(`
       SELECT * FROM monitor_system_errors
       ORDER BY created_at DESC
       LIMIT ?
     `).all(Math.min(limit, 100));
   } catch {
-    return [];
+    try {
+      return defaultDb.prepare(`
+        SELECT * FROM monitor_system_errors
+        ORDER BY created_at DESC
+        LIMIT ?
+      `).all(Math.min(limit, 100));
+    } catch {
+      return [];
+    }
   }
 }
