@@ -381,128 +381,139 @@ export function registerPurchaseRoutes(app, {
 
     try {
       const now = new Date().toISOString();
-      const count = db.prepare(`SELECT COUNT(*) as total FROM compras_requisicoes`).get().total + 1;
-      const id = `SOL-${new Date().getFullYear()}-${String(count).padStart(4, '0')}`;
       const solicitanteNome = req.authUser.username || req.authUser.id;
-
+      let id = '';
+      let createdItems = [];
       let totalValor = 0;
-      let totalQtd = 0;
-      const firstItem = itens[0];
-      const mainEmpresaPagadora = String(firstItem.empresa_pagadora || req.body?.empresa_pagadora || 'INDIFERENTE').trim();
 
-      const insertItemStmt = db.prepare(`
-        INSERT INTO compras_requisicoes_itens (
-          id, requisicao_id, numero_item, tipo_destino, empresa_pagadora, departamento_centro_custo,
-          categoria, fornecedor_nome, fornecedor_contato, forma_pagamento,
-          quantidade_parcelas, produto_servico, valor, quantidade, observacoes, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `);
+      db.transaction(() => {
+        const count = (db.prepare(`SELECT COALESCE(MAX(numero), 0) as maxNum FROM compras_requisicoes`).get()?.maxNum || 0) + 1;
+        id = `SOL-${new Date().getFullYear()}-${String(count).padStart(4, '0')}`;
 
-      const createdItems = [];
-      for (let i = 0; i < itens.length; i++) {
-        const it = itens[i];
-        const itemId = randomUUID();
-        const numItem = i + 1;
-        const itQtd = Math.max(1, Number(it.quantidade || 1));
-        const itVal = Number(it.valor);
-        const itParcelas = Math.max(1, Number(it.quantidade_parcelas) || 1);
-        const itEmpresa = String(it.empresa_pagadora || mainEmpresaPagadora).trim();
+        let totalQtd = 0;
+        const firstItem = itens[0];
+        const mainEmpresaPagadora = String(firstItem.empresa_pagadora || req.body?.empresa_pagadora || 'INDIFERENTE').trim();
 
-        totalValor += (itVal * itQtd);
-        totalQtd += itQtd;
+        const mainProdutoServico = itens.length === 1 
+          ? firstItem.produto_servico 
+          : `${firstItem.produto_servico} (+${itens.length - 1} ${itens.length - 1 === 1 ? 'item adicional' : 'itens adicionais'})`;
+        
+        const mainCategoria = itens.length === 1
+          ? firstItem.categoria
+          : 'Múltiplas';
 
-        insertItemStmt.run(
-          itemId,
+        for (let i = 0; i < itens.length; i++) {
+          const it = itens[i];
+          const itQtd = Math.max(1, Number(it.quantidade || 1));
+          const itVal = Number(it.valor);
+          totalValor += (itVal * itQtd);
+          totalQtd += itQtd;
+        }
+
+        // 1. Inserção transacional da requisição pai
+        db.prepare(`
+          INSERT INTO compras_requisicoes (
+            id, numero, tipo_destino, empresa_pagadora, categoria, fornecedor_nome, fornecedor_contato, forma_pagamento,
+            quantidade_parcelas, departamento_centro_custo, produto_servico,
+            valor, quantidade, observacoes, status, arquivado, arquivado_manualmente,
+            solicitante_id, solicitante_nome, solicitante_email,
+            created_at, updated_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'PENDENTE', 0, 0, ?, ?, ?, ?, ?)
+        `).run(
           id,
-          numItem,
-          String(it.tipo_destino || 'DEPARTAMENTO').trim().toUpperCase(),
-          itEmpresa,
-          String(it.departamento_centro_custo || '').trim(),
-          String(it.categoria || 'Outros').trim(),
-          String(it.fornecedor_nome || '').trim(),
-          String(it.fornecedor_contato || '').trim(),
-          String(it.forma_pagamento || 'PIX').trim().toUpperCase(),
-          itParcelas,
-          String(it.produto_servico || '').trim(),
-          itVal,
-          itQtd,
-          String(it.observacoes || '').trim(),
+          count,
+          firstItem.tipo_destino || 'DEPARTAMENTO',
+          mainEmpresaPagadora,
+          mainCategoria,
+          firstItem.fornecedor_nome,
+          firstItem.fornecedor_contato,
+          firstItem.forma_pagamento,
+          firstItem.quantidade_parcelas || 1,
+          firstItem.departamento_centro_custo,
+          mainProdutoServico,
+          totalValor,
+          totalQtd,
+          firstItem.observacoes || '',
+          req.authUser.id,
+          solicitanteNome,
+          req.authUser.email || '',
+          now,
           now
         );
 
-        createdItems.push({
-          id: itemId,
-          requisicao_id: id,
-          numero_item: numItem,
-          tipo_destino: it.tipo_destino,
-          empresa_pagadora: itEmpresa,
-          departamento_centro_custo: it.departamento_centro_custo,
-          categoria: it.categoria,
-          fornecedor_nome: it.fornecedor_nome,
-          fornecedor_contato: it.fornecedor_contato,
-          forma_pagamento: it.forma_pagamento,
-          quantidade_parcelas: itParcelas,
-          produto_servico: it.produto_servico,
-          valor: itVal,
-          quantidade: itQtd,
-          observacoes: it.observacoes || '',
-          created_at: now
+        // 2. Inserção transacional dos itens filhos
+        const insertItemStmt = db.prepare(`
+          INSERT INTO compras_requisicoes_itens (
+            id, requisicao_id, numero_item, tipo_destino, empresa_pagadora, departamento_centro_custo,
+            categoria, fornecedor_nome, fornecedor_contato, forma_pagamento,
+            quantidade_parcelas, produto_servico, valor, quantidade, observacoes, created_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `);
+
+        for (let i = 0; i < itens.length; i++) {
+          const it = itens[i];
+          const itemId = randomUUID();
+          const numItem = i + 1;
+          const itQtd = Math.max(1, Number(it.quantidade || 1));
+          const itVal = Number(it.valor);
+          const itParcelas = Math.max(1, Number(it.quantidade_parcelas) || 1);
+          const itEmpresa = String(it.empresa_pagadora || mainEmpresaPagadora).trim();
+
+          insertItemStmt.run(
+            itemId,
+            id,
+            numItem,
+            String(it.tipo_destino || 'DEPARTAMENTO').trim().toUpperCase(),
+            itEmpresa,
+            String(it.departamento_centro_custo || '').trim(),
+            String(it.categoria || 'Outros').trim(),
+            String(it.fornecedor_nome || '').trim(),
+            String(it.fornecedor_contato || '').trim(),
+            String(it.forma_pagamento || 'PIX').trim().toUpperCase(),
+            itParcelas,
+            String(it.produto_servico || '').trim(),
+            itVal,
+            itQtd,
+            String(it.observacoes || '').trim(),
+            now
+          );
+
+          createdItems.push({
+            id: itemId,
+            requisicao_id: id,
+            numero_item: numItem,
+            tipo_destino: it.tipo_destino,
+            empresa_pagadora: itEmpresa,
+            departamento_centro_custo: it.departamento_centro_custo,
+            categoria: it.categoria,
+            fornecedor_nome: it.fornecedor_nome,
+            fornecedor_contato: it.fornecedor_contato,
+            forma_pagamento: it.forma_pagamento,
+            quantidade_parcelas: itParcelas,
+            produto_servico: it.produto_servico,
+            valor: itVal,
+            quantidade: itQtd,
+            observacoes: it.observacoes || '',
+            created_at: now
+          });
+        }
+
+        // 3. Dispara notificação para todos os APROVADORES
+        const approverIds = getAllApproverUserIds().filter(uid => uid !== req.authUser.id);
+        const totalFormatado = formatBrl(totalValor);
+        notifyUsers(db, approverIds, {
+          titulo: `💳 Nova Solicitação Financeira (${id})`,
+          mensagem: `${solicitanteNome} solicitou ${mainProdutoServico} (${totalFormatado} - ${itens.length} ${itens.length === 1 ? 'item' : 'itens'})`,
+          tipo: 'COMPRAS_NOVA_REQUISICAO',
+          link: '/administrativo/compras'
         });
-      }
-
-      const mainProdutoServico = itens.length === 1 
-        ? firstItem.produto_servico 
-        : `${firstItem.produto_servico} (+${itens.length - 1} ${itens.length - 1 === 1 ? 'item adicional' : 'itens adicionais'})`;
-      
-      const mainCategoria = itens.length === 1
-        ? firstItem.categoria
-        : 'Múltiplas';
-
-      db.prepare(`
-        INSERT INTO compras_requisicoes (
-          id, numero, tipo_destino, empresa_pagadora, categoria, fornecedor_nome, fornecedor_contato, forma_pagamento,
-          quantidade_parcelas, departamento_centro_custo, produto_servico,
-          valor, quantidade, observacoes, status, arquivado, arquivado_manualmente,
-          solicitante_id, solicitante_nome, solicitante_email,
-          created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'PENDENTE', 0, 0, ?, ?, ?, ?, ?)
-      `).run(
-        id,
-        count,
-        firstItem.tipo_destino || 'DEPARTAMENTO',
-        mainEmpresaPagadora,
-        mainCategoria,
-        firstItem.fornecedor_nome,
-        firstItem.fornecedor_contato,
-        firstItem.forma_pagamento,
-        firstItem.quantidade_parcelas || 1,
-        firstItem.departamento_centro_custo,
-        mainProdutoServico,
-        totalValor,
-        totalQtd,
-        firstItem.observacoes || '',
-        req.authUser.id,
-        solicitanteNome,
-        req.authUser.email || '',
-        now,
-        now
-      );
-
-      // Dispara notificação para todos os APROVADORES
-      const approverIds = getAllApproverUserIds().filter(uid => uid !== req.authUser.id);
-      const totalFormatado = formatBrl(totalValor);
-      notifyUsers(db, approverIds, {
-        titulo: `💳 Nova Solicitação Financeira (${id})`,
-        mensagem: `${solicitanteNome} solicitou ${mainProdutoServico} (${totalFormatado} - ${itens.length} ${itens.length === 1 ? 'item' : 'itens'})`,
-        tipo: 'COMPRAS_NOVA_REQUISICAO',
-        link: '/administrativo/compras'
-      });
+      })();
 
       const nova = db.prepare(`SELECT * FROM compras_requisicoes WHERE id = ?`).get(id);
       return res.status(201).json({ ...nova, itens: createdItems });
     } catch (error) {
       console.error('Erro ao criar solicitação financeira no SQLite:', error.message);
-      return res.status(500).json({ error: 'Não foi possível registrar a solicitação no banco SQLite.' });
+      return res.status(500).json({ error: `Não foi possível registrar a solicitação no banco SQLite: ${error.message}` });
     }
   });
 
@@ -757,74 +768,76 @@ export function registerPurchaseRoutes(app, {
       const quantidade = req.body?.quantidade !== undefined ? Math.max(1, Number(req.body.quantidade) || 1) : requisicao.quantidade;
       const observacoes = req.body?.observacoes !== undefined ? String(req.body.observacoes).trim() : requisicao.observacoes;
 
-      db.prepare(`
-        UPDATE compras_requisicoes
-        SET status = 'APROVADO',
-            arquivado = 0,
-            aprovador_id = ?,
-            aprovador_nome = ?,
-            motivo_decisao = ?,
-            decidido_em = ?,
-            fornecedor_nome = ?,
-            fornecedor_contato = ?,
-            forma_pagamento = ?,
-            empresa_pagadora = ?,
-            quantidade_parcelas = ?,
-            departamento_centro_custo = ?,
-            produto_servico = ?,
-            valor = ?,
-            quantidade = ?,
-            observacoes = ?,
-            updated_at = ?
-        WHERE id = ?
-      `).run(
-        req.authUser.id,
-        aprovadorNome,
-        observacao,
-        now,
-        fornecedor_nome,
-        fornecedor_contato,
-        forma_pagamento,
-        empresa_pagadora,
-        quantidade_parcelas,
-        departamento_centro_custo,
-        produto_servico,
-        valor,
-        quantidade,
-        observacoes,
-        now,
-        req.params.id
-      );
+      db.transaction(() => {
+        db.prepare(`
+          UPDATE compras_requisicoes
+          SET status = 'APROVADO',
+              arquivado = 0,
+              aprovador_id = ?,
+              aprovador_nome = ?,
+              motivo_decisao = ?,
+              decidido_em = ?,
+              fornecedor_nome = ?,
+              fornecedor_contato = ?,
+              forma_pagamento = ?,
+              empresa_pagadora = ?,
+              quantidade_parcelas = ?,
+              departamento_centro_custo = ?,
+              produto_servico = ?,
+              valor = ?,
+              quantidade = ?,
+              observacoes = ?,
+              updated_at = ?
+          WHERE id = ?
+        `).run(
+          req.authUser.id,
+          aprovadorNome,
+          observacao,
+          now,
+          fornecedor_nome,
+          fornecedor_contato,
+          forma_pagamento,
+          empresa_pagadora,
+          quantidade_parcelas,
+          departamento_centro_custo,
+          produto_servico,
+          valor,
+          quantidade,
+          observacoes,
+          now,
+          req.params.id
+        );
 
-      let msgMsg = `Aprovado por ${aprovadorNome}.`;
-      if (requisicao.status === 'REVISAO') {
-        msgMsg = `🔄 Proposta editada e aprovada novamente por ${aprovadorNome}.`;
-      }
-      if (observacao) {
-        msgMsg += ` Observação: ${observacao}`;
-      }
+        let msgMsg = `Aprovado por ${aprovadorNome}.`;
+        if (requisicao.status === 'REVISAO') {
+          msgMsg = `🔄 Proposta editada e aprovada novamente por ${aprovadorNome}.`;
+        }
+        if (observacao) {
+          msgMsg += ` Observação: ${observacao}`;
+        }
 
-      db.prepare(`
-        INSERT INTO compras_mensagens (id, requisicao_id, autor_id, autor_nome, autor_role, mensagem, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-      `).run(
-        randomUUID(),
-        req.params.id,
-        req.authUser.id,
-        aprovadorNome,
-        'APROVADOR',
-        msgMsg,
-        now
-      );
+        db.prepare(`
+          INSERT INTO compras_mensagens (id, requisicao_id, autor_id, autor_nome, autor_role, mensagem, created_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?)
+        `).run(
+          randomUUID(),
+          req.params.id,
+          req.authUser.id,
+          aprovadorNome,
+          'APROVADOR',
+          msgMsg,
+          now
+        );
 
-      // Notifica o SOLICITANTE
-      createNotification(db, {
-        userId: requisicao.solicitante_id,
-        titulo: `✅ Solicitação Aprovada (${requisicao.id})`,
-        mensagem: `Sua solicitação (${produto_servico} - ${fornecedor_nome || ''}) foi aprovada por ${aprovadorNome}.`,
-        tipo: 'COMPRAS_APROVADO',
-        link: '/administrativo/compras'
-      });
+        // Notifica o SOLICITANTE
+        createNotification(db, {
+          userId: requisicao.solicitante_id,
+          titulo: `✅ Solicitação Aprovada (${requisicao.id})`,
+          mensagem: `Sua solicitação (${produto_servico} - ${fornecedor_nome || ''}) foi aprovada por ${aprovadorNome}.`,
+          tipo: 'COMPRAS_APROVADO',
+          link: '/administrativo/compras'
+        });
+      })();
 
       const atualizado = db.prepare(`SELECT * FROM compras_requisicoes WHERE id = ?`).get(req.params.id);
 
@@ -871,40 +884,42 @@ export function registerPurchaseRoutes(app, {
       const now = new Date().toISOString();
       const aprovadorNome = req.authUser.username || req.authUser.id;
 
-      db.prepare(`
-        UPDATE compras_requisicoes
-        SET status = 'NEGADO',
-            arquivado = 1,
-            aprovador_id = ?,
-            aprovador_nome = ?,
-            motivo_decisao = ?,
-            decidido_em = ?,
-            updated_at = ?
-        WHERE id = ?
-      `).run(req.authUser.id, aprovadorNome, observacao, now, now, req.params.id);
+      db.transaction(() => {
+        db.prepare(`
+          UPDATE compras_requisicoes
+          SET status = 'NEGADO',
+              arquivado = 1,
+              aprovador_id = ?,
+              aprovador_nome = ?,
+              motivo_decisao = ?,
+              decidido_em = ?,
+              updated_at = ?
+          WHERE id = ?
+        `).run(req.authUser.id, aprovadorNome, observacao, now, now, req.params.id);
 
-      const msgTexto = observacao ? `Solicitação Negada: ${observacao}` : 'Solicitação Negada pelo aprovador.';
-      db.prepare(`
-        INSERT INTO compras_mensagens (id, requisicao_id, autor_id, autor_nome, autor_role, mensagem, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-      `).run(
-        randomUUID(),
-        req.params.id,
-        req.authUser.id,
-        aprovadorNome,
-        'APROVADOR',
-        msgTexto,
-        now
-      );
+        const msgTexto = observacao ? `Solicitação Negada: ${observacao}` : 'Solicitação Negada pelo aprovador.';
+        db.prepare(`
+          INSERT INTO compras_mensagens (id, requisicao_id, autor_id, autor_nome, autor_role, mensagem, created_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?)
+        `).run(
+          randomUUID(),
+          req.params.id,
+          req.authUser.id,
+          aprovadorNome,
+          'APROVADOR',
+          msgTexto,
+          now
+        );
 
-      // Notifica o SOLICITANTE
-      createNotification(db, {
-        userId: requisicao.solicitante_id,
-        titulo: `❌ Solicitação Negada (${requisicao.id})`,
-        mensagem: `Sua solicitação (${requisicao.produto_servico}) foi negada por ${aprovadorNome}.${observacao ? ` Motivo: "${observacao}"` : ''}`,
-        tipo: 'COMPRAS_NEGADO',
-        link: '/administrativo/compras'
-      });
+        // Notifica o SOLICITANTE
+        createNotification(db, {
+          userId: requisicao.solicitante_id,
+          titulo: `❌ Solicitação Negada (${requisicao.id})`,
+          mensagem: `Sua solicitação (${requisicao.produto_servico}) foi negada por ${aprovadorNome}.${observacao ? ` Motivo: "${observacao}"` : ''}`,
+          tipo: 'COMPRAS_NEGADO',
+          link: '/administrativo/compras'
+        });
+      })();
 
       const atualizado = db.prepare(`SELECT * FROM compras_requisicoes WHERE id = ?`).get(req.params.id);
       return res.json({ success: true, requisicao: atualizado });
@@ -942,69 +957,71 @@ export function registerPurchaseRoutes(app, {
       const now = new Date().toISOString();
       const userName = req.authUser.username || req.authUser.id;
 
-      db.prepare(`
-        UPDATE compras_requisicoes
-        SET status = 'REABERTO',
-            arquivado = 0,
-            arquivado_manualmente = 0,
-            fornecedor_nome = ?,
-            fornecedor_contato = ?,
-            forma_pagamento = ?,
-            empresa_pagadora = ?,
-            quantidade_parcelas = ?,
-            departamento_centro_custo = ?,
-            produto_servico = ?,
-            valor = ?,
-            quantidade = ?,
-            observacoes = ?,
-            motivo_decisao = NULL,
-            decidido_em = NULL,
-            updated_at = ?
-        WHERE id = ?
-      `).run(
-        fornecedor_nome,
-        fornecedor_contato,
-        forma_pagamento,
-        empresa_pagadora,
-        quantidade_parcelas,
-        departamento_centro_custo,
-        produto_servico,
-        valor,
-        quantidade,
-        observacoes,
-        now,
-        req.params.id
-      );
+      db.transaction(() => {
+        db.prepare(`
+          UPDATE compras_requisicoes
+          SET status = 'REABERTO',
+              arquivado = 0,
+              arquivado_manualmente = 0,
+              fornecedor_nome = ?,
+              fornecedor_contato = ?,
+              forma_pagamento = ?,
+              empresa_pagadora = ?,
+              quantidade_parcelas = ?,
+              departamento_centro_custo = ?,
+              produto_servico = ?,
+              valor = ?,
+              quantidade = ?,
+              observacoes = ?,
+              motivo_decisao = NULL,
+              decidido_em = NULL,
+              updated_at = ?
+          WHERE id = ?
+        `).run(
+          fornecedor_nome,
+          fornecedor_contato,
+          forma_pagamento,
+          empresa_pagadora,
+          quantidade_parcelas,
+          departamento_centro_custo,
+          produto_servico,
+          valor,
+          quantidade,
+          observacoes,
+          now,
+          req.params.id
+        );
 
-      const msgTexto = mensagem
-        ? `Solicitação Reaberta pelo solicitante: ${mensagem}`
-        : 'Solicitação Reaberta pelo solicitante para nova análise.';
+        const msgTexto = mensagem
+          ? `Solicitação Reaberta pelo solicitante: ${mensagem}`
+          : 'Solicitação Reaberta pelo solicitante para nova análise.';
 
-      db.prepare(`
-        INSERT INTO compras_mensagens (id, requisicao_id, autor_id, autor_nome, autor_role, mensagem, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-      `).run(
-        randomUUID(),
-        req.params.id,
-        req.authUser.id,
-        userName,
-        'REQUISITANTE',
-        msgTexto,
-        now
-      );
+        db.prepare(`
+          INSERT INTO compras_mensagens (id, requisicao_id, autor_id, autor_nome, autor_role, mensagem, created_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?)
+        `).run(
+          randomUUID(),
+          req.params.id,
+          req.authUser.id,
+          userName,
+          'REQUISITANTE',
+          msgTexto,
+          now
+        );
 
-      // Notifica os aprovadores que interagiram (ou todos os aprovadores se nenhum interagiu)
-      let targetApprovers = getInteractingApproversForRequest(req.params.id).filter(uid => uid !== req.authUser.id);
-      if (!targetApprovers.length) {
-        targetApprovers = getAllApproverUserIds().filter(uid => uid !== req.authUser.id);
-      }
+        // Notifica os aprovadores que interagiram (ou todos os aprovadores se nenhum interagiu)
+        let targetApprovers = getInteractingApproversForRequest(req.params.id).filter(uid => uid !== req.authUser.id);
+        if (!targetApprovers.length) {
+          targetApprovers = getAllApproverUserIds().filter(uid => uid !== req.authUser.id);
+        }
 
-      notifyUsers(db, targetApprovers, {
-        titulo: `🔄 Solicitação Reaberta (${requisicao.id})`,
-        mensagem: `${userName} reabriu a solicitação de ${produto_servico}: "${mensagem || 'Para nova análise'}"`,
-        tipo: 'COMPRAS_REABERTO',
-        link: '/administrativo/compras'
-      });
+        notifyUsers(db, targetApprovers, {
+          titulo: `🔄 Solicitação Reaberta (${requisicao.id})`,
+          mensagem: `${userName} reabriu a solicitação de ${produto_servico}: "${mensagem || 'Para nova análise'}"`,
+          tipo: 'COMPRAS_REABERTO',
+          link: '/administrativo/compras'
+        });
+      })();
 
       const atualizado = db.prepare(`SELECT * FROM compras_requisicoes WHERE id = ?`).get(req.params.id);
       return res.json({ success: true, requisicao: atualizado });
@@ -1046,46 +1063,48 @@ export function registerPurchaseRoutes(app, {
         }
       }
 
-      db.prepare(`
-        INSERT INTO compras_mensagens (id, requisicao_id, autor_id, autor_nome, autor_role, mensagem, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-      `).run(msgId, req.params.id, req.authUser.id, autorNome, autorRole, mensagem, now);
+      db.transaction(() => {
+        db.prepare(`
+          INSERT INTO compras_mensagens (id, requisicao_id, autor_id, autor_nome, autor_role, mensagem, created_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?)
+        `).run(msgId, req.params.id, req.authUser.id, autorNome, autorRole, mensagem, now);
 
-      db.prepare(`
-        UPDATE compras_requisicoes
-        SET status = ?,
-            updated_at = ?
-        WHERE id = ?
-      `).run(novoStatus, now, req.params.id);
+        db.prepare(`
+          UPDATE compras_requisicoes
+          SET status = ?,
+              updated_at = ?
+          WHERE id = ?
+        `).run(novoStatus, now, req.params.id);
 
-      // --- DISPARO DE NOTIFICAÇÕES DIRECIONADAS ---
-      if (isApprover) {
-        // Se aprovador mandou mensagem -> notifica o SOLICITANTE
-        if (requisicao.solicitante_id !== req.authUser.id) {
-          createNotification(db, {
-            userId: requisicao.solicitante_id,
-            titulo: `💬 Mensagem do Aprovador (${requisicao.id})`,
+        // --- DISPARO DE NOTIFICAÇÕES DIRECIONADAS ---
+        if (isApprover) {
+          // Se aprovador mandou mensagem -> notifica o SOLICITANTE
+          if (requisicao.solicitante_id !== req.authUser.id) {
+            createNotification(db, {
+              userId: requisicao.solicitante_id,
+              titulo: `💬 Mensagem do Aprovador (${requisicao.id})`,
+              mensagem: `${autorNome}: "${mensagem}"`,
+              tipo: 'COMPRAS_MENSAGEM',
+              link: '/administrativo/compras'
+            });
+          }
+        } else {
+          // Se o solicitante mandou mensagem -> notifica APENAS os aprovadores que já interagiram nessa requisição
+          let interactingApprovers = getInteractingApproversForRequest(req.params.id).filter(uid => uid !== req.authUser.id);
+          
+          // Se nenhum aprovador interagiu ainda, notifica todos os aprovadores da esteira
+          if (!interactingApprovers.length) {
+            interactingApprovers = getAllApproverUserIds().filter(uid => uid !== req.authUser.id);
+          }
+
+          notifyUsers(db, interactingApprovers, {
+            titulo: `💬 Resposta do Solicitante (${requisicao.id})`,
             mensagem: `${autorNome}: "${mensagem}"`,
             tipo: 'COMPRAS_MENSAGEM',
             link: '/administrativo/compras'
           });
         }
-      } else {
-        // Se o solicitante mandou mensagem -> notifica APENAS os aprovadores que já interagiram nessa requisição
-        let interactingApprovers = getInteractingApproversForRequest(req.params.id).filter(uid => uid !== req.authUser.id);
-        
-        // Se nenhum aprovador interagiu ainda, notifica todos os aprovadores da esteira
-        if (!interactingApprovers.length) {
-          interactingApprovers = getAllApproverUserIds().filter(uid => uid !== req.authUser.id);
-        }
-
-        notifyUsers(db, interactingApprovers, {
-          titulo: `💬 Resposta do Solicitante (${requisicao.id})`,
-          mensagem: `${autorNome}: "${mensagem}"`,
-          tipo: 'COMPRAS_MENSAGEM',
-          link: '/administrativo/compras'
-        });
-      }
+      })();
 
       const novaMsg = db.prepare(`SELECT * FROM compras_mensagens WHERE id = ?`).get(msgId);
       return res.status(201).json({
@@ -1145,35 +1164,37 @@ export function registerPurchaseRoutes(app, {
       const now = new Date().toISOString();
       const financeName = req.authUser.username || req.authUser.id;
 
-      db.prepare(`
-        UPDATE compras_requisicoes
-        SET status = 'SOLICITACAO_CONCLUIDA',
-            arquivado = 1,
-            updated_at = ?
-        WHERE id = ?
-      `).run(now, id);
+      db.transaction(() => {
+        db.prepare(`
+          UPDATE compras_requisicoes
+          SET status = 'SOLICITACAO_CONCLUIDA',
+              arquivado = 1,
+              updated_at = ?
+          WHERE id = ?
+        `).run(now, id);
 
-      db.prepare(`
-        INSERT INTO compras_mensagens (id, requisicao_id, autor_id, autor_nome, autor_role, mensagem, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-      `).run(
-        randomUUID(),
-        id,
-        req.authUser.id,
-        financeName,
-        'APROVADOR',
-        observacao ? `💳 Solicitação Concluída pelo Financeiro. Obs: ${observacao}` : '💳 Solicitação Concluída pelo Financeiro.',
-        now
-      );
+        db.prepare(`
+          INSERT INTO compras_mensagens (id, requisicao_id, autor_id, autor_nome, autor_role, mensagem, created_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?)
+        `).run(
+          randomUUID(),
+          id,
+          req.authUser.id,
+          financeName,
+          'APROVADOR',
+          observacao ? `💳 Solicitação Concluída pelo Financeiro. Obs: ${observacao}` : '💳 Solicitação Concluída pelo Financeiro.',
+          now
+        );
 
-      // Notifica o solicitante
-      createNotification(db, {
-        userId: requisicao.solicitante_id,
-        titulo: `💳 Solicitação Concluída (${requisicao.id})`,
-        mensagem: `Sua solicitação (${requisicao.produto_servico}) foi marcada como Concluída pelo Financeiro.`,
-        tipo: 'COMPRAS_APROVADO',
-        link: '/administrativo/compras'
-      });
+        // Notifica o solicitante
+        createNotification(db, {
+          userId: requisicao.solicitante_id,
+          titulo: `💳 Solicitação Concluída (${requisicao.id})`,
+          mensagem: `Sua solicitação (${requisicao.produto_servico}) foi marcada como Concluída pelo Financeiro.`,
+          tipo: 'COMPRAS_APROVADO',
+          link: '/administrativo/compras'
+        });
+      })();
 
       const atualizado = db.prepare(`SELECT * FROM compras_requisicoes WHERE id = ?`).get(id);
       return res.json({ success: true, requisicao: atualizado });
@@ -1204,39 +1225,41 @@ export function registerPurchaseRoutes(app, {
       const now = new Date().toISOString();
       const financeName = req.authUser.username || req.authUser.id;
 
-      db.prepare(`
-        UPDATE compras_requisicoes
-        SET status = 'REVISAO',
-            arquivado = 0,
-            aprovador_id = NULL,
-            aprovador_nome = NULL,
-            motivo_decisao = ?,
-            decidido_em = NULL,
-            updated_at = ?
-        WHERE id = ?
-      `).run(motivo, now, id);
+      db.transaction(() => {
+        db.prepare(`
+          UPDATE compras_requisicoes
+          SET status = 'REVISAO',
+              arquivado = 0,
+              aprovador_id = NULL,
+              aprovador_nome = NULL,
+              motivo_decisao = ?,
+              decidido_em = NULL,
+              updated_at = ?
+          WHERE id = ?
+        `).run(motivo, now, id);
 
-      db.prepare(`
-        INSERT INTO compras_mensagens (id, requisicao_id, autor_id, autor_nome, autor_role, mensagem, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-      `).run(
-        randomUUID(),
-        id,
-        req.authUser.id,
-        financeName,
-        'APROVADOR',
-        `⚠️ DEVOLVIDO PARA REAPROVAÇÃO. Motivo: ${motivo}`,
-        now
-      );
+        db.prepare(`
+          INSERT INTO compras_mensagens (id, requisicao_id, autor_id, autor_nome, autor_role, mensagem, created_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?)
+        `).run(
+          randomUUID(),
+          id,
+          req.authUser.id,
+          financeName,
+          'APROVADOR',
+          `⚠️ DEVOLVIDO PARA REAPROVAÇÃO. Motivo: ${motivo}`,
+          now
+        );
 
-      // Notifica todos os aprovadores
-      const approverIds = getAllApproverUserIds().filter(uid => uid !== req.authUser.id);
-      notifyUsers(db, approverIds, {
-        titulo: `⚠️ Solicitação Financeira em Revisão (${requisicao.id})`,
-        mensagem: `${financeName} devolveu para reaprovação necessária: "${motivo}"`,
-        tipo: 'COMPRAS_NOVA_REQUISICAO',
-        link: '/administrativo/compras'
-      });
+        // Notifica todos os aprovadores
+        const approverIds = getAllApproverUserIds().filter(uid => uid !== req.authUser.id);
+        notifyUsers(db, approverIds, {
+          titulo: `⚠️ Solicitação Financeira em Revisão (${requisicao.id})`,
+          mensagem: `${financeName} devolveu para reaprovação necessária: "${motivo}"`,
+          tipo: 'COMPRAS_NOVA_REQUISICAO',
+          link: '/administrativo/compras'
+        });
+      })();
 
       const atualizado = db.prepare(`SELECT * FROM compras_requisicoes WHERE id = ?`).get(id);
       return res.json({ success: true, requisicao: atualizado });

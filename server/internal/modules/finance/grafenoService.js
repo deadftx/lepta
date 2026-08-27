@@ -239,11 +239,17 @@ export function getWebhookEvents(db, { limit = 50, offset = 0, eventType = null,
 
   return {
     total: totalCountRow ? totalCountRow.count : 0,
-    items: rows.map(r => ({
-      ...r,
-      raw_payload: r.raw_payload ? JSON.parse(r.raw_payload) : {},
-      headers: r.headers ? JSON.parse(r.headers) : {}
-    }))
+    items: rows.map(r => {
+      let raw_payload = {};
+      let headers = {};
+      try { if (r.raw_payload) raw_payload = JSON.parse(r.raw_payload); } catch {}
+      try { if (r.headers) headers = JSON.parse(r.headers); } catch {}
+      return {
+        ...r,
+        raw_payload,
+        headers
+      };
+    })
   };
 }
 
