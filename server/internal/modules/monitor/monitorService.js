@@ -8,20 +8,13 @@ import EventEmitter from 'events';
 
 const execAsync = promisify(exec);
 
-// Barramento de eventos em memória para auditoria e transmissão SSE ultraleve
 export const monitorEvents = new EventEmitter();
 monitorEvents.setMaxListeners(100);
 
-// Armazenamento em memória de presença e tempo por módulo dos usuários
-const userSessionsMap = new Map(); // userId -> sessionData
-
+const userSessionsMap = new Map();
 let cachedHomologDb = null;
 let cachedHomologPath = null;
 
-/**
- * Conecta ao banco de dados oficial do HOMOLOG na VPS (/var/www/lepta/database.sqlite) em readonly.
- * Se o arquivo do HOMOLOG não for encontrado, usa o banco atual como fallback.
- */
 export function getHomologDb(defaultDb) {
   const configuredPath = String(process.env.LEPTA_HOMOLOG_DB_PATH || '').trim();
   const possiblePaths = [
@@ -39,7 +32,6 @@ export function getHomologDb(defaultDb) {
     }
   }
 
-  // Se o banco do HOMOLOG não for encontrado no disco, usa o banco default
   if (!targetPath) {
     return defaultDb;
   }
@@ -64,9 +56,6 @@ export function getHomologDb(defaultDb) {
   }
 }
 
-/**
- * Garante a criação da tabela de logs de telemetria no SQLite
- */
 export function ensureMonitorSchema(db) {
   try {
     db.exec(`
@@ -82,6 +71,16 @@ export function ensureMonitorSchema(db) {
         login_at TEXT,
         total_session_seconds INTEGER DEFAULT 0,
         module_time_json TEXT DEFAULT '{}'
+      );
+
+      CREATE TABLE IF NOT EXISTS site_analytics_hits (
+        id TEXT PRIMARY KEY,
+        session_id TEXT NOT NULL,
+        path TEXT NOT NULL,
+        referrer TEXT,
+        device_type TEXT,
+        browser TEXT,
+        created_at TEXT NOT NULL
       );
 
       CREATE TABLE IF NOT EXISTS monitor_telemetry_logs (
@@ -108,13 +107,135 @@ export function ensureMonitorSchema(db) {
       );
     `);
   } catch (err) {
-    // Modo readonly
+    // Ignora erro se for readonly
   }
 }
 
 /**
- * Coleta métricas de hardware da VPS (CPU, Memória, Load Average, Uptime)
+ * Registra um acesso anônimo no site institucional (lepta.com.br)
  */
+export function recordPublicSiteHit(db, { sessionId, path: hitPath, referrer, userAgent }) {
+  ensureMonitorSchema(db);
+  const id = `hit_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+  const isoNow = new Date().toISOString();
+
+  // Helper para identificar tipo de dispositivo e navegador
+  const ua = String(userAgent || '');
+  let deviceType = 'Desktop';
+  if (/mobile|android|iphone|ipad|ipod/i.test(ua)) {
+    deviceType = /ipad|tablet/i.test(ua) ? 'Tablet' : 'Mobile';
+  }
+
+  let browser = 'Outro';
+  if (/edg/i.test(ua)) browser = 'Edge';
+  else if (/chrome/i.test(ua)) browser = 'Chrome';
+  else if (/safari/i.test(ua)) browser = 'Safari';
+  else if (/firefox/i.test(ua)) browser = 'Firefox';
+
+  try {
+    db.prepare(`
+      INSERT INTO site_analytics_hits (id, session_id, path, referrer, device_type, browser, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).run(id, String(sessionId || 'sess_anon'), String(hitPath || '/'), String(referrer || 'Direto'), deviceType, browser, isoNow);
+  } catch (err) {
+    console.error('Erro ao gravar hit do site no SQLite:', err.message);
+  }
+
+  monitorEvents.emit('site_hit', { id, sessionId, path: hitPath, deviceType, browser, timestamp: isoNow });
+}
+
+/**
+ * Coleta estatísticas consolidadas de acessos ao site institucional (lepta.com.br)
+ */
+export function getPublicSiteAnalytics(defaultDb, { period = 'today' } = {}) {
+  const targetDb = getHomologDb(defaultDb);
+  ensureMonitorSchema(defaultDb);
+
+  const now = new Date();
+
+  // Define limite inferior de data conforme o filtro selecionado
+  let startDateIso = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString(); // Hoje 00:00
+
+  if (period === '7d') {
+    const d = new Date();
+    d.setDate(d.getDate() - 7);
+    startDateIso = d.toISOString();
+  } else if (period === '30d') {
+    const d = new Date();
+    d.setDate(d.getDate() - 30);
+    startDateIso = d.toISOString();
+  } else if (period === 'month') {
+    const d = new Date(now.getFullYear(), now.getMonth(), 1);
+    startDateIso = d.toISOString();
+  }
+
+  try {
+    // 1. Visitantes online nos últimos 5 minutos no site
+    const fiveMinAgoIso = new Date(now.getTime() - 5 * 60 * 1000).toISOString();
+    const onlineNow = targetDb.prepare(`
+      SELECT COUNT(DISTINCT session_id) as count
+      FROM site_analytics_hits
+      WHERE created_at >= ?
+    `).get(fiveMinAgoIso)?.count || 0;
+
+    // 2. Total de sessões e pageviews no período
+    const periodStats = targetDb.prepare(`
+      SELECT
+        COUNT(DISTINCT session_id) as total_sessions,
+        COUNT(*) as total_pageviews
+      FROM site_analytics_hits
+      WHERE created_at >= ?
+    `).get(startDateIso) || { total_sessions: 0, total_pageviews: 0 };
+
+    // 3. Páginas mais acessadas
+    const topPages = targetDb.prepare(`
+      SELECT path, COUNT(*) as views
+      FROM site_analytics_hits
+      WHERE created_at >= ?
+      GROUP BY path
+      ORDER BY views DESC
+      LIMIT 10
+    `).all(startDateIso);
+
+    // 4. Distribuição por dispositivo (Desktop / Mobile / Tablet)
+    const devices = targetDb.prepare(`
+      SELECT device_type, COUNT(*) as count
+      FROM site_analytics_hits
+      WHERE created_at >= ?
+      GROUP BY device_type
+    `).all(startDateIso);
+
+    // 5. Distribuição por navegador
+    const browsers = targetDb.prepare(`
+      SELECT browser, COUNT(*) as count
+      FROM site_analytics_hits
+      WHERE created_at >= ?
+      GROUP BY browser
+    `).all(startDateIso);
+
+    return {
+      period,
+      onlineNow,
+      totalSessions: periodStats.total_sessions || 0,
+      totalPageviews: periodStats.total_pageviews || 0,
+      topPages,
+      devices,
+      browsers
+    };
+  } catch (err) {
+    console.error('Erro ao consultar analytics do site:', err.message);
+    return {
+      period,
+      onlineNow: 0,
+      totalSessions: 0,
+      totalPageviews: 0,
+      topPages: [],
+      devices: [],
+      browsers: []
+    };
+  }
+}
+
 export function getVpsMetrics() {
   const cpus = os.cpus();
   const totalMem = os.totalmem();
@@ -156,9 +277,6 @@ export function getVpsMetrics() {
   };
 }
 
-/**
- * Coleta o status dos processos PM2 da VPS (lepta-dev na 3005 e lepta-homolog na 3000)
- */
 export async function getPm2Status() {
   try {
     const { stdout } = await execAsync('pm2 jlist');
@@ -209,9 +327,6 @@ export async function getPm2Status() {
   }
 }
 
-/**
- * Compara os últimos commits dos branches DEV e HOMOLOG no repositório Git
- */
 export async function getGitCommitsComparison() {
   try {
     const { stdout: devLog } = await execAsync('git log -1 --format="%h|%s|%an|%cI" origin/DEV').catch(() => ({ stdout: '' }));
@@ -246,9 +361,6 @@ export async function getGitCommitsComparison() {
   }
 }
 
-/**
- * Atualiza o heartbeat de presença e tempo por módulo do usuário no SQLite e memória
- */
 export function recordUserHeartbeat(db, { userId, username, email, role, path: currentPath, moduleName }) {
   const now = Date.now();
   const isoNow = new Date().toISOString();
@@ -286,7 +398,6 @@ export function recordUserHeartbeat(db, { userId, username, email, role, path: c
 
   userSessionsMap.set(userId, session);
 
-  // Persiste a sessão no SQLite para leitura entre processos (DEV <-> HOMOLOG)
   try {
     ensureMonitorSchema(db);
     db.prepare(`
@@ -317,7 +428,7 @@ export function recordUserHeartbeat(db, { userId, username, email, role, path: c
       JSON.stringify(session.moduleTimeSeconds)
     );
   } catch (err) {
-    // Ignora erro se for readonly
+    // Ignora se for readonly
   }
 
   monitorEvents.emit('presence_update', {
@@ -331,9 +442,6 @@ export function recordUserHeartbeat(db, { userId, username, email, role, path: c
   return session;
 }
 
-/**
- * Obtém a lista de usuários e status de presença LENDO DIRETO DO BANCO DE DADOS DO HOMOLOG DA VPS
- */
 export function getActiveUsers(defaultDb) {
   const targetDb = getHomologDb(defaultDb);
   ensureMonitorSchema(defaultDb);
@@ -357,7 +465,6 @@ export function getActiveUsers(defaultDb) {
     }
   }
 
-  // Busca presença persistida no SQLite do HOMOLOG
   let dbSessionsMap = new Map();
   try {
     const dbSessions = targetDb.prepare(`SELECT * FROM monitor_user_sessions`).all();
@@ -382,9 +489,9 @@ export function getActiveUsers(defaultDb) {
 
     if (activeLastSeen) {
       const msSinceLastSeen = now - new Date(activeLastSeen).getTime();
-      if (msSinceLastSeen <= 90000) { // <= 1.5 min
+      if (msSinceLastSeen <= 90000) {
         status = 'online';
-      } else if (msSinceLastSeen <= 300000) { // <= 5 min
+      } else if (msSinceLastSeen <= 300000) {
         status = 'idle';
       }
 
@@ -417,9 +524,6 @@ export function getActiveUsers(defaultDb) {
   });
 }
 
-/**
- * Registra eventos de auditoria de banco de dados e notifica via barramento SSE
- */
 export function recordDatabaseEvent({ action, table, durationMs = 0, error = null }) {
   const eventData = {
     id: `dbevt_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
@@ -434,9 +538,6 @@ export function recordDatabaseEvent({ action, table, durationMs = 0, error = nul
   return eventData;
 }
 
-/**
- * Registra erros de sistema/API e emite alerta imediato para o dashboard de monitoramento
- */
 export function recordSystemError(db, { level = 'ERROR', source = 'API', message, stack = '', userId = null, path = null }) {
   ensureMonitorSchema(db);
   const id = `err_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
@@ -466,9 +567,6 @@ export function recordSystemError(db, { level = 'ERROR', source = 'API', message
   return errorData;
 }
 
-/**
- * Obtém o histórico recente de erros do sistema LENDO DO HOMOLOG (ou base local)
- */
 export function getRecentSystemErrors(defaultDb, { limit = 20 } = {}) {
   const targetDb = getHomologDb(defaultDb);
   ensureMonitorSchema(defaultDb);

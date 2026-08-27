@@ -16,7 +16,12 @@ import {
   Zap,
   CheckCircle,
   XCircle,
-  Layers
+  Layers,
+  TrendingUp,
+  Globe,
+  Monitor,
+  Smartphone,
+  Tablet
 } from 'lucide-react';
 import './MonitorDashboard.css';
 
@@ -91,10 +96,20 @@ interface SystemError {
   created_at: string;
 }
 
+interface SiteAnalyticsData {
+  period: string;
+  onlineNow: number;
+  totalSessions: number;
+  totalPageviews: number;
+  topPages: { path: string; views: number }[];
+  devices: { device_type: string; count: number }[];
+  browsers: { browser: string; count: number }[];
+}
+
 export const MonitorDashboard: React.FC = () => {
   const { user } = useAuth();
 
-  const [activeTab, setActiveTab] = useState<'vps' | 'users' | 'modules' | 'db' | 'errors'>('vps');
+  const [activeTab, setActiveTab] = useState<'vps' | 'users' | 'analytics' | 'modules' | 'db' | 'errors'>('vps');
   const [loading, setLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [autoRefresh, setAutoRefresh] = useState(true);
@@ -108,6 +123,10 @@ export const MonitorDashboard: React.FC = () => {
   const [dbEvents, setDbEvents] = useState<DbEvent[]>([]);
   const [systemErrors, setSystemErrors] = useState<SystemError[]>([]);
   const [alerts, setAlerts] = useState<string[]>([]);
+
+  // Analytics do site
+  const [analyticsPeriod, setAnalyticsPeriod] = useState<'today' | '7d' | '30d' | 'month'>('today');
+  const [siteAnalytics, setSiteAnalytics] = useState<SiteAnalyticsData | null>(null);
 
   // Filtros
   const [userSearch, setUserSearch] = useState('');
@@ -131,6 +150,7 @@ export const MonitorDashboard: React.FC = () => {
       setGit(data.git || null);
       setUsers(data.users || []);
       setSystemErrors(data.errors || []);
+      if (data.siteAnalytics) setSiteAnalytics(data.siteAnalytics);
       setLastSync(new Date().toLocaleTimeString('pt-BR'));
     } catch (err: any) {
       setErrorMsg(err.message);
@@ -139,7 +159,16 @@ export const MonitorDashboard: React.FC = () => {
     }
   };
 
-  // Heartbeat do próprio usuário ao acessar o monitor
+  const fetchAnalyticsByPeriod = async (period: 'today' | '7d' | '30d' | 'month') => {
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/monitor/analytics?period=${period}`, { headers: getAuthHeaders() });
+      if (res.ok) {
+        const data = await res.json();
+        setSiteAnalytics(data);
+      }
+    } catch {}
+  };
+
   const sendHeartbeat = async () => {
     try {
       await fetch(`${API_BASE_URL}/api/monitor/heartbeat`, {
@@ -154,7 +183,6 @@ export const MonitorDashboard: React.FC = () => {
     fetchOverview();
     sendHeartbeat();
 
-    // Auto refresh a cada 10s para dados consolidados
     let interval: ReturnType<typeof setInterval> | null = null;
     if (autoRefresh) {
       interval = setInterval(() => {
@@ -163,7 +191,6 @@ export const MonitorDashboard: React.FC = () => {
       }, 10000);
     }
 
-    // Conecta ao canal SSE de eventos em tempo real do banco e alertas
     try {
       const token = localStorage.getItem('auth_token') || sessionStorage.getItem('auth_token') || '';
       const sseUrl = `${API_BASE_URL}/api/monitor/stream?token=${encodeURIComponent(token)}`;
@@ -177,7 +204,7 @@ export const MonitorDashboard: React.FC = () => {
           } else if (payload.type === 'system_error') {
             setSystemErrors(prev => [payload.data, ...prev.slice(0, 19)]);
             setAlerts(prev => [`🚨 Erro capturado em tempo real: ${payload.data.message}`, ...prev]);
-          } else if (payload.type === 'presence_update') {
+          } else if (payload.type === 'presence_update' || payload.type === 'site_hit') {
             setLastSync(new Date().toLocaleTimeString('pt-BR'));
           }
         } catch {}
@@ -194,7 +221,11 @@ export const MonitorDashboard: React.FC = () => {
     };
   }, [autoRefresh]);
 
-  // Formatação de bytes para MB/GB
+  const handlePeriodChange = (p: 'today' | '7d' | '30d' | 'month') => {
+    setAnalyticsPeriod(p);
+    fetchAnalyticsByPeriod(p);
+  };
+
   const formatBytes = (bytes: number) => {
     if (!bytes || bytes === 0) return '0 MB';
     const mb = bytes / (1024 * 1024);
@@ -202,7 +233,6 @@ export const MonitorDashboard: React.FC = () => {
     return `${mb.toFixed(1)} MB`;
   };
 
-  // Formatação de segundos em tempo legível (ex: 2h 45m)
   const formatDuration = (seconds: number) => {
     if (!seconds || seconds <= 0) return '0m';
     const hrs = Math.floor(seconds / 3600);
@@ -213,7 +243,6 @@ export const MonitorDashboard: React.FC = () => {
     return `${secs}s`;
   };
 
-  // Filtra lista de usuários
   const filteredUsers = users.filter(u => {
     const matchesSearch = u.username.toLowerCase().includes(userSearch.toLowerCase()) ||
                           u.email.toLowerCase().includes(userSearch.toLowerCase());
@@ -226,7 +255,6 @@ export const MonitorDashboard: React.FC = () => {
   const offlineCount = users.filter(u => u.status === 'offline').length;
   const totalUsersCount = users.length;
 
-  // Filtra feed do banco
   const filteredDbEvents = dbEvents.filter(ev => {
     if (!dbSearch) return true;
     const term = dbSearch.toLowerCase();
@@ -235,12 +263,10 @@ export const MonitorDashboard: React.FC = () => {
            (ev.error && ev.error.toLowerCase().includes(term));
   });
 
-  // Módulos únicos para os filtros
   const uniqueModules = Array.from(new Set(users.map(u => u.currentModule).filter(Boolean)));
 
   return (
     <div className="monitor-container glass-theme">
-      {/* Top Banner de Alertas ao Vivo */}
       {alerts.length > 0 && (
         <div className="monitor-alert-banner">
           <div className="alert-content">
@@ -253,14 +279,13 @@ export const MonitorDashboard: React.FC = () => {
         </div>
       )}
 
-      {/* Cabeçalho do Monitor */}
       <header className="monitor-header">
         <div className="header-title">
           <div className="brand-badge">
             <Activity className="pulse-icon" size={24} />
             <h1>LEPTA MONITOR <span>REALTIME</span></h1>
           </div>
-          <p>Central de controle, telemetria da VPS, status dos serviços PM2 e presença de usuários em tempo real ({user?.username || 'Master'}).</p>
+          <p>Central de controle, telemetria da VPS, status dos serviços PM2, analytics do site e presença em tempo real ({user?.username || 'Master'}).</p>
         </div>
 
         <div className="header-actions">
@@ -338,6 +363,19 @@ export const MonitorDashboard: React.FC = () => {
           </div>
         </div>
 
+        <div className="kpi-card site-card">
+          <div className="kpi-header">
+            <Globe size={18} />
+            <span>Site lepta.com.br</span>
+          </div>
+          <div className="kpi-value text-blue">
+            {siteAnalytics?.onlineNow || 0} <span className="sub-value">Online no site</span>
+          </div>
+          <small className="kpi-subtext">
+            {siteAnalytics?.totalSessions || 0} sessões hoje | {siteAnalytics?.totalPageviews || 0} pageviews
+          </small>
+        </div>
+
         <div className="kpi-card git-card">
           <div className="kpi-header">
             <GitBranch size={18} />
@@ -359,6 +397,12 @@ export const MonitorDashboard: React.FC = () => {
           onClick={() => setActiveTab('vps')}
         >
           <Server size={18} /> VPS & Serviços PM2
+        </button>
+        <button
+          className={`tab-btn ${activeTab === 'analytics' ? 'active' : ''}`}
+          onClick={() => setActiveTab('analytics')}
+        >
+          <TrendingUp size={18} /> Analytics Site (lepta.com.br)
         </button>
         <button
           className={`tab-btn ${activeTab === 'users' ? 'active' : ''}`}
@@ -386,13 +430,11 @@ export const MonitorDashboard: React.FC = () => {
         </button>
       </nav>
 
-      {/* CONTEÚDO DAS ABAS */}
       <main className="tab-content">
-        {/* ABA 1: VPS & SERVIÇOS PM2 & GIT COMPARATOR */}
+        {/* ABA 1: VPS & PM2 & GIT */}
         {activeTab === 'vps' && (
           <div className="tab-pane fade-in">
             <div className="vps-services-grid">
-              {/* Card PM2 Process Status */}
               <section className="monitor-section-card">
                 <div className="section-title">
                   <Activity size={20} />
@@ -442,7 +484,6 @@ export const MonitorDashboard: React.FC = () => {
                 </div>
               </section>
 
-              {/* Card Git Commit Comparer */}
               <section className="monitor-section-card">
                 <div className="section-title">
                   <GitBranch size={20} />
@@ -478,6 +519,109 @@ export const MonitorDashboard: React.FC = () => {
                       <span>Autor: {git?.homolog.author}</span>
                       <span>Data: {git?.homolog.date ? new Date(git.homolog.date).toLocaleString('pt-BR') : '-'}</span>
                     </div>
+                  </div>
+                </div>
+              </section>
+            </div>
+          </div>
+        )}
+
+        {/* ABA ANALYTICS DO SITE INSTITUCIONAL */}
+        {activeTab === 'analytics' && (
+          <div className="tab-pane fade-in">
+            <div className="filter-bar">
+              <div className="analytics-period-selector">
+                <span className="filter-label">Filtro de Período:</span>
+                <button className={`period-btn ${analyticsPeriod === 'today' ? 'active' : ''}`} onClick={() => handlePeriodChange('today')}>Hoje</button>
+                <button className={`period-btn ${analyticsPeriod === '7d' ? 'active' : ''}`} onClick={() => handlePeriodChange('7d')}>Últimos 7 Dias</button>
+                <button className={`period-btn ${analyticsPeriod === '30d' ? 'active' : ''}`} onClick={() => handlePeriodChange('30d')}>Últimos 30 Dias</button>
+                <button className={`period-btn ${analyticsPeriod === 'month' ? 'active' : ''}`} onClick={() => handlePeriodChange('month')}>Mês Atual</button>
+              </div>
+            </div>
+
+            <div className="analytics-kpi-summary">
+              <div className="analytics-card">
+                <div className="an-card-header"><Radio className="online-indicator" size={16} /> Visitantes no Site Agora</div>
+                <div className="an-card-value text-green">{siteAnalytics?.onlineNow || 0}</div>
+                <small>Últimos 5 minutos no lepta.com.br</small>
+              </div>
+
+              <div className="analytics-card">
+                <div className="an-card-header"><Globe size={16} /> Sessões Abertas</div>
+                <div className="an-card-value text-blue">{siteAnalytics?.totalSessions || 0}</div>
+                <small>Sessões únicas no período selecionado</small>
+              </div>
+
+              <div className="analytics-card">
+                <div className="an-card-header"><TrendingUp size={16} /> Total de Pageviews</div>
+                <div className="an-card-value text-purple">{siteAnalytics?.totalPageviews || 0}</div>
+                <small>Visualizações de páginas acumuladas</small>
+              </div>
+            </div>
+
+            <div className="analytics-details-grid">
+              {/* Páginas mais acessadas */}
+              <section className="monitor-section-card">
+                <div className="section-title">
+                  <Globe size={20} />
+                  <h3>Páginas Mais Acessadas</h3>
+                </div>
+
+                <div className="top-pages-list">
+                  {(!siteAnalytics?.topPages || siteAnalytics.topPages.length === 0) ? (
+                    <p className="no-activity">Nenhum acesso registrado no período.</p>
+                  ) : (
+                    siteAnalytics.topPages.map(p => {
+                      const pct = siteAnalytics.totalPageviews > 0 ? Math.round((p.views / siteAnalytics.totalPageviews) * 100) : 0;
+                      return (
+                        <div key={p.path} className="page-hit-item">
+                          <div className="page-hit-info">
+                            <code>{p.path}</code>
+                            <span>{p.views} views ({pct}%)</span>
+                          </div>
+                          <div className="page-hit-bar">
+                            <div className="page-hit-fill" style={{ width: `${pct}%` }}></div>
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+              </section>
+
+              {/* Distribuição de Dispositivos e Navegadores */}
+              <section className="monitor-section-card">
+                <div className="section-title">
+                  <Monitor size={20} />
+                  <h3>Tecnologia dos Visitantes</h3>
+                </div>
+
+                <div className="device-distribution-group">
+                  <h4>Dispositivos</h4>
+                  <div className="devices-badges">
+                    {(!siteAnalytics?.devices || siteAnalytics.devices.length === 0) ? (
+                      <p className="no-activity">Sem dados suficientes.</p>
+                    ) : (
+                      siteAnalytics.devices.map(d => (
+                        <div key={d.device_type} className="device-pill">
+                          {d.device_type === 'Mobile' ? <Smartphone size={16} /> : d.device_type === 'Tablet' ? <Tablet size={16} /> : <Monitor size={16} />}
+                          <span>{d.device_type}: <strong>{d.count}</strong></span>
+                        </div>
+                      ))
+                    )}
+                  </div>
+
+                  <h4 className="mt-4">Navegadores</h4>
+                  <div className="browsers-list">
+                    {(!siteAnalytics?.browsers || siteAnalytics.browsers.length === 0) ? (
+                      <p className="no-activity">Sem dados suficientes.</p>
+                    ) : (
+                      siteAnalytics.browsers.map(b => (
+                        <span key={b.browser} className="browser-tag">
+                          {b.browser}: <strong>{b.count}</strong>
+                        </span>
+                      ))
+                    )}
                   </div>
                 </div>
               </section>
@@ -604,7 +748,7 @@ export const MonitorDashboard: React.FC = () => {
           </div>
         )}
 
-        {/* ABA 4: FEED DO BANCO DE DADOS (AUDIT LOG) */}
+        {/* ABA 4: FEED DO BANCO DE DADOS */}
         {activeTab === 'db' && (
           <div className="tab-pane fade-in">
             <div className="filter-bar">
@@ -651,7 +795,7 @@ export const MonitorDashboard: React.FC = () => {
           </div>
         )}
 
-        {/* ABA 5: CENTRAL DE ERROS & ALERTAS */}
+        {/* ABA 5: ERROS & ALERTAS */}
         {activeTab === 'errors' && (
           <div className="tab-pane fade-in">
             <div className="errors-list glass-panel">

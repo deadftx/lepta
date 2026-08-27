@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, Outlet } from 'react-router-dom';
 import Navbar from './components/Navbar';
 import Footer from './components/Footer';
@@ -31,7 +32,29 @@ import AccessRoute from './internal/core/AccessRoute';
 import { AuthProvider } from './internal/core/AuthContext';
 import './App.css';
 
+import { API_BASE_URL } from './config/api';
+
 const PublicLayout = () => {
+  useEffect(() => {
+    try {
+      let sessionId = sessionStorage.getItem('site_analytics_session_id');
+      if (!sessionId) {
+        sessionId = `sess_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+        sessionStorage.setItem('site_analytics_session_id', sessionId);
+      }
+
+      fetch(`${API_BASE_URL}/api/analytics/collect`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          sessionId,
+          path: window.location.pathname,
+          referrer: document.referrer || 'Direto'
+        })
+      }).catch(() => {});
+    } catch {}
+  }, []);
+
   return (
     <div className="app-container">
       <Navbar />

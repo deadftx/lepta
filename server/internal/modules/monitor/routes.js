@@ -6,19 +6,58 @@ import {
   recordUserHeartbeat,
   getActiveUsers,
   getRecentSystemErrors,
+  recordPublicSiteHit,
+  getPublicSiteAnalytics,
   monitorEvents
 } from './monitorService.js';
 
 export function registerMonitorRoutes(app, { db, requireSession, requireMaster }) {
   ensureMonitorSchema(db);
 
-  // Helper para verificar se é Master
   const checkMasterAccess = (req, res, next) => {
     if (req.authUser?.role === 'MASTER' || req.authUser?.username === 'leptamaster') {
       return next();
     }
     return res.status(403).json({ error: 'Acesso restrito ao Lepta Master.' });
   };
+
+  /**
+   * POST /api/analytics/collect
+   * Rota pública para coleta anônima de pageviews do site institucional (lepta.com.br)
+   */
+  app.post('/api/analytics/collect', (req, res) => {
+    try {
+      const { sessionId, path: hitPath, referrer } = req.body || {};
+      const userAgent = req.headers['user-agent'] || '';
+
+      recordPublicSiteHit(db, {
+        sessionId,
+        path: hitPath,
+        referrer,
+        userAgent
+      });
+
+      return res.json({ success: true });
+    } catch (err) {
+      console.error('Erro na coleta de analytics do site:', err.message);
+      return res.status(500).json({ error: 'Falha na coleta.' });
+    }
+  });
+
+  /**
+   * GET /api/monitor/analytics
+   * Retorna métricas de acesso ao site lepta.com.br filtradas por período
+   */
+  app.get('/api/monitor/analytics', requireSession, checkMasterAccess, (req, res) => {
+    try {
+      const period = String(req.query.period || 'today').toLowerCase();
+      const analytics = getPublicSiteAnalytics(db, { period });
+      return res.json(analytics);
+    } catch (error) {
+      console.error('Erro ao consultar analytics do site:', error.message);
+      return res.status(500).json({ error: 'Erro ao carregar analytics do site.' });
+    }
+  });
 
   /**
    * GET /api/monitor/overview
@@ -31,6 +70,7 @@ export function registerMonitorRoutes(app, { db, requireSession, requireMaster }
       const git = await getGitCommitsComparison();
       const users = getActiveUsers(db);
       const errors = getRecentSystemErrors(db, { limit: 15 });
+      const siteAnalytics = getPublicSiteAnalytics(db, { period: 'today' });
 
       return res.json({
         timestamp: new Date().toISOString(),
@@ -38,7 +78,8 @@ export function registerMonitorRoutes(app, { db, requireSession, requireMaster }
         pm2,
         git,
         users,
-        errors
+        errors,
+        siteAnalytics
       });
     } catch (error) {
       console.error('Erro ao gerar visão geral do monitor:', error.message);
@@ -57,6 +98,7 @@ export function registerMonitorRoutes(app, { db, requireSession, requireMaster }
         userId: req.authUser.id,
         username: req.authUser.username || req.authUser.id,
         email: req.authUser.email || '',
+        role: req.authUser.role || 'USER',
         path: currentPath,
         moduleName
       });
@@ -78,7 +120,6 @@ export function registerMonitorRoutes(app, { db, requireSession, requireMaster }
     res.setHeader('Connection', 'keep-alive');
     res.flushHeaders?.();
 
-    // Envia evento inicial de conexão
     res.write(`data: ${JSON.stringify({ type: 'connected', message: 'Canal de monitoramento em tempo real conectado.' })}\n\n`);
 
     const handleDbEvent = (data) => {
@@ -93,11 +134,15 @@ export function registerMonitorRoutes(app, { db, requireSession, requireMaster }
       res.write(`data: ${JSON.stringify({ type: 'presence_update', data })}\n\n`);
     };
 
+    const handleSiteHit = (data) => {
+      res.write(`data: ${JSON.stringify({ type: 'site_hit', data })}\n\n`);
+    };
+
     monitorEvents.on('db_event', handleDbEvent);
     monitorEvents.on('system_error', handleSystemError);
     monitorEvents.on('presence_update', handlePresenceUpdate);
+    monitorEvents.on('site_hit', handleSiteHit);
 
-    // Heartbeat regular da conexão SSE para evitar timeout de socket Nginx
     const sseKeepAlive = setInterval(() => {
       res.write(`: sse-ping\n\n`);
     }, 15000);
@@ -107,6 +152,7 @@ export function registerMonitorRoutes(app, { db, requireSession, requireMaster }
       monitorEvents.off('db_event', handleDbEvent);
       monitorEvents.off('system_error', handleSystemError);
       monitorEvents.off('presence_update', handlePresenceUpdate);
+      monitorEvents.off('site_hit', handleSiteHit);
     });
   });
 }
