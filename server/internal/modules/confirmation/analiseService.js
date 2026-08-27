@@ -96,7 +96,10 @@ function getUnidadeAdministrativaInfo(t) {
  * Garante que o título pertença a uma operação realizada/paga (Relação de títulos da carteira)
  */
 function hasPagamentoOperacional(t) {
-  const pagto = t.pagamentoOperacional?.id || t.pagamentoId || t.pagto || t.pagamentoOperacional;
+  let pagto = t.pagamentoOperacional?.id || t.pagamentoOperacionalId || t.idPagamentoOperacional || t.pagamentoOperacional || t.pagamentoId || t.pagto;
+  if (typeof pagto === 'object' && pagto !== null) {
+    pagto = pagto.id || pagto.codigo || pagto.numero;
+  }
   if (!pagto || pagto === '0' || pagto === 0 || pagto === '') {
     return false;
   }
@@ -378,6 +381,7 @@ export async function fetchTitulosAnaliseByDate({ dataCadastro, unltdToken }) {
     debugInfo: {
       rawCount: rawTitulos.length,
       totalNominalBruto,
+      sampleRaw: rawTitulos.slice(0, 3),
       rawUas,
       rawProds,
       rawSiglas,
