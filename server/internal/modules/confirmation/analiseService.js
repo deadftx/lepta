@@ -187,7 +187,17 @@ function isManifestoValido(t) {
 /**
  * Valida se o título atende a todos os critérios dos filtros estritos da Bitfin (Prints 1, 2 e 3)
  */
-export function isTituloValidoParaAnalise(t) {
+export function isTituloValidoParaAnalise(t, dataCadastro) {
+  // 0. DATA DE CADASTRO (Deve ser exatamente a data pesquisada)
+  if (dataCadastro) {
+    const rawCad = t.dataDeCadastro || t.cadastro || t.data_cadastro;
+    const formattedCad = formatDatePtBr(rawCad);
+    const expectedCad = formatDatePtBr(dataCadastro);
+    if (formattedCad && expectedCad && formattedCad !== expectedCad) {
+      return false;
+    }
+  }
+
   if (!getUnidadeAdministrativaInfo(t)) return false;
   if (!isProdutoValido(t)) return false;
   if (!isSiglaValida(t)) return false;
@@ -366,7 +376,7 @@ export async function fetchTitulosAnaliseByDate({ dataCadastro, unltdToken }) {
   console.log('========================================================================\n');
 
   // 1. Aplica filtros estritos das prints do Bitfin
-  const filteredRaw = rawTitulos.filter(isTituloValidoParaAnalise);
+  const filteredRaw = rawTitulos.filter(t => isTituloValidoParaAnalise(t, dataCadastro));
 
   // 2. Normaliza para o modelo canônico de 36 colunas
   const normalized = filteredRaw.map(normalizeTituloRecord);
