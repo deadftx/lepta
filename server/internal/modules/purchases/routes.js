@@ -5,20 +5,28 @@ import multer from 'multer';
 import { createNotification, notifyUsers } from '../notifications/routes.js';
 import { sendPurchaseApprovalEmail } from '../../services/emailService.js';
 
-// Configuração do Multer para upload de anexos de até 20MB
-const uploadDir = path.join(path.resolve(), 'uploads', 'compras');
+// Configuração do Multer para upload de anexos de até 20MB em pasta/subpastas por chamado
+const baseUploadsDir = String(process.env.LEPTA_UPLOADS_PATH || process.env.COMPRAS_UPLOADS_PATH || '').trim();
+const uploadDir = baseUploadsDir ? path.resolve(baseUploadsDir) : path.join(path.resolve(), 'uploads', 'compras');
 if (!fs.existsSync(uploadDir)) {
   fs.mkdirSync(uploadDir, { recursive: true });
 }
 
 const storage = multer.diskStorage({
   destination: function (req, file, cb) {
-    cb(null, uploadDir);
+    const rawId = req.params?.id || req.body?.requisicao_id || 'geral';
+    const folderName = String(rawId).trim().replace(/[^a-zA-Z0-9_-]/g, '_');
+    const targetFolder = path.join(uploadDir, folderName);
+    if (!fs.existsSync(targetFolder)) {
+      fs.mkdirSync(targetFolder, { recursive: true });
+    }
+    cb(null, targetFolder);
   },
   filename: function (req, file, cb) {
     const ext = path.extname(file.originalname);
     const basename = path.basename(file.originalname, ext);
-    cb(null, `${basename}-${Date.now()}-${randomUUID()}${ext}`);
+    const safeBaseName = basename.replace(/[^a-zA-Z0-9_\-\.\s]/g, '_');
+    cb(null, `${safeBaseName}-${Date.now()}-${randomUUID().substring(0, 8)}${ext}`);
   }
 });
 
@@ -1583,7 +1591,8 @@ export function registerPurchaseRoutes(app, {
 
       for (const file of files) {
         const anexoId = randomUUID();
-        insertStmt.run(anexoId, id, file.originalname, file.filename, file.size, req.authUser.id, userName, now);
+        const relativePath = path.relative(uploadDir, file.path).replace(/\\/g, '/');
+        insertStmt.run(anexoId, id, file.originalname, relativePath, file.size, req.authUser.id, userName, now);
 
         db.prepare(`
           INSERT INTO compras_mensagens (id, requisicao_id, autor_id, autor_nome, autor_role, mensagem, created_at)
