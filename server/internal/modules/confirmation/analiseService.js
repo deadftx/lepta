@@ -60,11 +60,12 @@ function extractText(val) {
   return String(val).trim();
 }
 
-/**
- * Valida Unidade Administrativa (somente MS FIDC e Special FIDC; rejeita Gestora e Securitizadora)
- */
 function getUnidadeAdministrativaInfo(t) {
   const rawUa = extractText(
+    t.contaOperacional?.unidadeAdministrativa?.nome ||
+    t.contaOperacional?.unidadeAdministrativa?.alias ||
+    t.unidadeAdministrativa?.nome ||
+    t.unidadeAdministrativa?.alias ||
     t.contaOperacional?.unidadeAdministrativa ||
     t.unidadeAdministrativa ||
     t.ua ||
@@ -81,7 +82,11 @@ function getUnidadeAdministrativaInfo(t) {
     return { name: 'Lepta Special FIDC', type: 'SPECIAL' };
   }
 
-  return { name: 'Lepta MS FIDC', type: 'MULTISETORIAL' };
+  if (norm.includes('ms') || norm.includes('mult') || norm.includes('multisetorial') || norm.includes('lepta ms')) {
+    return { name: 'Lepta MS FIDC', type: 'MULTISETORIAL' };
+  }
+
+  return null; // Descarta qualquer operação sem identificação explícita de MS ou Special
 }
 
 /**
