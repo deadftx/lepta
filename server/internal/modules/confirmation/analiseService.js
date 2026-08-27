@@ -3,7 +3,6 @@ import crypto from 'crypto';
 
 const API_BASE_URL = 'https://lepta-backend.bit-unltd.com.br';
 
-// Cache em memória para links compartilhados (tokens de acesso público)
 const shareTokensCache = new Map();
 
 /**
@@ -48,42 +47,103 @@ function normalizeStr(str) {
     .toLowerCase();
 }
 
-const ALLOWED_SIGLAS = new Set(['DM', 'DS']);
-
-// Manifestos bloqueados (desmarcados / roxos na tela do Bitfin)
-const DISALLOWED_MANIFESTOS = [
-  'transacao desconhecida',
-  'lastro inconsistente',
-  'transacao nao concluida',
-  'protestado'
-];
+/**
+ * Extrai texto limpo de strings ou Objetos JSON retornados pela API UNLTD
+ */
+function extractText(val) {
+  if (val === null || val === undefined) return '';
+  if (typeof val === 'string') return val.trim();
+  if (typeof val === 'number') return String(val);
+  if (typeof val === 'object') {
+    return (val.sigla || val.nome || val.descricao || val.alias || val.codigo || val.label || '').trim();
+  }
+  return String(val).trim();
+}
 
 /**
- * Valida se o título atende a todos os critérios restritivos do módulo de confirmação
+ * Valida Unidade Administrativa (somente MS FIDC e Special FIDC; rejeita Gestora e Securitizadora)
+ */
+function getUnidadeAdministrativaInfo(t) {
+  const rawUa = extractText(
+    t.contaOperacional?.unidadeAdministrativa ||
+    t.unidadeAdministrativa ||
+    t.ua ||
+    t.fundo ||
+    ''
+  );
+  const norm = normalizeStr(rawUa);
+
+  if (norm.includes('gestora') || norm.includes('securitizadora')) {
+    return null; // Rejeita Lepta Gestora e Lepta Securitizadora (Print 1)
+  }
+
+  if (norm.includes('special')) {
+    return { name: 'Lepta Special FIDC', type: 'SPECIAL' };
+  }
+
+  return { name: 'Lepta MS FIDC', type: 'MULTISETORIAL' };
+}
+
+/**
+ * Valida se o título atende a todos os critérios dos filtros estritos da Bitfin (Prints 1, 2 e 3)
  */
 export function isTituloValidoParaAnalise(t) {
-  // 1. SIGLA: somente DM (Duplicata Mercantil) e DS (Duplicata de Serviço)
-  const rawSigla = (t.tipoDocumento?.sigla || t.especie?.sigla || t.sigla || t.tipo || '').trim().toUpperCase();
-  if (rawSigla && !ALLOWED_SIGLAS.has(rawSigla)) {
+  // 1. UNIDADE ADMINISTRATIVA (Print 1: aceita apenas MS FIDC e Special FIDC; descarta Gestora e Securitizadora)
+  const uaInfo = getUnidadeAdministrativaInfo(t);
+  if (!uaInfo) {
     return false;
   }
 
-  // 2. PRODUTO: somente FAT (Faturização)
-  const rawProduto = (t.produto?.sigla || t.produto || '').trim().toUpperCase();
-  if (rawProduto && !rawProduto.includes('FAT')) {
+  // 2. PRODUTO (Print 1: aceita apenas Faturização / FAT)
+  const prodStr = extractText(t.produto?.sigla || t.produto?.nome || t.produto);
+  const normProd = normalizeStr(prodStr);
+  if (normProd) {
+    if (normProd.includes('ccb') || normProd.includes('cobranca') || normProd.includes('comissaria') ||
+        normProd.includes('confissao') || normProd.includes('custodia') || normProd.includes('domicilio') ||
+        normProd.includes('fomento') || normProd.includes('intercompany') || normProd.includes('nota')) {
+      return false;
+    }
+  }
+
+  // 3. TÍTULO / ESPÉCIE (Print 2: aceita apenas Duplicata Mercantil / DM e Duplicata de Serviço / DS)
+  const siglaStr = extractText(t.tipoDocumento || t.especie || t.sigla || t.tipo);
+  const normSigla = normalizeStr(siglaStr);
+  if (normSigla) {
+    if (normSigla.includes('contrato') || normSigla.includes('cheque')) {
+      return false;
+    }
+  }
+
+  // 4. SITUAÇÃO (Print 2: aceita apenas Em Aberto)
+  const sitStr = extractText(t.situacao || 'Em Aberto');
+  const normSit = normalizeStr(sitStr);
+  if (normSit.includes('liquidado') || normSit.includes('baixado') || normSit.includes('recomprado') ||
+      normSit.includes('cartorio') || normSit.includes('perda') || normSit.includes('pro solvendo') ||
+      normSit.includes('credito')) {
+    return false;
+  }
+  if (!normSit.includes('aberto')) {
     return false;
   }
 
-  // 3. SITUAÇÃO: somente Em Aberto / Aberto
-  const situacao = normalizeStr(t.situacao || 'em aberto');
-  if (!situacao.includes('aberto') || situacao.includes('liquidado') || situacao.includes('baixado')) {
-    return false;
-  }
+  // 5. MANIFESTO (Print 3: rejeita os 4 desmarcados / roxos)
+  const valManifesto = t.situacaoManifesto || t.manifesto || t.situacao_manifesto || 'Sem Atuacao';
+  const manStr = extractText(valManifesto);
+  const normMan = normalizeStr(manStr);
 
-  // 4. MANIFESTO: somente os manifestos ativos (rejeita os roxos/desmarcados)
-  const manifesto = normalizeStr(t.manifesto || t.situacaoManifesto || 'sem atuacao');
+  const DISALLOWED_MANIFESTOS = [
+    'transacao desconhecida',
+    'desconhecida',
+    'lastro inconsistente',
+    'inconsistente',
+    'transacao nao concluida',
+    'nao concluida',
+    'protestado',
+    'protesto'
+  ];
+
   for (const disallowed of DISALLOWED_MANIFESTOS) {
-    if (manifesto.includes(disallowed)) {
+    if (normMan.includes(disallowed)) {
       return false;
     }
   }
@@ -95,25 +155,9 @@ export function isTituloValidoParaAnalise(t) {
  * Normaliza e enriquece um título da API UNLTD para a estrutura canônica dos 36 campos
  */
 export function normalizeTituloRecord(t) {
-  const rawUa = (
-    t.contaOperacional?.unidadeAdministrativa?.nome ||
-    t.contaOperacional?.unidadeAdministrativa?.alias ||
-    t.unidadeAdministrativa?.nome ||
-    t.unidadeAdministrativa?.alias ||
-    t.ua ||
-    ''
-  ).trim();
-
-  // Determina se é MS FIDC ou Special FIDC
-  let ua = rawUa;
-  let fundoTipo = 'MULTISETORIAL';
-  if (/special/i.test(rawUa) || /special/i.test(t.fundo) || /special/i.test(t.fundo_id)) {
-    ua = 'Lepta Special FIDC';
-    fundoTipo = 'SPECIAL';
-  } else {
-    ua = 'Lepta MS FIDC';
-    fundoTipo = 'MULTISETORIAL';
-  }
+  const uaInfo = getUnidadeAdministrativaInfo(t) || { name: 'Lepta MS FIDC', type: 'MULTISETORIAL' };
+  const ua = uaInfo.name;
+  const fundoTipo = uaInfo.type;
 
   const cedenteDoc = String(t.contaOperacional?.cliente?.entidade?.documento || t.cliente?.documento || t.cedente_cnpj || '').replace(/\D/g, '');
   const sacadoDoc = String(t.sacado?.entidade?.documento || t.sacado?.documento || t.sacado_cnpj || '').replace(/\D/g, '');
@@ -123,8 +167,8 @@ export function normalizeTituloRecord(t) {
   const pagto = t.pagamentoOperacional?.id || t.pagamentoId || t.pagto || '';
   const cliente = (t.contaOperacional?.cliente?.entidade?.nome || t.cliente?.nome || t.cedente_nome || '').trim();
   const sacado = (t.sacado?.entidade?.nome || t.sacado?.nome || t.sacado_nome || '').trim();
-  const produto = (t.produto?.sigla || t.produto || 'FAT').toUpperCase();
-  const sigla = (t.tipoDocumento?.sigla || t.especie?.sigla || t.sigla || 'DM').toUpperCase();
+  const produto = (extractText(t.produto?.sigla || t.produto?.nome || t.produto) || 'FAT').toUpperCase();
+  const sigla = (extractText(t.tipoDocumento?.sigla || t.especie?.sigla || t.sigla) || 'DM').toUpperCase();
   const numero = String(t.numero || t.numero_titulo || '').trim();
 
   const cadastro = formatDatePtBr(t.dataDeCadastro || t.cadastro || t.data_cadastro);
@@ -133,9 +177,9 @@ export function normalizeTituloRecord(t) {
   const vencimentoEfetivo = formatDatePtBr(t.dataDeVencimentoEfetivo || t.vencimentoEfetivo || t.dataDeVencimento || t.vencimento);
 
   const vencido = t.vencido === true || String(t.vencido).toLowerCase() === 'sim' ? 'Sim' : 'Nao';
-  const situacao = t.situacao || 'Em Aberto';
+  const situacao = extractText(t.situacao) || 'Em Aberto';
   const dataSituacao = formatDatePtBr(t.dataDaSituacao || t.dataSituacao || t.dataDeCadastro || t.cadastro);
-  const manifesto = t.manifesto || t.situacaoManifesto || 'Sem Atuacao';
+  const manifesto = extractText(t.situacaoManifesto || t.manifesto) || 'Sem Atuacao';
   const dataManifesto = formatDatePtBr(t.dataDoManifesto || t.dataManifesto || t.dataDeCadastro || t.cadastro);
 
   const valorNominal = Number(t.valorNominal || t.valor_nominal_original || t.valor || 0);
@@ -152,9 +196,9 @@ export function normalizeTituloRecord(t) {
   const prazoReal = Number(t.prazoReal || 0);
   const prazoCobrado = Number(t.prazoCobrado || 0);
 
-  const gerente = (t.gerente?.nome || t.contaOperacional?.gerente?.nome || t.gerente || '').trim();
-  const superintendente = (t.superintendente?.nome || t.contaOperacional?.superintendente?.nome || t.superintendente || 'Sebastiao Neto').trim();
-  const bancoCobrador = (t.bancoCobrador || t.cobranca?.banco || t.contaBancaria?.banco || '').trim();
+  const gerente = extractText(t.gerente?.nome || t.contaOperacional?.gerente?.nome || t.gerente);
+  const superintendente = extractText(t.superintendente?.nome || t.contaOperacional?.superintendente?.nome || t.superintendente) || 'Sebastiao Neto';
+  const bancoCobrador = extractText(t.bancoCobrador || t.cobranca?.banco || t.contaBancaria?.banco);
 
   return {
     id,
@@ -198,7 +242,7 @@ export function normalizeTituloRecord(t) {
 }
 
 /**
- * Consulta a API UNLTD para a data de cadastro informada aplicando os filtros estritos
+ * Consulta a API UNLTD para a data de cadastro informada aplicando os fuso horários GMT-3 e filtros estritos
  */
 export async function fetchTitulosAnaliseByDate({ dataCadastro, unltdToken }) {
   if (!unltdToken) {
@@ -209,10 +253,20 @@ export async function fetchTitulosAnaliseByDate({ dataCadastro, unltdToken }) {
     throw new Error('Data de cadastro inválida. Use o formato AAAA-MM-DD.');
   }
 
+  // Horário de Brasília (UTC-3):
+  // 00:00:00 BRT = 03:00:00.000Z UTC
+  // 23:59:59.999 BRT = 02:59:59.999Z UTC do dia seguinte
+  const startUtc = `${dataCadastro}T03:00:00.000Z`;
+
+  const dateObj = new Date(`${dataCadastro}T00:00:00.000Z`);
+  dateObj.setUTCDate(dateObj.getUTCDate() + 1);
+  const nextDayStr = dateObj.toISOString().substring(0, 10);
+  const endUtc = `${nextDayStr}T02:59:59.999Z`;
+
   const payload = {
     tipoDeData: 'Cadastro',
-    dataInicial: `${dataCadastro}T00:00:00.000Z`,
-    dataFinal: `${dataCadastro}T23:59:59.999Z`,
+    dataInicial: startUtc,
+    dataFinal: endUtc,
     situacoes: ['Em Aberto']
   };
 
@@ -232,10 +286,10 @@ export async function fetchTitulosAnaliseByDate({ dataCadastro, unltdToken }) {
 
   const data = await response.json();
   const rawTitulos = Array.isArray(data) ? data : [];
-  
-  // 1. Aplica filtros estritos de negócio
+
+  // 1. Aplica filtros estritos das prints do Bitfin
   const filteredRaw = rawTitulos.filter(isTituloValidoParaAnalise);
-  
+
   // 2. Normaliza para o modelo canônico de 36 colunas
   const normalized = filteredRaw.map(normalizeTituloRecord);
 
@@ -316,7 +370,6 @@ export function generateTitulosCsv({ titulos, fundo = 'AMBOS' }) {
   }
 
   const lines = [];
-  // Cabeçalho sem ponto e vírgula final
   lines.push(CSV_HEADERS.join(';'));
 
   for (const t of filtered) {
@@ -359,7 +412,6 @@ export function generateTitulosCsv({ titulos, fundo = 'AMBOS' }) {
       t.bancoCobrador
     ];
 
-    // Adiciona ponto e vírgula final conforme padrão dos arquivos exportados
     lines.push(row.join(';') + ';');
   }
 
@@ -385,98 +437,84 @@ export async function generateTitulosExcel({ titulos, fundo = 'AMBOS', dataCadas
     fundo === 'SPECIAL' ? 'Lepta Special FIDC' : fundo === 'MULTISETORIAL' ? 'Lepta MS FIDC' : 'Titulos Geral'
   );
 
-  // Define colunas
   worksheet.columns = CSV_HEADERS.map(header => ({
     header,
     key: header.replace(/[^A-Za-z0-9]/g, '_').toLowerCase(),
     width: Math.max(header.length + 4, 14)
   }));
 
-  // Estiliza cabeçalho
   const headerRow = worksheet.getRow(1);
   headerRow.font = { bold: true, color: { argb: 'FFFFFFFF' } };
   headerRow.fill = {
     type: 'pattern',
     pattern: 'solid',
-    fgColor: { argb: 'FF0F172A' }
+    fgColor: { argb: 'FF1E293B' }
   };
-  headerRow.alignment = { vertical: 'middle', horizontal: 'center' };
 
-  // Adiciona linhas
   for (const t of filtered) {
-    worksheet.addRow([
-      t.id,
-      t.operacao,
-      t.pagto,
-      t.cliente,
-      t.documentoCliente,
-      t.sacado,
-      t.documentoSacado,
-      t.ua,
-      t.produto,
-      t.sigla,
-      t.numero,
-      t.cadastro,
-      t.emissao,
-      t.vencimento,
-      t.vencimentoEfetivo,
-      t.vencido,
-      t.situacao,
-      t.dataSituacao,
-      t.manifesto,
-      t.dataManifesto,
-      t.valorNominal,
-      t.descontoAbatimento,
-      t.valorLiquido,
-      t.valorPago,
-      t.saldoDevedor,
-      t.oscilacao,
-      t.taxa,
-      t.desagio,
-      t.custo,
-      t.receita,
-      t.tarifasOperacao,
-      t.prazoReal,
-      t.prazoCobrado,
-      t.gerente,
-      t.superintendente,
-      t.bancoCobrador
-    ]);
+    worksheet.addRow({
+      id: t.id,
+      operacao: t.operacao,
+      pagto: t.pagto,
+      cliente: t.cliente,
+      documento: t.documentoCliente,
+      sacado: t.sacado,
+      documento_1: t.documentoSacado,
+      ua: t.ua,
+      produto: t.produto,
+      sigla: t.sigla,
+      numero: t.numero,
+      cadastro: t.cadastro,
+      emissao: t.emissao,
+      vencimento: t.vencimento,
+      vencimento_efetivo: t.vencimentoEfetivo,
+      vencido: t.vencido,
+      situacao: t.situacao,
+      data_situacao: t.dataSituacao,
+      manifesto: t.manifesto,
+      data_manifesto: t.dataManifesto,
+      valor_nominal: t.valorNominal,
+      desconto_abatimento: t.descontoAbatimento,
+      valor_liquido: t.valorLiquido,
+      valor_pago: t.valorPago,
+      saldo_devedor: t.saldoDevedor,
+      oscilacao: t.oscilacao,
+      taxa: t.taxa,
+      desagio: t.desagio,
+      custo: t.custo,
+      receita: t.receita,
+      tarifas_operacao: t.tarifasOperacao,
+      prazo_real: t.prazoReal,
+      prazo_cobrado: t.prazoCobrado,
+      gerente: t.gerente,
+      superintendente: t.superintendente,
+      banco_cobrador: t.bancoCobrador
+    });
   }
 
-  // Formata colunas numéricas
-  const currencyCols = [21, 22, 23, 24, 25, 26, 28, 29, 30, 31];
-  currencyCols.forEach(colIdx => {
-    worksheet.getColumn(colIdx).numFmt = 'R$ #,##0.00;[Red]-R$ #,##0.00;"R$ 0.00"';
-  });
-  worksheet.getColumn(27).numFmt = '#,##0.00000'; // Taxa
-  worksheet.getColumn(32).numFmt = '#,##0.00'; // Prazo Real
-  worksheet.getColumn(33).numFmt = '#,##0.00'; // Prazo Cobrado
-
-  return await workbook.xlsx.writeBuffer();
+  const buffer = await workbook.xlsx.writeBuffer();
+  return buffer;
 }
 
-/**
- * Cria ou recupera um token de compartilhamento público
- */
 export function createShareToken({ dataCadastro, fundo = 'AMBOS', titulos }) {
   const token = crypto.randomBytes(16).toString('hex');
-  const createdAt = Date.now();
-  const expiresAt = createdAt + (7 * 24 * 60 * 60 * 1000); // 7 dias de validade
+  const now = Date.now();
+  const expiresAt = now + 7 * 24 * 3600 * 1000;
 
-  shareTokensCache.set(token, {
-    token,
+  const data = {
     dataCadastro,
     fundo,
-    titulos,
-    createdAt,
+    titulos: titulos || [],
+    createdAt: now,
     expiresAt
-  });
+  };
 
+  shareTokensCache.set(token, data);
   return token;
 }
 
 export function getSharedDataByToken(token) {
+  if (!token) return null;
   const data = shareTokensCache.get(token);
   if (!data) return null;
   if (Date.now() > data.expiresAt) {
@@ -486,10 +524,7 @@ export function getSharedDataByToken(token) {
   return data;
 }
 
-/**
- * Gera relatório HTML público, responsivo e interativo para compartilhamento
- */
-export function generateAnaliseHtmlReport({ titulos, dataCadastro, fundo = 'AMBOS', shareToken }) {
+export function generateAnaliseHtmlReport({ dataCadastro, fundo = 'AMBOS', titulos }) {
   let filtered = titulos || [];
   if (fundo === 'MULTISETORIAL' || fundo === 'MS') {
     filtered = filtered.filter(t => t.fundoTipo === 'MULTISETORIAL');
@@ -497,254 +532,105 @@ export function generateAnaliseHtmlReport({ titulos, dataCadastro, fundo = 'AMBO
     filtered = filtered.filter(t => t.fundoTipo === 'SPECIAL');
   }
 
+  const totalTitulos = filtered.length;
   const totalNominal = filtered.reduce((acc, t) => acc + t.valorNominal, 0);
   const totalLiquido = filtered.reduce((acc, t) => acc + t.valorLiquido, 0);
   const totalReceita = filtered.reduce((acc, t) => acc + t.receita, 0);
-  const totalQtd = filtered.length;
 
-  const dataFmt = formatDatePtBr(dataCadastro);
-  const fundoNome = fundo === 'SPECIAL' ? 'Lepta Special FIDC' : fundo === 'MULTISETORIAL' ? 'Lepta Multisorial FIDC' : 'Geral (Todos os Fundos)';
+  const tituloFundo = fundo === 'SPECIAL' ? 'Lepta Special FIDC' : fundo === 'MULTISETORIAL' ? 'Lepta MS FIDC' : 'Lepta FIDC - Visão Geral';
 
-  const tableRows = filtered.map((t, idx) => `
+  const rowsHtml = filtered.map(t => `
     <tr>
-      <td style="text-align: center; color: #64748b;">${idx + 1}</td>
-      <td style="font-weight: 700; color: #38bdf8;">${t.numero || '-'}</td>
-      <td style="font-weight: 600;">${t.cliente || '-'}</td>
-      <td style="font-size: 0.76rem; color: #94a3b8;">${t.documentoCliente || '-'}</td>
-      <td>${t.sacado || '-'}</td>
-      <td>
-        <span class="badge ${t.fundoTipo === 'SPECIAL' ? 'badge-special' : 'badge-multi'}">
-          ${t.ua}
-        </span>
-      </td>
-      <td>${t.vencimento || '-'}</td>
-      <td style="text-align: right; font-weight: 700;">R$ ${formatNumberPtBr(t.valorNominal)}</td>
-      <td style="text-align: right; color: #38bdf8;">R$ ${formatNumberPtBr(t.valorLiquido)}</td>
-      <td style="text-align: right; color: #4ade80; font-weight: 700;">R$ ${formatNumberPtBr(t.receita)}</td>
-      <td style="text-align: right;">${formatNumberPtBr(t.taxa, 4, 4)}%</td>
-      <td style="text-align: center;">
-        <span class="badge ${t.situacao === 'Liquidado' ? 'badge-success' : 'badge-warning'}">${t.situacao}</span>
-      </td>
-      <td>${t.gerente || '-'}</td>
+      <td>${t.id}</td>
+      <td>${t.operacao}</td>
+      <td><strong>${t.cliente}</strong><br><small>${t.documentoCliente}</small></td>
+      <td>${t.sacado}<br><small>${t.documentoSacado}</small></td>
+      <td><span class="badge ${t.fundoTipo.toLowerCase()}">${t.ua}</span></td>
+      <td>${t.produto} - ${t.sigla}</td>
+      <td>${t.numero}</td>
+      <td>${t.cadastro}</td>
+      <td>${t.vencimento}</td>
+      <td class="num font-bold">R$ ${formatNumberPtBr(t.valorNominal)}</td>
+      <td class="num">R$ ${formatNumberPtBr(t.valorLiquido)}</td>
+      <td><span class="status-tag">${t.manifesto}</span></td>
     </tr>
   `).join('');
 
-  return `<!DOCTYPE html>
-<html lang="pt-BR">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Análise de Confirmação — ${dataFmt} — LEPTA CAPITAL</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <style>
-    :root {
-      --bg: #090d16;
-      --card-bg: #0f172a;
-      --border: #1e293b;
-      --text: #f8fafc;
-      --text-dim: #94a3b8;
-      --primary: #38bdf8;
-      --success: #4ade80;
-      --warning: #fbbf24;
-      --special: #f59e0b;
-      --multi: #38bdf8;
-    }
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    body {
-      background-color: var(--bg);
-      color: var(--text);
-      font-family: 'Plus Jakarta Sans', -apple-system, sans-serif;
-      padding: 1.5rem;
-      line-height: 1.5;
-    }
-    .container {
-      max-width: 1400px;
-      margin: 0 auto;
-      display: flex;
-      flex-direction: column;
-      gap: 1.5rem;
-    }
-    header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      flex-wrap: wrap;
-      gap: 1rem;
-      padding-bottom: 1.25rem;
-      border-bottom: 1px solid var(--border);
-    }
-    .brand {
-      font-size: 1.35rem;
-      font-weight: 900;
-      letter-spacing: 0.5px;
-    }
-    .brand span { color: var(--primary); }
-    .subtitle { font-size: 0.85rem; color: var(--text-dim); }
-    .btn-download {
-      background: linear-gradient(135deg, #0284c7, #0369a1);
-      color: #ffffff;
-      border: 1px solid #38bdf8;
-      padding: 0.65rem 1.25rem;
-      border-radius: 8px;
-      font-weight: 700;
-      font-size: 0.85rem;
-      cursor: pointer;
-      text-decoration: none;
-      display: inline-flex;
-      align-items: center;
-      gap: 8px;
-      transition: all 0.2s;
-    }
-    .btn-download:hover {
-      background: #0284c7;
-      box-shadow: 0 0 15px rgba(56, 189, 248, 0.4);
-    }
-    .kpi-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-      gap: 1rem;
-    }
-    .kpi-card {
-      background: var(--card-bg);
-      border: 1px solid var(--border);
-      border-radius: 10px;
-      padding: 1rem 1.25rem;
-      display: flex;
-      flex-direction: column;
-      gap: 4px;
-    }
-    .kpi-label { font-size: 0.75rem; text-transform: uppercase; color: var(--text-dim); font-weight: 700; }
-    .kpi-val { font-size: 1.35rem; font-weight: 800; color: #fff; }
-    .table-card {
-      background: var(--card-bg);
-      border: 1px solid var(--border);
-      border-radius: 10px;
-      overflow: hidden;
-    }
-    .table-header {
-      padding: 1rem 1.25rem;
-      background: #090d16;
-      border-bottom: 1px solid var(--border);
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      font-weight: 700;
-      font-size: 0.95rem;
-    }
-    .table-wrapper {
-      overflow-x: auto;
-      max-height: 70vh;
-    }
-    table {
-      width: 100%;
-      border-collapse: collapse;
-      font-size: 0.82rem;
-      white-space: nowrap;
-    }
-    th {
-      background: #090d16;
-      color: var(--text-dim);
-      text-align: left;
-      padding: 10px 14px;
-      font-weight: 700;
-      border-bottom: 1px solid var(--border);
-      position: sticky;
-      top: 0;
-      z-index: 2;
-    }
-    td {
-      padding: 9px 14px;
-      border-bottom: 1px solid rgba(30, 41, 59, 0.6);
-      color: var(--text);
-    }
-    tr:hover td {
-      background: rgba(56, 189, 248, 0.04);
-    }
-    .badge {
-      display: inline-block;
-      padding: 2px 8px;
-      border-radius: 12px;
-      font-size: 0.72rem;
-      font-weight: 700;
-      border: 1px solid;
-    }
-    .badge-multi { background: rgba(56, 189, 248, 0.15); color: #38bdf8; border-color: #38bdf8; }
-    .badge-special { background: rgba(245, 158, 11, 0.15); color: #fbbf24; border-color: #fbbf24; }
-    .badge-success { background: rgba(74, 222, 128, 0.15); color: #4ade80; border-color: #4ade80; }
-    .badge-warning { background: rgba(251, 191, 36, 0.15); color: #fbbf24; border-color: #fbbf24; }
-    @media (max-width: 768px) {
-      body { padding: 0.75rem; }
-    }
-  </style>
-</head>
-<body>
-  <div class="container">
-    <header>
-      <div>
-        <div class="brand">LEPTA <span>CAPITAL</span></div>
-        <div class="subtitle">Análise de Confirmação — Data de Cadastro: <strong>${dataFmt}</strong> | Fundo: <strong>${fundoNome}</strong></div>
+  return `
+    <!DOCTYPE html>
+    <html lang="pt-BR">
+    <head>
+      <meta charset="UTF-8">
+      <title>Relatório de Análise de Confirmação - ${tituloFundo}</title>
+      <style>
+        body { font-family: system-ui, -apple-system, sans-serif; background: #0f172a; color: #f8fafc; margin: 0; padding: 24px; }
+        .header { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #334155; padding-bottom: 16px; margin-bottom: 24px; }
+        .h-title { font-size: 24px; font-weight: 800; color: #38bdf8; }
+        .kpi-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 24px; }
+        .kpi { background: #1e293b; padding: 16px; border-radius: 8px; border: 1px solid #334155; }
+        .kpi-label { font-size: 12px; color: #94a3b8; font-weight: 600; }
+        .kpi-val { font-size: 20px; font-weight: 800; color: #f1f5f9; margin-top: 4px; }
+        table { width: 100%; border-collapse: collapse; background: #1e293b; border-radius: 8px; overflow: hidden; font-size: 13px; }
+        th { background: #0f172a; color: #94a3b8; padding: 12px; text-align: left; border-bottom: 1px solid #334155; }
+        td { padding: 10px 12px; border-bottom: 1px solid #334155; color: #cbd5e1; }
+        .num { text-align: right; }
+        .font-bold { font-weight: 700; color: #f8fafc; }
+        .badge { padding: 2px 6px; border-radius: 4px; font-size: 11px; font-weight: 700; }
+        .badge.multisetorial { background: rgba(56, 189, 248, 0.2); color: #38bdf8; }
+        .badge.special { background: rgba(168, 85, 247, 0.2); color: #c084fc; }
+        .status-tag { background: rgba(255, 255, 255, 0.08); padding: 2px 6px; border-radius: 4px; font-size: 11px; }
+      </style>
+    </head>
+    <body>
+      <div class="header">
+        <div>
+          <div class="h-title">${tituloFundo}</div>
+          <p style="margin:4px 0 0 0; color:#94a3b8;">Data de Cadastro: <strong>${formatDatePtBr(dataCadastro)}</strong></p>
+        </div>
+        <div style="font-size:12px; color:#64748b;">Lepta Capital System</div>
       </div>
-      <div>
-        <a href="/api/confirmacao/analise/public/${shareToken}?download=xlsx" class="btn-download">
-          📥 Baixar Planilha (.xlsx)
-        </a>
-        <a href="/api/confirmacao/analise/public/${shareToken}?download=csv" class="btn-download" style="margin-left: 6px; background: #334155; border-color: #64748b;">
-          📄 Baixar CSV Oficial
-        </a>
-      </div>
-    </header>
 
-    <div class="kpi-grid">
-      <div class="kpi-card">
-        <span class="kpi-label">Total de Títulos</span>
-        <span class="kpi-val">${totalQtd.toLocaleString('pt-BR')}</span>
+      <div class="kpi-grid">
+        <div class="kpi">
+          <div class="kpi-label">TOTAL TÍTULOS</div>
+          <div class="kpi-val">${totalTitulos}</div>
+        </div>
+        <div class="kpi">
+          <div class="kpi-label">VALOR NOMINAL TOTAL</div>
+          <div class="kpi-val" style="color:#4ade80;">R$ ${formatNumberPtBr(totalNominal)}</div>
+        </div>
+        <div class="kpi">
+          <div class="kpi-label">VALOR LÍQUIDO TOTAL</div>
+          <div class="kpi-val" style="color:#38bdf8;">R$ ${formatNumberPtBr(totalLiquido)}</div>
+        </div>
+        <div class="kpi">
+          <div class="kpi-label">RECEITA ESTIMADA</div>
+          <div class="kpi-val" style="color:#c084fc;">R$ ${formatNumberPtBr(totalReceita)}</div>
+        </div>
       </div>
-      <div class="kpi-card">
-        <span class="kpi-label">Valor Nominal Total</span>
-        <span class="kpi-val">R$ ${formatNumberPtBr(totalNominal)}</span>
-      </div>
-      <div class="kpi-card">
-        <span class="kpi-label">Valor Líquido Total</span>
-        <span class="kpi-val" style="color: #38bdf8;">R$ ${formatNumberPtBr(totalLiquido)}</span>
-      </div>
-      <div class="kpi-card">
-        <span class="kpi-label">Receita Apurada</span>
-        <span class="kpi-val" style="color: #4ade80;">R$ ${formatNumberPtBr(totalReceita)}</span>
-      </div>
-    </div>
 
-    <div class="table-card">
-      <div class="table-header">
-        <span>Títulos Cadastrados (${filtered.length})</span>
-      </div>
-      <div class="table-wrapper">
-        <table>
-          <thead>
-            <tr>
-              <th>#</th>
-              <th>Número</th>
-              <th>Cedente (Cliente)</th>
-              <th>CNPJ Cedente</th>
-              <th>Sacado</th>
-              <th>Fundo (UA)</th>
-              <th>Vencimento</th>
-              <th style="text-align: right;">Valor Nominal</th>
-              <th style="text-align: right;">Valor Líquido</th>
-              <th style="text-align: right;">Receita</th>
-              <th style="text-align: right;">Taxa</th>
-              <th style="text-align: center;">Situação</th>
-              <th>Gerente</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${tableRows.length > 0 ? tableRows : '<tr><td colspan="13" style="text-align:center; padding: 2rem; color: #94a3b8;">Nenhum título encontrado para esta data.</td></tr>'}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  </div>
-</body>
-</html>`;
+      <table>
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>OP.</th>
+            <th>CLIENTE / CEDENTE</th>
+            <th>SACADO</th>
+            <th>UA</th>
+            <th>PROD.</th>
+            <th>NÚMERO</th>
+            <th>CADASTRO</th>
+            <th>VENCIMENTO</th>
+            <th class="num">NOMINAL</th>
+            <th class="num">LÍQUIDO</th>
+            <th>MANIFESTO</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rowsHtml}
+        </tbody>
+      </table>
+    </body>
+    </html>
+  `;
 }
