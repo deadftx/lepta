@@ -63,10 +63,13 @@ function extractText(val) {
   return String(val).trim();
 }
 
+/**
+ * Valida Unidade Administrativa (somente MS FIDC e Special FIDC; rejeita Gestora e Securitizadora)
+ */
 function getUnidadeAdministrativaInfo(t) {
   const rawUa = extractText(
-    t.contaOperacional?.unidadeAdministrativa?.nome ||
     t.contaOperacional?.unidadeAdministrativa?.alias ||
+    t.contaOperacional?.unidadeAdministrativa?.nome ||
     t.unidadeAdministrativa?.nome ||
     t.unidadeAdministrativa?.alias ||
     t.contaOperacional?.unidadeAdministrativa ||
@@ -93,24 +96,19 @@ function getUnidadeAdministrativaInfo(t) {
 }
 
 /**
- * Garante que o título pertença a uma operação realizada/paga (Relação de títulos da carteira)
- */
-function hasPagamentoOperacional(t) {
-  let pagto = t.pagamentoOperacional?.id || t.pagamentoOperacionalId || t.idPagamentoOperacional || t.pagamentoOperacional || t.pagamentoId || t.pagto;
-  if (typeof pagto === 'object' && pagto !== null) {
-    pagto = pagto.id || pagto.codigo || pagto.numero;
-  }
-  if (!pagto || pagto === '0' || pagto === 0 || pagto === '') {
-    return false;
-  }
-  return true;
-}
-
-/**
  * Checa se produto é Faturização (FAT)
  */
 function isProdutoValido(t) {
-  const prodStr = extractText(t.produto);
+  const prodStr = extractText(
+    t.contaOperacional?.produto?.sigla ||
+    t.contaOperacional?.produto?.descricao ||
+    t.contaOperacional?.produto ||
+    t.produto?.sigla ||
+    t.produto?.descricao ||
+    t.produto?.nome ||
+    t.produto ||
+    ''
+  );
   const norm = normalizeStr(prodStr);
   if (!norm) return true;
   if (norm.includes('ccb') || norm.includes('cobranca') || norm.includes('comissaria') ||
@@ -125,7 +123,16 @@ function isProdutoValido(t) {
  * Checa se sigla/espécie é Duplicata Mercantil (DM) ou Duplicata de Serviço (DS)
  */
 function isSiglaValida(t) {
-  const siglaStr = extractText(t.tipoDocumento) + ' ' + extractText(t.especie) + ' ' + extractText(t.sigla) + ' ' + extractText(t.tipo);
+  const siglaStr = extractText(
+    t.tipoDocumento?.sigla ||
+    t.especie?.sigla ||
+    t.sigla ||
+    t.contaOperacional?.sigla ||
+    t.tipoDocumento ||
+    t.especie ||
+    t.tipo ||
+    ''
+  );
   const norm = normalizeStr(siglaStr);
   if (!norm.trim()) return true;
   if (norm.includes('contrato') || norm.includes('cheque') || norm.includes('ccb')) {
@@ -153,9 +160,9 @@ function isSituacaoValida(t) {
  * Checa se manifesto é um dos 7 ativos (descarta os 4 roxos/desmarcados)
  */
 function isManifestoValido(t) {
-  const manStr = extractText(t.situacaoManifesto) + ' ' + extractText(t.manifesto) + ' ' + extractText(t.situacao_manifesto);
+  const manStr = extractText(t.situacaoManifesto || t.manifesto || t.situacao_manifesto || '');
   const norm = normalizeStr(manStr);
-  if (!norm.trim()) return true;
+  if (!norm.trim() || norm === '--') return true;
 
   const DISALLOWED_MANIFESTOS = [
     'transacao desconhecida',
@@ -178,11 +185,10 @@ function isManifestoValido(t) {
 }
 
 /**
- * Valida se o título atende a todos os critérios dos filtros estritos da Bitfin (Prints 1, 2, 3 e Carteira)
+ * Valida se o título atende a todos os critérios dos filtros estritos da Bitfin (Prints 1, 2 e 3)
  */
 export function isTituloValidoParaAnalise(t) {
   if (!getUnidadeAdministrativaInfo(t)) return false;
-  if (!hasPagamentoOperacional(t)) return false;
   if (!isProdutoValido(t)) return false;
   if (!isSiglaValida(t)) return false;
   if (!isSituacaoValida(t)) return false;
@@ -203,11 +209,11 @@ export function normalizeTituloRecord(t) {
 
   const id = t.id || '';
   const operacao = t.operacao?.id || t.operacaoId || t.operacao?.numero || t.operacao || '';
-  const pagto = t.pagamentoOperacional?.id || t.pagamentoId || t.pagto || '';
+  const pagto = t.pagamentoOperacional?.id || t.pagamentoOperacional || t.pagamentoId || t.pagto || '';
   const cliente = (t.contaOperacional?.cliente?.entidade?.nome || t.cliente?.nome || t.cedente_nome || '').trim();
   const sacado = (t.sacado?.entidade?.nome || t.sacado?.nome || t.sacado_nome || '').trim();
-  const produto = (extractText(t.produto?.sigla || t.produto?.nome || t.produto) || 'FAT').toUpperCase();
-  const sigla = (extractText(t.tipoDocumento?.sigla || t.especie?.sigla || t.sigla) || 'DM').toUpperCase();
+  const produto = (extractText(t.contaOperacional?.produto?.sigla || t.contaOperacional?.produto?.descricao || t.produto) || 'FAT').toUpperCase();
+  const sigla = (extractText(t.sigla || t.tipoDocumento?.sigla || t.especie?.sigla || t.contaOperacional?.sigla) || 'DM').toUpperCase();
   const numero = String(t.numero || t.numero_titulo || '').trim();
 
   const cadastro = formatDatePtBr(t.dataDeCadastro || t.cadastro || t.data_cadastro);
@@ -222,8 +228,8 @@ export function normalizeTituloRecord(t) {
   const dataManifesto = formatDatePtBr(t.dataDoManifesto || t.dataManifesto || t.dataDeCadastro || t.cadastro);
 
   const valorNominal = Number(t.valorNominal || t.valor_nominal_original || t.valor || 0);
-  const descontoAbatimento = Number(t.descontoAbatimento || t.abatimento || 0);
-  const valorLiquido = Number(t.valorLiquido || t.valor_liquido || (valorNominal - descontoAbatimento));
+  const descontoAbatimento = Number(t.descontoAbatimento || t.valorDoAbatimento || t.abatimento || 0);
+  const valorLiquido = Number(t.valorLiquido || (valorNominal - descontoAbatimento));
   const valorPago = Number(t.valorPago || 0);
   const saldoDevedor = Number(t.saldoDevedor || (valorNominal - valorPago));
   const oscilacao = t.oscilacao !== undefined ? Number(t.oscilacao) : -valorNominal;
@@ -281,7 +287,7 @@ export function normalizeTituloRecord(t) {
 }
 
 /**
- * Consulta a API UNLTD para a data de cadastro informada aplicando os fuso horários GMT-3 e filtros estritos
+ * Consulta a API UNLTD para a data de cadastro informada aplicando os filtros estritos
  */
 export async function fetchTitulosAnaliseByDate({ dataCadastro, unltdToken }) {
   if (!unltdToken) {
@@ -328,13 +334,19 @@ export async function fetchTitulosAnaliseByDate({ dataCadastro, unltdToken }) {
     const v = Number(t.valorNominal || t.valor_nominal_original || t.valor || 0);
     totalNominalBruto += v;
 
-    const uaStr = extractText(t.contaOperacional?.unidadeAdministrativa || t.unidadeAdministrativa || t.ua || t.fundo || 'VAZIO');
+    const uaStr = extractText(
+      t.contaOperacional?.unidadeAdministrativa?.alias ||
+      t.contaOperacional?.unidadeAdministrativa?.nome ||
+      t.unidadeAdministrativa?.nome ||
+      t.ua ||
+      'VAZIO'
+    );
     rawUas[uaStr] = (rawUas[uaStr] || 0) + v;
 
-    const prodStr = extractText(t.produto?.sigla || t.produto?.nome || t.produto || 'VAZIO');
+    const prodStr = extractText(t.contaOperacional?.produto?.descricao || t.contaOperacional?.produto?.sigla || t.produto || 'VAZIO');
     rawProds[prodStr] = (rawProds[prodStr] || 0) + v;
 
-    const sigStr = extractText(t.tipoDocumento || t.especie || t.sigla || t.tipo || 'VAZIO');
+    const sigStr = extractText(t.sigla || t.tipoDocumento || t.especie || 'VAZIO');
     rawSiglas[sigStr] = (rawSiglas[sigStr] || 0) + v;
 
     const manStr = extractText(t.situacaoManifesto || t.manifesto || 'VAZIO');
@@ -381,7 +393,6 @@ export async function fetchTitulosAnaliseByDate({ dataCadastro, unltdToken }) {
     debugInfo: {
       rawCount: rawTitulos.length,
       totalNominalBruto,
-      sampleRaw: rawTitulos.slice(0, 3),
       rawUas,
       rawProds,
       rawSiglas,
