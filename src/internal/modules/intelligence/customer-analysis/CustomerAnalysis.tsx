@@ -416,7 +416,7 @@ const CustomerAnalysis = () => {
             <div className="kpi-info">
               <h4>NPL</h4>
               <div className="kpi-value">{loading || loadingSubData ? '...' : formatCurrency(totalVolumeNpl)}</div>
-              <div className="kpi-sub">Total {selectedCedente ? 'do detalhamento' : 'da Base NPL'}</div>
+              <div className="kpi-sub" style={{ fontSize: '0.72rem', textTransform: 'lowercase', opacity: 0.85 }}>casos fechados</div>
             </div>
           </div>
 

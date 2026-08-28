@@ -2123,7 +2123,8 @@ app.get('/api/analise-clientes', requireSession, requirePermission('8.1'), async
           cedente as sacado, 
           SUM(COALESCE(NULLIF(valor_considerado, 0), NULLIF(credito_rj, 0), NULLIF(credito_execucao, 0), 0)) as valorNpl
         FROM BASE_NPL
-        WHERE cedente IS NOT NULL AND TRIM(cedente) != ''
+        WHERE (tipo_registro IS NULL OR tipo_registro = 'FECHADO')
+          AND cedente IS NOT NULL AND TRIM(cedente) != ''
         GROUP BY cedente
       `).all();
     } catch (e) {

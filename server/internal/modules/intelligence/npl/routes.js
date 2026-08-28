@@ -29,7 +29,8 @@ export function registerNplRoutes(app, {
    */
   app.get('/api/npl/kpis', requireSession, requirePermission('8.4'), (req, res) => {
     try {
-      const summary = getNplSummary(db);
+      const { view } = req.query;
+      const summary = getNplSummary(db, { view: view || 'fechados' });
       res.json(summary);
     } catch (err) {
       console.error('[NPL] Erro ao buscar resumo de KPIs:', err);
@@ -42,8 +43,8 @@ export function registerNplRoutes(app, {
    */
   app.get('/api/npl/clients', requireSession, requirePermission('8.4'), (req, res) => {
     try {
-      const { search, status, gestor, estado } = req.query;
-      const clients = getNplClients(db, { search, status, gestor, estado });
+      const { view, search, status, gestor, estado } = req.query;
+      const clients = getNplClients(db, { view: view || 'fechados', search, status, gestor, estado });
       res.json(clients);
     } catch (err) {
       console.error('[NPL] Erro ao listar cedentes NPL:', err);

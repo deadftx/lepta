@@ -272,8 +272,20 @@ export function parseNumber(val) {
 /**
  * Retorna o resumo geral de KPIs de NPL
  */
-export function getNplSummary(db) {
+/**
+ * Retorna o resumo geral de KPIs de NPL
+ */
+export function getNplSummary(db, { view = 'fechados' } = {}) {
   ensureBaseNplTable(db);
+  
+  let whereClauses = ["cedente IS NOT NULL AND TRIM(cedente) != ''"];
+  if (view === 'fechados') {
+    whereClauses.push("(tipo_registro IS NULL OR tipo_registro = 'FECHADO')");
+  } else if (view === 'pipeline') {
+    whereClauses.push("tipo_registro = 'PIPELINE'");
+  }
+  const whereSql = `WHERE ${whereClauses.join(' AND ')}`;
+
   const row = db.prepare(`
     SELECT 
       COUNT(*) as totalRegistros,
@@ -285,13 +297,13 @@ export function getNplSummary(db) {
       SUM(COALESCE(resultado_liquido, 0)) as totalResultadoLiquido,
       SUM(COALESCE(valor_final_da_operacao, 0)) as totalValorFinal
     FROM BASE_NPL
-    WHERE cedente IS NOT NULL AND TRIM(cedente) != ''
+    ${whereSql}
   `).get();
 
   const statusRows = db.prepare(`
     SELECT status_da_negociacao, COUNT(*) as qtd
     FROM BASE_NPL
-    WHERE status_da_negociacao IS NOT NULL AND TRIM(status_da_negociacao) != ''
+    ${whereSql} AND status_da_negociacao IS NOT NULL AND TRIM(status_da_negociacao) != ''
     GROUP BY status_da_negociacao
   `).all();
 
@@ -304,11 +316,17 @@ export function getNplSummary(db) {
 /**
  * Lista os cedentes com dados agregados de NPL
  */
-export function getNplClients(db, { search = '', status = '', gestor = '', estado = '' } = {}) {
+export function getNplClients(db, { view = 'fechados', search = '', status = '', gestor = '', estado = '' } = {}) {
   ensureBaseNplTable(db);
 
   let whereClauses = ["cedente IS NOT NULL AND TRIM(cedente) != ''"];
   const params = [];
+
+  if (view === 'fechados') {
+    whereClauses.push("(tipo_registro IS NULL OR tipo_registro = 'FECHADO')");
+  } else if (view === 'pipeline') {
+    whereClauses.push("tipo_registro = 'PIPELINE'");
+  }
 
   if (search && search.trim()) {
     const term = `%${search.trim().toLowerCase()}%`;
@@ -355,6 +373,7 @@ export function getNplClients(db, { search = '', status = '', gestor = '', estad
       SUM(COALESCE(resultado_liquido, 0)) as totalResultadoLiquido,
       SUM(COALESCE(valor_final_da_operacao, 0)) as totalValorFinalOperacao,
       SUM(COALESCE(valor_retido_fidc, 0)) as totalValorRetidoFidc,
+      GROUP_CONCAT(DISTINCT fase_pipeline) as fasePipelineConcat,
       GROUP_CONCAT(DISTINCT gestor) as gestoresConcat,
       GROUP_CONCAT(DISTINCT status_da_negociacao) as statusConcat,
       GROUP_CONCAT(DISTINCT estado) as estadosConcat,

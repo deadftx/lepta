@@ -159,6 +159,9 @@ const formatCurrency = (value?: number | null) => {
 const NplManagement: React.FC = () => {
   const navigate = useNavigate();
 
+  // Seletor de visão: 'fechados' (R$ 48,89M) ou 'pipeline' (Total de Casos ~422M+)
+  const [activeView, setActiveView] = useState<'fechados' | 'pipeline'>('fechados');
+
   // Estados da lista principal
   const [clients, setClients] = useState<NplClientSummary[]>([]);
   const [kpis, setKpis] = useState<NplKpiSummary | null>(null);
@@ -184,110 +187,127 @@ const NplManagement: React.FC = () => {
   const [savingRecord, setSavingRecord] = useState(false);
   const [formFeedback, setFormFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
-  // Carrega dados principais diretamente da mesma consulta de Análise de Cedente
+  // Carrega dados principais de acordo com a visão selecionada
   const fetchData = async () => {
     setLoading(true);
     setError('');
     try {
       const queryParams = new URLSearchParams();
       queryParams.append('t', Date.now().toString());
+      queryParams.append('view', activeView);
+      if (searchTerm) queryParams.append('search', searchTerm);
+      if (selectedStatus) queryParams.append('status', selectedStatus);
+      if (selectedGestor) queryParams.append('gestor', selectedGestor);
+      if (selectedEstado) queryParams.append('estado', selectedEstado);
 
       const requestOptions = {
         cache: 'no-store' as RequestCache,
         headers: getAuthHeaders({ 'Pragma': 'no-cache', 'Cache-Control': 'no-cache' })
       };
 
-      // Consulta exatamente o mesmo endpoint da Análise de Cedentes
-      const [analiseRes, nplClientsRes] = await Promise.all([
-        fetch(`${API_BASE_URL}/api/analise-clientes?${queryParams.toString()}`, requestOptions),
-        fetch(`${API_BASE_URL}/api/npl/clients`, requestOptions).catch(() => null)
-      ]);
+      if (activeView === 'fechados') {
+        // Consulta sincronizada diretamente com a Análise de Cedentes
+        const [analiseRes, nplClientsRes] = await Promise.all([
+          fetch(`${API_BASE_URL}/api/analise-clientes?${queryParams.toString()}`, requestOptions),
+          fetch(`${API_BASE_URL}/api/npl/clients?view=fechados`, requestOptions).catch(() => null)
+        ]);
 
-      if (!analiseRes.ok) throw new Error('Falha ao consultar análise de clientes/cedentes');
+        if (!analiseRes.ok) throw new Error('Falha ao consultar análise de clientes/cedentes');
 
-      const analiseData = await analiseRes.json();
-      const nplClientsData = nplClientsRes && nplClientsRes.ok ? await nplClientsRes.json() : [];
+        const analiseData = await analiseRes.json();
+        const nplClientsData = nplClientsRes && nplClientsRes.ok ? await nplClientsRes.json() : [];
 
-      // Mapeamento de metadados específicos de NPL por cedente
-      const nplMetaMap = new Map<string, any>();
-      if (Array.isArray(nplClientsData)) {
-        for (const nc of nplClientsData) {
-          if (nc.cedente) {
-            nplMetaMap.set(nc.cedente.trim().toLowerCase(), nc);
+        const nplMetaMap = new Map<string, any>();
+        if (Array.isArray(nplClientsData)) {
+          for (const nc of nplClientsData) {
+            if (nc.cedente) {
+              nplMetaMap.set(nc.cedente.trim().toLowerCase(), nc);
+            }
           }
         }
-      }
 
-      // Filtra os cedentes que possuem valor de NPL > 0 na análise
-      const allCedentesComNpl = analiseData.filter((c: any) => (c.valorNpl || 0) > 0);
-      
-      // Total consolidado de NPL da Base (idêntico ao card da Análise de Cedente)
-      const totalVolumeNpl = analiseData.reduce((acc: number, curr: any) => acc + (curr.valorNpl || 0), 0);
-      const totalVolumeGeral = allCedentesComNpl.reduce((acc: number, curr: any) => acc + (curr.valorGeral || 0), 0);
-      const totalVolumeVencido = allCedentesComNpl.reduce((acc: number, curr: any) => acc + (curr.valorVencido || 0), 0);
-      const totalVolumeAberto = allCedentesComNpl.reduce((acc: number, curr: any) => acc + (curr.valorAberto || 0), 0);
-      const totalVolumeLiquidado = allCedentesComNpl.reduce((acc: number, curr: any) => acc + (curr.valorLiquidado || 0), 0);
-      const totalTitulos = allCedentesComNpl.reduce((acc: number, curr: any) => acc + (curr.qtdTitulos || 0), 0);
+        const allCedentesComNpl = analiseData.filter((c: any) => (c.valorNpl || 0) > 0);
+        const totalVolumeNpl = analiseData.reduce((acc: number, curr: any) => acc + (curr.valorNpl || 0), 0);
+        const totalVolumeGeral = allCedentesComNpl.reduce((acc: number, curr: any) => acc + (curr.valorGeral || 0), 0);
+        const totalVolumeVencido = allCedentesComNpl.reduce((acc: number, curr: any) => acc + (curr.valorVencido || 0), 0);
+        const totalVolumeAberto = allCedentesComNpl.reduce((acc: number, curr: any) => acc + (curr.valorAberto || 0), 0);
+        const totalVolumeLiquidado = allCedentesComNpl.reduce((acc: number, curr: any) => acc + (curr.valorLiquidado || 0), 0);
+        const totalTitulos = allCedentesComNpl.reduce((acc: number, curr: any) => acc + (curr.qtdTitulos || 0), 0);
 
-      const formattedClients: NplClientSummary[] = allCedentesComNpl.map((c: any) => {
-        const meta = nplMetaMap.get((c.cedente || '').trim().toLowerCase());
-        return {
-          cedente: c.cedente,
-          cedenteCnpj: meta?.cedenteCnpj || c.documento || c.cnpj || '',
-          totalCasos: meta?.totalCasos || c.qtdTitulos || 1,
-          totalValorConsiderado: c.valorNpl || 0,
-          totalCreditoRj: meta?.totalCreditoRj || c.valorNpl || 0,
-          totalCreditoExecucao: meta?.totalCreditoExecucao || 0,
-          totalPropostaReal: c.valorGeral || 0,
-          totalPropostaParceiro: meta?.totalPropostaParceiro || 0,
-          totalValorSaidaCliente: meta?.totalValorSaidaCliente || 0,
-          totalResultadoBruto: meta?.totalResultadoBruto || 0,
-          totalResultadoLiquido: c.valorLiquidado || 0,
-          totalValorFinalOperacao: c.valorNpl || 0,
-          totalValorRetidoFidc: meta?.totalValorRetidoFidc || 0,
-          gestores: meta?.gestores || [],
-          statusList: meta?.statusList?.length ? meta.statusList : ['NPL Ativo'],
-          estados: meta?.estados || [],
-          credores: meta?.credores || [],
-          observacoes: meta?.observacoes || (c.hasNova ? 'Cliente com operações ativas' : 'Operação NPL'),
-          ultimaAtualizacao: meta?.ultimaAtualizacao || ''
-        };
-      });
+        const formattedClients: NplClientSummary[] = allCedentesComNpl.map((c: any) => {
+          const meta = nplMetaMap.get((c.cedente || '').trim().toLowerCase());
+          return {
+            cedente: c.cedente,
+            cedenteCnpj: meta?.cedenteCnpj || c.documento || c.cnpj || '',
+            totalCasos: meta?.totalCasos || c.qtdTitulos || 1,
+            totalValorConsiderado: c.valorNpl || 0,
+            totalCreditoRj: meta?.totalCreditoRj || c.valorNpl || 0,
+            totalCreditoExecucao: meta?.totalCreditoExecucao || 0,
+            totalPropostaReal: c.valorGeral || 0,
+            totalPropostaParceiro: meta?.totalPropostaParceiro || 0,
+            totalValorSaidaCliente: meta?.totalValorSaidaCliente || 0,
+            totalResultadoBruto: meta?.totalResultadoBruto || 0,
+            totalResultadoLiquido: c.valorLiquidado || 0,
+            totalValorFinalOperacao: c.valorNpl || 0,
+            totalValorRetidoFidc: meta?.totalValorRetidoFidc || 0,
+            gestores: meta?.gestores || [],
+            statusList: meta?.statusList?.length ? meta.statusList : ['Casos Fechados'],
+            estados: meta?.estados || [],
+            credores: meta?.credores || [],
+            observacoes: meta?.observacoes || (c.hasNova ? 'Cliente com operações ativas' : 'Operação NPL'),
+            ultimaAtualizacao: meta?.ultimaAtualizacao || ''
+          };
+        });
 
-      // Aplica filtros locais (busca, status, gestor, estado)
-      let filtered = formattedClients;
-      if (searchTerm.trim()) {
-        const term = searchTerm.trim().toLowerCase();
-        filtered = filtered.filter(c => 
-          c.cedente.toLowerCase().includes(term) ||
-          c.cedenteCnpj.toLowerCase().includes(term) ||
-          c.credores.some(cr => cr.toLowerCase().includes(term)) ||
-          c.gestores.some(g => g.toLowerCase().includes(term))
-        );
-      }
-      if (selectedStatus) {
-        filtered = filtered.filter(c => c.statusList.includes(selectedStatus));
-      }
-      if (selectedGestor) {
-        filtered = filtered.filter(c => c.gestores.includes(selectedGestor));
-      }
-      if (selectedEstado) {
-        filtered = filtered.filter(c => c.estados.includes(selectedEstado));
-      }
+        let filtered = formattedClients;
+        if (searchTerm.trim()) {
+          const term = searchTerm.trim().toLowerCase();
+          filtered = filtered.filter(c => 
+            c.cedente.toLowerCase().includes(term) ||
+            c.cedenteCnpj.toLowerCase().includes(term) ||
+            c.credores.some(cr => cr.toLowerCase().includes(term)) ||
+            c.gestores.some(g => g.toLowerCase().includes(term))
+          );
+        }
+        if (selectedStatus) {
+          filtered = filtered.filter(c => c.statusList.includes(selectedStatus));
+        }
+        if (selectedGestor) {
+          filtered = filtered.filter(c => c.gestores.includes(selectedGestor));
+        }
+        if (selectedEstado) {
+          filtered = filtered.filter(c => c.estados.includes(selectedEstado));
+        }
 
-      setClients(filtered);
-      setKpis({
-        totalRegistros: totalTitulos || allCedentesComNpl.length,
-        totalCedentes: allCedentesComNpl.length,
-        totalValorConsiderado: totalVolumeNpl, // Total idêntico ao da Análise de Cedente (R$ 422.234.088,77)
-        totalCreditoRj: totalVolumeVencido,
-        totalCreditoExecucao: totalVolumeAberto,
-        totalPropostaReal: totalVolumeGeral,
-        totalResultadoLiquido: totalVolumeLiquidado,
-        totalValorFinal: totalVolumeNpl
-      });
+        setClients(filtered);
+        setKpis({
+          totalRegistros: totalTitulos || allCedentesComNpl.length,
+          totalCedentes: allCedentesComNpl.length,
+          totalValorConsiderado: totalVolumeNpl, // R$ 48.898.645,32
+          totalCreditoRj: totalVolumeVencido,
+          totalCreditoExecucao: totalVolumeAberto,
+          totalPropostaReal: totalVolumeGeral,
+          totalResultadoLiquido: totalVolumeLiquidado,
+          totalValorFinal: totalVolumeNpl
+        });
+      } else {
+        // Visão de Total de Casos / Pipeline Ativo
+        const [clientsRes, kpisRes] = await Promise.all([
+          fetch(`${API_BASE_URL}/api/npl/clients?${queryParams.toString()}`, requestOptions),
+          fetch(`${API_BASE_URL}/api/npl/kpis?view=pipeline`, requestOptions)
+        ]);
+
+        if (!clientsRes.ok) throw new Error('Falha ao carregar clientes do pipeline NPL');
+        if (!kpisRes.ok) throw new Error('Falha ao carregar KPIs do pipeline NPL');
+
+        const clientsData = await clientsRes.json();
+        const kpisData = await kpisRes.json();
+
+        setClients(clientsData);
+        setKpis(kpisData);
+      }
     } catch (err: any) {
-      console.error('Erro ao buscar dados NPL da Análise:', err);
+      console.error('Erro ao buscar dados NPL:', err);
       setError(err.message || 'Erro ao carregar dados de NPL');
     } finally {
       setLoading(false);
@@ -296,7 +316,7 @@ const NplManagement: React.FC = () => {
 
   useEffect(() => {
     fetchData();
-  }, [searchTerm, selectedStatus, selectedGestor, selectedEstado]);
+  }, [activeView, searchTerm, selectedStatus, selectedGestor, selectedEstado]);
 
   // Carrega registros de um cedente específico
   const fetchCedenteRecords = async (cedente: string) => {
@@ -565,6 +585,63 @@ const NplManagement: React.FC = () => {
         </div>
       </header>
 
+      {/* Seletor de Janela / Visão: Casos Fechados vs Total de Casos (Pipeline Ativo) */}
+      <section className="npl-view-tabs internal-card glass" style={{ display: 'flex', gap: '0.75rem', padding: '0.5rem', marginBottom: '1.25rem' }}>
+        <button
+          type="button"
+          className={`npl-tab-btn ${activeView === 'fechados' ? 'active' : ''}`}
+          onClick={() => setActiveView('fechados')}
+          style={{
+            flex: 1,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: '0.5rem',
+            padding: '0.75rem 1rem',
+            borderRadius: '10px',
+            border: activeView === 'fechados' ? '1px solid #10b981' : '1px solid rgba(255,255,255,0.06)',
+            background: activeView === 'fechados' ? 'rgba(16, 185, 129, 0.15)' : 'rgba(255,255,255,0.02)',
+            color: activeView === 'fechados' ? '#10b981' : '#94a3b8',
+            fontWeight: 600,
+            cursor: 'pointer',
+            transition: 'all 0.2s ease'
+          }}
+        >
+          <CheckCircle2 size={18} />
+          <span>NPL (Casos Fechados)</span>
+          <span style={{ fontSize: '0.72rem', background: 'rgba(255,255,255,0.08)', padding: '2px 8px', borderRadius: '12px' }}>
+            R$ 48,89 M
+          </span>
+        </button>
+
+        <button
+          type="button"
+          className={`npl-tab-btn ${activeView === 'pipeline' ? 'active' : ''}`}
+          onClick={() => setActiveView('pipeline')}
+          style={{
+            flex: 1,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: '0.5rem',
+            padding: '0.75rem 1rem',
+            borderRadius: '10px',
+            border: activeView === 'pipeline' ? '1px solid #f59e0b' : '1px solid rgba(255,255,255,0.06)',
+            background: activeView === 'pipeline' ? 'rgba(245, 158, 11, 0.15)' : 'rgba(255,255,255,0.02)',
+            color: activeView === 'pipeline' ? '#f59e0b' : '#94a3b8',
+            fontWeight: 600,
+            cursor: 'pointer',
+            transition: 'all 0.2s ease'
+          }}
+        >
+          <TrendingUp size={18} />
+          <span>Total de Casos (Pipeline Ativo)</span>
+          <span style={{ fontSize: '0.72rem', background: 'rgba(255,255,255,0.08)', padding: '2px 8px', borderRadius: '12px' }}>
+            Pipeline Integrado
+          </span>
+        </button>
+      </section>
+
       {/* Grid de KPIs Globais */}
       <section className="npl-kpi-grid">
         <div className="npl-kpi-card glass">
@@ -574,7 +651,7 @@ const NplManagement: React.FC = () => {
           <div className="kpi-body">
             <span>Cedentes em NPL</span>
             <strong>{loading ? '...' : kpis?.totalCedentes || clients.length}</strong>
-            <small>Cadastrados na Base NPL</small>
+            <small>{activeView === 'fechados' ? 'Casos Fechados' : 'Esteira do Pipeline'}</small>
           </div>
         </div>
 
@@ -583,9 +660,11 @@ const NplManagement: React.FC = () => {
             <TrendingUp size={22} />
           </div>
           <div className="kpi-body">
-            <span>NPL</span>
+            <span>{activeView === 'fechados' ? 'NPL' : 'Total de Casos'}</span>
             <strong style={{ color: '#f59e0b' }}>{loading ? '...' : formatCurrency(kpis?.totalValorConsiderado)}</strong>
-            <small style={{ color: '#10b981' }}>Total da Base NPL</small>
+            <small style={{ color: '#10b981', fontSize: '0.72rem', textTransform: 'lowercase', opacity: 0.85 }}>
+              {activeView === 'fechados' ? 'casos fechados' : 'pipeline de operações ativas'}
+            </small>
           </div>
         </div>
 
@@ -596,7 +675,7 @@ const NplManagement: React.FC = () => {
           <div className="kpi-body">
             <span>Volume Geral em Carteira</span>
             <strong style={{ color: '#a855f7' }}>{loading ? '...' : formatCurrency(kpis?.totalPropostaReal)}</strong>
-            <small>Operações dos cedentes NPL</small>
+            <small>{activeView === 'fechados' ? 'Operações dos cedentes NPL' : 'Proposta Real Total'}</small>
           </div>
         </div>
 
@@ -605,9 +684,9 @@ const NplManagement: React.FC = () => {
             <CheckCircle2 size={22} />
           </div>
           <div className="kpi-body">
-            <span>Total Vencido</span>
+            <span>{activeView === 'fechados' ? 'Total Vencido' : 'Crédito RJ Total'}</span>
             <strong style={{ color: '#ef4444' }}>{loading ? '...' : formatCurrency(kpis?.totalCreditoRj)}</strong>
-            <small>Exposição vencida</small>
+            <small>{activeView === 'fechados' ? 'Exposição vencida' : 'Total em Recuperação Judicial'}</small>
           </div>
         </div>
       </section>
