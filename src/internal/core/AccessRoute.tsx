@@ -1,10 +1,10 @@
 import { Navigate } from 'react-router-dom';
 import type { ReactNode } from 'react';
 import { useAuth } from './AuthContext';
-import { hasPermission } from './permissions';
+import { hasPermission, hasAnyPermission } from './permissions';
 
 interface AccessRouteProps {
-  permission?: string;
+  permission?: string | string[];
   masterOnly?: boolean;
   children: ReactNode;
 }
@@ -13,7 +13,9 @@ const AccessRoute = ({ permission, masterOnly = false, children }: AccessRoutePr
   const { user } = useAuth();
   const allowed = masterOnly
     ? user?.role === 'MASTER'
-    : Boolean(permission && hasPermission(user, permission));
+    : Array.isArray(permission)
+      ? hasAnyPermission(user, permission)
+      : Boolean(permission && hasPermission(user, permission));
 
   return allowed ? children : <Navigate to="/dashboard" replace />;
 };

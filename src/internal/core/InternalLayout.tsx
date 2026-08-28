@@ -196,7 +196,7 @@ const InternalLayout = () => {
                       <ClipboardCheck size={18} /> Esteira de Comitê
                     </Link>
                   )}
-                  {hasAccess('8.6') && (
+                  {(hasAccess('8.6') || hasAccess('8.1') || hasAccess('8')) && (
                     <Link to="/intelligence/consulta-smartfactor" className={navItemClass('/intelligence/consulta-smartfactor')}>
                       <Search size={18} /> Consulta SmartFactor
                     </Link>

@@ -73,8 +73,14 @@ export const normalizePermissions = (permissions: string[] = []) => {
   return [...normalized].filter(id => allPermissionIds.includes(id));
 };
 
-export const hasPermission = (user: User | null, permissionId: string) =>
-  user?.role === 'MASTER' || normalizePermissions(user?.permissions).includes(permissionId);
+export const hasPermission = (user: User | null, permissionId: string) => {
+  if (!user) return false;
+  if (user.role === 'MASTER') return true;
+  const perms = normalizePermissions(user.permissions);
+  if (perms.includes(permissionId)) return true;
+  if (permissionId === '8.6' && (perms.includes('8.1') || perms.includes('8'))) return true;
+  return false;
+};
 
 export const hasAnyPermission = (user: User | null, permissionIds: string[]) =>
   user?.role === 'MASTER' || permissionIds.some(id => hasPermission(user, id));
