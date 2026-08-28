@@ -184,33 +184,111 @@ const NplManagement: React.FC = () => {
   const [savingRecord, setSavingRecord] = useState(false);
   const [formFeedback, setFormFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
-  // Carrega dados principais
+  // Carrega dados principais diretamente da mesma consulta de Análise de Cedente
   const fetchData = async () => {
     setLoading(true);
     setError('');
     try {
       const queryParams = new URLSearchParams();
-      if (searchTerm) queryParams.append('search', searchTerm);
-      if (selectedStatus) queryParams.append('status', selectedStatus);
-      if (selectedGestor) queryParams.append('gestor', selectedGestor);
-      if (selectedEstado) queryParams.append('estado', selectedEstado);
+      queryParams.append('t', Date.now().toString());
 
-      const [clientsRes, kpisRes] = await Promise.all([
-        fetch(`${API_BASE_URL}/api/npl/clients?${queryParams.toString()}`, { headers: getAuthHeaders() }),
-        fetch(`${API_BASE_URL}/api/npl/kpis`, { headers: getAuthHeaders() })
+      const requestOptions = {
+        cache: 'no-store' as RequestCache,
+        headers: getAuthHeaders({ 'Pragma': 'no-cache', 'Cache-Control': 'no-cache' })
+      };
+
+      // Consulta exatamente o mesmo endpoint da Análise de Cedentes
+      const [analiseRes, nplClientsRes] = await Promise.all([
+        fetch(`${API_BASE_URL}/api/analise-clientes?${queryParams.toString()}`, requestOptions),
+        fetch(`${API_BASE_URL}/api/npl/clients`, requestOptions).catch(() => null)
       ]);
 
-      if (!clientsRes.ok) throw new Error('Falha ao carregar clientes NPL');
-      if (!kpisRes.ok) throw new Error('Falha ao carregar KPIs NPL');
+      if (!analiseRes.ok) throw new Error('Falha ao consultar análise de clientes/cedentes');
 
-      const clientsData = await clientsRes.json();
-      const kpisData = await kpisRes.json();
+      const analiseData = await analiseRes.json();
+      const nplClientsData = nplClientsRes && nplClientsRes.ok ? await nplClientsRes.json() : [];
 
-      setClients(clientsData);
-      setKpis(kpisData);
+      // Mapeamento de metadados específicos de NPL por cedente
+      const nplMetaMap = new Map<string, any>();
+      if (Array.isArray(nplClientsData)) {
+        for (const nc of nplClientsData) {
+          if (nc.cedente) {
+            nplMetaMap.set(nc.cedente.trim().toLowerCase(), nc);
+          }
+        }
+      }
+
+      // Filtra os cedentes que possuem valor de NPL > 0 na análise
+      const allCedentesComNpl = analiseData.filter((c: any) => (c.valorNpl || 0) > 0);
+      
+      // Total consolidado de NPL da Base (idêntico ao card da Análise de Cedente)
+      const totalVolumeNpl = analiseData.reduce((acc: number, curr: any) => acc + (curr.valorNpl || 0), 0);
+      const totalVolumeGeral = allCedentesComNpl.reduce((acc: number, curr: any) => acc + (curr.valorGeral || 0), 0);
+      const totalVolumeVencido = allCedentesComNpl.reduce((acc: number, curr: any) => acc + (curr.valorVencido || 0), 0);
+      const totalVolumeAberto = allCedentesComNpl.reduce((acc: number, curr: any) => acc + (curr.valorAberto || 0), 0);
+      const totalVolumeLiquidado = allCedentesComNpl.reduce((acc: number, curr: any) => acc + (curr.valorLiquidado || 0), 0);
+      const totalTitulos = allCedentesComNpl.reduce((acc: number, curr: any) => acc + (curr.qtdTitulos || 0), 0);
+
+      const formattedClients: NplClientSummary[] = allCedentesComNpl.map((c: any) => {
+        const meta = nplMetaMap.get((c.cedente || '').trim().toLowerCase());
+        return {
+          cedente: c.cedente,
+          cedenteCnpj: meta?.cedenteCnpj || c.documento || c.cnpj || '',
+          totalCasos: meta?.totalCasos || c.qtdTitulos || 1,
+          totalValorConsiderado: c.valorNpl || 0,
+          totalCreditoRj: meta?.totalCreditoRj || c.valorNpl || 0,
+          totalCreditoExecucao: meta?.totalCreditoExecucao || 0,
+          totalPropostaReal: c.valorGeral || 0,
+          totalPropostaParceiro: meta?.totalPropostaParceiro || 0,
+          totalValorSaidaCliente: meta?.totalValorSaidaCliente || 0,
+          totalResultadoBruto: meta?.totalResultadoBruto || 0,
+          totalResultadoLiquido: c.valorLiquidado || 0,
+          totalValorFinalOperacao: c.valorNpl || 0,
+          totalValorRetidoFidc: meta?.totalValorRetidoFidc || 0,
+          gestores: meta?.gestores || [],
+          statusList: meta?.statusList?.length ? meta.statusList : ['NPL Ativo'],
+          estados: meta?.estados || [],
+          credores: meta?.credores || [],
+          observacoes: meta?.observacoes || (c.hasNova ? 'Cliente com operações ativas' : 'Operação NPL'),
+          ultimaAtualizacao: meta?.ultimaAtualizacao || ''
+        };
+      });
+
+      // Aplica filtros locais (busca, status, gestor, estado)
+      let filtered = formattedClients;
+      if (searchTerm.trim()) {
+        const term = searchTerm.trim().toLowerCase();
+        filtered = filtered.filter(c => 
+          c.cedente.toLowerCase().includes(term) ||
+          c.cedenteCnpj.toLowerCase().includes(term) ||
+          c.credores.some(cr => cr.toLowerCase().includes(term)) ||
+          c.gestores.some(g => g.toLowerCase().includes(term))
+        );
+      }
+      if (selectedStatus) {
+        filtered = filtered.filter(c => c.statusList.includes(selectedStatus));
+      }
+      if (selectedGestor) {
+        filtered = filtered.filter(c => c.gestores.includes(selectedGestor));
+      }
+      if (selectedEstado) {
+        filtered = filtered.filter(c => c.estados.includes(selectedEstado));
+      }
+
+      setClients(filtered);
+      setKpis({
+        totalRegistros: totalTitulos || allCedentesComNpl.length,
+        totalCedentes: allCedentesComNpl.length,
+        totalValorConsiderado: totalVolumeNpl, // Total idêntico ao da Análise de Cedente (R$ 422.234.088,77)
+        totalCreditoRj: totalVolumeVencido,
+        totalCreditoExecucao: totalVolumeAberto,
+        totalPropostaReal: totalVolumeGeral,
+        totalResultadoLiquido: totalVolumeLiquidado,
+        totalValorFinal: totalVolumeNpl
+      });
     } catch (err: any) {
-      console.error('Erro ao buscar dados NPL:', err);
-      setError(err.message || 'Erro ao carregar módulo NPL');
+      console.error('Erro ao buscar dados NPL da Análise:', err);
+      setError(err.message || 'Erro ao carregar dados de NPL');
     } finally {
       setLoading(false);
     }
@@ -496,18 +574,18 @@ const NplManagement: React.FC = () => {
           <div className="kpi-body">
             <span>Cedentes em NPL</span>
             <strong>{loading ? '...' : kpis?.totalCedentes || clients.length}</strong>
-            <small>{kpis?.totalRegistros || 0} operações registradas</small>
+            <small>Cadastrados na Base NPL</small>
           </div>
         </div>
 
         <div className="npl-kpi-card glass">
-          <div className="kpi-icon emerald">
-            <DollarSign size={22} />
+          <div className="kpi-icon" style={{ color: '#f59e0b', background: 'rgba(245, 158, 11, 0.12)' }}>
+            <TrendingUp size={22} />
           </div>
           <div className="kpi-body">
-            <span>Valor Considerado (Face)</span>
-            <strong style={{ color: '#10b981' }}>{loading ? '...' : formatCurrency(kpis?.totalValorConsiderado)}</strong>
-            <small>Total em carteira NPL</small>
+            <span>NPL</span>
+            <strong style={{ color: '#f59e0b' }}>{loading ? '...' : formatCurrency(kpis?.totalValorConsiderado)}</strong>
+            <small style={{ color: '#10b981' }}>Total da Base NPL</small>
           </div>
         </div>
 
@@ -516,9 +594,9 @@ const NplManagement: React.FC = () => {
             <Scale size={22} />
           </div>
           <div className="kpi-body">
-            <span>Crédito RJ Total</span>
-            <strong style={{ color: '#a855f7' }}>{loading ? '...' : formatCurrency(kpis?.totalCreditoRj)}</strong>
-            <small>Créditos em recuperação judicial</small>
+            <span>Volume Geral em Carteira</span>
+            <strong style={{ color: '#a855f7' }}>{loading ? '...' : formatCurrency(kpis?.totalPropostaReal)}</strong>
+            <small>Operações dos cedentes NPL</small>
           </div>
         </div>
 
@@ -527,9 +605,9 @@ const NplManagement: React.FC = () => {
             <CheckCircle2 size={22} />
           </div>
           <div className="kpi-body">
-            <span>Resultado Líquido</span>
-            <strong style={{ color: '#f59e0b' }}>{loading ? '...' : formatCurrency(kpis?.totalResultadoLiquido)}</strong>
-            <small>Projeção acumulada</small>
+            <span>Total Vencido</span>
+            <strong style={{ color: '#ef4444' }}>{loading ? '...' : formatCurrency(kpis?.totalCreditoRj)}</strong>
+            <small>Exposição vencida</small>
           </div>
         </div>
       </section>
@@ -707,6 +785,22 @@ const NplManagement: React.FC = () => {
           </div>
           <div className="popover-actions">
             <button
+              className="popover-btn npl-info-btn"
+              onClick={() => handleOpenNplDetails(popover.cedente)}
+            >
+              <TrendingUp size={17} /> Informações / Operações NPL
+            </button>
+            <button
+              className="popover-btn"
+              style={{ background: 'var(--accent-color, #10b981)', color: '#fff' }}
+              onClick={() => {
+                setPopover(null);
+                navigate(`/intelligence/analysis`);
+              }}
+            >
+              <Building2 size={17} /> Detalhes na Análise de Cedentes
+            </button>
+            <button
               className="popover-btn client-info-btn"
               onClick={() => {
                 const ced = popover.cedente;
@@ -714,13 +808,7 @@ const NplManagement: React.FC = () => {
                 navigate(`/intelligence/cadastro-clientes?search=${encodeURIComponent(ced)}`);
               }}
             >
-              <ContactRound size={17} /> Informações do Cedente
-            </button>
-            <button
-              className="popover-btn npl-info-btn"
-              onClick={() => handleOpenNplDetails(popover.cedente)}
-            >
-              <TrendingUp size={17} /> Informações NPL
+              <ContactRound size={17} /> Informações Cadastrais
             </button>
           </div>
         </div>,
