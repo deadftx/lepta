@@ -1,6 +1,10 @@
 import fs from 'fs';
 import path from 'path';
-import readline from 'readline';
+import zlib from 'zlib';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 /**
  * Service para Consulta SmartFactor (Histórico Legado de Títulos e Operações)
@@ -52,6 +56,43 @@ export function ensureSmartFactorTable(db) {
       CREATE INDEX IF NOT EXISTS idx_sf_situacao ON BASE_SMARTFACTOR (SITUACAO);
       CREATE INDEX IF NOT EXISTS idx_sf_data_situacao ON BASE_SMARTFACTOR (DATA_SITUACAO);
     `);
+
+    // Auto-popula caso a tabela esteja vazia (ex: no deploy de DEV ou HOMOLOG)
+    const countRow = db.prepare('SELECT COUNT(*) as c FROM BASE_SMARTFACTOR').get();
+    if (!countRow || countRow.c === 0) {
+      const seedPath = path.join(__dirname, 'smartfactor_seed.json.gz');
+      if (fs.existsSync(seedPath)) {
+        console.log('[SMARTFACTOR] Auto-populando BASE_SMARTFACTOR a partir do arquivo seed...');
+        const buf = fs.readFileSync(seedPath);
+        const unzipped = zlib.gunzipSync(buf);
+        const records = JSON.parse(unzipped.toString('utf-8'));
+
+        const insertStmt = db.prepare(`
+          INSERT INTO BASE_SMARTFACTOR (
+            ID, OPERACAO, PAGTO, CLIENTE, DOCUMENTO, SACADO, DOCUMENTO_SACADO,
+            UA, PRODUTO, SIGLA, NUMERO, CADASTRO, EMISSAO, VENCIMENTO,
+            VENCIMENTO_EFETIVO, VENCIDO, SITUACAO, DATA_SITUACAO, VALOR_NOMINAL,
+            DESCONTO_ABATIMENTO, VALOR_LIQUIDO, VALOR_PAGO, SALDO_DEVEDOR,
+            TAXA, DESAGIO, TARIFAS_OPERACAO, PRAZO_REAL, PRAZO_COBRADO,
+            BANCO_COBRADOR, SETOR_CEDENTE, GRUPO_ECONOMICO, CIDADE_SACADO, UF_SACADO
+          ) VALUES (
+            @ID, @OPERACAO, @PAGTO, @CLIENTE, @DOCUMENTO, @SACADO, @DOCUMENTO_SACADO,
+            @UA, @PRODUTO, @SIGLA, @NUMERO, @CADASTRO, @EMISSAO, @VENCIMENTO,
+            @VENCIMENTO_EFETIVO, @VENCIDO, @SITUACAO, @DATA_SITUACAO, @VALOR_NOMINAL,
+            @DESCONTO_ABATIMENTO, @VALOR_LIQUIDO, @VALOR_PAGO, @SALDO_DEVEDOR,
+            @TAXA, @DESAGIO, @TARIFAS_OPERACAO, @PRAZO_REAL, @PRAZO_COBRADO,
+            @BANCO_COBRADOR, @SETOR_CEDENTE, @GRUPO_ECONOMICO, @CIDADE_SACADO, @UF_SACADO
+          )
+        `);
+
+        const insertMany = db.transaction((rows) => {
+          for (const r of rows) insertStmt.run(r);
+        });
+
+        insertMany(records);
+        console.log(`[SMARTFACTOR] ${records.length} registros inseridos com sucesso em BASE_SMARTFACTOR!`);
+      }
+    }
   } catch (err) {
     console.error('[SMARTFACTOR] Erro ao garantir schema de BASE_SMARTFACTOR:', err.message);
   }
