@@ -88,6 +88,20 @@ const CustomerAnalysis = () => {
   const [popover, setPopover] = useState<{ visible: boolean; x: number; y: number; cedente: string } | null>(null);
   const [openGroupMembers, setOpenGroupMembers] = useState<number | null>(null);
 
+  // Carrega valor de NPL de forma imediata diretamente do banco de dados
+  const [nplImmediateVolume, setNplImmediateVolume] = useState<number | null>(null);
+
+  useEffect(() => {
+    fetch('/api/npl/kpis?view=fechados', { headers: getAuthHeaders() })
+      .then(res => res.ok ? res.json() : null)
+      .then(data => {
+        if (data && typeof data.totalValorConsiderado === 'number') {
+          setNplImmediateVolume(data.totalValorConsiderado);
+        }
+      })
+      .catch(() => {});
+  }, []);
+
   // Close popover when clicking outside
   useEffect(() => {
     const handleClickOutside = () => {
@@ -371,8 +385,10 @@ const CustomerAnalysis = () => {
   const totalGroups = economicGroups.length;
   // Volume Geral only uses BASE_NOVA
   const totalVolume = kpiClients.reduce((acc, curr) => acc + (curr.valorGeral || 0), 0);
-  // Separate Volume for NPL
-  const totalVolumeNpl = (selectedCedente ? kpiClients : clients).reduce((acc, curr) => acc + (curr.valorNpl || 0), 0);
+  // Separate Volume for NPL (exibe imediatamente do banco ou do merge com clientes)
+  const totalVolumeNpl = clients.length > 0
+    ? (selectedCedente ? kpiClients : clients).reduce((acc, curr) => acc + (curr.valorNpl || 0), 0)
+    : (nplImmediateVolume ?? 0);
   const totalVencido = kpiClients.reduce((acc, curr) => acc + (curr.valorVencido || 0), 0);
   const totalLiquidado = kpiClients.reduce((acc, curr) => acc + (curr.valorLiquidado || 0), 0);
   const totalAberto = kpiClients.reduce((acc, curr) => acc + (curr.valorAberto || 0), 0);
@@ -415,7 +431,7 @@ const CustomerAnalysis = () => {
             </div>
             <div className="kpi-info">
               <h4>NPL</h4>
-              <div className="kpi-value">{loading || loadingSubData ? '...' : formatCurrency(totalVolumeNpl)}</div>
+              <div className="kpi-value">{loading && nplImmediateVolume === null ? '...' : formatCurrency(totalVolumeNpl)}</div>
               <div className="kpi-sub" style={{ fontSize: '0.72rem', textTransform: 'lowercase', opacity: 0.85 }}>casos fechados</div>
             </div>
           </div>

@@ -187,7 +187,7 @@ const NplManagement: React.FC = () => {
   const [savingRecord, setSavingRecord] = useState(false);
   const [formFeedback, setFormFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
-  // Carrega dados principais de acordo com a visão selecionada
+  // Carrega dados principais de forma imediata diretamente do banco de dados
   const fetchData = async () => {
     setLoading(true);
     setError('');
@@ -205,109 +205,22 @@ const NplManagement: React.FC = () => {
         headers: getAuthHeaders({ 'Pragma': 'no-cache', 'Cache-Control': 'no-cache' })
       };
 
-      if (activeView === 'fechados') {
-        // Consulta sincronizada diretamente com a Análise de Cedentes
-        const [analiseRes, nplClientsRes] = await Promise.all([
-          fetch(`${API_BASE_URL}/api/analise-clientes?${queryParams.toString()}`, requestOptions),
-          fetch(`${API_BASE_URL}/api/npl/clients?view=fechados`, requestOptions).catch(() => null)
-        ]);
+      // Conexão direta e imediata com o banco de dados (SQLite BASE_NPL)
+      const [clientsRes, kpisRes] = await Promise.all([
+        fetch(`${API_BASE_URL}/api/npl/clients?${queryParams.toString()}`, requestOptions),
+        fetch(`${API_BASE_URL}/api/npl/kpis?view=${activeView}`, requestOptions)
+      ]);
 
-        if (!analiseRes.ok) throw new Error('Falha ao consultar análise de clientes/cedentes');
+      if (!clientsRes.ok) throw new Error('Falha ao carregar dados do NPL do banco');
+      if (!kpisRes.ok) throw new Error('Falha ao carregar KPIs do NPL do banco');
 
-        const analiseData = await analiseRes.json();
-        const nplClientsData = nplClientsRes && nplClientsRes.ok ? await nplClientsRes.json() : [];
+      const clientsData = await clientsRes.json();
+      const kpisData = await kpisRes.json();
 
-        const nplMetaMap = new Map<string, any>();
-        if (Array.isArray(nplClientsData)) {
-          for (const nc of nplClientsData) {
-            if (nc.cedente) {
-              nplMetaMap.set(nc.cedente.trim().toLowerCase(), nc);
-            }
-          }
-        }
-
-        const allCedentesComNpl = analiseData.filter((c: any) => (c.valorNpl || 0) > 0);
-        const totalVolumeNpl = analiseData.reduce((acc: number, curr: any) => acc + (curr.valorNpl || 0), 0);
-        const totalVolumeGeral = allCedentesComNpl.reduce((acc: number, curr: any) => acc + (curr.valorGeral || 0), 0);
-        const totalVolumeVencido = allCedentesComNpl.reduce((acc: number, curr: any) => acc + (curr.valorVencido || 0), 0);
-        const totalVolumeAberto = allCedentesComNpl.reduce((acc: number, curr: any) => acc + (curr.valorAberto || 0), 0);
-        const totalVolumeLiquidado = allCedentesComNpl.reduce((acc: number, curr: any) => acc + (curr.valorLiquidado || 0), 0);
-        const totalTitulos = allCedentesComNpl.reduce((acc: number, curr: any) => acc + (curr.qtdTitulos || 0), 0);
-
-        const formattedClients: NplClientSummary[] = allCedentesComNpl.map((c: any) => {
-          const meta = nplMetaMap.get((c.cedente || '').trim().toLowerCase());
-          return {
-            cedente: c.cedente,
-            cedenteCnpj: meta?.cedenteCnpj || c.documento || c.cnpj || '',
-            totalCasos: meta?.totalCasos || c.qtdTitulos || 1,
-            totalValorConsiderado: c.valorNpl || 0,
-            totalCreditoRj: meta?.totalCreditoRj || c.valorNpl || 0,
-            totalCreditoExecucao: meta?.totalCreditoExecucao || 0,
-            totalPropostaReal: c.valorGeral || 0,
-            totalPropostaParceiro: meta?.totalPropostaParceiro || 0,
-            totalValorSaidaCliente: meta?.totalValorSaidaCliente || 0,
-            totalResultadoBruto: meta?.totalResultadoBruto || 0,
-            totalResultadoLiquido: c.valorLiquidado || 0,
-            totalValorFinalOperacao: c.valorNpl || 0,
-            totalValorRetidoFidc: meta?.totalValorRetidoFidc || 0,
-            gestores: meta?.gestores || [],
-            statusList: meta?.statusList?.length ? meta.statusList : ['Casos Fechados'],
-            estados: meta?.estados || [],
-            credores: meta?.credores || [],
-            observacoes: meta?.observacoes || (c.hasNova ? 'Cliente com operações ativas' : 'Operação NPL'),
-            ultimaAtualizacao: meta?.ultimaAtualizacao || ''
-          };
-        });
-
-        let filtered = formattedClients;
-        if (searchTerm.trim()) {
-          const term = searchTerm.trim().toLowerCase();
-          filtered = filtered.filter(c => 
-            c.cedente.toLowerCase().includes(term) ||
-            c.cedenteCnpj.toLowerCase().includes(term) ||
-            c.credores.some(cr => cr.toLowerCase().includes(term)) ||
-            c.gestores.some(g => g.toLowerCase().includes(term))
-          );
-        }
-        if (selectedStatus) {
-          filtered = filtered.filter(c => c.statusList.includes(selectedStatus));
-        }
-        if (selectedGestor) {
-          filtered = filtered.filter(c => c.gestores.includes(selectedGestor));
-        }
-        if (selectedEstado) {
-          filtered = filtered.filter(c => c.estados.includes(selectedEstado));
-        }
-
-        setClients(filtered);
-        setKpis({
-          totalRegistros: totalTitulos || allCedentesComNpl.length,
-          totalCedentes: allCedentesComNpl.length,
-          totalValorConsiderado: totalVolumeNpl, // R$ 48.898.645,32
-          totalCreditoRj: totalVolumeVencido,
-          totalCreditoExecucao: totalVolumeAberto,
-          totalPropostaReal: totalVolumeGeral,
-          totalResultadoLiquido: totalVolumeLiquidado,
-          totalValorFinal: totalVolumeNpl
-        });
-      } else {
-        // Visão de Total de Casos / Pipeline Ativo
-        const [clientsRes, kpisRes] = await Promise.all([
-          fetch(`${API_BASE_URL}/api/npl/clients?${queryParams.toString()}`, requestOptions),
-          fetch(`${API_BASE_URL}/api/npl/kpis?view=pipeline`, requestOptions)
-        ]);
-
-        if (!clientsRes.ok) throw new Error('Falha ao carregar clientes do pipeline NPL');
-        if (!kpisRes.ok) throw new Error('Falha ao carregar KPIs do pipeline NPL');
-
-        const clientsData = await clientsRes.json();
-        const kpisData = await kpisRes.json();
-
-        setClients(clientsData);
-        setKpis(kpisData);
-      }
+      setClients(clientsData);
+      setKpis(kpisData);
     } catch (err: any) {
-      console.error('Erro ao buscar dados NPL:', err);
+      console.error('Erro ao buscar dados NPL do banco:', err);
       setError(err.message || 'Erro ao carregar dados de NPL');
     } finally {
       setLoading(false);

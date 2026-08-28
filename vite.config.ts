@@ -8,8 +8,9 @@ export default defineConfig({
     allowedHosts: true,
     proxy: {
       '/api': {
-        target: 'http://localhost:3004',
-        changeOrigin: true
+        target: 'https://lepta.com.br',
+        changeOrigin: true,
+        secure: true
       }
     }
   }

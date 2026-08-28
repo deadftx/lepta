@@ -1,11 +1,8 @@
-const developmentApiUrl = typeof window !== 'undefined'
-  ? `http://${window.location.hostname}:3004`
-  : 'http://localhost:3004';
-
 const configuredDevelopmentApiUrl = String(import.meta.env.VITE_API_URL || '').trim();
 
+// Em DEV, utiliza o proxy configurado no Vite (apontando para https://lepta.com.br) ou a URL customizada se informada
 export const API_BASE_URL = import.meta.env.DEV
-  ? (configuredDevelopmentApiUrl || developmentApiUrl)
+  ? configuredDevelopmentApiUrl
   : '';
 
 export const getAuthHeaders = (headers: Record<string, string> = {}) => {
