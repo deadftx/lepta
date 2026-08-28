@@ -353,6 +353,18 @@
   font-weight: 600;
 }
 
+.npl-uf-badge {
+  font-size: 0.68rem;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 6px;
+  background: rgba(245, 158, 11, 0.12);
+  color: #f59e0b;
+  border: 1px solid rgba(245, 158, 11, 0.25);
+  display: inline-flex;
+  align-items: center;
+}
+
 .status-pill {
   display: inline-block;
   background: rgba(59, 130, 246, 0.12);

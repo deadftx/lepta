@@ -1,7 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   AlertTriangle, ArrowLeft, BadgeCheck, BarChart3, Building2, Calendar, CalendarClock,
-  CheckCircle2, ChevronDown, ChevronRight, ChevronUp, CircleDollarSign, FileCheck2, Filter,
+  CheckCircle2, ChevronDown, ChevronRight, ChevronUp, CircleDollarSign, ExternalLink, FileCheck2, Filter,
   Landmark, Plus, RefreshCw, Search, ShieldCheck, TrendingDown, TrendingUp, UserRoundSearch,
   UsersRound, X
 } from 'lucide-react';
@@ -149,6 +150,7 @@ const riskColor: Record<RiskDetails['indicador']['nivel'], string> = {
 };
 
 const RiskAnalysis = () => {
+  const navigate = useNavigate();
   const [type, setType] = useState<EntityType>('cliente');
   const [search, setSearch] = useState('');
   const [suggestions, setSuggestions] = useState<RiskSuggestion[]>([]);
@@ -447,7 +449,21 @@ const RiskAnalysis = () => {
           <div className="risk-entity-icon large"><Building2 size={28} /></div>
           <div>
             <span>{details.tipo === 'cliente' ? 'CEDENTE / CLIENTE' : 'SACADO'}</span>
-            <h1>{details.entidade.nome}</h1>
+            <h1
+              onClick={() => {
+                const doc = (details.entidade.documento || '').replace(/\D/g, '');
+                if (doc) {
+                  navigate(`/intelligence/cadastro-clientes?documento=${encodeURIComponent(doc)}`);
+                } else {
+                  navigate(`/intelligence/cadastro-clientes?search=${encodeURIComponent(details.entidade.nome)}`);
+                }
+              }}
+              className="clickable-cedente-title"
+              title="Clique para abrir o Cadastro deste Cedente"
+            >
+              {details.entidade.nome}
+              <ExternalLink size={20} className="cedente-link-icon" />
+            </h1>
             <p>{formatDocument(details.entidade.documento)}{details.entidade.grupoEconomico ? ` • Grupo ${details.entidade.grupoEconomico}` : ''}</p>
           </div>
         </div>

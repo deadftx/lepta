@@ -90,7 +90,8 @@ if (fechadosPath) {
   for (let r = 3; r <= ws.rowCount; r++) {
     const row = ws.getRow(r);
     const sacado = strVal(row.getCell(1).value);
-    const cedente = strVal(row.getCell(3).value) || sacado;
+    const bancoCredor = strVal(row.getCell(3).value);
+    const cedente = sacado || bancoCredor;
     if (!cedente) continue;
 
     insertStmt.run({
@@ -98,7 +99,7 @@ if (fechadosPath) {
       fase_pipeline: 'Casos Fechados',
       cedente,
       cedente_cnpj: strVal(row.getCell(2).value),
-      credores_de_interesse: sacado,
+      credores_de_interesse: bancoCredor || sacado,
       credito_rj: numVal(row.getCell(24).value),
       credito_execucao: numVal(row.getCell(26).value),
       extraconcursal_nao_ajuizado: numVal(row.getCell(27).value),

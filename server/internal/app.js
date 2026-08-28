@@ -950,6 +950,43 @@ function getAllLocalClientRows() {
   return db.prepare(`SELECT * FROM clientes_cadastro ORDER BY updated_at DESC`).all();
 }
 
+function checkClientHasOperations(document, nome) {
+  try {
+    const docClean = normalizeEntityDocument(document);
+    const termNome = (nome || '').trim().toLowerCase();
+
+    // 1. Check BASE_NOVA
+    try {
+      const rowNova = db.prepare(`
+        SELECT 1 FROM BASE_NOVA 
+        WHERE (
+          (DOCUMENTO IS NOT NULL AND (DOCUMENTO = ? OR REPLACE(REPLACE(REPLACE(DOCUMENTO, '.', ''), '/', ''), '-', '') = ?))
+          OR (CLIENTE IS NOT NULL AND LENGTH(?) >= 3 AND LOWER(CLIENTE) LIKE ?)
+        )
+        LIMIT 1
+      `).get(document, docClean, termNome, `%${termNome}%`);
+      if (rowNova) return true;
+    } catch {}
+
+    // 2. Check BASE_SMARTFACTOR
+    try {
+      const rowSf = db.prepare(`
+        SELECT 1 FROM BASE_SMARTFACTOR 
+        WHERE (
+          (DOCUMENTO IS NOT NULL AND (DOCUMENTO = ? OR REPLACE(REPLACE(REPLACE(DOCUMENTO, '.', ''), '/', ''), '-', '') = ?))
+          OR (CLIENTE IS NOT NULL AND LENGTH(?) >= 3 AND LOWER(CLIENTE) LIKE ?)
+        )
+        LIMIT 1
+      `).get(document, docClean, termNome, `%${termNome}%`);
+      if (rowSf) return true;
+    } catch {}
+
+    return false;
+  } catch {
+    return false;
+  }
+}
+
 function composeClientRegistration(apiData, localRow) {
   const snapshot = parseJsonObject(localRow?.api_snapshot_json, null);
   const override = parseJsonObject(localRow?.override_json, {});
@@ -970,12 +1007,20 @@ function composeClientRegistration(apiData, localRow) {
       contatos: contacts
     }
   } : mergedData;
+
+  const hasOps = checkClientHasOperations(
+    data?.entidade?.documento || localRow?.documento,
+    data?.entidade?.nome
+  );
+
   return {
     data,
     source: apiData ? (localRow ? 'api+local' : 'api') : 'local',
     hasLocalData: Boolean(localRow),
     localOnly: Boolean(localRow?.local_only),
     apiAvailable: Boolean(apiData),
+    hasOperations: hasOps,
+    committeeStatus: hasOps ? 'ATIVO_BITFIN' : 'EM_ANALISE',
     updatedAt: localRow?.updated_at || null,
     updatedBy: localRow?.updated_by || null
   };
@@ -996,6 +1041,8 @@ function clientRegistrationSummary(composed) {
     hasLocalData: composed.hasLocalData,
     localOnly: composed.localOnly,
     apiAvailable: composed.apiAvailable,
+    hasOperations: composed.hasOperations,
+    committeeStatus: composed.committeeStatus,
     updatedAt: composed.updatedAt
   };
 }

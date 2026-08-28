@@ -1,6 +1,11 @@
 import fs from 'fs';
 import path from 'path';
+import zlib from 'zlib';
+import { fileURLToPath } from 'url';
 import ExcelJS from 'exceljs';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 /**
  * Service para Gestão de NPL (Non-Performing Loans / Base NPL)
@@ -92,7 +97,36 @@ export async function autoImportNplIfEmpty(db) {
   try {
     ensureBaseNplTable(db);
     const count = db.prepare('SELECT COUNT(*) as c FROM BASE_NPL').get()?.c || 0;
-    if (count > 0) return;
+    if (count >= 300) return;
+
+    const seedPath = path.join(__dirname, 'npl_seed.json.gz');
+    if (fs.existsSync(seedPath)) {
+      console.log('[BASE_NPL] Auto-populando BASE_NPL a partir de npl_seed.json.gz...');
+      const buf = fs.readFileSync(seedPath);
+      const unzipped = zlib.gunzipSync(buf);
+      const records = JSON.parse(unzipped.toString('utf-8'));
+
+      db.exec('DELETE FROM BASE_NPL');
+
+      const colNames = NPL_COLUMNS.filter(c => c.name !== 'id').map(c => c.name);
+      const colPlaceholders = colNames.map(c => `@${c}`).join(', ');
+      const insertStmt = db.prepare(`
+        INSERT INTO BASE_NPL (${colNames.join(', ')})
+        VALUES (${colPlaceholders})
+      `);
+
+      const insertMany = db.transaction((rows) => {
+        for (const r of rows) {
+          const params = {};
+          for (const col of colNames) params[col] = r[col] !== undefined ? r[col] : null;
+          insertStmt.run(params);
+        }
+      });
+
+      insertMany(records);
+      console.log(`[BASE_NPL] ${records.length} registros inseridos com sucesso em BASE_NPL!`);
+      return;
+    }
 
     const root = path.resolve();
     const candidatePaths = [
@@ -284,12 +318,8 @@ export function getNplSummary(db, { view = 'fechados' } = {}) {
   const hasTipo = existingCols.has('tipo_registro');
 
   let whereClauses = ["cedente IS NOT NULL AND TRIM(cedente) != ''"];
-  if (hasTipo) {
-    if (view === 'fechados') {
-      whereClauses.push("(tipo_registro IS NULL OR tipo_registro = 'FECHADO')");
-    } else if (view === 'pipeline') {
-      whereClauses.push("tipo_registro = 'PIPELINE'");
-    }
+  if (hasTipo && view === 'fechados') {
+    whereClauses.push("(tipo_registro IS NULL OR tipo_registro = 'FECHADO')");
   }
   const whereSql = `WHERE ${whereClauses.join(' AND ')}`;
 
@@ -340,12 +370,8 @@ export function getNplClients(db, { view = 'fechados', search = '', status = '',
   let whereClauses = ["cedente IS NOT NULL AND TRIM(cedente) != ''"];
   const params = [];
 
-  if (hasTipo) {
-    if (view === 'fechados') {
-      whereClauses.push("(tipo_registro IS NULL OR tipo_registro = 'FECHADO')");
-    } else if (view === 'pipeline') {
-      whereClauses.push("tipo_registro = 'PIPELINE'");
-    }
+  if (hasTipo && view === 'fechados') {
+    whereClauses.push("(tipo_registro IS NULL OR tipo_registro = 'FECHADO')");
   }
 
   if (search && search.trim()) {

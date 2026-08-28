@@ -695,20 +695,28 @@ const NplManagement: React.FC = () => {
                     onClick={e => handleCedenteClick(e, client.cedente)}
                     title="Clique para ver opções do cedente"
                   >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
-                      <strong>{client.cedente}</strong>
-                      {client.estados.length > 0 && (
-                        <span className="status-pill" style={{ fontSize: '0.68rem', padding: '1px 5px', background: 'rgba(245, 158, 11, 0.15)', color: '#f59e0b', borderColor: 'rgba(245, 158, 11, 0.3)' }}>
-                          {client.estados.join(', ')}
-                        </span>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+                        <strong style={{ color: '#ffffff', fontSize: '0.96rem', fontWeight: 700 }}>
+                          {client.cedente}
+                        </strong>
+                        {client.estados.length > 0 && (
+                          <span className="npl-uf-badge">
+                            {client.estados.join(', ')}
+                          </span>
+                        )}
+                      </div>
+                      {client.cedenteCnpj && (
+                        <small style={{ color: '#64748b', fontSize: '0.74rem' }}>
+                          CNPJ: {client.cedenteCnpj}
+                        </small>
+                      )}
+                      {client.credores.length > 0 && (
+                        <small style={{ color: '#94a3b8', fontSize: '0.74rem' }}>
+                          Credor: {client.credores.slice(0, 2).join(', ')}{client.credores.length > 2 ? '...' : ''}
+                        </small>
                       )}
                     </div>
-                    {client.cedenteCnpj && <small>{client.cedenteCnpj}</small>}
-                    {client.credores.length > 0 && (
-                      <small style={{ color: '#94a3b8', fontSize: '0.74rem' }}>
-                        Credores: {client.credores.slice(0, 2).join(', ')}{client.credores.length > 2 ? '...' : ''}
-                      </small>
-                    )}
                   </td>
                   <td>
                     <span className="badge-cases">{client.totalCasos}</span>

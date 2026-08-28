@@ -93,6 +93,8 @@ interface ComposedClient {
   hasLocalData: boolean;
   localOnly: boolean;
   apiAvailable: boolean;
+  hasOperations?: boolean;
+  committeeStatus?: 'ATIVO_BITFIN' | 'EM_ANALISE' | string;
   updatedAt?: string | null;
   updatedBy?: string | null;
   warning?: string | null;
@@ -111,6 +113,8 @@ interface ClientSummary {
   hasLocalData: boolean;
   localOnly: boolean;
   apiAvailable: boolean;
+  hasOperations?: boolean;
+  committeeStatus?: 'ATIVO_BITFIN' | 'EM_ANALISE' | string;
   updatedAt?: string | null;
 }
 
@@ -554,6 +558,17 @@ const CustomerRegistration = () => {
               <span className={`source-pill ${selectedClient.source}`}>{sourceLabel(selectedClient.source)}</span>
               <span className="validity-pill">{entity.valido === false ? 'Cadastro inválido' : 'Cadastro válido'}</span>
               {!selectedClient.apiAvailable && !selectedClient.localOnly && <span className="offline-pill">API indisponível — usando cópia</span>}
+              {selectedClient.hasOperations ? (
+                <span className="committee-pill active" title="Cliente já possui títulos/operações no BitFin (Última etapa da esteira)">
+                  <span className="committee-dot active" />
+                  Esteira do Comitê: <strong>Ativo no BitFin</strong>
+                </span>
+              ) : (
+                <span className="committee-pill pending" title="Cliente sem operações registradas no sistema">
+                  <span className="committee-dot pending" />
+                  Esteira do Comitê: <strong>Em Análise</strong>
+                </span>
+              )}
             </div>
           </div>
           <div className="customer-document-highlight">
@@ -759,7 +774,18 @@ const CustomerRegistration = () => {
                         <strong>{client.nome}</strong>
                         <small>{formatDocument(client.documento)}{client.email ? ` · ${client.email}` : ''}</small>
                       </span>
-                      <span className={`source-pill ${client.source}`}>{sourceLabel(client.source)}</span>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                        {client.hasOperations ? (
+                          <span className="committee-pill active small" title="Ativo no BitFin (Com operações)">
+                            <span className="committee-dot active" /> Ativo BitFin
+                          </span>
+                        ) : (
+                          <span className="committee-pill pending small" title="Em Análise na Esteira">
+                            <span className="committee-dot pending" /> Em Análise
+                          </span>
+                        )}
+                        <span className={`source-pill ${client.source}`}>{sourceLabel(client.source)}</span>
+                      </div>
                     </button>
                   ))
                 ) : (

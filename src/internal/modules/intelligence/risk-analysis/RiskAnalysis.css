@@ -51,6 +51,29 @@
 .risk-detail-identity > div:last-child { min-width: 0; }
 .risk-detail-identity span { color: #64748b; font-size: .7rem; font-weight: 700; letter-spacing: .08em; }
 .risk-detail-identity h1 { overflow-wrap: anywhere; font-size: clamp(1.2rem,2vw,1.7rem); }
+.clickable-cedente-title {
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  transition: all 0.2s ease;
+  user-select: none;
+}
+.clickable-cedente-title:hover {
+  color: #38bdf8 !important;
+  text-shadow: 0 0 16px rgba(56, 189, 248, 0.4);
+}
+.cedente-link-icon {
+  opacity: 0.55;
+  color: #94a3b8;
+  transition: all 0.2s ease;
+  flex-shrink: 0;
+}
+.clickable-cedente-title:hover .cedente-link-icon {
+  opacity: 1;
+  color: #38bdf8;
+  transform: translate(2px, -2px);
+}
 .risk-score { flex: 0 0 auto; display: flex; align-items: center; gap: .8rem; padding: .75rem 1rem; border: 1px solid color-mix(in srgb,var(--risk-color) 35%,transparent); border-radius: 14px; background: color-mix(in srgb,var(--risk-color) 9%,transparent); }
 .risk-score-circle { width: 62px; height: 62px; display: flex; flex-direction: column; align-items: center; justify-content: center; border: 4px solid var(--risk-color); border-radius: 50%; }
 .risk-score-circle strong { color: white; font-size: 1.25rem; line-height: 1; }

@@ -145,12 +145,21 @@ export const SmartFactorQuery: React.FC = () => {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  // Filtrar sugestões de cedentes digitadas
-  const filteredCedentes = cedente.trim().length >= 1
-    ? cedentesList.filter(c => 
-        c.nome.toLowerCase().includes(cedente.toLowerCase()) || 
-        c.cnpj.replace(/\D/g, '').includes(cedente.replace(/\D/g, ''))
-      ).slice(0, 15)
+  // Normalizador de texto para busca sem acentos
+  const normalize = (s: string) => (s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
+
+  // Filtrar sugestões de cedentes digitadas em tempo real
+  const queryNorm = normalize(cedente);
+  const queryDigits = cedente.replace(/\D/g, '');
+
+  const filteredCedentes = queryNorm.length >= 1
+    ? cedentesList.filter(c => {
+        const nomeNorm = normalize(c.nome);
+        const cnpjClean = (c.cnpj || '').replace(/\D/g, '');
+        const matchName = nomeNorm.includes(queryNorm);
+        const matchCnpj = queryDigits.length >= 2 && cnpjClean.includes(queryDigits);
+        return matchName || matchCnpj;
+      }).slice(0, 15)
     : cedentesList.slice(0, 15);
 
   const handleSearch = async () => {
@@ -273,17 +282,6 @@ export const SmartFactorQuery: React.FC = () => {
             </div>
           </div>
         </div>
-
-        <div className="smartfactor-header-actions">
-          {titles.length > 0 && (
-            <button className="sf-btn-secondary" onClick={exportToExcel}>
-              <Download size={16} /> Exportar Excel
-            </button>
-          )}
-          <button className="sf-btn-primary" onClick={handleSearch} disabled={loading}>
-            <Search size={16} /> {loading ? 'Pesquisando...' : 'Pesquisar Títulos'}
-          </button>
-        </div>
       </div>
 
       {/* Painel de Filtros */}
@@ -305,27 +303,33 @@ export const SmartFactorQuery: React.FC = () => {
                 onFocus={() => setShowCedenteSuggestions(true)}
                 autoComplete="off"
               />
-              {showCedenteSuggestions && filteredCedentes.length > 0 && (
+              {showCedenteSuggestions && (
                 <div className="sf-suggestions-dropdown" role="listbox">
-                  {filteredCedentes.map(c => (
-                    <button
-                      key={c.cnpj || c.nome}
-                      type="button"
-                      className="sf-suggestion-item"
-                      onClick={() => {
-                        setCedente(c.nome);
-                        setShowCedenteSuggestions(false);
-                      }}
-                    >
-                      <div className="sf-suggestion-icon">
-                        <Building2 size={16} />
-                      </div>
-                      <div className="sf-suggestion-content">
-                        <strong>{c.nome}</strong>
-                        <small>{c.cnpj} • {c.totalTitulos} títulos ({formatBRL(c.totalVolume)})</small>
-                      </div>
-                    </button>
-                  ))}
+                  {filteredCedentes.length > 0 ? (
+                    filteredCedentes.map(c => (
+                      <button
+                        key={c.cnpj || c.nome}
+                        type="button"
+                        className="sf-suggestion-item"
+                        onClick={() => {
+                          setCedente(c.nome);
+                          setShowCedenteSuggestions(false);
+                        }}
+                      >
+                        <div className="sf-suggestion-icon">
+                          <Building2 size={16} />
+                        </div>
+                        <div className="sf-suggestion-content">
+                          <strong>{c.nome}</strong>
+                          <small>{c.cnpj} • {c.totalTitulos} títulos ({formatBRL(c.totalVolume)})</small>
+                        </div>
+                      </button>
+                    ))
+                  ) : (
+                    <div style={{ padding: '0.85rem 1rem', color: '#94a3b8', fontSize: '0.78rem', textAlign: 'center' }}>
+                      Nenhum cedente correspondente encontrado.
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -470,6 +474,11 @@ export const SmartFactorQuery: React.FC = () => {
           <button className="sf-btn-secondary" onClick={handleClearFilters}>
             <RotateCcw size={15} /> Limpar Filtros
           </button>
+          {titles.length > 0 && (
+            <button className="sf-btn-secondary" onClick={exportToExcel}>
+              <Download size={15} /> Exportar Excel
+            </button>
+          )}
           <button className="sf-btn-primary" onClick={handleSearch} disabled={loading}>
             <Search size={15} /> {loading ? 'Pesquisando...' : 'Pesquisar Títulos'}
           </button>
