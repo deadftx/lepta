@@ -8,6 +8,8 @@ import ExcelJS from 'exceljs';
 
 export const NPL_COLUMNS = [
   { name: 'id', type: 'INTEGER PRIMARY KEY AUTOINCREMENT' },
+  { name: 'tipo_registro', type: "TEXT DEFAULT 'FECHADO'" },
+  { name: 'fase_pipeline', type: 'TEXT' },
   { name: 'cedente', type: 'TEXT NOT NULL' },
   { name: 'cedente_cnpj', type: 'TEXT' },
   { name: 'credores_de_interesse', type: 'TEXT' },
@@ -278,11 +280,16 @@ export function parseNumber(val) {
 export function getNplSummary(db, { view = 'fechados' } = {}) {
   ensureBaseNplTable(db);
   
+  const existingCols = new Set(db.prepare(`PRAGMA table_info(BASE_NPL)`).all().map(c => c.name.toLowerCase()));
+  const hasTipo = existingCols.has('tipo_registro');
+
   let whereClauses = ["cedente IS NOT NULL AND TRIM(cedente) != ''"];
-  if (view === 'fechados') {
-    whereClauses.push("(tipo_registro IS NULL OR tipo_registro = 'FECHADO')");
-  } else if (view === 'pipeline') {
-    whereClauses.push("tipo_registro = 'PIPELINE'");
+  if (hasTipo) {
+    if (view === 'fechados') {
+      whereClauses.push("(tipo_registro IS NULL OR tipo_registro = 'FECHADO')");
+    } else if (view === 'pipeline') {
+      whereClauses.push("tipo_registro = 'PIPELINE'");
+    }
   }
   const whereSql = `WHERE ${whereClauses.join(' AND ')}`;
 
@@ -298,7 +305,7 @@ export function getNplSummary(db, { view = 'fechados' } = {}) {
       SUM(COALESCE(valor_final_da_operacao, 0)) as totalValorFinal
     FROM BASE_NPL
     ${whereSql}
-  `).get();
+  `).get() || {};
 
   const statusRows = db.prepare(`
     SELECT status_da_negociacao, COUNT(*) as qtd
@@ -308,7 +315,14 @@ export function getNplSummary(db, { view = 'fechados' } = {}) {
   `).all();
 
   return {
-    ...row,
+    totalRegistros: Number(row.totalRegistros || 0),
+    totalCedentes: Number(row.totalCedentes || 0),
+    totalValorConsiderado: Number(row.totalValorConsiderado || 0),
+    totalCreditoRj: Number(row.totalCreditoRj || 0),
+    totalCreditoExecucao: Number(row.totalCreditoExecucao || 0),
+    totalPropostaReal: Number(row.totalPropostaReal || 0),
+    totalResultadoLiquido: Number(row.totalResultadoLiquido || 0),
+    totalValorFinal: Number(row.totalValorFinal || 0),
     statusDistribuicao: statusRows
   };
 }
@@ -319,13 +333,19 @@ export function getNplSummary(db, { view = 'fechados' } = {}) {
 export function getNplClients(db, { view = 'fechados', search = '', status = '', gestor = '', estado = '' } = {}) {
   ensureBaseNplTable(db);
 
+  const existingCols = new Set(db.prepare(`PRAGMA table_info(BASE_NPL)`).all().map(c => c.name.toLowerCase()));
+  const hasTipo = existingCols.has('tipo_registro');
+  const hasFase = existingCols.has('fase_pipeline');
+
   let whereClauses = ["cedente IS NOT NULL AND TRIM(cedente) != ''"];
   const params = [];
 
-  if (view === 'fechados') {
-    whereClauses.push("(tipo_registro IS NULL OR tipo_registro = 'FECHADO')");
-  } else if (view === 'pipeline') {
-    whereClauses.push("tipo_registro = 'PIPELINE'");
+  if (hasTipo) {
+    if (view === 'fechados') {
+      whereClauses.push("(tipo_registro IS NULL OR tipo_registro = 'FECHADO')");
+    } else if (view === 'pipeline') {
+      whereClauses.push("tipo_registro = 'PIPELINE'");
+    }
   }
 
   if (search && search.trim()) {
@@ -372,8 +392,7 @@ export function getNplClients(db, { view = 'fechados', search = '', status = '',
       SUM(COALESCE(resultado_bruto, 0)) as totalResultadoBruto,
       SUM(COALESCE(resultado_liquido, 0)) as totalResultadoLiquido,
       SUM(COALESCE(valor_final_da_operacao, 0)) as totalValorFinalOperacao,
-      SUM(COALESCE(valor_retido_fidc, 0)) as totalValorRetidoFidc,
-      GROUP_CONCAT(DISTINCT fase_pipeline) as fasePipelineConcat,
+      ${hasFase ? 'GROUP_CONCAT(DISTINCT fase_pipeline) as fasePipelineConcat,' : "'' as fasePipelineConcat,"}
       GROUP_CONCAT(DISTINCT gestor) as gestoresConcat,
       GROUP_CONCAT(DISTINCT status_da_negociacao) as statusConcat,
       GROUP_CONCAT(DISTINCT estado) as estadosConcat,

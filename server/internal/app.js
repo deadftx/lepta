@@ -2118,12 +2118,17 @@ app.get('/api/analise-clientes', requireSession, requirePermission('8.1'), async
 
     let rowsNpl = [];
     try {
+      const nplCols = new Set(db.prepare(`PRAGMA table_info(BASE_NPL)`).all().map(c => c.name.toLowerCase()));
+      const filterSql = nplCols.has('tipo_registro')
+        ? "(tipo_registro IS NULL OR tipo_registro = 'FECHADO')"
+        : "1=1";
+
       rowsNpl = db.prepare(`
         SELECT 
           cedente as sacado, 
           SUM(COALESCE(NULLIF(valor_considerado, 0), NULLIF(credito_rj, 0), NULLIF(credito_execucao, 0), 0)) as valorNpl
         FROM BASE_NPL
-        WHERE (tipo_registro IS NULL OR tipo_registro = 'FECHADO')
+        WHERE ${filterSql}
           AND cedente IS NOT NULL AND TRIM(cedente) != ''
         GROUP BY cedente
       `).all();
