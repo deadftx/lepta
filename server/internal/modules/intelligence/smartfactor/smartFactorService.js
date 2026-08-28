@@ -1,18 +1,90 @@
+import fs from 'fs';
+import path from 'path';
+import readline from 'readline';
+
 /**
  * Service para Consulta SmartFactor (Histórico Legado de Títulos e Operações)
  */
 
-export function getSmartFactorCedentes(db) {
-  return db.prepare(`
-    SELECT DISTINCT CLIENTE as nome, DOCUMENTO as cnpj, COUNT(*) as totalTitulos, SUM(VALOR_NOMINAL) as totalVolume
-    FROM BASE_SMARTFACTOR
-    WHERE CLIENTE IS NOT NULL AND TRIM(CLIENTE) != ''
-    GROUP BY CLIENTE
-    ORDER BY CLIENTE ASC
-  `).all();
+export function ensureSmartFactorTable(db) {
+  try {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS BASE_SMARTFACTOR (
+        ID TEXT PRIMARY KEY,
+        OPERACAO TEXT,
+        PAGTO TEXT,
+        CLIENTE TEXT,
+        DOCUMENTO TEXT,
+        SACADO TEXT,
+        DOCUMENTO_SACADO TEXT,
+        UA TEXT DEFAULT 'SmartFactor',
+        PRODUTO TEXT,
+        SIGLA TEXT,
+        NUMERO TEXT,
+        CADASTRO TEXT,
+        EMISSAO TEXT,
+        VENCIMENTO TEXT,
+        VENCIMENTO_EFETIVO TEXT,
+        VENCIDO TEXT,
+        SITUACAO TEXT,
+        DATA_SITUACAO TEXT,
+        VALOR_NOMINAL REAL DEFAULT 0,
+        DESCONTO_ABATIMENTO REAL DEFAULT 0,
+        VALOR_LIQUIDO REAL DEFAULT 0,
+        VALOR_PAGO REAL DEFAULT 0,
+        SALDO_DEVEDOR REAL DEFAULT 0,
+        TAXA REAL DEFAULT 0,
+        DESAGIO REAL DEFAULT 0,
+        TARIFAS_OPERACAO REAL DEFAULT 0,
+        PRAZO_REAL REAL DEFAULT 0,
+        PRAZO_COBRADO REAL DEFAULT 0,
+        BANCO_COBRADOR TEXT,
+        SETOR_CEDENTE TEXT,
+        GRUPO_ECONOMICO TEXT,
+        CIDADE_SACADO TEXT,
+        UF_SACADO TEXT
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_sf_cliente ON BASE_SMARTFACTOR (CLIENTE);
+      CREATE INDEX IF NOT EXISTS idx_sf_documento ON BASE_SMARTFACTOR (DOCUMENTO);
+      CREATE INDEX IF NOT EXISTS idx_sf_sacado ON BASE_SMARTFACTOR (SACADO);
+      CREATE INDEX IF NOT EXISTS idx_sf_vencimento ON BASE_SMARTFACTOR (VENCIMENTO);
+      CREATE INDEX IF NOT EXISTS idx_sf_situacao ON BASE_SMARTFACTOR (SITUACAO);
+      CREATE INDEX IF NOT EXISTS idx_sf_data_situacao ON BASE_SMARTFACTOR (DATA_SITUACAO);
+    `);
+  } catch (err) {
+    console.error('[SMARTFACTOR] Erro ao garantir schema de BASE_SMARTFACTOR:', err.message);
+  }
 }
 
+export function getSmartFactorCedentes(db) {
+  ensureSmartFactorTable(db);
+  try {
+    return db.prepare(`
+      SELECT DISTINCT CLIENTE as nome, DOCUMENTO as cnpj, COUNT(*) as totalTitulos, SUM(VALOR_NOMINAL) as totalVolume
+      FROM BASE_SMARTFACTOR
+      WHERE CLIENTE IS NOT NULL AND TRIM(CLIENTE) != ''
+      GROUP BY CLIENTE
+      ORDER BY CLIENTE ASC
+    `).all();
+  } catch (err) {
+    console.error('[SMARTFACTOR] Erro ao buscar cedentes:', err.message);
+    return [];
+  }
+}
+
+// Conversão robusta de datas: suporta tanto DD/MM/YYYY quanto YYYY-MM-DD
+const dateToIsoExpr = (colName) => `
+  CASE 
+    WHEN ${colName} IS NULL OR ${colName} = '' THEN '9999-99-99'
+    WHEN instr(${colName}, '/') > 0 THEN (substr(${colName}, 7, 4) || '-' || substr(${colName}, 4, 2) || '-' || substr(${colName}, 1, 2))
+    ELSE ${colName}
+  END
+`;
+
 export function searchSmartFactorTitles(db, filters = {}) {
+  ensureSmartFactorTable(db);
+
   const {
     cedente = '',
     sacado = '',
@@ -36,14 +108,26 @@ export function searchSmartFactorTitles(db, filters = {}) {
 
   if (cedente && cedente.trim()) {
     const term = `%${cedente.trim().toLowerCase()}%`;
-    whereClauses.push('(LOWER(CLIENTE) LIKE ? OR DOCUMENTO LIKE ?)');
-    params.push(term, term);
+    const docClean = cedente.replace(/\D/g, '');
+    if (docClean.length >= 4) {
+      whereClauses.push('(LOWER(CLIENTE) LIKE ? OR DOCUMENTO LIKE ? OR REPLACE(REPLACE(REPLACE(DOCUMENTO, ".", ""), "/", ""), "-", "") LIKE ?)');
+      params.push(term, `%${cedente.trim()}%`, `%${docClean}%`);
+    } else {
+      whereClauses.push('(LOWER(CLIENTE) LIKE ? OR DOCUMENTO LIKE ?)');
+      params.push(term, term);
+    }
   }
 
   if (sacado && sacado.trim()) {
     const term = `%${sacado.trim().toLowerCase()}%`;
-    whereClauses.push('(LOWER(SACADO) LIKE ? OR DOCUMENTO_SACADO LIKE ?)');
-    params.push(term, term);
+    const docClean = sacado.replace(/\D/g, '');
+    if (docClean.length >= 4) {
+      whereClauses.push('(LOWER(SACADO) LIKE ? OR DOCUMENTO_SACADO LIKE ? OR REPLACE(REPLACE(REPLACE(DOCUMENTO_SACADO, ".", ""), "/", ""), "-", "") LIKE ?)');
+      params.push(term, `%${sacado.trim()}%`, `%${docClean}%`);
+    } else {
+      whereClauses.push('(LOWER(SACADO) LIKE ? OR DOCUMENTO_SACADO LIKE ?)');
+      params.push(term, term);
+    }
   }
 
   if (numero && numero.trim()) {
@@ -58,8 +142,8 @@ export function searchSmartFactorTitles(db, filters = {}) {
   }
 
   if (situacao && situacao.trim()) {
-    whereClauses.push('LOWER(SITUACAO) = ?');
-    params.push(situacao.trim().toLowerCase());
+    whereClauses.push('LOWER(SITUACAO) LIKE ?');
+    params.push(`%${situacao.trim().toLowerCase()}%`);
   }
 
   if (valorMin && !isNaN(parseFloat(valorMin))) {
@@ -71,9 +155,6 @@ export function searchSmartFactorTitles(db, filters = {}) {
     whereClauses.push('VALOR_NOMINAL <= ?');
     params.push(parseFloat(valorMax));
   }
-
-  // Conversão de datas DD/MM/YYYY para comparação YYYY-MM-DD
-  const dateToIsoExpr = (colName) => `(substr(${colName}, 7, 4) || '-' || substr(${colName}, 4, 2) || '-' || substr(${colName}, 1, 2))`;
 
   if (dataOpDe) {
     whereClauses.push(`${dateToIsoExpr('EMISSAO')} >= ?`);
@@ -148,35 +229,56 @@ export function searchSmartFactorTitles(db, filters = {}) {
     ${whereSql}
   `;
 
-  const kpis = db.prepare(kpisQuery).get(...params);
+  try {
+    const kpis = db.prepare(kpisQuery).get(...params) || {};
 
-  // Listagem de títulos com limite e offset
-  const titlesQuery = `
-    SELECT *
-    FROM BASE_SMARTFACTOR
-    ${whereSql}
-    ORDER BY ${dateToIsoExpr('EMISSAO')} DESC, ID DESC
-    LIMIT ? OFFSET ?
-  `;
+    const titlesQuery = `
+      SELECT *
+      FROM BASE_SMARTFACTOR
+      ${whereSql}
+      ORDER BY ${dateToIsoExpr('EMISSAO')} DESC, ID DESC
+      LIMIT ? OFFSET ?
+    `;
 
-  const rows = db.prepare(titlesQuery).all(...params, limit, offset);
+    const rows = db.prepare(titlesQuery).all(...params, limit, offset);
 
-  return {
-    kpis: {
-      totalTitulos: Number(kpis.totalTitulos || 0),
-      totalValorNominal: Number(kpis.totalValorNominal || 0),
-      totalValorLiquido: Number(kpis.totalValorLiquido || 0),
-      totalValorPago: Number(kpis.totalValorPago || 0),
-      totalDesagio: Number(kpis.totalDesagio || 0),
-      totalTarifas: Number(kpis.totalTarifas || 0),
-      totalValorVencido: Number(kpis.totalValorVencido || 0),
-      totalQtdVencido: Number(kpis.totalQtdVencido || 0),
-      totalValorLiquidado: Number(kpis.totalValorLiquidado || 0),
-      totalQtdLiquidado: Number(kpis.totalQtdLiquidado || 0),
-      totalValorAberto: Number(kpis.totalValorAberto || 0),
-      totalQtdAberto: Number(kpis.totalQtdAberto || 0)
-    },
-    titles: rows,
-    totalRecords: Number(kpis.totalTitulos || 0)
-  };
+    return {
+      kpis: {
+        totalTitulos: Number(kpis.totalTitulos || 0),
+        totalValorNominal: Number(kpis.totalValorNominal || 0),
+        totalValorLiquido: Number(kpis.totalValorLiquido || 0),
+        totalValorPago: Number(kpis.totalValorPago || 0),
+        totalDesagio: Number(kpis.totalDesagio || 0),
+        totalTarifas: Number(kpis.totalTarifas || 0),
+        totalValorVencido: Number(kpis.totalValorVencido || 0),
+        totalQtdVencido: Number(kpis.totalQtdVencido || 0),
+        totalValorLiquidado: Number(kpis.totalValorLiquidado || 0),
+        totalQtdLiquidado: Number(kpis.totalQtdLiquidado || 0),
+        totalValorAberto: Number(kpis.totalValorAberto || 0),
+        totalQtdAberto: Number(kpis.totalQtdAberto || 0)
+      },
+      titles: rows,
+      totalRecords: Number(kpis.totalTitulos || 0)
+    };
+  } catch (err) {
+    console.error('[SMARTFACTOR] Erro na consulta:', err.message);
+    return {
+      kpis: {
+        totalTitulos: 0,
+        totalValorNominal: 0,
+        totalValorLiquido: 0,
+        totalValorPago: 0,
+        totalDesagio: 0,
+        totalTarifas: 0,
+        totalValorVencido: 0,
+        totalQtdVencido: 0,
+        totalValorLiquidado: 0,
+        totalQtdLiquidado: 0,
+        totalValorAberto: 0,
+        totalQtdAberto: 0
+      },
+      titles: [],
+      totalRecords: 0
+    };
+  }
 }

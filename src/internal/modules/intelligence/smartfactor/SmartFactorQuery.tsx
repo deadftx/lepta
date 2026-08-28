@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   Search, 
   Filter, 
@@ -11,7 +11,8 @@ import {
   Clock, 
   AlertTriangle,
   Eye,
-  X
+  X,
+  Building2
 } from 'lucide-react';
 import { API_BASE_URL, getAuthHeaders } from '../../../../config/api';
 import './SmartFactorQuery.css';
@@ -81,6 +82,7 @@ export const SmartFactorQuery: React.FC = () => {
 
   // Filtros
   const [cedente, setCedente] = useState('');
+  const [showCedenteSuggestions, setShowCedenteSuggestions] = useState(false);
   const [sacado, setSacado] = useState('');
   const [numero, setNumero] = useState('');
   const [operacao, setOperacao] = useState('');
@@ -112,8 +114,9 @@ export const SmartFactorQuery: React.FC = () => {
   });
 
   const [selectedTitle, setSelectedTitle] = useState<SmartFactorTitle | null>(null);
+  const autocompleteRef = useRef<HTMLDivElement>(null);
 
-  // Carregar lista de cedentes para o filtro inicial
+  // Carregar lista de cedentes para o autocomplete
   useEffect(() => {
     async function loadCedentes() {
       try {
@@ -122,7 +125,7 @@ export const SmartFactorQuery: React.FC = () => {
         });
         if (res.ok) {
           const data = await res.json();
-          setCedentesList(data);
+          setCedentesList(Array.isArray(data) ? data : []);
         }
       } catch (err) {
         console.error('Erro ao carregar cedentes do SmartFactor:', err);
@@ -131,9 +134,29 @@ export const SmartFactorQuery: React.FC = () => {
     loadCedentes();
   }, []);
 
+  // Fechar dropdown ao clicar fora
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (autocompleteRef.current && !autocompleteRef.current.contains(e.target as Node)) {
+        setShowCedenteSuggestions(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  // Filtrar sugestões de cedentes digitadas
+  const filteredCedentes = cedente.trim().length >= 1
+    ? cedentesList.filter(c => 
+        c.nome.toLowerCase().includes(cedente.toLowerCase()) || 
+        c.cnpj.replace(/\D/g, '').includes(cedente.replace(/\D/g, ''))
+      ).slice(0, 15)
+    : cedentesList.slice(0, 15);
+
   const handleSearch = async () => {
     try {
       setLoading(true);
+      setShowCedenteSuggestions(false);
       const params = new URLSearchParams();
       if (cedente) params.append('cedente', cedente);
       if (sacado) params.append('sacado', sacado);
@@ -266,24 +289,46 @@ export const SmartFactorQuery: React.FC = () => {
       {/* Painel de Filtros */}
       <div className="smartfactor-filters-panel">
         <div className="filters-grid">
-          {/* Cedente */}
-          <div className="filter-group">
-            <label>Cedente</label>
-            <input
-              type="text"
-              className="filter-input"
-              placeholder="Nome ou CNPJ do Cedente..."
-              list="sf-cedentes-list"
-              value={cedente}
-              onChange={e => setCedente(e.target.value)}
-            />
-            <datalist id="sf-cedentes-list">
-              {cedentesList.map(c => (
-                <option key={c.cnpj} value={c.nome}>
-                  {c.cnpj} ({c.totalTitulos} títulos)
-                </option>
-              ))}
-            </datalist>
+          {/* Cedente com Dropdown Interativo de Previsões */}
+          <div className="filter-group" ref={autocompleteRef}>
+            <label>Cedente (Busca com Previsão)</label>
+            <div className="filter-autocomplete-wrapper">
+              <input
+                type="text"
+                className="filter-input"
+                placeholder="Digite nome ou CNPJ do cedente..."
+                value={cedente}
+                onChange={e => {
+                  setCedente(e.target.value);
+                  setShowCedenteSuggestions(true);
+                }}
+                onFocus={() => setShowCedenteSuggestions(true)}
+                autoComplete="off"
+              />
+              {showCedenteSuggestions && filteredCedentes.length > 0 && (
+                <div className="sf-suggestions-dropdown" role="listbox">
+                  {filteredCedentes.map(c => (
+                    <button
+                      key={c.cnpj || c.nome}
+                      type="button"
+                      className="sf-suggestion-item"
+                      onClick={() => {
+                        setCedente(c.nome);
+                        setShowCedenteSuggestions(false);
+                      }}
+                    >
+                      <div className="sf-suggestion-icon">
+                        <Building2 size={16} />
+                      </div>
+                      <div className="sf-suggestion-content">
+                        <strong>{c.nome}</strong>
+                        <small>{c.cnpj} • {c.totalTitulos} títulos ({formatBRL(c.totalVolume)})</small>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
 
           {/* Sacado */}
@@ -332,7 +377,7 @@ export const SmartFactorQuery: React.FC = () => {
             >
               <option value="">Todas as Situações</option>
               <option value="quitado">Quitado / Liquidado</option>
-              <option value="em aberto">Em Aberto</option>
+              <option value="aberto">Em Aberto</option>
               <option value="baixado">Baixado</option>
               <option value="recomprado">Recomprado</option>
             </select>
@@ -426,7 +471,7 @@ export const SmartFactorQuery: React.FC = () => {
             <RotateCcw size={15} /> Limpar Filtros
           </button>
           <button className="sf-btn-primary" onClick={handleSearch} disabled={loading}>
-            <Search size={15} /> {loading ? 'Pesquisando...' : 'Aplicar Filtros'}
+            <Search size={15} /> {loading ? 'Pesquisando...' : 'Pesquisar Títulos'}
           </button>
         </div>
       </div>
@@ -473,8 +518,8 @@ export const SmartFactorQuery: React.FC = () => {
             </div>
             <div className="smartfactor-kpi-info">
               <span>Em Aberto (Adimplente)</span>
-              <strong>{formatBRL(kpis.totalValorAberto - kpis.totalValorVencido)}</strong>
-              <small>{(kpis.totalQtdAberto - kpis.totalQtdVencido).toLocaleString('pt-BR')} títulos no prazo</small>
+              <strong>{formatBRL(Math.max(0, kpis.totalValorAberto - kpis.totalValorVencido))}</strong>
+              <small>{Math.max(0, kpis.totalQtdAberto - kpis.totalQtdVencido).toLocaleString('pt-BR')} títulos no prazo</small>
             </div>
           </div>
 
