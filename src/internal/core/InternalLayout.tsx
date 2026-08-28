@@ -156,7 +156,7 @@ const InternalLayout = () => {
               )}
             </div>
           )}
-          {hasAnyPermission(user, ['8.1', '8.2', '8.3', '8.4']) && (
+          {hasAnyPermission(user, ['8.1', '8.2', '8.3', '8.4', '8.5']) && (
             <div className="nav-menu-group">
               <div 
                 className={`nav-item nav-item-parent ${isIntelligenceActive ? 'active' : ''}`}
@@ -189,6 +189,11 @@ const InternalLayout = () => {
                   {hasAccess('8.4') && (
                     <Link to="/intelligence/npl" className={navItemClass('/intelligence/npl')}>
                       <TrendingUp size={18} /> NPL
+                    </Link>
+                  )}
+                  {hasAccess('8.5') && (
+                    <Link to="/intelligence/esteira-comite" className={navItemClass('/intelligence/esteira-comite')}>
+                      <ClipboardCheck size={18} /> Esteira de Comitê
                     </Link>
                   )}
                 </div>

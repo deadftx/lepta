@@ -17,6 +17,7 @@ import { registerConfirmationRoutes } from './modules/confirmation/routes.js';
 import { registerTickerRoutes } from './modules/ticker/routes.js';
 import { registerMonitorRoutes } from './modules/monitor/routes.js';
 import { registerNplRoutes } from './modules/intelligence/npl/routes.js';
+import { createCommitteeRouter } from './modules/intelligence/committee/routes.js';
 import { recordDatabaseEvent, recordSystemError, recordUserHeartbeat } from './modules/monitor/monitorService.js';
 import { ensureCedentesTableSchema, consolidateCedentesTable, syncAllCedentesFromUnltdApi } from './modules/database/unltdSync.js';
 
@@ -3008,6 +3009,8 @@ registerNplRoutes(app, {
   requirePermission,
   getAuthenticatedUser
 });
+
+app.use('/api/comite', requireSession, createCommitteeRouter(db, requirePermission));
 
 function dropLegacyBases() {
   try {
