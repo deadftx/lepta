@@ -132,8 +132,8 @@
 
 .filters-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  gap: 1rem;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 1.1rem;
 }
 
 .filter-group {
@@ -141,6 +141,7 @@
   flex-direction: column;
   gap: 0.35rem;
   position: relative;
+  min-width: 0;
 }
 
 .filter-autocomplete-wrapper {
@@ -218,38 +219,61 @@
 }
 
 .filter-group label {
-  font-size: 0.76rem;
+  font-size: 0.75rem;
   font-weight: 600;
   color: #94a3b8;
   text-transform: uppercase;
   letter-spacing: 0.5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .filter-input {
   background: rgba(0, 0, 0, 0.3);
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 8px;
-  padding: 0.55rem 0.8rem;
+  padding: 0.55rem 0.65rem;
   color: #ffffff;
-  font-size: 0.85rem;
+  font-size: 0.82rem;
   outline: none;
   transition: border-color 0.2s ease;
   width: 100%;
+  box-sizing: border-box;
 }
 
 .filter-input:focus {
   border-color: #f59e0b;
 }
 
+input[type="date"].filter-input {
+  min-width: 0;
+  padding: 0.5rem 0.45rem;
+  font-size: 0.78rem;
+}
+
+input[type="date"]::-webkit-calendar-picker-indicator {
+  cursor: pointer;
+  filter: invert(0.8);
+  margin-left: 2px;
+}
+
 .filter-input-row {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: 0.4rem;
+  width: 100%;
+}
+
+.filter-input-row .filter-input {
+  flex: 1 1 0;
+  min-width: 0;
 }
 
 .filter-input-row span {
-  font-size: 0.78rem;
+  font-size: 0.74rem;
   color: #64748b;
+  flex-shrink: 0;
 }
 
 .filters-actions-bar {
@@ -264,20 +288,22 @@
 /* KPIs Grid */
 .smartfactor-kpi-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
   gap: 1rem;
 }
 
 .smartfactor-kpi-card {
-  padding: 1.1rem 1.25rem;
+  padding: 1.1rem 1.15rem;
   border-radius: 12px;
   background: rgba(15, 23, 42, 0.6);
   border: 1px solid rgba(255, 255, 255, 0.06);
   backdrop-filter: blur(10px);
   display: flex;
   align-items: center;
-  gap: 1rem;
+  gap: 0.85rem;
   transition: transform 0.2s ease;
+  min-width: 0;
+  overflow: hidden;
 }
 
 .smartfactor-kpi-card:hover {
@@ -286,8 +312,8 @@
 }
 
 .smartfactor-kpi-icon {
-  width: 44px;
-  height: 44px;
+  width: 42px;
+  height: 42px;
   border-radius: 10px;
   display: flex;
   align-items: center;
@@ -298,26 +324,40 @@
 .smartfactor-kpi-info {
   display: flex;
   flex-direction: column;
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
 }
 
 .smartfactor-kpi-info span {
-  font-size: 0.76rem;
+  font-size: 0.72rem;
   color: #94a3b8;
   font-weight: 500;
   text-transform: uppercase;
   letter-spacing: 0.5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .smartfactor-kpi-info strong {
-  font-size: 1.35rem;
+  font-size: clamp(0.95rem, 1.15vw, 1.22rem);
   font-weight: 700;
   color: #ffffff;
   margin: 2px 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: block;
 }
 
 .smartfactor-kpi-info small {
   font-size: 0.72rem;
   color: #64748b;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: block;
 }
 
 /* Tabela de Títulos */
