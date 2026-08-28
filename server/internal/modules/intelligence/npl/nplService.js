@@ -278,7 +278,7 @@ export function getNplSummary(db) {
     SELECT 
       COUNT(*) as totalRegistros,
       COUNT(DISTINCT cedente) as totalCedentes,
-      SUM(COALESCE(valor_considerado, 0)) as totalValorConsiderado,
+      SUM(COALESCE(NULLIF(valor_considerado, 0), NULLIF(credito_rj, 0), NULLIF(credito_execucao, 0), 0)) as totalValorConsiderado,
       SUM(COALESCE(credito_rj, 0)) as totalCreditoRj,
       SUM(COALESCE(credito_execucao, 0)) as totalCreditoExecucao,
       SUM(COALESCE(proposta_real, 0)) as totalPropostaReal,
@@ -345,7 +345,7 @@ export function getNplClients(db, { search = '', status = '', gestor = '', estad
       cedente,
       MAX(cedente_cnpj) as cedente_cnpj,
       COUNT(*) as totalCasos,
-      SUM(COALESCE(valor_considerado, 0)) as totalValorConsiderado,
+      SUM(COALESCE(NULLIF(valor_considerado, 0), NULLIF(credito_rj, 0), NULLIF(credito_execucao, 0), 0)) as totalValorConsiderado,
       SUM(COALESCE(credito_rj, 0)) as totalCreditoRj,
       SUM(COALESCE(credito_execucao, 0)) as totalCreditoExecucao,
       SUM(COALESCE(proposta_real, 0)) as totalPropostaReal,

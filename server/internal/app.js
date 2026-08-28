@@ -2120,11 +2120,11 @@ app.get('/api/analise-clientes', requireSession, requirePermission('8.1'), async
     try {
       rowsNpl = db.prepare(`
         SELECT 
-          COALESCE(NULLIF(cedente, ''), Sacado) as sacado, 
-          SUM(COALESCE(NULLIF(valor_considerado, 0), NULLIF(credito_rj, 0), NULLIF(Valor_do_Credito_Face, 0), 0)) as valorNpl
+          cedente as sacado, 
+          SUM(COALESCE(NULLIF(valor_considerado, 0), NULLIF(credito_rj, 0), NULLIF(credito_execucao, 0), 0)) as valorNpl
         FROM BASE_NPL
-        WHERE (cedente IS NOT NULL AND TRIM(cedente) != '') OR (Sacado IS NOT NULL AND TRIM(Sacado) != '')
-        GROUP BY COALESCE(NULLIF(cedente, ''), Sacado)
+        WHERE cedente IS NOT NULL AND TRIM(cedente) != ''
+        GROUP BY cedente
       `).all();
     } catch (e) {
       console.log("Aviso: BASE_NPL indisponível.", e.message);
@@ -2364,13 +2364,13 @@ app.get('/api/analise-ua/:cedente', requireSession, requirePermission('8.1'), as
     try {
       allNpl = db.prepare(`
         SELECT 
-          COALESCE(NULLIF(cedente, ''), Sacado) as Sacado,
+          cedente as Sacado,
           credores_de_interesse as Cedente,
-          COALESCE(NULLIF(gestor, ''), NULLIF(ramo_de_atividade, ''), Cessionario, 'NPL') as Cessionario,
-          SUM(COALESCE(NULLIF(valor_considerado, 0), NULLIF(credito_rj, 0), NULLIF(Valor_do_Credito_Face, 0), 0)) as valorNpl
+          COALESCE(NULLIF(gestor, ''), NULLIF(ramo_de_atividade, ''), 'NPL') as Cessionario,
+          SUM(COALESCE(NULLIF(valor_considerado, 0), NULLIF(credito_rj, 0), NULLIF(credito_execucao, 0), 0)) as valorNpl
         FROM BASE_NPL
-        WHERE (cedente IS NOT NULL AND TRIM(cedente) != '') OR (Sacado IS NOT NULL AND TRIM(Sacado) != '')
-        GROUP BY Sacado, Cedente, Cessionario
+        WHERE cedente IS NOT NULL AND TRIM(cedente) != ''
+        GROUP BY cedente, credores_de_interesse, gestor, ramo_de_atividade
       `).all();
     } catch (e) {
       console.log("Aviso: BASE_NPL em UA indisponível.", e.message);
@@ -2418,13 +2418,13 @@ app.get('/api/analise-un/:cedente', requireSession, requirePermission('8.1'), (r
     try {
       const allNpl = db.prepare(`
         SELECT 
-          COALESCE(NULLIF(cedente, ''), Sacado) as Sacado,
+          cedente as Sacado,
           credores_de_interesse as Cedente,
-          COALESCE(NULLIF(credores_de_interesse, ''), NULLIF(gestor, ''), Cessionario, 'Operação NPL') as Cessionario,
-          SUM(COALESCE(NULLIF(valor_considerado, 0), NULLIF(credito_rj, 0), NULLIF(Valor_do_Credito_Face, 0), 0)) as valorNpl
+          COALESCE(NULLIF(credores_de_interesse, ''), NULLIF(gestor, ''), 'Operação NPL') as Cessionario,
+          SUM(COALESCE(NULLIF(valor_considerado, 0), NULLIF(credito_rj, 0), NULLIF(credito_execucao, 0), 0)) as valorNpl
         FROM BASE_NPL
-        WHERE (cedente IS NOT NULL AND TRIM(cedente) != '') OR (Sacado IS NOT NULL AND TRIM(Sacado) != '')
-        GROUP BY Sacado, Cedente, Cessionario
+        WHERE cedente IS NOT NULL AND TRIM(cedente) != ''
+        GROUP BY cedente, credores_de_interesse, gestor
       `).all();
       const normCedente = normalizeStr(cedente);
 
