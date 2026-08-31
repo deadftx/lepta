@@ -183,3 +183,138 @@
     text-align: right;
   }
 }
+
+/* Microsoft & Windows SSO Styles */
+.sso-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin-bottom: 1.25rem;
+}
+
+.btn-sso {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  padding: 0.75rem 1rem;
+  border-radius: 10px;
+  font-size: 0.92rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  outline: none;
+}
+
+.btn-sso-microsoft {
+  background: #2f2f2f;
+  background: linear-gradient(180deg, #2b2b2b 0%, #1f1f1f 100%);
+  color: #ffffff;
+  border-color: rgba(255, 255, 255, 0.18);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+}
+
+.btn-sso-microsoft:hover:not(:disabled) {
+  background: linear-gradient(180deg, #383838 0%, #262626 100%);
+  border-color: rgba(255, 255, 255, 0.35);
+  transform: translateY(-1px);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.35);
+}
+
+.btn-sso-windows {
+  background: rgba(0, 120, 212, 0.12);
+  color: #60a5fa;
+  border-color: rgba(0, 120, 212, 0.35);
+}
+
+.btn-sso-windows:hover:not(:disabled) {
+  background: rgba(0, 120, 212, 0.22);
+  border-color: #3b82f6;
+  color: #93c5fd;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 14px rgba(0, 120, 212, 0.25);
+}
+
+.sso-divider {
+  display: flex;
+  align-items: center;
+  text-align: center;
+  margin: 1.25rem 0;
+  color: #64748b;
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.sso-divider::before,
+.sso-divider::after {
+  content: '';
+  flex: 1;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.sso-divider span {
+  padding: 0 0.75rem;
+}
+
+/* Modal de Autenticação Rápida / Windows SSO */
+.sso-modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.75);
+  backdrop-filter: blur(8px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 1rem;
+}
+
+.sso-modal-content {
+  background: #131722;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 16px;
+  width: 100%;
+  max-width: 440px;
+  padding: 1.75rem;
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.6);
+  animation: modal-fade-in 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes modal-fade-in {
+  from { opacity: 0; transform: scale(0.96) translateY(8px); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+.sso-accounts-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  max-height: 220px;
+  overflow-y: auto;
+  margin: 1rem 0;
+  padding-right: 4px;
+}
+
+.sso-account-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.75rem 1rem;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  text-align: left;
+}
+
+.sso-account-item:hover {
+  background: rgba(0, 120, 212, 0.15);
+  border-color: rgba(0, 120, 212, 0.4);
+}

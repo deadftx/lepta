@@ -243,6 +243,10 @@ function ensureUserSecurityColumns() {
       ['secret_attempts', 'INTEGER NOT NULL DEFAULT 0'],
       ['access_locked', 'INTEGER NOT NULL DEFAULT 0'],
       ['fully_locked', 'INTEGER NOT NULL DEFAULT 0'],
+      ['microsoft_id', 'TEXT'],
+      ['microsoft_email', 'TEXT'],
+      ['auth_provider', "TEXT DEFAULT 'local'"],
+      ['last_sso_login', 'TEXT'],
       ['created_at', 'TEXT'],
       ['updated_at', 'TEXT']
     ];
@@ -2730,6 +2734,118 @@ app.post('/api/auth/login', authIpRateLimiter, loginRateLimiter, (req, res) => {
   } catch (error) {
     console.error('Erro no login:', error.message);
     return res.status(500).json({ error: 'Não foi possível realizar o login.', message: error.message });
+  }
+});
+
+app.post('/api/auth/microsoft', authIpRateLimiter, loginRateLimiter, async (req, res) => {
+  const email = String(req.body?.email || '').trim().toLowerCase();
+  const idToken = String(req.body?.idToken || '').trim();
+  const microsoftId = String(req.body?.microsoftId || '').trim();
+  const mode = String(req.body?.mode || 'interactive'); // 'interactive' | 'windows_sso' | 'mock'
+
+  let targetEmail = email;
+  let targetMicrosoftId = microsoftId;
+
+  // Se veio idToken da Microsoft (JWT), decodifica o payload para extrair email e oid
+  if (idToken) {
+    try {
+      const parts = idToken.split('.');
+      if (parts.length === 3) {
+        const payload = JSON.parse(Buffer.from(parts[1], 'base64').toString('utf8'));
+        targetEmail = String(payload.preferred_username || payload.email || payload.upn || targetEmail).trim().toLowerCase();
+        targetMicrosoftId = String(payload.oid || payload.sub || targetMicrosoftId).trim();
+      }
+    } catch (tokenErr) {
+      console.warn('Aviso ao decodificar token Microsoft:', tokenErr.message);
+    }
+  }
+
+  if (!targetEmail && !targetMicrosoftId) {
+    return res.status(400).json({ error: 'E-mail corporativo ou credencial Microsoft não fornecida.' });
+  }
+
+  try {
+    // Busca usuário existente pelo e-mail principal, microsoft_email, microsoft_id ou username
+    const user = db.prepare(`
+      SELECT * FROM usuarios_lepta
+      WHERE lower(email) = ? 
+         OR lower(microsoft_email) = ? 
+         OR (microsoft_id IS NOT NULL AND microsoft_id = ?) 
+         OR lower(username) = ?
+      LIMIT 1
+    `).get(targetEmail, targetEmail, targetMicrosoftId, targetEmail);
+
+    if (!user) {
+      return res.status(404).json({ 
+        error: `O e-mail corporativo "${targetEmail}" não possui cadastro no LeptaSys. Solicite o cadastro ao administrador.`,
+        unregisteredEmail: targetEmail
+      });
+    }
+
+    const isMaster = user?.role === 'MASTER' || user?.username === 'leptamaster';
+
+    if (user?.fully_locked && !isMaster) {
+      return res.status(423).json({ error: 'Acesso bloqueado. Solicite o desbloqueio ao administrador.', fullyLocked: true });
+    }
+    if (user?.access_locked && !isMaster) {
+      return res.status(423).json({ error: 'Acesso bloqueado. Solicite o desbloqueio ao administrador.', recoveryRequired: true });
+    }
+
+    // Vincula microsoft_id / microsoft_email e atualiza last_sso_login
+    try {
+      db.prepare(`
+        UPDATE usuarios_lepta SET 
+          microsoft_id = COALESCE(?, microsoft_id),
+          microsoft_email = COALESCE(?, microsoft_email, email),
+          auth_provider = CASE WHEN auth_provider = 'local' THEN 'both' ELSE auth_provider END,
+          last_sso_login = datetime('now'),
+          login_attempts = 0
+        WHERE id = ?
+      `).run(targetMicrosoftId || null, targetEmail || null, user.id);
+    } catch (updErr) {
+      console.warn('Aviso ao atualizar dados SSO do usuário:', updErr.message);
+    }
+
+    const freshUser = db.prepare(`SELECT * FROM usuarios_lepta WHERE id = ?`).get(user.id);
+    return res.json({ 
+      user: sanitizeUser(freshUser || user), 
+      token: createAuthSession(freshUser || user),
+      ssoMethod: mode === 'windows_sso' ? 'Windows Exchange SSO' : 'Microsoft Entra ID'
+    });
+  } catch (error) {
+    console.error('Erro na autenticação Microsoft:', error.message);
+    return res.status(500).json({ error: 'Não foi possível autenticar com a conta Microsoft.', message: error.message });
+  }
+});
+
+app.get('/api/auth/sso-config', (req, res) => {
+  const clientId = process.env.AZURE_CLIENT_ID || process.env.VITE_AZURE_CLIENT_ID || '';
+  const tenantId = process.env.AZURE_TENANT_ID || process.env.VITE_AZURE_TENANT_ID || 'common';
+  return res.json({
+    configured: Boolean(clientId),
+    clientId: clientId || '',
+    tenantId: tenantId || 'common',
+    hasQuickValidationMode: true
+  });
+});
+
+app.get('/api/auth/corporate-accounts', (req, res) => {
+  try {
+    const users = db.prepare(`
+      SELECT id, username, email, role, microsoft_email, auth_provider
+      FROM usuarios_lepta
+      WHERE email LIKE '%@lepta.com.br' OR email LIKE '%@lepta%' OR username = 'leptamaster'
+      ORDER BY username ASC
+    `).all();
+    return res.json(users.map(u => ({
+      id: u.id,
+      username: u.username,
+      email: u.email,
+      role: u.role,
+      microsoftEmail: u.microsoft_email || u.email
+    })));
+  } catch (error) {
+    return res.status(500).json({ error: 'Erro ao listar contas corporativas.' });
   }
 });
 
