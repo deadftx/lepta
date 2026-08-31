@@ -3029,19 +3029,9 @@ app.post('/api/auth/admin/unlock/:id', requireSession, requireMaster, (req, res)
   return res.json({ success: true });
 });
 
-const ASSIGNABLE_PERMISSION_IDS = new Set([
-  '4', '5', '6',
-  '7', '7.1', '7.2', '7.3', '7.4', '7.5',
-  '8', '8.1', '8.2', '8.3',
-  '9',
-  '10', '10.1', '10.2',
-  '11', '11.1', '11.2'
-]);
-
 function normalizeAssignablePermissions(value) {
   if (!Array.isArray(value)) return null;
-  return Array.from(new Set(value.map(String)))
-    .filter(permission => ASSIGNABLE_PERMISSION_IDS.has(permission));
+  return Array.from(new Set(value.map(v => String(v).trim()).filter(Boolean)));
 }
 
 app.post('/api/admin/users', requireSession, requireMaster, (req, res) => {
