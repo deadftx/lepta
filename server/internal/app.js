@@ -7,6 +7,7 @@ import ExcelJS from 'exceljs';
 import Database from 'better-sqlite3';
 import stringSimilarity from 'string-similarity';
 import { createCipheriv, createDecipheriv, createHash, randomBytes, scryptSync, timingSafeEqual } from 'crypto';
+import { execSync } from 'child_process';
 import { registerDatabaseSyncRoutes } from './modules/database/routes.js';
 import { registerPowerBiRoutes } from './modules/database/biRoutes.js';
 import { registerGrafenoRoutes } from './modules/finance/grafenoRoutes.js';
@@ -2737,14 +2738,35 @@ app.post('/api/auth/login', authIpRateLimiter, loginRateLimiter, (req, res) => {
   }
 });
 
+function getWindowsLoggedUpn() {
+  if (process.platform !== 'win32') return null;
+  try {
+    const upn = execSync('whoami /upn', { encoding: 'utf8', timeout: 2500 }).trim();
+    if (upn && (upn.toLowerCase().endsWith('@lepta.com.br') || upn.toLowerCase().endsWith('@lepta.com'))) {
+      return upn.toLowerCase();
+    }
+  } catch (err) {
+    console.warn('Aviso ao consultar whoami /upn:', err.message);
+  }
+  return null;
+}
+
 app.post('/api/auth/microsoft', authIpRateLimiter, loginRateLimiter, async (req, res) => {
-  const email = String(req.body?.email || '').trim().toLowerCase();
+  let email = String(req.body?.email || '').trim().toLowerCase();
   const idToken = String(req.body?.idToken || '').trim();
   const microsoftId = String(req.body?.microsoftId || '').trim();
   const mode = String(req.body?.mode || 'interactive'); // 'interactive' | 'windows_sso' | 'mock'
 
   let targetEmail = email;
   let targetMicrosoftId = microsoftId;
+
+  // Se for modo windows_sso e não foi informado e-mail, detecta direto a conta da máquina Windows
+  if (mode === 'windows_sso' && !targetEmail) {
+    const detectedUpn = getWindowsLoggedUpn();
+    if (detectedUpn) {
+      targetEmail = detectedUpn;
+    }
+  }
 
   // Se veio idToken da Microsoft (JWT), decodifica o payload para extrair email e oid
   if (idToken) {
@@ -2761,12 +2783,20 @@ app.post('/api/auth/microsoft', authIpRateLimiter, loginRateLimiter, async (req,
   }
 
   if (!targetEmail && !targetMicrosoftId) {
-    return res.status(400).json({ error: 'E-mail corporativo ou credencial Microsoft não fornecida.' });
+    return res.status(400).json({ error: 'E-mail corporativo ou credencial Microsoft não detectada.' });
+  }
+
+  // Restringe acesso exclusivamente a contas com domínio corporativo @lepta.com.br
+  const isLeptaDomain = targetEmail.endsWith('@lepta.com.br') || targetEmail.endsWith('@lepta.com');
+  if (!isLeptaDomain && targetEmail !== 'leptamaster') {
+    return res.status(403).json({ 
+      error: 'Acesso restrito. Apenas contas corporativas com domínio @lepta.com.br são autorizadas.' 
+    });
   }
 
   try {
     // Busca usuário existente pelo e-mail principal, microsoft_email, microsoft_id ou username
-    const user = db.prepare(`
+    let user = db.prepare(`
       SELECT * FROM usuarios_lepta
       WHERE lower(email) = ? 
          OR lower(microsoft_email) = ? 
@@ -2775,11 +2805,40 @@ app.post('/api/auth/microsoft', authIpRateLimiter, loginRateLimiter, async (req,
       LIMIT 1
     `).get(targetEmail, targetEmail, targetMicrosoftId, targetEmail);
 
+    // Se o colaborador ainda não tem registro no sistema, cria automaticamente a conta no banco via AD
     if (!user) {
-      return res.status(404).json({ 
-        error: `O e-mail corporativo "${targetEmail}" não possui cadastro no LeptaSys. Solicite o cadastro ao administrador.`,
-        unregisteredEmail: targetEmail
-      });
+      const username = targetEmail.split('@')[0];
+      const userId = 'usr_' + Date.now();
+      const now = new Date().toISOString();
+      const defaultPermissions = JSON.stringify([
+        '4', '5', '6', '7', '7.1', '7.2', '7.4', '7.5', 
+        '8', '8.1', '8.2', '8.3', '8.4', '8.5', '8.6', 
+        '10', '10.1', '10.2', '11', '11.1'
+      ]);
+
+      try {
+        db.prepare(`
+          INSERT INTO usuarios_lepta (
+            id, username, email, password, role, permissions,
+            microsoft_id, microsoft_email, auth_provider, last_sso_login,
+            login_attempts, secret_attempts, access_locked, fully_locked,
+            created_at, updated_at
+          ) VALUES (?, ?, ?, '', 'USER', ?, ?, ?, 'microsoft', datetime('now'), 0, 0, 0, 0, ?, ?)
+        `).run(
+          userId,
+          username,
+          targetEmail,
+          defaultPermissions,
+          targetMicrosoftId || null,
+          targetEmail,
+          now,
+          now
+        );
+        user = db.prepare(`SELECT * FROM usuarios_lepta WHERE id = ?`).get(userId);
+      } catch (insertErr) {
+        console.error('Erro ao auto-provisionar usuário Microsoft:', insertErr.message);
+        return res.status(500).json({ error: 'Erro ao registrar nova conta corporativa.' });
+      }
     }
 
     const isMaster = user?.role === 'MASTER' || user?.username === 'leptamaster';

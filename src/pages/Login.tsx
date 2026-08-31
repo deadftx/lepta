@@ -1,9 +1,8 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useNavigate, useLocation, useSearchParams } from 'react-router-dom';
-import { Lock, User, ArrowRight, AlertCircle, CheckCircle2, KeyRound, Mail, ArrowLeft, X, ShieldCheck, Laptop } from 'lucide-react';
+import { Lock, User, ArrowRight, AlertCircle, CheckCircle2, KeyRound, Mail, ArrowLeft, X, ShieldCheck } from 'lucide-react';
 import { useAuth } from '../internal/core/AuthContext';
 import { API_BASE_URL } from '../config/api';
-import { getSSOConfig, getCorporateAccounts, type CorporateAccount, type MicrosoftSSOConfig } from '../config/msalConfig';
 import './Login.css';
 
 const MicrosoftIcon = () => (
@@ -33,14 +32,11 @@ const Login = () => {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
-  // SSO state
-  const [ssoConfig, setSsoConfig] = useState<MicrosoftSSOConfig | null>(null);
-  const [corporateAccounts, setCorporateAccounts] = useState<CorporateAccount[]>([]);
-  const [ssoModalOpen, setSsoModalOpen] = useState(false);
-  const [ssoMode, setSsoMode] = useState<'interactive' | 'windows_sso'>('windows_sso');
-  const [ssoCustomEmail, setSsoCustomEmail] = useState('');
-  const [ssoLoading, setSsoLoading] = useState(false);
-  const [ssoError, setSsoError] = useState('');
+  // Microsoft Email Prompt Modal (para mobile ou login interativo)
+  const [microsoftModalOpen, setMicrosoftModalOpen] = useState(false);
+  const [microsoftEmail, setMicrosoftEmail] = useState('');
+  const [microsoftLoading, setMicrosoftLoading] = useState(false);
+  const [microsoftError, setMicrosoftError] = useState('');
 
   // Primeiro Acesso state
   const [isFirstAccessMode, setIsFirstAccessMode] = useState(false);
@@ -57,11 +53,6 @@ const Login = () => {
   const [secretAnswer, setSecretAnswer] = useState('');
   const [recoveryPassword, setRecoveryPassword] = useState('');
   const [recoveryError, setRecoveryError] = useState('');
-
-  useEffect(() => {
-    getSSOConfig().then(setSsoConfig).catch(() => {});
-    getCorporateAccounts().then(setCorporateAccounts).catch(() => {});
-  }, []);
 
   const navigateToDestination = () => {
     const fromState = (location.state as any)?.from;
@@ -89,35 +80,46 @@ const Login = () => {
     }
   };
 
-  const handleOpenSSOModal = (mode: 'interactive' | 'windows_sso') => {
-    setSsoMode(mode);
-    setSsoError('');
-    setSsoCustomEmail('');
-    setSsoModalOpen(true);
+  // 1-Clique: Conecta diretamente com o usuário autenticado na máquina Windows (Exchange)
+  const handleWindowsDirectConnect = async () => {
+    setError('');
+    setLoading(true);
+
+    const result = await loginWithMicrosoft({
+      mode: 'windows_sso'
+    });
+
+    setLoading(false);
+    if (result.success) {
+      navigateToDestination();
+    } else {
+      setError(result.error || 'Não foi possível autenticar diretamente com a conta da máquina.');
+    }
   };
 
-  const handleExecuteSSO = async (emailToAuth: string) => {
-    const trimmed = emailToAuth.trim().toLowerCase();
+  // Login interativo Microsoft (para celular ou conta corporativa digitada)
+  const handleMicrosoftPromptSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const trimmed = microsoftEmail.trim().toLowerCase();
     if (!trimmed) {
-      setSsoError('Por favor, informe um e-mail corporativo válido.');
+      setMicrosoftError('Por favor, informe seu e-mail corporativo @lepta.com.br.');
       return;
     }
 
-    setSsoLoading(true);
-    setSsoError('');
-    setError('');
+    setMicrosoftLoading(true);
+    setMicrosoftError('');
 
     const result = await loginWithMicrosoft({
       email: trimmed,
-      mode: ssoMode
+      mode: 'interactive'
     });
 
-    setSsoLoading(false);
+    setMicrosoftLoading(false);
     if (result.success) {
-      setSsoModalOpen(false);
+      setMicrosoftModalOpen(false);
       navigateToDestination();
     } else {
-      setSsoError(result.error || 'Não foi possível autenticar com esta conta.');
+      setMicrosoftError(result.error || 'Não foi possível autenticar com esta conta.');
     }
   };
 
@@ -314,16 +316,21 @@ const Login = () => {
               <button
                 type="button"
                 className="btn-sso btn-sso-windows"
-                onClick={() => handleOpenSSOModal('windows_sso')}
-                title="Autenticar diretamente com o usuário conectado no Windows"
+                onClick={handleWindowsDirectConnect}
+                disabled={loading}
+                title="Conecta diretamente com o usuário conectado no Windows (1 clique)"
               >
-                <WindowsIcon /> Conectar com Usuário do Windows (Exchange)
+                <WindowsIcon /> {loading ? 'Conectando...' : 'Conectar com Usuário do Windows (Exchange)'}
               </button>
 
               <button
                 type="button"
                 className="btn-sso btn-sso-microsoft"
-                onClick={() => handleOpenSSOModal('interactive')}
+                onClick={() => {
+                  setMicrosoftError('');
+                  setMicrosoftModalOpen(true);
+                }}
+                disabled={loading}
                 title="Entrar com conta Microsoft corporativa da Lepta"
               >
                 <MicrosoftIcon /> Entrar com Conta Microsoft (Lepta)
@@ -497,102 +504,68 @@ const Login = () => {
         )}
       </div>
 
-      {/* Modal de Conexão Corporativa / Windows SSO */}
-      {ssoModalOpen && (
-        <div className="sso-modal-overlay" onClick={() => !ssoLoading && setSsoModalOpen(false)}>
+      {/* Modal Interativo para Celular / E-mail Microsoft Corporativo */}
+      {microsoftModalOpen && (
+        <div className="sso-modal-overlay" onClick={() => !microsoftLoading && setMicrosoftModalOpen(false)}>
           <div className="sso-modal-content" onClick={(e) => e.stopPropagation()}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1rem' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
-                {ssoMode === 'windows_sso' ? <Laptop size={24} color="#60a5fa" /> : <MicrosoftIcon />}
+                <MicrosoftIcon />
                 <div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                    <h3 style={{ margin: 0, fontSize: '1.15rem', color: '#f8fafc' }}>
-                      {ssoMode === 'windows_sso' ? 'Conexão Windows (Exchange)' : 'Autenticação Microsoft Lepta'}
-                    </h3>
-                    {ssoConfig?.configured && (
-                      <span style={{ fontSize: '0.7rem', color: '#10b981', background: 'rgba(16, 185, 129, 0.15)', padding: '2px 6px', borderRadius: '4px', border: '1px solid rgba(16, 185, 129, 0.3)' }}>
-                        Ativo
-                      </span>
-                    )}
-                  </div>
+                  <h3 style={{ margin: 0, fontSize: '1.15rem', color: '#f8fafc' }}>
+                    Conta Microsoft Lepta
+                  </h3>
                   <p style={{ margin: 0, fontSize: '0.8rem', color: '#94a3b8' }}>
-                    {ssoMode === 'windows_sso' ? 'Conta corporativa vinculada ao seu computador' : 'Selecione ou confirme sua conta corporativa'}
+                    Autentique com seu e-mail corporativo @lepta.com.br
                   </p>
                 </div>
               </div>
               <button 
                 type="button" 
-                onClick={() => setSsoModalOpen(false)}
-                disabled={ssoLoading}
+                onClick={() => setMicrosoftModalOpen(false)}
+                disabled={microsoftLoading}
                 style={{ background: 'transparent', border: 'none', color: '#94a3b8', cursor: 'pointer' }}
               >
                 <X size={20} />
               </button>
             </div>
 
-            {ssoError && (
+            {microsoftError && (
               <div className="login-error" style={{ marginBottom: '1rem' }}>
                 <AlertCircle size={18} />
-                <span>{ssoError}</span>
+                <span>{microsoftError}</span>
               </div>
             )}
 
-            {corporateAccounts.length > 0 ? (
-              <>
-                <p style={{ fontSize: '0.85rem', color: '#cbd5e1', marginBottom: '0.5rem' }}>
-                  Contas corporativas detectadas no sistema:
-                </p>
-                <div className="sso-accounts-list">
-                  {corporateAccounts.map((acc) => (
-                    <button
-                      key={acc.id}
-                      type="button"
-                      className="sso-account-item"
-                      disabled={ssoLoading}
-                      onClick={() => handleExecuteSSO(acc.email)}
-                    >
-                      <div>
-                        <strong style={{ display: 'block', fontSize: '0.9rem', color: '#f1f5f9' }}>{acc.username}</strong>
-                        <span style={{ fontSize: '0.8rem', color: '#94a3b8' }}>{acc.email}</span>
-                      </div>
-                      <span style={{ fontSize: '0.72rem', padding: '0.2rem 0.5rem', borderRadius: '4px', background: 'rgba(59, 130, 246, 0.15)', color: '#60a5fa' }}>
-                        {acc.role}
-                      </span>
-                    </button>
-                  ))}
-                </div>
-                <div className="sso-divider" style={{ margin: '0.85rem 0' }}>
-                  <span>ou digite outro e-mail</span>
-                </div>
-              </>
-            ) : null}
-
             <form
-              onSubmit={(e) => {
-                e.preventDefault();
-                handleExecuteSSO(ssoCustomEmail);
-              }}
-              style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}
+              onSubmit={handleMicrosoftPromptSubmit}
+              style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}
             >
               <div className="input-group" style={{ marginBottom: 0 }}>
                 <Mail className="input-icon" size={18} />
                 <input
                   type="email"
                   className="input-field with-icon"
-                  placeholder="exemplo@lepta.com.br"
-                  value={ssoCustomEmail}
-                  onChange={(e) => setSsoCustomEmail(e.target.value)}
-                  disabled={ssoLoading}
+                  placeholder="seu.nome@lepta.com.br"
+                  value={microsoftEmail}
+                  onChange={(e) => setMicrosoftEmail(e.target.value)}
+                  disabled={microsoftLoading}
+                  autoFocus
+                  required
                 />
               </div>
+
+              <p style={{ fontSize: '0.78rem', color: '#94a3b8', margin: 0, lineHeight: 1.4 }}>
+                Sua conta será provisionada e vinculada automaticamente ao banco de dados no primeiro acesso corporativo.
+              </p>
 
               <button
                 type="submit"
                 className="btn-primary login-submit"
-                disabled={ssoLoading || !ssoCustomEmail.trim()}
-                style={{ padding: '10px' }}
+                disabled={microsoftLoading || !microsoftEmail.trim()}
+                style={{ padding: '11px' }}
               >
-                {ssoLoading ? 'Autenticando...' : <>Conectar Agora <ShieldCheck size={18} /></>}
+                {microsoftLoading ? 'Autenticando...' : <>Entrar com Microsoft <ShieldCheck size={18} /></>}
               </button>
             </form>
           </div>
