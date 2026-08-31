@@ -2336,6 +2336,57 @@ app.get('/api/analise-sacados/:cedente', requireSession, requirePermission('8.1'
   }
 });
 
+function extractTipoDocumento(t) {
+  if (!t) return '-';
+
+  // 1. Objeto ou string tipoDocumento / tipoDeDocumento / documentoTipo / especie / especieDoTitulo / produto / operacao
+  const fields = [
+    t.tipoDocumento,
+    t.tipoDeDocumento,
+    t.documentoTipo,
+    t.especie,
+    t.especieDoTitulo,
+    t.tipoEspecie,
+    t.produto,
+    t.operacao?.produto,
+    t.operacao?.tipoDeOperacao,
+    t.tipoOperacao,
+    t.tipoDeOperacao,
+    t.operacao?.tipo,
+    t.modalidade,
+    t.operacao?.modalidade,
+    t.natureza,
+    t.tipo,
+    t.sigla,
+    t.contaOperacional?.sigla
+  ];
+
+  for (const f of fields) {
+    if (!f) continue;
+    if (typeof f === 'string' && f.trim() && f.trim() !== '-' && f.trim().toLowerCase() !== 'null' && f.trim().toLowerCase() !== 'undefined') {
+      return f.trim();
+    }
+    if (typeof f === 'object') {
+      const candidates = [f.nome, f.descricao, f.sigla, f.codigo, f.alias, f.titulo];
+      for (const c of candidates) {
+        if (c && typeof c === 'string' && c.trim() && c.trim() !== '-' && c.trim().toLowerCase() !== 'null') {
+          return c.trim();
+        }
+      }
+    }
+  }
+
+  // 2. Fallback para campos de registros SQLite (SmartFactor / Base Nova)
+  const dbFields = [t.SIGLA, t.TIPO_DOCUMENTO, t.ESPECIE, t.TIPO, t.PRODUTO, t.MODALIDADE];
+  for (const f of dbFields) {
+    if (f && typeof f === 'string' && f.trim() && f.trim() !== '-') {
+      return f.trim();
+    }
+  }
+
+  return '-';
+}
+
 app.get('/api/analise-titulos/:cedente', requireSession, requirePermission('8.1'), async (req, res) => {
   try {
     const cedenteParams = req.params.cedente;
@@ -2414,7 +2465,7 @@ app.get('/api/analise-titulos/:cedente', requireSession, requirePermission('8.1'
           taxa: Number(t.taxa || 0),
           desagio: Number(t.desagio || 0),
           bancoCobrador: t.bancoCobrador?.nome || t.bancoCobrador || '',
-          tipoDocumento: t.tipoDeDocumento || t.especie || 'Duplicata',
+          tipoDocumento: extractTipoDocumento(t),
           chaveNfe: t.chaveNfe || t.manifesto || '',
           codigoDoLastro: t.codigoDoLastro || ''
         });
@@ -2467,7 +2518,7 @@ app.get('/api/analise-titulos/:cedente', requireSession, requirePermission('8.1'
               taxa: Number(r.TAXA || 0),
               desagio: Number(r.DESAGIO || 0),
               bancoCobrador: r.BANCO_COBRADOR || '',
-              tipoDocumento: r.SIGLA || 'Duplicata',
+              tipoDocumento: extractTipoDocumento(r),
               chaveNfe: '',
               codigoDoLastro: ''
             };

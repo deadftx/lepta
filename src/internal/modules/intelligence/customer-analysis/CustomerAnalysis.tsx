@@ -1903,7 +1903,7 @@ const CustomerAnalysis = () => {
                   </div>
                   <div className="title-detail-field">
                     <span className="field-label">Tipo de Documento</span>
-                    <span className="field-value">{selectedTitleDetail.tipoDocumento || 'Duplicata'}</span>
+                    <span className="field-value">{selectedTitleDetail.tipoDocumento || '-'}</span>
                   </div>
                   {selectedTitleDetail.bancoCobrador && (
                     <div className="title-detail-field">
