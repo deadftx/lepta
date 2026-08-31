@@ -517,7 +517,23 @@ const CustomerAnalysis = () => {
 
   // Filtragem e Ordenação dos TÍTULOS (drillDownMode === 'titulos')
   let displayTitles: TitleItem[] = [];
-  if (drillDownMode === 'titulos') {
+  const hasTitleFilter = Boolean(
+    titleSearchTerm.trim() !== '' ||
+    titleNumero.trim() !== '' ||
+    titleOperacao.trim() !== '' ||
+    titleSacado.trim() !== '' ||
+    titleSituacao.trim() !== '' ||
+    (titleValorMin.trim() !== '' && !isNaN(parseFloat(titleValorMin))) ||
+    (titleValorMax.trim() !== '' && !isNaN(parseFloat(titleValorMax))) ||
+    titleStartDate !== '' ||
+    titleEndDate !== '' ||
+    kpiFilters.includes('cedentes') ||
+    kpiFilters.includes('total_liquidado') ||
+    kpiFilters.includes('total_aberto') ||
+    kpiFilters.includes('total_vencido')
+  );
+
+  if (drillDownMode === 'titulos' && hasTitleFilter) {
     displayTitles = [...titlesData];
 
     // 1. Filtro por Data
@@ -564,7 +580,7 @@ const CustomerAnalysis = () => {
     }
     if (titleSituacao.trim() !== '') {
       const term = titleSituacao.toLowerCase().trim();
-      displayTitles = displayTitles.filter(t => t.situacao.toLowerCase().includes(term));
+      displayTitles = displayTitles.filter(t => t.situacao.toLowerCase() === term);
     }
     if (titleValorMin.trim() !== '' && !isNaN(parseFloat(titleValorMin))) {
       displayTitles = displayTitles.filter(t => t.valorNominal >= parseFloat(titleValorMin));
@@ -1109,17 +1125,33 @@ const CustomerAnalysis = () => {
                 ))}
                 {displayTitles.length === 0 && (
                   <tr className="analysis-empty-row">
-                    <td colSpan={10} style={{ textAlign: 'center', padding: '3rem', color: '#94a3b8' }}>
-                      <Search size={48} style={{ margin: '0 auto 1rem', opacity: 0.2 }} />
-                      <p style={{ fontSize: '1.1rem' }}>Nenhum título encontrado para os filtros selecionados</p>
-                      <button 
-                        type="button" 
-                        className="btn-primary" 
-                        onClick={handleClearTitleFilters}
-                        style={{ marginTop: '0.75rem', display: 'inline-flex', alignItems: 'center', gap: '0.5rem' }}
-                      >
-                        <RotateCcw size={14} /> Redefinir Filtros de Títulos
-                      </button>
+                    <td colSpan={10} style={{ textAlign: 'center', padding: '3.5rem 1.5rem', color: '#94a3b8' }}>
+                      {!hasTitleFilter ? (
+                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.6rem' }}>
+                          <Search size={44} style={{ opacity: 0.35, color: '#38bdf8' }} />
+                          <p style={{ fontSize: '1.05rem', color: '#e2e8f0', fontWeight: 600, margin: 0 }}>
+                            Informe um termo na busca rápida ou preencha os filtros para listar os títulos
+                          </p>
+                          <span style={{ fontSize: '0.85rem', color: '#94a3b8' }}>
+                            Você também pode clicar nos cards de indicadores acima para visualizar títulos por situação.
+                          </span>
+                        </div>
+                      ) : (
+                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.6rem' }}>
+                          <Search size={44} style={{ opacity: 0.25 }} />
+                          <p style={{ fontSize: '1.05rem', color: '#e2e8f0', fontWeight: 600, margin: 0 }}>
+                            Nenhum título encontrado para os filtros selecionados
+                          </p>
+                          <button 
+                            type="button" 
+                            className="btn-primary" 
+                            onClick={handleClearTitleFilters}
+                            style={{ marginTop: '0.5rem', display: 'inline-flex', alignItems: 'center', gap: '0.5rem', padding: '0.45rem 1rem' }}
+                          >
+                            <RotateCcw size={14} /> Redefinir Filtros de Títulos
+                          </button>
+                        </div>
+                      )}
                     </td>
                   </tr>
                 )}
