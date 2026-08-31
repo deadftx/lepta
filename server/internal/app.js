@@ -845,22 +845,121 @@ async function fetchLiquidacoesDaAPI(req) {
   return unltdLiquidacoesCache.pending;
 }
 
+function matchRegisteredManager(rawInput, managerList) {
+  if (!rawInput || typeof rawInput !== 'string') return null;
+  const clean = normalizeStr(rawInput).toLowerCase().trim();
+  if (!clean || clean.length < 2) return null;
+
+  // Normalização de caracteres para extrair tokens limpos
+  const cleanLetters = clean.replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
+  const cleanTokens = cleanLetters.split(' ').filter(t => t.length >= 2);
+
+  let bestMatch = null;
+  let highestScore = 0;
+
+  for (const m of managerList) {
+    if (!m || !m.nome) continue;
+    const mNorm = normalizeStr(m.nome).toLowerCase().trim();
+    const mLetters = mNorm.replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
+    const mTokens = mLetters.split(' ').filter(t => t.length >= 2);
+
+    // 1. Igualdade exata (normalizada)
+    if (clean === mNorm || cleanLetters === mLetters) {
+      return m;
+    }
+
+    // 2. Se o input contiver o e-mail ou prefixo de e-mail do gestor (ex: "andre.barroco", "andre.barroco@lepta.com.br")
+    if (m.email) {
+      const emailClean = normalizeStr(m.email).toLowerCase().trim();
+      const emailPrefix = emailClean.split('@')[0].replace(/[^a-z0-9]/g, '');
+      const inputNoPunct = clean.replace(/[^a-z0-9]/g, '');
+      if (clean.includes(emailClean) || (emailPrefix.length >= 4 && inputNoPunct.includes(emailPrefix))) {
+        return m;
+      }
+    }
+
+    // 3. Checagem por sobrenomes distintivos cadastrados (ex: 'barroco', 'blanes', 'dantas', 'pereira')
+    const distinctiveSurnames = mTokens.slice(1).filter(t => t.length >= 4);
+    for (const surname of distinctiveSurnames) {
+      if (cleanTokens.includes(surname)) {
+        // Se também contém o primeiro nome OU se a string de busca é curta (apenas o sobrenome ou 2 palavras)
+        if (cleanTokens.includes(mTokens[0]) || cleanTokens.length <= 2) {
+          return m;
+        }
+      }
+    }
+
+    // 4. Se todos os tokens do gestor estão contidos no input do BitFin (ex: "ANDRE LUIS BARROCO" contendo "ANDRE" e "BARROCO")
+    const allManagerTokensInInput = mTokens.every(t => cleanTokens.includes(t));
+    if (allManagerTokensInInput) {
+      return m;
+    }
+
+    // 5. Primeiro nome bate E qualquer outro token bate (ex: "Luiz Fernando Dantas" vs "Luiz Dantas")
+    if (cleanTokens.length >= 2 && mTokens.length >= 2) {
+      const firstMatches = cleanTokens[0] === mTokens[0];
+      const otherMatches = cleanTokens.slice(1).some(t => mTokens.slice(1).includes(t));
+      if (firstMatches && otherMatches) {
+        return m;
+      }
+    }
+
+    // 6. Inversão de nome do BitFin (ex: "Barroco, André" ou "Dantas, Luiz")
+    if (cleanTokens.length >= 2 && mTokens.length >= 2) {
+      if (cleanTokens[0] === mTokens[mTokens.length - 1] && cleanTokens[1] === mTokens[0]) {
+        return m;
+      }
+    }
+
+    // 7. Substring mútua (nome completo longo do BitFin contendo o nome do gestor)
+    if (cleanLetters.includes(mLetters) || mLetters.includes(cleanLetters)) {
+      if (cleanLetters.length >= 5 && mLetters.length >= 5) {
+        return m;
+      }
+    }
+
+    // 8. Similaridade fuzzy (Dice coefficient)
+    const simScore = stringSimilarity.compareTwoStrings(cleanLetters, mLetters);
+    if (simScore > highestScore) {
+      highestScore = simScore;
+      bestMatch = m;
+    }
+  }
+
+  if (highestScore >= 0.60 && bestMatch) {
+    return bestMatch;
+  }
+
+  return null;
+}
+
 function enrichClientWithManagers(payload) {
   if (!payload || typeof payload !== 'object') return payload;
   const entidade = payload.entidade || {};
   
-  if (entidade.gerente === undefined || entidade.gerente === null) {
+  if (entidade.gerente === undefined || entidade.gerente === null || !entidade.gerente) {
     const fromAccounts = (payload.contasOperacionais || [])
       .map(acc => acc?.gerente?.nome || acc?.gerente || acc?.colaborador?.nome || acc?.colaborador)
       .find(Boolean);
     entidade.gerente = fromAccounts || payload.gerente || '';
   }
+
+  // Tenta vincular com gerentes cadastrados na lista oficial
+  try {
+    ensureGerentesContasTable();
+    const registered = db.prepare(`SELECT * FROM gerentes_contas WHERE ativo = 1`).all();
+    const matched = matchRegisteredManager(entidade.gerente, registered);
+    if (matched) {
+      entidade.gerente = matched.nome;
+      entidade.superintendente = matched.superintendente_nome || (matched.cargo === 'SUPERINTENDENTE' ? matched.nome : 'Rafael Pereira');
+    }
+  } catch (err) {}
   
-  if (entidade.superintendente === undefined || entidade.superintendente === null) {
+  if (entidade.superintendente === undefined || entidade.superintendente === null || !entidade.superintendente || entidade.superintendente === 'Sebastiao Neto') {
     const fromAccounts = (payload.contasOperacionais || [])
       .map(acc => acc?.superintendente?.nome || acc?.superintendente)
       .find(Boolean);
-    entidade.superintendente = fromAccounts || payload.superintendente || 'Sebastiao Neto';
+    entidade.superintendente = fromAccounts || payload.superintendente || 'Rafael Pereira';
   }
   
   payload.entidade = entidade;
@@ -1260,31 +1359,81 @@ app.get('/api/gerentes', requireSession, async (req, res) => {
       ORDER BY CASE WHEN cargo = 'SUPERINTENDENTE' THEN 0 ELSE 1 END, nome ASC
     `).all();
 
-    // Contagem de cedentes vinculados (local + SmartFactor)
-    const localRows = getAllLocalClientRows();
-    const countsMap = new Map();
+    // Map de gerente_id -> Set de documentos de cedentes únicos
+    const cedentesByManager = new Map();
+    for (const g of gerentes) {
+      cedentesByManager.set(g.id, new Set());
+    }
 
+    // 1. Clientes cadastrados no banco interno (clientes_cadastro)
+    const localRows = getAllLocalClientRows();
     for (const row of localRows) {
       const localComposed = composeClientRegistration(null, row);
-      const gerente = localComposed.data?.entidade?.gerente;
-      if (gerente) {
-        const normG = normalizeStr(gerente);
-        countsMap.set(normG, (countsMap.get(normG) || 0) + 1);
+      const doc = normalizeEntityDocument(row.documento);
+      const gName = localComposed.data?.entidade?.gerente;
+      if (gName && doc) {
+        const matched = matchRegisteredManager(gName, gerentes);
+        if (matched && cedentesByManager.has(matched.id)) {
+          cedentesByManager.get(matched.id).add(doc);
+        }
       }
     }
 
+    // 2. Clientes da API BitFin / UNLTD
+    try {
+      const titles = await fetchTitulosDaAPI(req).catch(() => []);
+      for (const t of titles) {
+        const cliente = t.contaOperacional?.cliente;
+        const entidade = cliente?.entidade;
+        const doc = normalizeEntityDocument(entidade?.documento);
+        if (!doc) continue;
+
+        // Se já foi atribuído pelo banco interno, mantém prioridade do banco
+        let alreadyAssigned = false;
+        for (const docSet of cedentesByManager.values()) {
+          if (docSet.has(doc)) {
+            alreadyAssigned = true;
+            break;
+          }
+        }
+        if (alreadyAssigned) continue;
+
+        const gName = entidade?.gerente || t.contaOperacional?.gerente?.nome || t.contaOperacional?.gerente || t.contaOperacional?.colaborador?.nome || t.contaOperacional?.colaborador;
+        if (gName) {
+          const matched = matchRegisteredManager(gName, gerentes);
+          if (matched && cedentesByManager.has(matched.id)) {
+            cedentesByManager.get(matched.id).add(doc);
+          }
+        }
+      }
+    } catch (apiErr) {
+      console.warn('Aviso ao sincronizar gerentes com a API BitFin:', apiErr.message);
+    }
+
+    // 3. Fallback no SmartFactor / BASE_NOVA
     try {
       if (tableExists('BASE_SMARTFACTOR')) {
-        const sfCounts = db.prepare(`
-          SELECT GERENTE, COUNT(DISTINCT CLIENTE) as total 
+        const sfRows = db.prepare(`
+          SELECT DISTINCT CLIENTE, DOCUMENTO, GERENTE 
           FROM BASE_SMARTFACTOR 
           WHERE GERENTE IS NOT NULL AND GERENTE != ''
-          GROUP BY GERENTE
         `).all();
-        for (const s of sfCounts) {
-          const normG = normalizeStr(s.GERENTE);
-          if (!countsMap.has(normG)) {
-            countsMap.set(normG, s.total);
+        for (const s of sfRows) {
+          const doc = normalizeEntityDocument(s.DOCUMENTO) || s.CLIENTE;
+          if (!doc) continue;
+
+          let alreadyAssigned = false;
+          for (const docSet of cedentesByManager.values()) {
+            if (docSet.has(doc)) {
+              alreadyAssigned = true;
+              break;
+            }
+          }
+          if (alreadyAssigned) continue;
+
+          const matched = matchRegisteredManager(s.GERENTE, gerentes);
+          if (matched && cedentesByManager.has(matched.id)) {
+            cedentesByManager.get(matched.id).add(doc);
           }
         }
       }
@@ -1293,11 +1442,10 @@ app.get('/api/gerentes', requireSession, async (req, res) => {
     }
 
     const enriched = gerentes.map(g => {
-      const norm = normalizeStr(g.nome);
-      const totalCedentes = countsMap.get(norm) || 0;
+      const docSet = cedentesByManager.get(g.id);
       return {
         ...g,
-        totalCedentes
+        totalCedentes: docSet ? docSet.size : 0
       };
     });
 
@@ -1383,54 +1531,60 @@ app.get('/api/gerentes/:id/cedentes', requireSession, async (req, res) => {
   try {
     ensureGerentesContasTable();
     const id = req.params.id;
-    const gerente = db.prepare(`SELECT * FROM gerentes_contas WHERE id = ?`).get(id);
+    const gerentes = db.prepare(`SELECT * FROM gerentes_contas WHERE ativo = 1`).all();
+    const gerente = gerentes.find(g => g.id === id);
     if (!gerente) return res.status(404).json({ error: 'Gerente não encontrado.' });
 
-    const normGerente = normalizeStr(gerente.nome);
     const cedentesMap = new Map();
 
-    // 1. Clientes cadastrados internamente com override / local
+    // 1. Clientes cadastrados internamente com override / local (maior precedência)
     const localRows = getAllLocalClientRows();
     for (const row of localRows) {
       const localComposed = composeClientRegistration(null, row);
       const gName = localComposed.data?.entidade?.gerente;
-      if (gName && (normalizeStr(gName) === normGerente || normalizeStr(gName).includes(normGerente) || normGerente.includes(normalizeStr(gName)))) {
-        const doc = row.documento;
-        const entity = localComposed.data?.entidade || {};
-        cedentesMap.set(doc, {
-          documento: doc,
-          nome: entity.nome || 'Cliente Interno',
-          email: entity.email || '-',
-          telefone: entity.telefone || '-',
-          tipo: entity.tipo || 'PJ',
-          gerente: entity.gerente || gerente.nome,
-          superintendente: entity.superintendente || gerente.superintendente_nome || 'Rafael Pereira',
-          source: localComposed.source,
-          updatedAt: localComposed.updatedAt
-        });
+      if (gName) {
+        const matched = matchRegisteredManager(gName, gerentes);
+        if (matched && matched.id === gerente.id) {
+          const doc = row.documento;
+          const entity = localComposed.data?.entidade || {};
+          cedentesMap.set(doc, {
+            documento: doc,
+            nome: entity.nome || 'Cliente Interno',
+            email: entity.email || '-',
+            telefone: entity.telefone || '-',
+            tipo: entity.tipo || 'PJ',
+            gerente: gerente.nome,
+            superintendente: gerente.superintendente_nome || (gerente.cargo === 'SUPERINTENDENTE' ? gerente.nome : 'Rafael Pereira'),
+            source: localComposed.source,
+            updatedAt: localComposed.updatedAt
+          });
+        }
       }
     }
 
-    // 2. Clientes na API UNLTD (se houver títulos ou dados em cache)
+    // 2. Clientes na API BitFin / UNLTD
     try {
       const titles = await fetchTitulosDaAPI(req).catch(() => []);
       for (const t of titles) {
         const cliente = t.contaOperacional?.cliente;
         const entidade = cliente?.entidade;
         if (!entidade?.nome) continue;
-        const gName = entidade.gerente || t.contaOperacional?.gerente?.nome || t.contaOperacional?.gerente;
-        if (gName && (normalizeStr(gName) === normGerente || normalizeStr(gName).includes(normGerente) || normGerente.includes(normalizeStr(gName)))) {
-          const doc = normalizeEntityDocument(entidade.documento);
-          if (doc && !cedentesMap.has(doc)) {
+        const doc = normalizeEntityDocument(entidade.documento);
+        if (!doc || cedentesMap.has(doc)) continue;
+
+        const gName = entidade.gerente || t.contaOperacional?.gerente?.nome || t.contaOperacional?.gerente || t.contaOperacional?.colaborador?.nome || t.contaOperacional?.colaborador;
+        if (gName) {
+          const matched = matchRegisteredManager(gName, gerentes);
+          if (matched && matched.id === gerente.id) {
             cedentesMap.set(doc, {
               documento: doc,
               nome: entidade.nome,
               email: entidade.email || '-',
               telefone: entidade.telefone || '-',
               tipo: entidade.tipo || 'PJ',
-              gerente: gName,
-              superintendente: entidade.superintendente || gerente.superintendente_nome || 'Rafael Pereira',
-              source: 'api'
+              gerente: gerente.nome,
+              superintendente: gerente.superintendente_nome || (gerente.cargo === 'SUPERINTENDENTE' ? gerente.nome : 'Rafael Pereira'),
+              source: 'BitFin API'
             });
           }
         }
@@ -1439,28 +1593,31 @@ app.get('/api/gerentes/:id/cedentes', requireSession, async (req, res) => {
       console.warn('Aviso ao buscar cedentes da API para o gerente:', apiErr.message);
     }
 
-    // 3. Fallback no SmartFactor se disponível
+    // 3. Fallback no SmartFactor / BASE_NOVA
     try {
       if (tableExists('BASE_SMARTFACTOR')) {
         const sfRows = db.prepare(`
           SELECT DISTINCT CLIENTE, DOCUMENTO, GERENTE, UA
           FROM BASE_SMARTFACTOR
-          WHERE GERENTE IS NOT NULL AND LOWER(GERENTE) LIKE ?
-        `).all(`%${gerente.nome.trim().toLowerCase()}%`);
+          WHERE GERENTE IS NOT NULL AND GERENTE != ''
+        `).all();
 
         for (const sf of sfRows) {
           const doc = normalizeEntityDocument(sf.DOCUMENTO) || sf.CLIENTE;
-          if (doc && !cedentesMap.has(doc)) {
+          if (!doc || cedentesMap.has(doc)) continue;
+
+          const matched = matchRegisteredManager(sf.GERENTE, gerentes);
+          if (matched && matched.id === gerente.id) {
             cedentesMap.set(doc, {
               documento: sf.DOCUMENTO || '-',
               nome: sf.CLIENTE,
               email: '-',
               telefone: '-',
               tipo: 'PJ',
-              gerente: sf.GERENTE || gerente.nome,
-              superintendente: gerente.superintendente_nome || 'Rafael Pereira',
+              gerente: gerente.nome,
+              superintendente: gerente.superintendente_nome || (gerente.cargo === 'SUPERINTENDENTE' ? gerente.nome : 'Rafael Pereira'),
               ua: sf.UA || '-',
-              source: 'smartfactor'
+              source: 'SmartFactor'
             });
           }
         }
