@@ -332,51 +332,69 @@ const CustomerAnalysis = () => {
     }
   };
 
+  const createEmlWithAttachment = (
+    subject: string,
+    bodyText: string,
+    attachmentFilename: string,
+    attachmentBuffer: ArrayBuffer
+  ): Blob => {
+    const boundary = `----=_NextPart_${Date.now()}_${Math.random().toString(36).substring(2)}`;
+    const bytes = new Uint8Array(attachmentBuffer);
+    let binary = '';
+    const len = bytes.byteLength;
+    for (let i = 0; i < len; i++) {
+      binary += String.fromCharCode(bytes[i]);
+    }
+    const base64Data = btoa(binary);
+    const base64Lines = base64Data.match(/.{1,76}/g)?.join('\r\n') || base64Data;
+    const utf8Subject = `=?UTF-8?B?${btoa(unescape(encodeURIComponent(subject)))}?=`;
+
+    const emlContent = [
+      'MIME-Version: 1.0',
+      'X-Unsent: 1',
+      `Subject: ${utf8Subject}`,
+      `Content-Type: multipart/mixed; boundary="${boundary}"`,
+      '',
+      `--${boundary}`,
+      'Content-Type: text/plain; charset=UTF-8',
+      'Content-Transfer-Encoding: 8bit',
+      '',
+      bodyText,
+      '',
+      `--${boundary}`,
+      `Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet; name="${attachmentFilename}"`,
+      `Content-Disposition: attachment; filename="${attachmentFilename}"`,
+      'Content-Transfer-Encoding: base64',
+      '',
+      base64Lines,
+      '',
+      `--${boundary}--`
+    ].join('\r\n');
+
+    return new Blob([emlContent], { type: 'message/rfc822' });
+  };
+
   const handleSendEmailWithAttachment = async () => {
     try {
       setExportLoading(true);
       const { workbook, filename, title } = await generateExcelWorkbook();
       const buffer = await workbook.xlsx.writeBuffer();
-      const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-      const file = new File([blob], filename, { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+      
+      const subject = `${title} - Lepta Capital`;
+      const body = `Olá,\n\nSegue em anexo o ${title} exportado diretamente do LeptaSys em ${new Date().toLocaleDateString('pt-BR')}.\n\nArquivo gerado: ${filename}\n\nAtenciosamente,\nLepta Capital`;
 
-      const subject = encodeURIComponent(`${title} - Lepta Capital`);
-      const body = encodeURIComponent(
-        `Olá,\n\nSegue o ${title} exportado diretamente do LeptaSys em ${new Date().toLocaleDateString('pt-BR')}.\n\nArquivo: ${filename}\n\nAtenciosamente,\nLepta Capital`
-      );
+      // 1. Gera arquivo .eml (formato padrão do Outlook com flag X-Unsent: 1 e .xlsx anexado)
+      const emlBlob = createEmlWithAttachment(subject, body, filename, buffer as ArrayBuffer);
+      const emlFilename = filename.replace(/\.xlsx$/i, '.eml');
 
-      let sharedNatively = false;
-      if (navigator.canShare && navigator.canShare({ files: [file] })) {
-        try {
-          await navigator.share({
-            title,
-            text: `Relatório exportado do LeptaSys: ${filename}`,
-            files: [file]
-          });
-          sharedNatively = true;
-          showToast('Outlook / cliente de e-mail iniciado com o anexo!');
-        } catch (shareErr: any) {
-          if (shareErr.name !== 'AbortError') {
-            console.warn('Fallback para download + mailto:', shareErr);
-          } else {
-            return;
-          }
-        }
-      }
+      const emlUrl = window.URL.createObjectURL(emlBlob);
+      const a = document.createElement('a');
+      a.href = emlUrl;
+      a.download = emlFilename;
+      a.click();
+      window.URL.revokeObjectURL(emlUrl);
 
-      if (!sharedNatively) {
-        const url = window.URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = filename;
-        a.click();
-        window.URL.revokeObjectURL(url);
-
-        const mailtoLink = `mailto:?subject=${subject}&body=${body}`;
-        window.location.href = mailtoLink;
-
-        showToast(`Relatório baixado (${filename}) e Outlook aberto para envio!`);
-      }
+      showToast(`Rascunho do Outlook gerado (${emlFilename}) com o Excel 100% anexado!`);
     } catch (err) {
       console.error('Erro ao preparar e-mail:', err);
       showToast('Erro ao preparar e-mail com anexo.');
