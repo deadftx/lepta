@@ -850,7 +850,32 @@
 .title-filter-actions {
   display: flex;
   align-items: flex-end;
+  gap: 0.5rem;
   margin-bottom: 1px;
+}
+
+.btn-consult-title-filters {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  height: 38px;
+  padding: 0 1.1rem;
+  background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+  border: 1px solid rgba(96, 165, 250, 0.4);
+  border-radius: 8px;
+  color: #ffffff;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(59, 130, 246, 0.25);
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+
+.btn-consult-title-filters:hover {
+  background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.4);
+  transform: translateY(-1px);
 }
 
 .btn-clear-title-filters {
@@ -874,6 +899,21 @@
   background: rgba(239, 68, 68, 0.15);
   border-color: rgba(239, 68, 68, 0.3);
   color: #fca5a5;
+}
+
+/* Drag to scroll container */
+.customer-analysis-page .table-responsive.draggable-table-container {
+  cursor: grab;
+}
+
+.customer-analysis-page .table-responsive.draggable-table-container.is-dragging {
+  cursor: grabbing !important;
+  user-select: none;
+}
+
+.customer-analysis-page .table-responsive.draggable-table-container.is-dragging * {
+  cursor: grabbing !important;
+  user-select: none;
 }
 
 /* Status Badges para Títulos */

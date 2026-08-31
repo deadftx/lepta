@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { 
@@ -143,6 +143,53 @@ const CustomerAnalysis = () => {
   const [titleValorMin, setTitleValorMin] = useState('');
   const [titleValorMax, setTitleValorMax] = useState('');
   const [selectedTitleDetail, setSelectedTitleDetail] = useState<TitleItem | null>(null);
+  const [titleQueryTriggered, setTitleQueryTriggered] = useState(false);
+
+  // Drag-to-scroll horizontal da tabela de títulos
+  const tableContainerRef = useRef<HTMLDivElement>(null);
+  const [isDraggingTable, setIsDraggingTable] = useState(false);
+  const dragStartX = useRef(0);
+  const dragScrollLeft = useRef(0);
+  const hasMovedDrag = useRef(false);
+
+  const handleTableMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (!tableContainerRef.current) return;
+    const target = e.target as HTMLElement;
+    if (target.closest('button, input, select, a')) return;
+
+    dragStartX.current = e.pageX - tableContainerRef.current.offsetLeft;
+    dragScrollLeft.current = tableContainerRef.current.scrollLeft;
+    hasMovedDrag.current = false;
+    setIsDraggingTable(true);
+  };
+
+  const handleTableMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (!isDraggingTable || !tableContainerRef.current) return;
+    e.preventDefault();
+    const x = e.pageX - tableContainerRef.current.offsetLeft;
+    const walk = (x - dragStartX.current) * 1.5;
+    if (Math.abs(walk) > 4) {
+      hasMovedDrag.current = true;
+    }
+    tableContainerRef.current.scrollLeft = dragScrollLeft.current - walk;
+  };
+
+  const handleTableMouseUp = () => {
+    setIsDraggingTable(false);
+  };
+
+  const handleTableMouseLeave = () => {
+    setIsDraggingTable(false);
+  };
+
+  const handleTitleRowClick = (title: TitleItem) => {
+    if (hasMovedDrag.current) return;
+    setSelectedTitleDetail(title);
+  };
+
+  const handleExecuteTitleQuery = () => {
+    setTitleQueryTriggered(true);
+  };
 
   // Sort state
   const [sortConfig, setSortConfig] = useState<{ key: string, direction: 'asc' | 'desc' } | null>(null);
@@ -381,6 +428,7 @@ const CustomerAnalysis = () => {
     setTitleValorMax('');
     setTitleStartDate('');
     setTitleEndDate('');
+    setTitleQueryTriggered(false);
     setSelectedCedente(cedente);
     setDrillDownMode(mode);
     fetchSubData(cedente, mode);
@@ -392,6 +440,7 @@ const CustomerAnalysis = () => {
     setSubData([]);
     setTitlesData([]);
     setSelectedTitleDetail(null);
+    setTitleQueryTriggered(false);
   };
 
   const handleClearTitleFilters = () => {
@@ -404,6 +453,7 @@ const CustomerAnalysis = () => {
     setTitleValorMax('');
     setTitleStartDate('');
     setTitleEndDate('');
+    setTitleQueryTriggered(false);
     setKpiFilters(['volume_geral']);
   };
 
@@ -419,6 +469,7 @@ const CustomerAnalysis = () => {
     setTitleValorMax('');
     setTitleStartDate('');
     setTitleEndDate('');
+    setTitleQueryTriggered(true);
     setKpiFilters(['volume_geral']);
     fetchSubData(selectedCedente, 'titulos');
   };
@@ -518,6 +569,7 @@ const CustomerAnalysis = () => {
   // Filtragem e Ordenação dos TÍTULOS (drillDownMode === 'titulos')
   let displayTitles: TitleItem[] = [];
   const hasTitleFilter = Boolean(
+    titleQueryTriggered ||
     titleSearchTerm.trim() !== '' ||
     titleNumero.trim() !== '' ||
     titleOperacao.trim() !== '' ||
@@ -843,6 +895,7 @@ const CustomerAnalysis = () => {
                       className="input-field" 
                       value={titleStartDate} 
                       onChange={e => setTitleStartDate(e.target.value)} 
+                      onKeyDown={e => { if (e.key === 'Enter') handleExecuteTitleQuery(); }}
                     />
                   </div>
                   <div className="date-input-sub">
@@ -852,6 +905,7 @@ const CustomerAnalysis = () => {
                       className="input-field" 
                       value={titleEndDate} 
                       onChange={e => setTitleEndDate(e.target.value)} 
+                      onKeyDown={e => { if (e.key === 'Enter') handleExecuteTitleQuery(); }}
                     />
                   </div>
                 </div>
@@ -867,6 +921,7 @@ const CustomerAnalysis = () => {
                     placeholder="Buscar em qualquer campo do título..." 
                     value={titleSearchTerm} 
                     onChange={e => setTitleSearchTerm(e.target.value)} 
+                    onKeyDown={e => { if (e.key === 'Enter') handleExecuteTitleQuery(); }}
                   />
                 </div>
               </div>
@@ -882,6 +937,7 @@ const CustomerAnalysis = () => {
                   placeholder="Ex: 12345" 
                   value={titleNumero} 
                   onChange={e => setTitleNumero(e.target.value)} 
+                  onKeyDown={e => { if (e.key === 'Enter') handleExecuteTitleQuery(); }}
                 />
               </div>
 
@@ -893,6 +949,7 @@ const CustomerAnalysis = () => {
                   placeholder="Ex: 104" 
                   value={titleOperacao} 
                   onChange={e => setTitleOperacao(e.target.value)} 
+                  onKeyDown={e => { if (e.key === 'Enter') handleExecuteTitleQuery(); }}
                 />
               </div>
 
@@ -904,6 +961,7 @@ const CustomerAnalysis = () => {
                   placeholder="Nome do sacado..." 
                   value={titleSacado} 
                   onChange={e => setTitleSacado(e.target.value)} 
+                  onKeyDown={e => { if (e.key === 'Enter') handleExecuteTitleQuery(); }}
                 />
               </div>
 
@@ -932,6 +990,7 @@ const CustomerAnalysis = () => {
                     placeholder="Mín" 
                     value={titleValorMin} 
                     onChange={e => setTitleValorMin(e.target.value)} 
+                    onKeyDown={e => { if (e.key === 'Enter') handleExecuteTitleQuery(); }}
                   />
                   <span className="value-separator">-</span>
                   <input 
@@ -940,11 +999,20 @@ const CustomerAnalysis = () => {
                     placeholder="Máx" 
                     value={titleValorMax} 
                     onChange={e => setTitleValorMax(e.target.value)} 
+                    onKeyDown={e => { if (e.key === 'Enter') handleExecuteTitleQuery(); }}
                   />
                 </div>
               </div>
 
               <div className="title-filter-actions">
+                <button 
+                  type="button" 
+                  className="btn-consult-title-filters" 
+                  onClick={handleExecuteTitleQuery}
+                  title="Executar consulta com os filtros aplicados ou listar todos os títulos"
+                >
+                  <Search size={14} /> Consultar
+                </button>
                 <button 
                   type="button" 
                   className="btn-clear-title-filters" 
@@ -958,37 +1026,36 @@ const CustomerAnalysis = () => {
           </div>
         ) : (
           /* FILTRO PADRÃO PARA CLIENTES / SACADOS / UAs */
-          <div className="analysis-filter-row" style={{ padding: '0 1.5rem 1.5rem 1.5rem', display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
-            <div className="search-input-wrapper" style={{ flex: '1 1 40%' }}>
+          <div className="analysis-filters">
+            <div className="search-input-wrapper">
               <Search size={18} />
-              <input
-                type="text"
-                className="input-field"
-                placeholder={selectedCedente ? `Buscar ${drillDownMode === 'sacados' ? 'sacado' : drillDownMode === 'un' ? 'UN' : 'UA'}...` : groupMode ? 'Buscar por nome do grupo financeiro...' : "Buscar instantânea por nome do cliente ou cedente..."}
-                value={searchTerm}
-                onChange={e => setSearchTerm(e.target.value)}
-                style={{ width: '100%' }}
+              <input 
+                type="text" 
+                className="input-field" 
+                placeholder={selectedCedente ? (drillDownMode === 'sacados' ? 'Buscar sacado...' : 'Buscar unidade...') : groupMode ? 'Buscar grupo financeiro...' : 'Buscar cliente (cedente)...'} 
+                value={searchTerm} 
+                onChange={e => setSearchTerm(e.target.value)} 
               />
             </div>
             
-            <div className="analysis-date-filters" style={{ display: 'flex', gap: '0.5rem', flex: '1 1 auto', alignItems: 'center' }}>
+            <div className="analysis-date-filters">
               <div className="search-input-wrapper analysis-date-field" style={{ flex: 1 }}>
                 <span style={{ position: 'absolute', left: '1rem', color: '#94a3b8', fontSize: '0.85rem' }}>De:</span>
                 <input 
-                  type="date"
-                  className="input-field"
-                  value={startDate}
-                  onChange={e => setStartDate(e.target.value)}
+                  type="date" 
+                  className="input-field" 
+                  value={startDate} 
+                  onChange={e => setStartDate(e.target.value)} 
                   style={{ width: '100%', paddingLeft: '3rem' }}
                 />
               </div>
               <div className="search-input-wrapper analysis-date-field" style={{ flex: 1 }}>
                 <span style={{ position: 'absolute', left: '1rem', color: '#94a3b8', fontSize: '0.85rem' }}>Até:</span>
                 <input 
-                  type="date"
-                  className="input-field"
-                  value={endDate}
-                  onChange={e => setEndDate(e.target.value)}
+                  type="date" 
+                  className="input-field" 
+                  value={endDate} 
+                  onChange={e => setEndDate(e.target.value)} 
                   style={{ width: '100%', paddingLeft: '3rem' }}
                 />
               </div>
@@ -1013,7 +1080,14 @@ const CustomerAnalysis = () => {
           </div>
         ) : drillDownMode === 'titulos' ? (
           /* TABELA DE TÍTULOS */
-          <div className="table-responsive">
+          <div 
+            ref={tableContainerRef}
+            className={`table-responsive draggable-table-container ${isDraggingTable ? 'is-dragging' : ''}`}
+            onMouseDown={handleTableMouseDown}
+            onMouseMove={handleTableMouseMove}
+            onMouseUp={handleTableMouseUp}
+            onMouseLeave={handleTableMouseLeave}
+          >
             <table className="data-table title-data-table">
               <thead>
                 <tr>
@@ -1079,7 +1153,7 @@ const CustomerAnalysis = () => {
                   <tr 
                     key={title.id || `${title.numero}-${idx}`}
                     className="title-row-interactive"
-                    onClick={() => setSelectedTitleDetail(title)}
+                    onClick={() => handleTitleRowClick(title)}
                   >
                     <td className="analysis-client-cell" data-label="Nº Título" style={{ fontWeight: 600, color: '#38bdf8' }}>
                       {title.numero}
