@@ -277,6 +277,40 @@ function ensureTableColumns(table, keys) {
   }
 }
 
+function ensureGerentesContasTable() {
+  try {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS gerentes_contas (
+        id TEXT PRIMARY KEY,
+        nome TEXT NOT NULL,
+        email TEXT NOT NULL,
+        cargo TEXT NOT NULL DEFAULT 'GERENTE',
+        superintendente_id TEXT,
+        superintendente_nome TEXT,
+        ativo INTEGER NOT NULL DEFAULT 1,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+    `);
+
+    const now = new Date().toISOString();
+    const insertStmt = db.prepare(`
+      INSERT OR IGNORE INTO gerentes_contas (id, nome, email, cargo, superintendente_id, superintendente_nome, ativo, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?)
+    `);
+
+    // 1. Superintendente Padrão
+    insertStmt.run('sup_rafael_pereira', 'Rafael Pereira', 'rafael.pereira@lepta.com.br', 'SUPERINTENDENTE', null, null, now, now);
+
+    // 2. Gerentes Vinculados ao Rafael Pereira
+    insertStmt.run('ger_andre_barroco', 'André Barroco', 'andre.barroco@lepta.com.br', 'GERENTE', 'sup_rafael_pereira', 'Rafael Pereira', now, now);
+    insertStmt.run('ger_mauro_blanes', 'Mauro Blanes', 'mauro.blanes@lepta.com.br', 'GERENTE', 'sup_rafael_pereira', 'Rafael Pereira', now, now);
+    insertStmt.run('ger_luiz_dantas', 'Luiz Dantas', 'luiz.dantas@lepta.com.br', 'GERENTE', 'sup_rafael_pereira', 'Rafael Pereira', now, now);
+  } catch (error) {
+    console.error('Erro em ensureGerentesContasTable:', error.message);
+  }
+}
+
 function ensureAccessAreas() {
   const areas = [
     ['4', 'Business Intelligence'],
@@ -292,6 +326,10 @@ function ensureAccessAreas() {
     ['8.1', 'Lepta Intelligence > Análise de Clientes'],
     ['8.2', 'Lepta Intelligence > Cadastro de Clientes'],
     ['8.3', 'Lepta Intelligence > Análise de Riscos'],
+    ['8.4', 'Lepta Intelligence > NPL'],
+    ['8.5', 'Lepta Intelligence > Esteira de Comitê'],
+    ['8.6', 'Lepta Intelligence > Consulta SmartFactor'],
+    ['8.7', 'Lepta Intelligence > Cadastro de Gerentes'],
     ['9', 'Banco de Dados'],
     ['10', 'Confirmação'],
     ['10.1', 'Confirmação > Sistema de Confirmação'],
@@ -491,6 +529,7 @@ function requireMaster(req, res, next) {
 
 ensureUserSecurityColumns();
 ensureAccessAreas();
+ensureGerentesContasTable();
 
 function migratePlaintextPasswords() {
   try {
@@ -1207,6 +1246,239 @@ app.delete('/api/clientes-cadastro/:documento', requireSession, requireClientReg
   const result = db.prepare(`DELETE FROM clientes_cadastro WHERE documento = ?`).run(document);
   if (!result.changes) return res.status(404).json({ error: 'Não há cadastro interno para excluir.' });
   return res.json({ success: true });
+});
+
+// -------------------------------------------------------------
+// ROTAS: CADASTRO DE GERENTES E GESTORES (LEPTA INTELLIGENCE)
+// -------------------------------------------------------------
+app.get('/api/gerentes', requireSession, async (req, res) => {
+  try {
+    ensureGerentesContasTable();
+    const gerentes = db.prepare(`
+      SELECT * FROM gerentes_contas 
+      WHERE ativo = 1 
+      ORDER BY CASE WHEN cargo = 'SUPERINTENDENTE' THEN 0 ELSE 1 END, nome ASC
+    `).all();
+
+    // Contagem de cedentes vinculados (local + SmartFactor)
+    const localRows = getAllLocalClientRows();
+    const countsMap = new Map();
+
+    for (const row of localRows) {
+      const localComposed = composeClientRegistration(null, row);
+      const gerente = localComposed.data?.entidade?.gerente;
+      if (gerente) {
+        const normG = normalizeStr(gerente);
+        countsMap.set(normG, (countsMap.get(normG) || 0) + 1);
+      }
+    }
+
+    try {
+      if (tableExists('BASE_SMARTFACTOR')) {
+        const sfCounts = db.prepare(`
+          SELECT GERENTE, COUNT(DISTINCT CLIENTE) as total 
+          FROM BASE_SMARTFACTOR 
+          WHERE GERENTE IS NOT NULL AND GERENTE != ''
+          GROUP BY GERENTE
+        `).all();
+        for (const s of sfCounts) {
+          const normG = normalizeStr(s.GERENTE);
+          if (!countsMap.has(normG)) {
+            countsMap.set(normG, s.total);
+          }
+        }
+      }
+    } catch (err) {
+      console.warn('Aviso ao contar gerentes no SmartFactor:', err.message);
+    }
+
+    const enriched = gerentes.map(g => {
+      const norm = normalizeStr(g.nome);
+      const totalCedentes = countsMap.get(norm) || 0;
+      return {
+        ...g,
+        totalCedentes
+      };
+    });
+
+    return res.json(enriched);
+  } catch (error) {
+    console.error('Erro ao listar gerentes:', error.message);
+    return res.status(500).json({ error: 'Erro ao listar gerentes.', message: error.message });
+  }
+});
+
+app.post('/api/gerentes', requireSession, (req, res) => {
+  try {
+    ensureGerentesContasTable();
+    const nome = String(req.body?.nome || '').trim();
+    const email = String(req.body?.email || '').trim().toLowerCase();
+    const cargo = String(req.body?.cargo || 'GERENTE').trim().toUpperCase();
+    const superintendenteId = req.body?.superintendente_id ? String(req.body.superintendente_id).trim() : null;
+    const superintendenteNome = req.body?.superintendente_nome ? String(req.body.superintendente_nome).trim() : null;
+
+    if (!nome) return res.status(400).json({ error: 'Nome do gerente é obrigatório.' });
+    if (!email) return res.status(400).json({ error: 'E-mail do gerente é obrigatório.' });
+
+    const id = 'ger_' + Date.now();
+    const now = new Date().toISOString();
+
+    db.prepare(`
+      INSERT INTO gerentes_contas (id, nome, email, cargo, superintendente_id, superintendente_nome, ativo, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?)
+    `).run(id, nome, email, cargo, superintendenteId, superintendenteNome, now, now);
+
+    const created = db.prepare(`SELECT * FROM gerentes_contas WHERE id = ?`).get(id);
+    return res.status(201).json({ ...created, totalCedentes: 0 });
+  } catch (error) {
+    console.error('Erro ao cadastrar gerente:', error.message);
+    return res.status(500).json({ error: 'Erro ao cadastrar gerente.', message: error.message });
+  }
+});
+
+app.put('/api/gerentes/:id', requireSession, (req, res) => {
+  try {
+    ensureGerentesContasTable();
+    const id = req.params.id;
+    const existing = db.prepare(`SELECT * FROM gerentes_contas WHERE id = ?`).get(id);
+    if (!existing) return res.status(404).json({ error: 'Gerente não encontrado.' });
+
+    const nome = req.body?.nome !== undefined ? String(req.body.nome).trim() : existing.nome;
+    const email = req.body?.email !== undefined ? String(req.body.email).trim().toLowerCase() : existing.email;
+    const cargo = req.body?.cargo !== undefined ? String(req.body.cargo).trim().toUpperCase() : existing.cargo;
+    const superintendenteId = req.body?.superintendente_id !== undefined ? (req.body.superintendente_id ? String(req.body.superintendente_id).trim() : null) : existing.superintendente_id;
+    const superintendenteNome = req.body?.superintendente_nome !== undefined ? (req.body.superintendente_nome ? String(req.body.superintendente_nome).trim() : null) : existing.superintendente_nome;
+    const ativo = req.body?.ativo !== undefined ? (req.body.ativo ? 1 : 0) : existing.ativo;
+
+    const now = new Date().toISOString();
+
+    db.prepare(`
+      UPDATE gerentes_contas SET
+        nome = ?, email = ?, cargo = ?, superintendente_id = ?, superintendente_nome = ?, ativo = ?, updated_at = ?
+      WHERE id = ?
+    `).run(nome, email, cargo, superintendenteId, superintendenteNome, ativo, now, id);
+
+    const updated = db.prepare(`SELECT * FROM gerentes_contas WHERE id = ?`).get(id);
+    return res.json(updated);
+  } catch (error) {
+    console.error('Erro ao atualizar gerente:', error.message);
+    return res.status(500).json({ error: 'Erro ao atualizar gerente.', message: error.message });
+  }
+});
+
+app.delete('/api/gerentes/:id', requireSession, (req, res) => {
+  try {
+    ensureGerentesContasTable();
+    const id = req.params.id;
+    const result = db.prepare(`DELETE FROM gerentes_contas WHERE id = ?`).run(id);
+    if (!result.changes) return res.status(404).json({ error: 'Gerente não encontrado.' });
+    return res.json({ success: true });
+  } catch (error) {
+    console.error('Erro ao excluir gerente:', error.message);
+    return res.status(500).json({ error: 'Erro ao excluir gerente.', message: error.message });
+  }
+});
+
+app.get('/api/gerentes/:id/cedentes', requireSession, async (req, res) => {
+  try {
+    ensureGerentesContasTable();
+    const id = req.params.id;
+    const gerente = db.prepare(`SELECT * FROM gerentes_contas WHERE id = ?`).get(id);
+    if (!gerente) return res.status(404).json({ error: 'Gerente não encontrado.' });
+
+    const normGerente = normalizeStr(gerente.nome);
+    const cedentesMap = new Map();
+
+    // 1. Clientes cadastrados internamente com override / local
+    const localRows = getAllLocalClientRows();
+    for (const row of localRows) {
+      const localComposed = composeClientRegistration(null, row);
+      const gName = localComposed.data?.entidade?.gerente;
+      if (gName && (normalizeStr(gName) === normGerente || normalizeStr(gName).includes(normGerente) || normGerente.includes(normalizeStr(gName)))) {
+        const doc = row.documento;
+        const entity = localComposed.data?.entidade || {};
+        cedentesMap.set(doc, {
+          documento: doc,
+          nome: entity.nome || 'Cliente Interno',
+          email: entity.email || '-',
+          telefone: entity.telefone || '-',
+          tipo: entity.tipo || 'PJ',
+          gerente: entity.gerente || gerente.nome,
+          superintendente: entity.superintendente || gerente.superintendente_nome || 'Rafael Pereira',
+          source: localComposed.source,
+          updatedAt: localComposed.updatedAt
+        });
+      }
+    }
+
+    // 2. Clientes na API UNLTD (se houver títulos ou dados em cache)
+    try {
+      const titles = await fetchTitulosDaAPI(req).catch(() => []);
+      for (const t of titles) {
+        const cliente = t.contaOperacional?.cliente;
+        const entidade = cliente?.entidade;
+        if (!entidade?.nome) continue;
+        const gName = entidade.gerente || t.contaOperacional?.gerente?.nome || t.contaOperacional?.gerente;
+        if (gName && (normalizeStr(gName) === normGerente || normalizeStr(gName).includes(normGerente) || normGerente.includes(normalizeStr(gName)))) {
+          const doc = normalizeEntityDocument(entidade.documento);
+          if (doc && !cedentesMap.has(doc)) {
+            cedentesMap.set(doc, {
+              documento: doc,
+              nome: entidade.nome,
+              email: entidade.email || '-',
+              telefone: entidade.telefone || '-',
+              tipo: entidade.tipo || 'PJ',
+              gerente: gName,
+              superintendente: entidade.superintendente || gerente.superintendente_nome || 'Rafael Pereira',
+              source: 'api'
+            });
+          }
+        }
+      }
+    } catch (apiErr) {
+      console.warn('Aviso ao buscar cedentes da API para o gerente:', apiErr.message);
+    }
+
+    // 3. Fallback no SmartFactor se disponível
+    try {
+      if (tableExists('BASE_SMARTFACTOR')) {
+        const sfRows = db.prepare(`
+          SELECT DISTINCT CLIENTE, DOCUMENTO, GERENTE, UA
+          FROM BASE_SMARTFACTOR
+          WHERE GERENTE IS NOT NULL AND LOWER(GERENTE) LIKE ?
+        `).all(`%${gerente.nome.trim().toLowerCase()}%`);
+
+        for (const sf of sfRows) {
+          const doc = normalizeEntityDocument(sf.DOCUMENTO) || sf.CLIENTE;
+          if (doc && !cedentesMap.has(doc)) {
+            cedentesMap.set(doc, {
+              documento: sf.DOCUMENTO || '-',
+              nome: sf.CLIENTE,
+              email: '-',
+              telefone: '-',
+              tipo: 'PJ',
+              gerente: sf.GERENTE || gerente.nome,
+              superintendente: gerente.superintendente_nome || 'Rafael Pereira',
+              ua: sf.UA || '-',
+              source: 'smartfactor'
+            });
+          }
+        }
+      }
+    } catch (sfErr) {
+      console.warn('Aviso ao consultar BASE_SMARTFACTOR:', sfErr.message);
+    }
+
+    const list = Array.from(cedentesMap.values()).sort((a, b) => a.nome.localeCompare(b.nome));
+    return res.json({
+      gerente,
+      total: list.length,
+      cedentes: list
+    });
+  } catch (error) {
+    console.error('Erro ao consultar cedentes do gerente:', error.message);
+    return res.status(500).json({ error: 'Erro ao consultar cedentes do gerente.', message: error.message });
+  }
 });
 
 // -------------------------------------------------------------

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { LogOut, User, ShieldAlert, Shield, UserPlus, Users, ChevronDown, ChevronRight, LayoutDashboard, Sliders, Home, Calendar, Menu, X, Wallet, FileSpreadsheet, BrainCircuit, Database, ClipboardCheck, ContactRound, ShieldCheck, Landmark, Briefcase, ShoppingCart, SlidersHorizontal, DollarSign, Mail, Search, TrendingUp } from 'lucide-react';
+import { LogOut, User, ShieldAlert, Shield, UserPlus, Users, ChevronDown, ChevronRight, LayoutDashboard, Sliders, Home, Calendar, Menu, X, Wallet, FileSpreadsheet, BrainCircuit, Database, ClipboardCheck, ContactRound, ShieldCheck, Landmark, Briefcase, ShoppingCart, SlidersHorizontal, DollarSign, Mail, Search, TrendingUp, UserCheck } from 'lucide-react';
 import { useNavigate, Outlet, Link, useLocation } from 'react-router-dom';
 import { useAuth } from './AuthContext';
 import NotificationBell from './NotificationBell';
@@ -199,6 +199,11 @@ const InternalLayout = () => {
                   {(hasAccess('8.6') || hasAccess('8.1') || hasAccess('8')) && (
                     <Link to="/intelligence/consulta-smartfactor" className={navItemClass('/intelligence/consulta-smartfactor')}>
                       <Search size={18} /> Consulta SmartFactor
+                    </Link>
+                  )}
+                  {hasAccess('8.7') && (
+                    <Link to="/intelligence/cadastro-gerentes" className={navItemClass('/intelligence/cadastro-gerentes')}>
+                      <UserCheck size={18} /> Cadastro de Gerentes
                     </Link>
                   )}
                 </div>

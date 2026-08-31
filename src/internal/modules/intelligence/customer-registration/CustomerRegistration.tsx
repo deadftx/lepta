@@ -197,9 +197,26 @@ const CustomerRegistration = () => {
   const [suggestions, setSuggestions] = useState<ClientSummary[]>([]);
   const [suggestionsLoading, setSuggestionsLoading] = useState(false);
   const [showSuggestions, setShowSuggestions] = useState(false);
+  const [availableManagers, setAvailableManagers] = useState<{
+    id: string;
+    nome: string;
+    email: string;
+    cargo: string;
+    superintendente_id?: string | null;
+    superintendente_nome?: string | null;
+  }[]>([]);
 
   const token = () => localStorage.getItem('lepta_auth_token');
   const authHeaders = () => ({ Authorization: `Bearer ${token()}` });
+
+  useEffect(() => {
+    fetch(`${API_BASE_URL}/api/gerentes`, { headers: authHeaders() })
+      .then(res => res.json())
+      .then(data => {
+        if (Array.isArray(data)) setAvailableManagers(data);
+      })
+      .catch(err => console.warn('Aviso ao carregar gerentes:', err));
+  }, []);
 
   const clientSearchUrl = (query: string) =>
     `${API_BASE_URL}/api/clientes-cadastro?search=${encodeURIComponent(query)}`;
@@ -640,8 +657,57 @@ const CustomerRegistration = () => {
                 </div>
               </div>
               <DetailField label="Tipo" value={entity.tipo} editing={editing} onChange={value => updateEntity('tipo', value)} />
-              <DetailField icon={<UserRound size={17} />} label="Gerente (Gestor)" value={entity.gerente} editing={editing} onChange={value => updateEntity('gerente', value)} placeholder="Nome do gerente de contas" />
-              <DetailField icon={<UserRound size={17} />} label="Superintendente" value={entity.superintendente} editing={editing} onChange={value => updateEntity('superintendente', value)} placeholder="Nome do superintendente" />
+              
+              <div className="detail-field">
+                <span><UserRound size={17} /> Gerente (Gestor)</span>
+                {editing ? (
+                  <select
+                    className="detail-field-select"
+                    value={entity.gerente || ''}
+                    onChange={e => {
+                      const gName = e.target.value;
+                      updateEntity('gerente', gName);
+                      const found = availableManagers.find(m => m.nome === gName);
+                      if (found?.superintendente_nome) {
+                        updateEntity('superintendente', found.superintendente_nome);
+                      }
+                    }}
+                  >
+                    <option value="">Selecione um gerente...</option>
+                    {availableManagers.filter(m => m.cargo === 'GERENTE').map(m => (
+                      <option key={m.id} value={m.nome}>{m.nome} ({m.email})</option>
+                    ))}
+                    {availableManagers.filter(m => m.cargo === 'SUPERINTENDENTE').length > 0 && (
+                      <optgroup label="Superintendentes">
+                        {availableManagers.filter(m => m.cargo === 'SUPERINTENDENTE').map(m => (
+                          <option key={m.id} value={m.nome}>{m.nome} ({m.email})</option>
+                        ))}
+                      </optgroup>
+                    )}
+                  </select>
+                ) : (
+                  <strong>{entity.gerente || 'Não informado'}</strong>
+                )}
+              </div>
+
+              <div className="detail-field">
+                <span><UserRound size={17} /> Superintendente</span>
+                {editing ? (
+                  <select
+                    className="detail-field-select"
+                    value={entity.superintendente || ''}
+                    onChange={e => updateEntity('superintendente', e.target.value)}
+                  >
+                    <option value="">Selecione um superintendente...</option>
+                    {availableManagers.filter(m => m.cargo === 'SUPERINTENDENTE').map(m => (
+                      <option key={m.id} value={m.nome}>{m.nome} ({m.email})</option>
+                    ))}
+                  </select>
+                ) : (
+                  <strong>{entity.superintendente || 'Não informado'}</strong>
+                )}
+              </div>
+
               <DetailField label="ID na UNLTD" value={entity.id?.toString()} />
               <DetailField label="ID do cliente" value={data.id?.toString()} />
               <DetailField label="Última alteração interna" value={selectedClient.updatedAt ? new Date(selectedClient.updatedAt).toLocaleString('pt-BR') : 'Sem alteração interna'} />

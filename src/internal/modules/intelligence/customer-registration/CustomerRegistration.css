@@ -385,9 +385,31 @@
 .detail-field.wide,
 .contact-field.wide { grid-column: 1 / -1; }
 .detail-field > span { display: flex; align-items: center; gap: 0.35rem; color: #64748b; font-size: 0.7rem; font-weight: 700; text-transform: uppercase; }
-.detail-field > strong { color: #dbeafe; font-size: 0.88rem; font-weight: 600; overflow-wrap: anywhere; }
-.detail-field-link { display: inline-flex; align-items: center; gap: 0.4rem; font-size: 0.88rem; font-weight: 600; overflow-wrap: anywhere; }
-.detail-field input { min-height: 38px; padding: 0.5rem 0.65rem; font-size: 0.84rem; }
+.detail-field input,
+.detail-field select,
+.detail-field-select {
+  min-height: 38px;
+  padding: 0.5rem 0.65rem;
+  font-size: 0.84rem;
+  background: rgba(15, 23, 42, 0.7);
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  border-radius: 8px;
+  color: #f1f5f9;
+  outline: none;
+  width: 100%;
+}
+.detail-field select option,
+.detail-field-select option,
+.detail-field select optgroup,
+.detail-field-select optgroup {
+  background: #0f172a;
+  color: #f8fafc;
+}
+.detail-field select:focus,
+.detail-field-select:focus {
+  border-color: #38bdf8;
+  box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.2);
+}
 
 .contact-field { min-width: 0; }
 .contact-field-header {

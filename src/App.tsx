@@ -22,6 +22,7 @@ import RiskAnalysis from './internal/modules/intelligence/risk-analysis/RiskAnal
 import NplManagement from './internal/modules/intelligence/npl/NplManagement';
 import CommitteePipeline from './internal/modules/intelligence/committee/CommitteePipeline';
 import { SmartFactorQuery } from './internal/modules/intelligence/smartfactor/SmartFactorQuery';
+import ManagerRegistration from './internal/modules/intelligence/manager-registration/ManagerRegistration';
 import DatabaseManagement from './internal/modules/database/DatabaseManagement';
 import PurchaseApproval from './internal/modules/administrative/purchases/PurchaseApproval';
 import PurchaseWorkflowConfig from './internal/modules/administrative/purchases/PurchaseWorkflowConfig';
@@ -98,6 +99,7 @@ function App() {
               <Route path="/intelligence/npl" element={<AccessRoute permission="8.4"><NplManagement /></AccessRoute>} />
               <Route path="/intelligence/esteira-comite" element={<AccessRoute permission="8.5"><CommitteePipeline /></AccessRoute>} />
               <Route path="/intelligence/consulta-smartfactor" element={<AccessRoute permission="8.6"><SmartFactorQuery /></AccessRoute>} />
+              <Route path="/intelligence/cadastro-gerentes" element={<AccessRoute permission="8.7"><ManagerRegistration /></AccessRoute>} />
               <Route path="/administrativo/compras" element={<AccessRoute permission="11.1"><PurchaseApproval /></AccessRoute>} />
               <Route path="/administrativo/configuracao-compras" element={<AccessRoute permission="11.2"><PurchaseWorkflowConfig /></AccessRoute>} />
               <Route path="/confirmacao/sistema" element={<AccessRoute permission="10.1"><ConfirmationSystem /></AccessRoute>} />
