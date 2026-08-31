@@ -3,19 +3,30 @@ import { useNavigate, useLocation, useSearchParams } from 'react-router-dom';
 import { Lock, User, ArrowRight, AlertCircle, CheckCircle2, KeyRound, Mail, ArrowLeft } from 'lucide-react';
 import { useAuth } from '../internal/core/AuthContext';
 import { API_BASE_URL } from '../config/api';
+import { authenticateWithMicrosoft } from '../config/msalConfig';
 import './Login.css';
+
+const MicrosoftIcon = () => (
+  <svg width="18" height="18" viewBox="0 0 21 21" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <path fill="#F25022" d="M1 1h9v9H1z"/>
+    <path fill="#00A4EF" d="M1 11h9v9H1z"/>
+    <path fill="#7FBA00" d="M11 1h9v9h-9z"/>
+    <path fill="#FFB900" d="M11 11h9v9h-9z"/>
+  </svg>
+);
 
 const Login = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const [searchParams] = useSearchParams();
-  const { login } = useAuth();
+  const { login, loginWithMicrosoft } = useAuth();
 
   // Login form state
   const [loginId, setLoginId] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [corporateLoading, setCorporateLoading] = useState(false);
 
   // Primeiro Acesso state
   const [isFirstAccessMode, setIsFirstAccessMode] = useState(false);
@@ -33,6 +44,17 @@ const Login = () => {
   const [recoveryPassword, setRecoveryPassword] = useState('');
   const [recoveryError, setRecoveryError] = useState('');
 
+  const navigateToDestination = () => {
+    const fromState = (location.state as any)?.from;
+    let targetUrl = '/dashboard';
+    if (fromState && fromState.pathname) {
+      targetUrl = `${fromState.pathname}${fromState.search || ''}`;
+    } else if (searchParams.get('redirect')) {
+      targetUrl = searchParams.get('redirect')!;
+    }
+    navigate(targetUrl, { replace: true });
+  };
+
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
@@ -42,16 +64,48 @@ const Login = () => {
 
     setLoading(false);
     if (success) {
-      const fromState = (location.state as any)?.from;
-      let targetUrl = '/dashboard';
-      if (fromState && fromState.pathname) {
-        targetUrl = `${fromState.pathname}${fromState.search || ''}`;
-      } else if (searchParams.get('redirect')) {
-        targetUrl = searchParams.get('redirect')!;
-      }
-      navigate(targetUrl, { replace: true });
+      navigateToDestination();
     } else {
       setError('Credenciais incorretas.');
+    }
+  };
+
+  // Autenticação oficial Microsoft (SSO silencioso da máquina ou popup oficial da Microsoft)
+  const handleCorporateLogin = async () => {
+    setError('');
+    setCorporateLoading(true);
+
+    try {
+      // 1. Aciona o fluxo oficial do MSAL (SSO automático ou janela segura da Microsoft)
+      const msAuth = await authenticateWithMicrosoft();
+
+      if (!msAuth) {
+        setCorporateLoading(false);
+        return;
+      }
+
+      // 2. Envia o token oficial assinado pela Microsoft para o backend validar e autenticar
+      const result = await loginWithMicrosoft({
+        idToken: msAuth.idToken,
+        email: msAuth.email
+      });
+
+      setCorporateLoading(false);
+      if (result.success) {
+        navigateToDestination();
+      } else {
+        setError(result.error || 'Acesso não autorizado para esta conta.');
+      }
+    } catch (err: any) {
+      console.error('Erro na autenticação corporativa:', err);
+      setCorporateLoading(false);
+      
+      const errorMessage = err?.message || '';
+      if (errorMessage.includes('user_cancelled')) {
+        // Usuário fechou a janela da Microsoft
+        return;
+      }
+      setError(err?.errorMessage || err?.message || 'Não foi possível conectar com a conta Microsoft.');
     }
   };
 
@@ -117,7 +171,7 @@ const Login = () => {
           email: emailToSearch,
           password: '',
           role: 'USER',
-          permissions: ['1']
+          permissions: ['7.4']
         };
 
         const createRes = await fetch(`${API_BASE_URL}/users`, {
@@ -233,7 +287,7 @@ const Login = () => {
           <>
             <div className="login-header">
               <h2>Área <span className="text-gradient">Interna</span></h2>
-              <p>Acesse sua conta para continuar.</p>
+              <p>Acesse sua conta corporativa para continuar.</p>
             </div>
 
             {error && (
@@ -242,6 +296,24 @@ const Login = () => {
                 <span>{error}</span>
               </div>
             )}
+
+            {/* Botão Oficial de Acesso Microsoft (Aguardando configuração ITFLUX) */}
+            <div className="sso-section">
+              <button
+                type="button"
+                className="btn-sso btn-sso-corporate btn-sso-disabled"
+                onClick={handleCorporateLogin}
+                disabled={true}
+                title="EM CONSTRUÇÃO - AGUARDANDO CONFIGURAÇÃO ITFLUX"
+              >
+                <MicrosoftIcon />
+                <span>Entrar com Conta Corporativa (Lepta)</span>
+              </button>
+            </div>
+
+            <div className="sso-divider">
+              <span>ou acesse com usuário e senha</span>
+            </div>
 
             <form onSubmit={handleLogin} className="login-form">
               <div className="input-group">
@@ -275,7 +347,7 @@ const Login = () => {
                 <button type="button" className="forgot-password" onClick={() => setIsRecoveryMode(true)}>Esqueci minha senha</button>
               </div>
 
-              <button type="submit" className="btn-primary login-submit" disabled={loading}>
+              <button type="submit" className="btn-primary login-submit" disabled={loading || corporateLoading}>
                 {loading ? 'Entrando...' : <>Entrar <ArrowRight size={18} /></>}
               </button>
 
@@ -410,4 +482,3 @@ const Login = () => {
 };
 
 export default Login;
-

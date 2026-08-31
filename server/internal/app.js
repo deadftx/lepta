@@ -7,6 +7,7 @@ import ExcelJS from 'exceljs';
 import Database from 'better-sqlite3';
 import stringSimilarity from 'string-similarity';
 import { createCipheriv, createDecipheriv, createHash, randomBytes, scryptSync, timingSafeEqual } from 'crypto';
+import { execSync } from 'child_process';
 import { registerDatabaseSyncRoutes } from './modules/database/routes.js';
 import { registerPowerBiRoutes } from './modules/database/biRoutes.js';
 import { registerGrafenoRoutes } from './modules/finance/grafenoRoutes.js';
@@ -2737,13 +2738,41 @@ app.post('/api/auth/login', authIpRateLimiter, loginRateLimiter, (req, res) => {
   }
 });
 
+function getWindowsLoggedUpn() {
+  if (process.platform !== 'win32') return null;
+  try {
+    const upn = execSync('whoami /upn', { encoding: 'utf8', timeout: 2500 }).trim();
+    if (upn && (upn.toLowerCase().endsWith('@lepta.com.br') || upn.toLowerCase().endsWith('@lepta.com'))) {
+      return upn.toLowerCase();
+    }
+  } catch (err) {
+    console.warn('Aviso ao consultar whoami /upn:', err.message);
+  }
+  return null;
+}
+
 app.post('/api/auth/microsoft', authIpRateLimiter, loginRateLimiter, async (req, res) => {
   let email = String(req.body?.email || '').trim().toLowerCase();
   const idToken = String(req.body?.idToken || '').trim();
   const microsoftId = String(req.body?.microsoftId || '').trim();
+  const mode = String(req.body?.mode || 'auto'); // 'auto' | 'windows_sso' | 'interactive'
 
   let targetEmail = email;
   let targetMicrosoftId = microsoftId;
+
+  // Se modo for auto ou windows_sso e não foi informado e-mail/token, tenta detectar conta ativa da máquina Windows
+  if ((mode === 'auto' || mode === 'windows_sso') && !targetEmail && !idToken) {
+    const detectedUpn = getWindowsLoggedUpn();
+    if (detectedUpn) {
+      targetEmail = detectedUpn;
+    } else {
+      // Não está em máquina Windows autenticada no domínio -> instrui frontend a abrir login interativo Microsoft
+      return res.status(200).json({ 
+        requireInteractive: true,
+        message: 'Dispositivo sem sessão ativa do Windows detectada. Prossiga com o login interativo da Microsoft.'
+      });
+    }
+  }
 
   // Se veio idToken da Microsoft (JWT), decodifica o payload para extrair email e oid
   if (idToken) {
@@ -2843,7 +2872,7 @@ app.post('/api/auth/microsoft', authIpRateLimiter, loginRateLimiter, async (req,
     return res.json({ 
       user: sanitizeUser(freshUser || user), 
       token: createAuthSession(freshUser || user),
-      ssoMethod: 'Microsoft Entra ID'
+      ssoMethod: mode === 'windows_sso' ? 'Windows Exchange SSO' : 'Microsoft Entra ID'
     });
   } catch (error) {
     console.error('Erro na autenticação Microsoft:', error.message);
@@ -2851,6 +2880,36 @@ app.post('/api/auth/microsoft', authIpRateLimiter, loginRateLimiter, async (req,
   }
 });
 
+app.get('/api/auth/sso-config', (req, res) => {
+  const clientId = process.env.AZURE_CLIENT_ID || process.env.VITE_AZURE_CLIENT_ID || '';
+  const tenantId = process.env.AZURE_TENANT_ID || process.env.VITE_AZURE_TENANT_ID || 'common';
+  return res.json({
+    configured: Boolean(clientId),
+    clientId: clientId || '',
+    tenantId: tenantId || 'common',
+    hasQuickValidationMode: true
+  });
+});
+
+app.get('/api/auth/corporate-accounts', (req, res) => {
+  try {
+    const users = db.prepare(`
+      SELECT id, username, email, role, microsoft_email, auth_provider
+      FROM usuarios_lepta
+      WHERE email LIKE '%@lepta.com.br' OR email LIKE '%@lepta%' OR username = 'leptamaster'
+      ORDER BY username ASC
+    `).all();
+    return res.json(users.map(u => ({
+      id: u.id,
+      username: u.username,
+      email: u.email,
+      role: u.role,
+      microsoftEmail: u.microsoft_email || u.email
+    })));
+  } catch (error) {
+    return res.status(500).json({ error: 'Erro ao listar contas corporativas.' });
+  }
+});
 app.get('/api/auth/me', requireSession, (req, res) => {
   const user = db.prepare(`SELECT * FROM usuarios_lepta WHERE id = ?`).get(req.authSession.userId);
   if (!user) return res.status(404).json({ error: 'Usuário não encontrado.' });

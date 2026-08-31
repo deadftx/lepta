@@ -18,6 +18,7 @@ interface AuthContextType {
   isAuthenticated: boolean;
   user: User | null;
   login: (loginId: string, pass: string) => Promise<boolean>;
+  loginWithMicrosoft: (params?: { email?: string; idToken?: string; microsoftId?: string; mode?: 'auto' | 'interactive' | 'windows_sso' | 'mock' }) => Promise<{ success: boolean; requireInteractive?: boolean; error?: string }>;
   logout: () => void;
   isLoading: boolean;
 }
@@ -140,6 +141,32 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     }
   };
 
+  const loginWithMicrosoft = async (params: { email?: string; idToken?: string; microsoftId?: string; mode?: 'auto' | 'interactive' | 'windows_sso' | 'mock' } = {}): Promise<{ success: boolean; requireInteractive?: boolean; error?: string }> => {
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/auth/microsoft`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(params)
+      });
+
+      const data = await res.json();
+      if (res.ok) {
+        if (data.requireInteractive) {
+          return { success: false, requireInteractive: true };
+        }
+        setIsAuthenticated(true);
+        setUser(data.user);
+        localStorage.setItem('lepta_user', JSON.stringify(data.user));
+        localStorage.setItem('lepta_auth_token', data.token);
+        return { success: true };
+      }
+      return { success: false, error: data.error || 'Não foi possível autenticar com a conta Microsoft.' };
+    } catch (error) {
+      console.error("Erro na autenticação Microsoft:", error);
+      return { success: false, error: 'Erro de conexão com o servidor.' };
+    }
+  };
+
   const logout = () => {
     const token = localStorage.getItem('lepta_auth_token');
     if (token) {
@@ -161,7 +188,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   };
 
   return (
-    <AuthContext.Provider value={{ isAuthenticated, user, login, logout, isLoading }}>
+    <AuthContext.Provider value={{ isAuthenticated, user, login, loginWithMicrosoft, logout, isLoading }}>
       {!isLoading && user?.requiresSecuritySetup
         ? <SecuritySetup onComplete={completeSecuritySetup} onLogout={logout} />
         : !isLoading && children}

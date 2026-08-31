@@ -28,6 +28,7 @@ interface StatementMetadata {
   empresa: string;
   cnpj: string;
   saldoAnterior: number;
+  saldoDisponivel?: number;
 }
 
 const EMPTY_STATEMENT_METADATA: StatementMetadata = {
@@ -36,7 +37,8 @@ const EMPTY_STATEMENT_METADATA: StatementMetadata = {
   conta: '',
   empresa: '',
   cnpj: '',
-  saldoAnterior: 0
+  saldoAnterior: 0,
+  saldoDisponivel: 0
 };
 
 const Finance = () => {
@@ -244,6 +246,32 @@ const Finance = () => {
       // preservando a sequência natural de lançamentos do mesmo dia (de frente para trás)
       formatted.sort((a, b) => parseDateToTime(a.Data) - parseDateToTime(b.Data));
 
+      // Saldo Disponível: é sempre o último valor de saldo do extrato
+      // (primeiro do CSV bruto, que é o último da lista exportada)
+      let saldoDisponivel = 0;
+      for (let i = formatted.length - 1; i >= 0; i--) {
+        if (typeof formatted[i].Saldo === 'number' && !isNaN(formatted[i].Saldo!)) {
+          saldoDisponivel = formatted[i].Saldo!;
+          break;
+        }
+      }
+      if (saldoDisponivel === 0 && tableData.length > 0) {
+        for (let i = 0; i < tableData.length; i++) {
+          if (typeof tableData[i].Saldo === 'number' && !isNaN(tableData[i].Saldo!)) {
+            saldoDisponivel = tableData[i].Saldo!;
+            break;
+          }
+        }
+      }
+      if (saldoDisponivel === 0) {
+        const metaSaldo = findMetadataValue('Saldo Disponível', 'Saldo Disponivel', 'Saldo Final', 'Saldo Atual');
+        if (metaSaldo !== undefined && !isNaN(Number(metaSaldo))) {
+          saldoDisponivel = Number(metaSaldo);
+        }
+      }
+
+      parsedMetadata.saldoDisponivel = saldoDisponivel;
+
       setProcessedData(formatted);
       setStatementMetadata(parsedMetadata);
     } catch (err: any) {
@@ -300,7 +328,17 @@ const Finance = () => {
 
       const totalCreditos = sortedData.reduce((sum, item) => sum + (item.Créditos || 0), 0);
       const totalDebitos = sortedData.reduce((sum, item) => sum + (item.Débitos || 0), 0);
-      const saldoDisponivel = 0; // Saldo Disponível zerado por padrão na exportação
+      
+      // Saldo Disponível é o último valor de saldo do extrato
+      let saldoDisponivel = statementMetadata.saldoDisponivel || 0;
+      if (!saldoDisponivel && sortedData.length > 0) {
+        for (let i = sortedData.length - 1; i >= 0; i--) {
+          if (typeof sortedData[i].Saldo === 'number' && !isNaN(sortedData[i].Saldo!)) {
+            saldoDisponivel = sortedData[i].Saldo!;
+            break;
+          }
+        }
+      }
 
       const metadataRows: Array<Array<string | number>> = [
         ['Banco', statementMetadata.banco, 'Agência', statementMetadata.agencia, 'Conta', statementMetadata.conta],
