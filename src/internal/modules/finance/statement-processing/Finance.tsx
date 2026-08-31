@@ -191,9 +191,13 @@ const Finance = () => {
         range: headerRowIndex
       });
 
+      // O extrato bancário original vem em ordem cronológica inversa (de trás para frente).
+      // Invertemos a ordem das linhas brutas para processar cronologicamente (de frente para trás).
+      const chronologicalRows = [...tableData].reverse();
+
       const formatted: TargetTransaction[] = [];
 
-      for (const row of tableData) {
+      for (const row of chronologicalRows) {
         // Skip final balance row
         if (row.Lancamento === 'SALDO FINAL' || row.Lancamento === 'SALDO INICIAL') {
           continue;
@@ -236,7 +240,8 @@ const Finance = () => {
         });
       }
 
-      // Ordena por data de A a Z (crescente: começando no dia 01)
+      // Ordena por data de A a Z (crescente: começando no dia 01 ao 30),
+      // preservando a sequência natural de lançamentos do mesmo dia (de frente para trás)
       formatted.sort((a, b) => parseDateToTime(a.Data) - parseDateToTime(b.Data));
 
       setProcessedData(formatted);
@@ -337,7 +342,7 @@ const Finance = () => {
         cell.alignment = { horizontal: 'left', vertical: 'middle' };
       });
 
-      data.forEach(item => {
+      sortedData.forEach(item => {
         const row = ws.addRow({
           data: item.Data,
           historico: item.Histórico,
