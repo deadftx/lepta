@@ -1,8 +1,9 @@
 import { useState } from 'react';
 import { useNavigate, useLocation, useSearchParams } from 'react-router-dom';
-import { Lock, User, ArrowRight, AlertCircle, CheckCircle2, KeyRound, Mail, ArrowLeft, X, ShieldCheck } from 'lucide-react';
+import { Lock, User, ArrowRight, AlertCircle, CheckCircle2, KeyRound, Mail, ArrowLeft } from 'lucide-react';
 import { useAuth } from '../internal/core/AuthContext';
 import { API_BASE_URL } from '../config/api';
+import { authenticateWithMicrosoft } from '../config/msalConfig';
 import './Login.css';
 
 const MicrosoftIcon = () => (
@@ -26,12 +27,6 @@ const Login = () => {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [corporateLoading, setCorporateLoading] = useState(false);
-
-  // Microsoft Email Prompt Modal (fallback automático para celular / dispositivos sem sessão ativa do Windows)
-  const [microsoftModalOpen, setMicrosoftModalOpen] = useState(false);
-  const [microsoftEmail, setMicrosoftEmail] = useState('');
-  const [microsoftLoading, setMicrosoftLoading] = useState(false);
-  const [microsoftError, setMicrosoftError] = useState('');
 
   // Primeiro Acesso state
   const [isFirstAccessMode, setIsFirstAccessMode] = useState(false);
@@ -75,51 +70,42 @@ const Login = () => {
     }
   };
 
-  // Botão Inteligente Único: Tenta login silencioso da máquina (1 clique) e, se não estiver autenticado, faz fallback transparente
-  const handleSmartCorporateLogin = async () => {
+  // Autenticação oficial Microsoft (SSO silencioso da máquina ou popup oficial da Microsoft)
+  const handleCorporateLogin = async () => {
     setError('');
     setCorporateLoading(true);
 
-    // 1. Tenta autenticação silenciosa direta com a conta ativa da máquina Windows / Exchange
-    const result = await loginWithMicrosoft({ mode: 'auto' });
+    try {
+      // 1. Aciona o fluxo oficial do MSAL (SSO automático ou janela segura da Microsoft)
+      const msAuth = await authenticateWithMicrosoft();
 
-    setCorporateLoading(false);
-    if (result.success) {
-      navigateToDestination();
-      return;
-    }
+      if (!msAuth) {
+        setCorporateLoading(false);
+        return;
+      }
 
-    // 2. Se for dispositivo mobile ou máquina sem sessão do domínio ativa, abre o login corporativo Microsoft
-    if (result.requireInteractive || !result.success) {
-      setMicrosoftError('');
-      setMicrosoftEmail('');
-      setMicrosoftModalOpen(true);
-    }
-  };
+      // 2. Envia o token oficial assinado pela Microsoft para o backend validar e autenticar
+      const result = await loginWithMicrosoft({
+        idToken: msAuth.idToken,
+        email: msAuth.email
+      });
 
-  // Login interativo Microsoft (para celular ou conta corporativa digitada)
-  const handleMicrosoftPromptSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const trimmed = microsoftEmail.trim().toLowerCase();
-    if (!trimmed) {
-      setMicrosoftError('Por favor, informe seu e-mail corporativo @lepta.com.br.');
-      return;
-    }
-
-    setMicrosoftLoading(true);
-    setMicrosoftError('');
-
-    const result = await loginWithMicrosoft({
-      email: trimmed,
-      mode: 'interactive'
-    });
-
-    setMicrosoftLoading(false);
-    if (result.success) {
-      setMicrosoftModalOpen(false);
-      navigateToDestination();
-    } else {
-      setMicrosoftError(result.error || 'Não foi possível autenticar com esta conta.');
+      setCorporateLoading(false);
+      if (result.success) {
+        navigateToDestination();
+      } else {
+        setError(result.error || 'Acesso não autorizado para esta conta.');
+      }
+    } catch (err: any) {
+      console.error('Erro na autenticação corporativa:', err);
+      setCorporateLoading(false);
+      
+      const errorMessage = err?.message || '';
+      if (errorMessage.includes('user_cancelled')) {
+        // Usuário fechou a janela da Microsoft
+        return;
+      }
+      setError(err?.errorMessage || err?.message || 'Não foi possível conectar com a conta Microsoft.');
     }
   };
 
@@ -311,17 +297,17 @@ const Login = () => {
               </div>
             )}
 
-            {/* Botão Único e Inteligente de Acesso Corporativo */}
+            {/* Botão Oficial e Seguro de Acesso Microsoft */}
             <div className="sso-section">
               <button
                 type="button"
                 className="btn-sso btn-sso-corporate"
-                onClick={handleSmartCorporateLogin}
+                onClick={handleCorporateLogin}
                 disabled={loading || corporateLoading}
                 title="Entrar com conta corporativa Microsoft / Windows"
               >
                 <MicrosoftIcon />
-                <span>{corporateLoading ? 'Conectando ao AD...' : 'Entrar com Conta Corporativa (Lepta)'}</span>
+                <span>{corporateLoading ? 'Conectando à Microsoft...' : 'Entrar com Conta Corporativa (Lepta)'}</span>
               </button>
             </div>
 
@@ -491,74 +477,6 @@ const Login = () => {
           </>
         )}
       </div>
-
-      {/* Modal Interativo para Celular / Dispositivo Externo */}
-      {microsoftModalOpen && (
-        <div className="sso-modal-overlay" onClick={() => !microsoftLoading && setMicrosoftModalOpen(false)}>
-          <div className="sso-modal-content" onClick={(e) => e.stopPropagation()}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1rem' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
-                <MicrosoftIcon />
-                <div>
-                  <h3 style={{ margin: 0, fontSize: '1.15rem', color: '#f8fafc' }}>
-                    Conta Microsoft Lepta
-                  </h3>
-                  <p style={{ margin: 0, fontSize: '0.8rem', color: '#94a3b8' }}>
-                    Informe seu e-mail corporativo @lepta.com.br
-                  </p>
-                </div>
-              </div>
-              <button 
-                type="button" 
-                onClick={() => setMicrosoftModalOpen(false)}
-                disabled={microsoftLoading}
-                style={{ background: 'transparent', border: 'none', color: '#94a3b8', cursor: 'pointer' }}
-              >
-                <X size={20} />
-              </button>
-            </div>
-
-            {microsoftError && (
-              <div className="login-error" style={{ marginBottom: '1rem' }}>
-                <AlertCircle size={18} />
-                <span>{microsoftError}</span>
-              </div>
-            )}
-
-            <form
-              onSubmit={handleMicrosoftPromptSubmit}
-              style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}
-            >
-              <div className="input-group" style={{ marginBottom: 0 }}>
-                <Mail className="input-icon" size={18} />
-                <input
-                  type="email"
-                  className="input-field with-icon"
-                  placeholder="seu.nome@lepta.com.br"
-                  value={microsoftEmail}
-                  onChange={(e) => setMicrosoftEmail(e.target.value)}
-                  disabled={microsoftLoading}
-                  autoFocus
-                  required
-                />
-              </div>
-
-              <p style={{ fontSize: '0.78rem', color: '#94a3b8', margin: 0, lineHeight: 1.4 }}>
-                Sua conta corporativa será autenticada e vinculada com segurança ao sistema.
-              </p>
-
-              <button
-                type="submit"
-                className="btn-primary login-submit"
-                disabled={microsoftLoading || !microsoftEmail.trim()}
-                style={{ padding: '11px' }}
-              >
-                {microsoftLoading ? 'Autenticando...' : <>Entrar com Microsoft <ShieldCheck size={18} /></>}
-              </button>
-            </form>
-          </div>
-        </div>
-      )}
     </div>
   );
 };

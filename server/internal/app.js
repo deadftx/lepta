@@ -2788,8 +2788,8 @@ app.post('/api/auth/microsoft', authIpRateLimiter, loginRateLimiter, async (req,
     }
   }
 
-  if (!targetEmail && !targetMicrosoftId) {
-    return res.status(400).json({ error: 'E-mail corporativo ou credencial Microsoft não detectada.' });
+  if (!targetEmail) {
+    return res.status(401).json({ error: 'Token corporativo Microsoft não fornecido ou inválido.' });
   }
 
   // Restringe acesso exclusivamente a contas com domínio corporativo @lepta.com.br

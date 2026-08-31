@@ -13,6 +13,7 @@
     "import-excel": "node scripts/importExcel.js"
   },
   "dependencies": {
+    "@azure/msal-browser": "^5.20.0",
     "@types/nodemailer": "^8.0.1",
     "better-sqlite3": "^13.0.3",
     "cors": "^2.8.6",
