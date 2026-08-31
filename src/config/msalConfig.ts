@@ -1,9 +1,10 @@
 import { PublicClientApplication, type Configuration, type PopupRequest } from '@azure/msal-browser';
 
-// Microsoft Office 365 / Entra ID configuration
-// Permite autenticação direta com contas organizacionais @lepta.com.br
-const clientId = import.meta.env.VITE_AZURE_CLIENT_ID || '04b07795-8ddb-461a-bbee-02f9e1bf7b46';
-const tenantId = import.meta.env.VITE_AZURE_TENANT_ID || 'organizations';
+// Microsoft Office 365 / Entra ID configuration (LeptaSys)
+// ID do aplicativo (cliente): 562eefd4-36bb-45af-822f-4377afa893ae
+// ID do diretório (locatário): f376d8b7-1a55-4cfb-a8e1-3e2799e0918e
+const clientId = import.meta.env.VITE_AZURE_CLIENT_ID || '562eefd4-36bb-45af-822f-4377afa893ae';
+const tenantId = import.meta.env.VITE_AZURE_TENANT_ID || 'f376d8b7-1a55-4cfb-a8e1-3e2799e0918e';
 
 export const msalConfig: Configuration = {
   auth: {

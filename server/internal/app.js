@@ -3479,12 +3479,12 @@ app.post('/api/auth/microsoft', authIpRateLimiter, loginRateLimiter, async (req,
 });
 
 app.get('/api/auth/sso-config', (req, res) => {
-  const clientId = process.env.AZURE_CLIENT_ID || process.env.VITE_AZURE_CLIENT_ID || '';
-  const tenantId = process.env.AZURE_TENANT_ID || process.env.VITE_AZURE_TENANT_ID || 'common';
+  const clientId = process.env.AZURE_CLIENT_ID || process.env.VITE_AZURE_CLIENT_ID || '562eefd4-36bb-45af-822f-4377afa893ae';
+  const tenantId = process.env.AZURE_TENANT_ID || process.env.VITE_AZURE_TENANT_ID || 'f376d8b7-1a55-4cfb-a8e1-3e2799e0918e';
   return res.json({
     configured: Boolean(clientId),
     clientId: clientId || '',
-    tenantId: tenantId || 'common',
+    tenantId: tenantId || 'f376d8b7-1a55-4cfb-a8e1-3e2799e0918e',
     hasQuickValidationMode: true
   });
 });
