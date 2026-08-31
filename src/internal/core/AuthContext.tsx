@@ -180,6 +180,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     setUser(null);
     localStorage.removeItem('lepta_user');
     localStorage.removeItem('lepta_auth_token');
+    try {
+      sessionStorage.clear();
+    } catch {}
   };
 
   const completeSecuritySetup = (updatedUser: User) => {

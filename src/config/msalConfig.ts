@@ -10,7 +10,8 @@ export const msalConfig: Configuration = {
   auth: {
     clientId,
     authority: `https://login.microsoftonline.com/${tenantId}`,
-    redirectUri: typeof window !== 'undefined' ? window.location.origin : ''
+    redirectUri: typeof window !== 'undefined' ? window.location.origin.replace(/\/$/, '') : '',
+    postLogoutRedirectUri: typeof window !== 'undefined' ? window.location.origin : ''
   },
   cache: {
     cacheLocation: 'sessionStorage'
@@ -18,13 +19,35 @@ export const msalConfig: Configuration = {
 };
 
 let msalInstance: PublicClientApplication | null = null;
+let msalInitPromise: Promise<PublicClientApplication> | null = null;
 
 export async function getMsalInstance(): Promise<PublicClientApplication> {
-  if (!msalInstance) {
-    msalInstance = new PublicClientApplication(msalConfig);
-    await msalInstance.initialize();
+  if (msalInstance) return msalInstance;
+  if (msalInitPromise) return msalInitPromise;
+
+  msalInitPromise = (async () => {
+    const instance = new PublicClientApplication(msalConfig);
+    await instance.initialize();
+    await instance.handleRedirectPromise();
+    msalInstance = instance;
+    return instance;
+  })();
+
+  return msalInitPromise;
+}
+
+// Se a janela atual for um popup aberto pelo MSAL (tendo hash com code= ou window.opener), processa e fecha imediatamente
+if (typeof window !== 'undefined') {
+  const isAuthResponse = window.location.hash.includes('code=') ||
+    window.location.search.includes('code=') ||
+    window.location.hash.includes('id_token=') ||
+    window.location.search.includes('error=');
+
+  if (isAuthResponse || (window.opener && window.opener !== window)) {
+    getMsalInstance().catch(err => {
+      console.warn('MSAL callback handler warning:', err);
+    });
   }
-  return msalInstance;
 }
 
 export const loginRequest: PopupRequest = {

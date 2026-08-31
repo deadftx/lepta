@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useNavigate, useLocation, useSearchParams } from 'react-router-dom';
-import { Lock, User, ArrowRight, AlertCircle, CheckCircle2, KeyRound, Mail, ArrowLeft } from 'lucide-react';
+import { Lock, User, ArrowRight, AlertCircle, CheckCircle2, KeyRound, Mail, ArrowLeft, LogOut } from 'lucide-react';
 import { useAuth } from '../internal/core/AuthContext';
 import { API_BASE_URL } from '../config/api';
 import { authenticateWithMicrosoft } from '../config/msalConfig';
@@ -19,7 +19,7 @@ const Login = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const [searchParams] = useSearchParams();
-  const { login, loginWithMicrosoft } = useAuth();
+  const { login, loginWithMicrosoft, user, isAuthenticated, logout } = useAuth();
 
   // Login form state
   const [loginId, setLoginId] = useState('');
@@ -260,7 +260,46 @@ const Login = () => {
   return (
     <div className="login-page">
       <div className="login-container glass">
-        {isRecoveryMode ? (
+        {isAuthenticated && user && !isRecoveryMode && !isFirstAccessMode ? (
+          <div className="login-active-session">
+            <div className="login-header">
+              <h2>Sessão <span className="text-gradient">Ativa</span></h2>
+              <p>Você já está autenticado no sistema.</p>
+            </div>
+
+            <div className="active-user-badge">
+              <div className="user-avatar-circle">
+                {(user.username || user.email || 'U')[0].toUpperCase()}
+              </div>
+              <div className="user-details">
+                <strong>{user.username}</strong>
+                <span>{user.email || 'Conta Corporativa Lepta'}</span>
+              </div>
+            </div>
+
+            <div className="active-session-actions">
+              <button
+                type="button"
+                className="btn-primary login-submit"
+                onClick={() => navigateToDestination()}
+                style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
+              >
+                <ArrowRight size={18} />
+                CONTINUAR NO SISTEMA
+              </button>
+
+              <button
+                type="button"
+                className="btn-outline"
+                onClick={() => logout()}
+                style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', marginTop: '4px' }}
+              >
+                <LogOut size={16} />
+                Sair / Trocar de Conta
+              </button>
+            </div>
+          </div>
+        ) : isRecoveryMode ? (
           <>
             <div className="login-header">
               <h2>Recuperar <span className="text-gradient">Acesso</span></h2>

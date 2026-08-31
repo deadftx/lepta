@@ -1,11 +1,13 @@
 import { useState, useEffect } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { LogIn, Menu, X } from 'lucide-react';
+import { ArrowRight, LogIn, Menu, X } from 'lucide-react';
+import { useAuth } from '../internal/core/AuthContext';
 import './Navbar.css';
 
 const Navbar = () => {
   const location = useLocation();
   const navigate = useNavigate();
+  const { isAuthenticated } = useAuth();
   const [isOpen, setIsOpen] = useState(false);
 
   // Fecha o menu quando a rota muda
@@ -80,10 +82,17 @@ const Navbar = () => {
         </ul>
 
         <div className="navbar-actions">
-          <Link to="/login" className="btn-primary login-btn desktop-only">
-            <LogIn size={18} />
-            ÁREA INTERNA
-          </Link>
+          {isAuthenticated ? (
+            <Link to="/dashboard" className="btn-primary login-btn desktop-only" style={{ background: 'linear-gradient(135deg, #0284c7 0%, #0369a1 100%)' }}>
+              <ArrowRight size={18} />
+              CONTINUAR
+            </Link>
+          ) : (
+            <Link to="/login" className="btn-primary login-btn desktop-only">
+              <LogIn size={18} />
+              ÁREA INTERNA
+            </Link>
+          )}
           
           {/* Hamburger Menu Toggle (Mobile) */}
           <button className="mobile-toggle" onClick={toggleMenu} aria-label="Toggle menu">
@@ -100,10 +109,17 @@ const Navbar = () => {
           <li><a href="#" onClick={(e) => handleNavClick(e, 'valores')}>Valores</a></li>
           <li><a href="#" onClick={(e) => handleNavClick(e, 'contato')}>Contato</a></li>
           <li className="mobile-menu-action">
-            <Link to="/login" className="btn-primary login-btn-mobile" onClick={() => setIsOpen(false)}>
-              <LogIn size={18} />
-              ÁREA INTERNA
-            </Link>
+            {isAuthenticated ? (
+              <Link to="/dashboard" className="btn-primary login-btn-mobile" onClick={() => setIsOpen(false)} style={{ background: 'linear-gradient(135deg, #0284c7 0%, #0369a1 100%)' }}>
+                <ArrowRight size={18} />
+                CONTINUAR
+              </Link>
+            ) : (
+              <Link to="/login" className="btn-primary login-btn-mobile" onClick={() => setIsOpen(false)}>
+                <LogIn size={18} />
+                ÁREA INTERNA
+              </Link>
+            )}
           </li>
         </ul>
       </div>
