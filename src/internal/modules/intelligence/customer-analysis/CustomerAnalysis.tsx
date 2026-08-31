@@ -1,7 +1,33 @@
 import { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
-import { Users, Search, BrainCircuit, Database, TrendingUp, AlertTriangle, ArrowLeft, Building2, User, CheckCircle, Clock, ArrowUpDown, ArrowUp, ArrowDown, Wifi, X, Network, ContactRound } from 'lucide-react';
+import { 
+  Users, 
+  Search, 
+  BrainCircuit, 
+  Database, 
+  TrendingUp, 
+  AlertTriangle, 
+  ArrowLeft, 
+  Building2, 
+  User, 
+  CheckCircle, 
+  Clock, 
+  ArrowUpDown, 
+  ArrowUp, 
+  ArrowDown, 
+  Wifi, 
+  X, 
+  Network, 
+  ContactRound,
+  FileText,
+  RotateCcw,
+  Eye,
+  Calendar,
+  DollarSign,
+  Layers,
+  Hash
+} from 'lucide-react';
 import './CustomerAnalysis.css';
 import '../../../core/styles/Operations.css';
 import { getAuthHeaders } from '../../../../config/api';
@@ -27,8 +53,44 @@ interface ClientAnalysis {
   cedentes?: string[];
 }
 
+export interface TitleItem {
+  id: string;
+  numero: string;
+  operacao: string;
+  cedente: string;
+  documentoCedente?: string;
+  sacado: string;
+  documentoSacado?: string;
+  ua: string;
+  dataVencimento: string | null;
+  dataOperacao: string | null;
+  dataLiquidacao: string | null;
+  dataEmissao: string | null;
+  situacao: string;
+  vencido: string;
+  valorNominal: number;
+  valorLiquido: number;
+  valorPago: number;
+  taxa?: number;
+  desagio?: number;
+  bancoCobrador?: string;
+  tipoDocumento?: string;
+  chaveNfe?: string;
+  codigoDoLastro?: string;
+}
+
 const formatCurrency = (value: number) => {
   return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value);
+};
+
+const formatDateDisplay = (dateStr?: string | null) => {
+  if (!dateStr) return '-';
+  if (dateStr.includes('/')) return dateStr;
+  const parts = dateStr.split('T')[0].split('-');
+  if (parts.length === 3) {
+    return `${parts[2]}/${parts[1]}/${parts[0]}`;
+  }
+  return dateStr;
 };
 
 const MAX_VISIBLE_NAME_LENGTH = 70;
@@ -62,12 +124,26 @@ const CustomerAnalysis = () => {
   const [dataSource, setDataSource] = useState<'api' | 'db'>('api');
 
   const [selectedCedente, setSelectedCedente] = useState<string | null>(null);
-  const [drillDownMode, setDrillDownMode] = useState<'sacados' | 'ua' | 'un' | null>(null);
+  const [drillDownMode, setDrillDownMode] = useState<'sacados' | 'ua' | 'un' | 'titulos' | null>(null);
   const [kpiFilters, setKpiFilters] = useState<string[]>(['volume_geral']);
   const [subData, setSubData] = useState<ClientAnalysis[]>([]);
   const [loadingSubData, setLoadingSubData] = useState(false);
   const [subDataError, setSubDataError] = useState('');
   
+  // Títulos Drill-Down States
+  const [titlesData, setTitlesData] = useState<TitleItem[]>([]);
+  const [titleSearchTerm, setTitleSearchTerm] = useState('');
+  const [titleDateType, setTitleDateType] = useState<'vencimento' | 'operacao' | 'liquidacao'>('vencimento');
+  const [titleStartDate, setTitleStartDate] = useState('');
+  const [titleEndDate, setTitleEndDate] = useState('');
+  const [titleNumero, setTitleNumero] = useState('');
+  const [titleOperacao, setTitleOperacao] = useState('');
+  const [titleSacado, setTitleSacado] = useState('');
+  const [titleSituacao, setTitleSituacao] = useState('');
+  const [titleValorMin, setTitleValorMin] = useState('');
+  const [titleValorMax, setTitleValorMax] = useState('');
+  const [selectedTitleDetail, setSelectedTitleDetail] = useState<TitleItem | null>(null);
+
   // Sort state
   const [sortConfig, setSortConfig] = useState<{ key: string, direction: 'asc' | 'desc' } | null>(null);
 
@@ -188,8 +264,8 @@ const CustomerAnalysis = () => {
     e.stopPropagation();
     
     // Estimativas do tamanho do modal
-    const modalWidth = 320;
-    const modalHeight = 150;
+    const modalWidth = 340;
+    const modalHeight = 220;
     
     let popX = e.clientX + 15;
     let popY = e.clientY + 15;
@@ -197,7 +273,7 @@ const CustomerAnalysis = () => {
     if (window.matchMedia('(max-width: 767px), (max-width: 900px) and (hover: none) and (pointer: coarse)').matches) {
       const targetRect = e.currentTarget.getBoundingClientRect();
       const viewportHeight = window.visualViewport?.height || window.innerHeight;
-      const mobileModalHeight = 230;
+      const mobileModalHeight = 270;
       popX = 12;
       popY = targetRect.bottom + 8;
       if (popY + mobileModalHeight > viewportHeight - 12) {
@@ -220,10 +296,27 @@ const CustomerAnalysis = () => {
     });
   };
 
-  const fetchSubData = async (cedente: string, mode: 'sacados' | 'ua' | 'un') => {
+  const fetchSubData = async (cedente: string, mode: 'sacados' | 'ua' | 'un' | 'titulos') => {
     setLoadingSubData(true);
     setSubDataError('');
     try {
+      if (mode === 'titulos') {
+        const queryParams = new URLSearchParams();
+        if (startDate) queryParams.append('startDate', startDate);
+        if (endDate) queryParams.append('endDate', endDate);
+        
+        const url = `/api/analise-titulos/${encodeURIComponent(cedente)}${queryParams.toString() ? '?' + queryParams.toString() : ''}`;
+        const response = await fetch(url, { headers: getAuthHeaders() });
+        if (!response.ok) throw new Error('Erro ao buscar títulos da API');
+        
+        const source = response.headers.get('x-data-source') === 'db' ? 'db' : 'api';
+        setDataSource(source);
+        
+        const data = await response.json();
+        setTitlesData(Array.isArray(data) ? data : []);
+        return;
+      }
+
       let endpoint = '';
       if (mode === 'sacados') endpoint = '/api/analise-sacados/';
       else if (mode === 'ua') endpoint = '/api/analise-ua/';
@@ -274,11 +367,20 @@ const CustomerAnalysis = () => {
     }
   }, [startDate, endDate]);
 
-  const handleSelectDrillDown = async (mode: 'sacados' | 'ua' | 'un') => {
+  const handleSelectDrillDown = async (mode: 'sacados' | 'ua' | 'un' | 'titulos') => {
     if (!popover) return;
     const cedente = popover.cedente;
     setPopover(null);
     setSearchTerm('');
+    setTitleSearchTerm('');
+    setTitleNumero('');
+    setTitleOperacao('');
+    setTitleSacado('');
+    setTitleSituacao('');
+    setTitleValorMin('');
+    setTitleValorMax('');
+    setTitleStartDate('');
+    setTitleEndDate('');
     setSelectedCedente(cedente);
     setDrillDownMode(mode);
     fetchSubData(cedente, mode);
@@ -288,6 +390,37 @@ const CustomerAnalysis = () => {
     setSelectedCedente(null);
     setDrillDownMode(null);
     setSubData([]);
+    setTitlesData([]);
+    setSelectedTitleDetail(null);
+  };
+
+  const handleClearTitleFilters = () => {
+    setTitleSearchTerm('');
+    setTitleNumero('');
+    setTitleOperacao('');
+    setTitleSacado('');
+    setTitleSituacao('');
+    setTitleValorMin('');
+    setTitleValorMax('');
+    setTitleStartDate('');
+    setTitleEndDate('');
+    setKpiFilters(['volume_geral']);
+  };
+
+  const handleSacadoClick = (sacadoName: string) => {
+    if (!selectedCedente) return;
+    setDrillDownMode('titulos');
+    setTitleSacado(sacadoName);
+    setTitleSearchTerm('');
+    setTitleNumero('');
+    setTitleOperacao('');
+    setTitleSituacao('');
+    setTitleValorMin('');
+    setTitleValorMax('');
+    setTitleStartDate('');
+    setTitleEndDate('');
+    setKpiFilters(['volume_geral']);
+    fetchSubData(selectedCedente, 'titulos');
   };
 
   // Logic for combinable filters
@@ -297,6 +430,7 @@ const CustomerAnalysis = () => {
         setSelectedCedente(null);
         setDrillDownMode(null);
         setSubData([]);
+        setTitlesData([]);
         setPopover(null);
         setSearchTerm('');
         return prev.includes(filter) ? ['volume_geral'] : ['grupos_financeiros'];
@@ -323,7 +457,7 @@ const CustomerAnalysis = () => {
   let displayClients: ClientAnalysis[] = [];
   let kpiClients = clients; // Usado apenas para os totais no topo
   
-  if (selectedCedente) {
+  if (selectedCedente && drillDownMode !== 'titulos') {
     const currentSubData = searchTerm.trim() === '' 
       ? subData 
       : subData.filter(item => {
@@ -333,7 +467,7 @@ const CustomerAnalysis = () => {
     
     displayClients = currentSubData;
     kpiClients = currentSubData; 
-  } else {
+  } else if (!selectedCedente) {
     // Filtragem combinada para a visão geral
     const showListWithoutSearch = kpiFilters.includes('cedentes') || groupMode;
     
@@ -354,7 +488,7 @@ const CustomerAnalysis = () => {
     kpiClients = activeBase;
   }
 
-  // Ordenação padrão
+  // Ordenação padrão para clientes/sacados/UAs
   displayClients.sort((a, b) => {
     if (sortConfig) {
       const { key, direction } = sortConfig;
@@ -380,12 +514,108 @@ const CustomerAnalysis = () => {
     const aTotal = (a.valorGeral || 0) + (a.valorNpl || 0);
     return bTotal - aTotal;
   });
+
+  // Filtragem e Ordenação dos TÍTULOS (drillDownMode === 'titulos')
+  let displayTitles: TitleItem[] = [];
+  if (drillDownMode === 'titulos') {
+    displayTitles = [...titlesData];
+
+    // 1. Filtro por Data
+    if (titleStartDate || titleEndDate) {
+      displayTitles = displayTitles.filter(t => {
+        let d = t.dataVencimento;
+        if (titleDateType === 'operacao') d = t.dataOperacao || t.dataEmissao;
+        else if (titleDateType === 'liquidacao') d = t.dataLiquidacao;
+        if (!d) return false;
+        const iso = d.split('T')[0];
+        if (titleStartDate && iso < titleStartDate) return false;
+        if (titleEndDate && iso > titleEndDate) return false;
+        return true;
+      });
+    }
+
+    // 2. Busca rápida geral nos títulos
+    if (titleSearchTerm.trim() !== '') {
+      const term = titleSearchTerm.toLowerCase().trim();
+      displayTitles = displayTitles.filter(t => 
+        t.numero.toLowerCase().includes(term) ||
+        t.operacao.toLowerCase().includes(term) ||
+        t.sacado.toLowerCase().includes(term) ||
+        (t.documentoSacado || '').includes(term) ||
+        t.situacao.toLowerCase().includes(term) ||
+        (t.bancoCobrador || '').toLowerCase().includes(term) ||
+        (t.tipoDocumento || '').toLowerCase().includes(term) ||
+        (t.ua || '').toLowerCase().includes(term)
+      );
+    }
+
+    // 3. Filtros específicos
+    if (titleNumero.trim() !== '') {
+      const term = titleNumero.toLowerCase().trim();
+      displayTitles = displayTitles.filter(t => t.numero.toLowerCase().includes(term));
+    }
+    if (titleOperacao.trim() !== '') {
+      const term = titleOperacao.toLowerCase().trim();
+      displayTitles = displayTitles.filter(t => t.operacao.toLowerCase().includes(term));
+    }
+    if (titleSacado.trim() !== '') {
+      const term = titleSacado.toLowerCase().trim();
+      displayTitles = displayTitles.filter(t => t.sacado.toLowerCase().includes(term) || (t.documentoSacado || '').includes(term));
+    }
+    if (titleSituacao.trim() !== '') {
+      const term = titleSituacao.toLowerCase().trim();
+      displayTitles = displayTitles.filter(t => t.situacao.toLowerCase().includes(term));
+    }
+    if (titleValorMin.trim() !== '' && !isNaN(parseFloat(titleValorMin))) {
+      displayTitles = displayTitles.filter(t => t.valorNominal >= parseFloat(titleValorMin));
+    }
+    if (titleValorMax.trim() !== '' && !isNaN(parseFloat(titleValorMax))) {
+      displayTitles = displayTitles.filter(t => t.valorNominal <= parseFloat(titleValorMax));
+    }
+
+    // 4. Integração com filtros de KPI
+    if (kpiFilters.includes('total_liquidado')) {
+      displayTitles = displayTitles.filter(t => t.situacao.toLowerCase().includes('liquidado') || t.situacao.toLowerCase().includes('quitado'));
+    } else if (kpiFilters.includes('total_aberto')) {
+      displayTitles = displayTitles.filter(t => t.situacao.toLowerCase().includes('aberto') && t.vencido !== 'Sim');
+    } else if (kpiFilters.includes('total_vencido')) {
+      displayTitles = displayTitles.filter(t => t.vencido === 'Sim' || t.situacao.toLowerCase().includes('vencid'));
+    }
+
+    // 5. Ordenação dos títulos
+    displayTitles.sort((a, b) => {
+      if (sortConfig) {
+        const { key, direction } = sortConfig;
+        const modifier = direction === 'asc' ? 1 : -1;
+        if (key === 'numero') return a.numero.localeCompare(b.numero) * modifier;
+        if (key === 'operacao') return a.operacao.localeCompare(b.operacao) * modifier;
+        if (key === 'sacado') return a.sacado.localeCompare(b.sacado) * modifier;
+        if (key === 'vencimento') return (a.dataVencimento || '').localeCompare(b.dataVencimento || '') * modifier;
+        if (key === 'operacaoData') return (a.dataOperacao || '').localeCompare(b.dataOperacao || '') * modifier;
+        if (key === 'liquidacao') return (a.dataLiquidacao || '').localeCompare(b.dataLiquidacao || '') * modifier;
+        if (key === 'situacao') return a.situacao.localeCompare(b.situacao) * modifier;
+        if (key === 'valorNominal') return (a.valorNominal - b.valorNominal) * modifier;
+        if (key === 'valorLiquido') return (a.valorLiquido - b.valorLiquido) * modifier;
+        if (key === 'valorPago') return (a.valorPago - b.valorPago) * modifier;
+      }
+      return b.valorNominal - a.valorNominal;
+    });
+  }
+
+  // Cálculos de Totais para Títulos
+  const titulosTotalQtd = titlesData.length;
+  const titulosSacadosDistintos = new Set(titlesData.map(t => t.sacado)).size;
+  const titulosVolumeGeral = titlesData.reduce((acc, t) => acc + (t.valorNominal || 0), 0);
+  const titulosTotalAberto = titlesData.filter(t => t.situacao.toLowerCase().includes('aberto') && t.vencido !== 'Sim').reduce((acc, t) => acc + (t.valorNominal || 0), 0);
+  const titulosTotalLiquidado = titlesData.filter(t => t.situacao.toLowerCase().includes('liquidado') || t.situacao.toLowerCase().includes('quitado')).reduce((acc, t) => acc + (t.valorPago || t.valorLiquido || t.valorNominal || 0), 0);
+  const titulosTotalVencido = titlesData.filter(t => t.vencido === 'Sim' || t.situacao.toLowerCase().includes('vencid')).reduce((acc, t) => acc + (t.valorNominal || 0), 0);
+  const titulosPercVencido = titulosVolumeGeral > 0 ? (titulosTotalVencido / titulosVolumeGeral) * 100 : 0;
   
   const totalClients = selectedCedente ? kpiClients.length : clients.length;
   const totalGroups = economicGroups.length;
   // Volume Geral only uses BASE_NOVA
   const totalVolume = kpiClients.reduce((acc, curr) => acc + (curr.valorGeral || 0), 0);
-  // Separate Volume for NPL (exibe imediatamente do banco ou do merge com clientes)
+  // Separate Volume for NPL
   const totalVolumeNpl = clients.length > 0
     ? (selectedCedente ? kpiClients : clients).reduce((acc, curr) => acc + (curr.valorNpl || 0), 0)
     : (nplImmediateVolume ?? 0);
@@ -394,34 +624,59 @@ const CustomerAnalysis = () => {
   const totalAberto = kpiClients.reduce((acc, curr) => acc + (curr.valorAberto || 0), 0);
   
   const percVencidoGeral = totalVolume > 0 ? (totalVencido / totalVolume) * 100 : 0;
-// const avgScore = totalClients > 0 ? Math.floor(kpiClients.reduce((acc, c) => acc + (c.score || 0), 0) / totalClients) : 0;
+
+  const getSituacaoBadge = (situacao: string, vencido: string) => {
+    const sit = (situacao || '').toLowerCase();
+    if (vencido === 'Sim' || sit.includes('vencid')) {
+      return <span className="title-status-badge status-vencido"><AlertTriangle size={12} /> Vencido</span>;
+    }
+    if (sit.includes('liquidado') || sit.includes('quitad')) {
+      return <span className="title-status-badge status-liquidado"><CheckCircle size={12} /> {situacao}</span>;
+    }
+    if (sit.includes('aberto')) {
+      return <span className="title-status-badge status-aberto"><Clock size={12} /> Aberto</span>;
+    }
+    if (sit.includes('recomprad')) {
+      return <span className="title-status-badge status-recomprado"><RotateCcw size={12} /> Recomprado</span>;
+    }
+    if (sit.includes('baixad')) {
+      return <span className="title-status-badge status-baixado">{situacao}</span>;
+    }
+    return <span className="title-status-badge status-default">{situacao || 'Padrão'}</span>;
+  };
 
   return (
     <div className="customer-analysis-page">
-      {/* Title block removed to save space */ }
-
       {/* KPI Summary Grid */}
       <div className="kpi-grid">
         <div className="kpi-row kpi-row-primary">
           <div className={`kpi-card ${kpiFilters.includes('cedentes') ? 'active' : ''}`} onClick={() => toggleKpiFilter('cedentes')}>
             <div className="kpi-icon">
-              <Users size={24} />
+              {drillDownMode === 'titulos' ? <FileText size={24} /> : <Users size={24} />}
             </div>
             <div className="kpi-info">
-              <h4>{selectedCedente ? (drillDownMode === 'sacados' ? 'Sacados' : 'Unid. Administrativas') : 'Cedentes / Clientes'}</h4>
-              <div className="kpi-value">{loading || loadingSubData ? '...' : totalClients}</div>
-              <div className="kpi-sub">{selectedCedente ? 'Do cedente selecionado' : 'Cadastrados na Base'}</div>
+              <h4>{drillDownMode === 'titulos' ? 'Títulos do Cedente' : selectedCedente ? (drillDownMode === 'sacados' ? 'Sacados' : 'Unid. Administrativas') : 'Cedentes / Clientes'}</h4>
+              <div className="kpi-value">
+                {drillDownMode === 'titulos' ? (loadingSubData ? '...' : titulosTotalQtd) : loading || loadingSubData ? '...' : totalClients}
+              </div>
+              <div className="kpi-sub">
+                {drillDownMode === 'titulos' ? 'Cadastrados no Cedente' : selectedCedente ? 'Do cedente selecionado' : 'Cadastrados na Base'}
+              </div>
             </div>
           </div>
 
-          <div className={`kpi-card ${groupMode ? 'active' : ''}`} onClick={() => toggleKpiFilter('grupos_financeiros')}>
+          <div className={`kpi-card ${groupMode ? 'active' : ''}`} onClick={() => !drillDownMode && toggleKpiFilter('grupos_financeiros')}>
             <div className="kpi-icon" style={{ color: '#06b6d4', background: 'rgba(6, 182, 212, 0.12)' }}>
-              <Network size={24} />
+              {drillDownMode === 'titulos' ? <Users size={24} /> : <Network size={24} />}
             </div>
             <div className="kpi-info">
-              <h4>Grupos Financeiros</h4>
-              <div className="kpi-value">{loading ? '...' : totalGroups}</div>
-              <div className="kpi-sub" style={{ color: '#06b6d4' }}>Vinculados pela API UNLTD</div>
+              <h4>{drillDownMode === 'titulos' ? 'Sacados Vinculados' : 'Grupos Financeiros'}</h4>
+              <div className="kpi-value">
+                {drillDownMode === 'titulos' ? (loadingSubData ? '...' : titulosSacadosDistintos) : loading ? '...' : totalGroups}
+              </div>
+              <div className="kpi-sub" style={{ color: '#06b6d4' }}>
+                {drillDownMode === 'titulos' ? 'Sacados distintos operados' : 'Vinculados pela API UNLTD'}
+              </div>
             </div>
           </div>
 
@@ -455,8 +710,12 @@ const CustomerAnalysis = () => {
             </div>
             <div className="kpi-info">
               <h4>Operações de desconto</h4>
-              <div className="kpi-value">{loading || loadingSubData ? '...' : formatCurrency(totalVolume)}</div>
-              <div className="kpi-sub">Total {selectedCedente ? 'do detalhamento' : 'da Base'}</div>
+              <div className="kpi-value">
+                {drillDownMode === 'titulos' ? (loadingSubData ? '...' : formatCurrency(titulosVolumeGeral)) : loading || loadingSubData ? '...' : formatCurrency(totalVolume)}
+              </div>
+              <div className="kpi-sub">
+                {drillDownMode === 'titulos' ? 'Total dos títulos' : selectedCedente ? 'do detalhamento' : 'da Base'}
+              </div>
             </div>
           </div>
 
@@ -466,7 +725,9 @@ const CustomerAnalysis = () => {
             </div>
             <div className="kpi-info">
               <h4>Total em aberto</h4>
-              <div className="kpi-value">{loading || loadingSubData ? '...' : formatCurrency(totalAberto)}</div>
+              <div className="kpi-value">
+                {drillDownMode === 'titulos' ? (loadingSubData ? '...' : formatCurrency(titulosTotalAberto)) : loading || loadingSubData ? '...' : formatCurrency(totalAberto)}
+              </div>
               <div className="kpi-sub" style={{ color: '#f59e0b' }}>A vencer (Títulos Abertos)</div>
             </div>
           </div>
@@ -477,7 +738,9 @@ const CustomerAnalysis = () => {
             </div>
             <div className="kpi-info">
               <h4>Total Liquidado</h4>
-              <div className="kpi-value">{loading || loadingSubData ? '...' : formatCurrency(totalLiquidado)}</div>
+              <div className="kpi-value">
+                {drillDownMode === 'titulos' ? (loadingSubData ? '...' : formatCurrency(titulosTotalLiquidado)) : loading || loadingSubData ? '...' : formatCurrency(totalLiquidado)}
+              </div>
               <div className="kpi-sub" style={{ color: '#10b981' }}>Titulos Liquidados</div>
             </div>
           </div>
@@ -488,21 +751,27 @@ const CustomerAnalysis = () => {
             </div>
             <div className="kpi-info">
               <h4>Total Vencidos</h4>
-              <div className="kpi-value">{loading || loadingSubData ? '...' : formatCurrency(totalVencido)}</div>
-              <div className="kpi-sub" style={{ color: '#ef4444' }}>{percVencidoGeral.toFixed(2)}% da carteira</div>
+              <div className="kpi-value">
+                {drillDownMode === 'titulos' ? (loadingSubData ? '...' : formatCurrency(titulosTotalVencido)) : loading || loadingSubData ? '...' : formatCurrency(totalVencido)}
+              </div>
+              <div className="kpi-sub" style={{ color: '#ef4444' }}>
+                {drillDownMode === 'titulos' ? `${titulosPercVencido.toFixed(2)}% da carteira` : `${percVencidoGeral.toFixed(2)}% da carteira`}
+              </div>
             </div>
           </div>
         </div>
       </div>
 
-      {/* Main Content Table */}
+      {/* Main Content Card */}
       <div className="internal-card glass analysis-results-card" style={{ marginTop: '1rem' }}>
         <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
           <h3>
             {selectedCedente 
-              ? (drillDownMode === 'sacados' 
-                  ? `Visão Geral dos Sacados do Cedente "${selectedCedente}"` 
-                  : `Visão Geral das UAs do Cedente "${selectedCedente}"`)
+              ? (drillDownMode === 'titulos'
+                  ? `Análise de Títulos do Cedente "${selectedCedente}"`
+                  : drillDownMode === 'sacados' 
+                    ? `Visão Geral dos Sacados do Cedente "${selectedCedente}"` 
+                    : `Visão Geral das UAs do Cedente "${selectedCedente}"`)
               : groupMode ? 'Visão Geral dos Grupos Financeiros' : 'Visão Geral dos Clientes'}
           </h3>
           <div className="analysis-header-actions" style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
@@ -530,43 +799,186 @@ const CustomerAnalysis = () => {
           </div>
         </div>
 
-        {/* Unified Search Bar */}
-        <div className="analysis-filter-row" style={{ padding: '0 1.5rem 1.5rem 1.5rem', display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
-          <div className="search-input-wrapper" style={{ flex: '1 1 40%' }}>
-            <Search size={18} />
-            <input
-              type="text"
-              className="input-field"
-              placeholder={selectedCedente ? `Buscar ${drillDownMode === 'sacados' ? 'sacado' : drillDownMode === 'un' ? 'UN' : 'UA'}...` : groupMode ? 'Buscar por nome do grupo financeiro...' : "Buscar instantânea por nome do cliente ou cedente..."}
-              value={searchTerm}
-              onChange={e => setSearchTerm(e.target.value)}
-              style={{ width: '100%' }}
-            />
+        {/* MODO TÍTULOS: BARRA DE FILTROS AVANÇADOS */}
+        {drillDownMode === 'titulos' ? (
+          <div className="title-analysis-filters-container">
+            {/* Linha 1: Tipo de Data, Período e Busca Geral */}
+            <div className="title-filters-row">
+              <div className="title-filter-item date-type-select-wrapper">
+                <label className="title-filter-label"><Calendar size={14} /> Filtrar Data por:</label>
+                <select 
+                  className="input-field select-field" 
+                  value={titleDateType} 
+                  onChange={e => setTitleDateType(e.target.value as any)}
+                >
+                  <option value="vencimento">Data de Vencimento</option>
+                  <option value="operacao">Data de Operação / Emissão</option>
+                  <option value="liquidacao">Data de Liquidação</option>
+                </select>
+              </div>
+
+              <div className="title-filter-item date-range-wrapper">
+                <label className="title-filter-label">Período ({titleDateType === 'vencimento' ? 'Venc.' : titleDateType === 'operacao' ? 'Oper.' : 'Liq.'}):</label>
+                <div className="title-date-inputs">
+                  <div className="date-input-sub">
+                    <span>De:</span>
+                    <input 
+                      type="date" 
+                      className="input-field" 
+                      value={titleStartDate} 
+                      onChange={e => setTitleStartDate(e.target.value)} 
+                    />
+                  </div>
+                  <div className="date-input-sub">
+                    <span>Até:</span>
+                    <input 
+                      type="date" 
+                      className="input-field" 
+                      value={titleEndDate} 
+                      onChange={e => setTitleEndDate(e.target.value)} 
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div className="title-filter-item quick-search-wrapper">
+                <label className="title-filter-label"><Search size={14} /> Busca Rápida Geral:</label>
+                <div className="search-input-wrapper" style={{ width: '100%' }}>
+                  <Search size={16} />
+                  <input 
+                    type="text" 
+                    className="input-field" 
+                    placeholder="Buscar em qualquer campo do título..." 
+                    value={titleSearchTerm} 
+                    onChange={e => setTitleSearchTerm(e.target.value)} 
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Linha 2: Filtros Específicos (Número, Operação, Sacado, Situação, Valores) */}
+            <div className="title-filters-row title-filters-secondary">
+              <div className="title-filter-item">
+                <label className="title-filter-label"><Hash size={13} /> Nº Título:</label>
+                <input 
+                  type="text" 
+                  className="input-field" 
+                  placeholder="Ex: 12345" 
+                  value={titleNumero} 
+                  onChange={e => setTitleNumero(e.target.value)} 
+                />
+              </div>
+
+              <div className="title-filter-item">
+                <label className="title-filter-label"><Layers size={13} /> Nº Operação:</label>
+                <input 
+                  type="text" 
+                  className="input-field" 
+                  placeholder="Ex: 104" 
+                  value={titleOperacao} 
+                  onChange={e => setTitleOperacao(e.target.value)} 
+                />
+              </div>
+
+              <div className="title-filter-item">
+                <label className="title-filter-label"><User size={13} /> Sacado:</label>
+                <input 
+                  type="text" 
+                  className="input-field" 
+                  placeholder="Nome do sacado..." 
+                  value={titleSacado} 
+                  onChange={e => setTitleSacado(e.target.value)} 
+                />
+              </div>
+
+              <div className="title-filter-item">
+                <label className="title-filter-label"><CheckCircle size={13} /> Situação:</label>
+                <select 
+                  className="input-field select-field" 
+                  value={titleSituacao} 
+                  onChange={e => setTitleSituacao(e.target.value)}
+                >
+                  <option value="">Todas as Situações</option>
+                  <option value="aberto">Em Aberto</option>
+                  <option value="liquidado">Liquidado / Quitado</option>
+                  <option value="vencido">Vencido</option>
+                  <option value="recomprado">Recomprado</option>
+                  <option value="baixado">Baixado</option>
+                </select>
+              </div>
+
+              <div className="title-filter-item title-filter-values">
+                <label className="title-filter-label"><DollarSign size={13} /> Faixa de Valor (R$):</label>
+                <div className="title-value-inputs">
+                  <input 
+                    type="number" 
+                    className="input-field" 
+                    placeholder="Mín" 
+                    value={titleValorMin} 
+                    onChange={e => setTitleValorMin(e.target.value)} 
+                  />
+                  <span className="value-separator">-</span>
+                  <input 
+                    type="number" 
+                    className="input-field" 
+                    placeholder="Máx" 
+                    value={titleValorMax} 
+                    onChange={e => setTitleValorMax(e.target.value)} 
+                  />
+                </div>
+              </div>
+
+              <div className="title-filter-actions">
+                <button 
+                  type="button" 
+                  className="btn-clear-title-filters" 
+                  onClick={handleClearTitleFilters}
+                  title="Limpar todos os filtros de títulos"
+                >
+                  <RotateCcw size={14} /> Limpar
+                </button>
+              </div>
+            </div>
           </div>
-          
-          <div className="analysis-date-filters" style={{ display: 'flex', gap: '0.5rem', flex: '1 1 auto', alignItems: 'center' }}>
-            <div className="search-input-wrapper analysis-date-field" style={{ flex: 1 }}>
-              <span style={{ position: 'absolute', left: '1rem', color: '#94a3b8', fontSize: '0.85rem' }}>De:</span>
-              <input 
-                type="date"
+        ) : (
+          /* FILTRO PADRÃO PARA CLIENTES / SACADOS / UAs */
+          <div className="analysis-filter-row" style={{ padding: '0 1.5rem 1.5rem 1.5rem', display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
+            <div className="search-input-wrapper" style={{ flex: '1 1 40%' }}>
+              <Search size={18} />
+              <input
+                type="text"
                 className="input-field"
-                value={startDate}
-                onChange={e => setStartDate(e.target.value)}
-                style={{ width: '100%', paddingLeft: '3rem' }}
+                placeholder={selectedCedente ? `Buscar ${drillDownMode === 'sacados' ? 'sacado' : drillDownMode === 'un' ? 'UN' : 'UA'}...` : groupMode ? 'Buscar por nome do grupo financeiro...' : "Buscar instantânea por nome do cliente ou cedente..."}
+                value={searchTerm}
+                onChange={e => setSearchTerm(e.target.value)}
+                style={{ width: '100%' }}
               />
             </div>
-            <div className="search-input-wrapper analysis-date-field" style={{ flex: 1 }}>
-              <span style={{ position: 'absolute', left: '1rem', color: '#94a3b8', fontSize: '0.85rem' }}>Até:</span>
-              <input 
-                type="date"
-                className="input-field"
-                value={endDate}
-                onChange={e => setEndDate(e.target.value)}
-                style={{ width: '100%', paddingLeft: '3rem' }}
-              />
+            
+            <div className="analysis-date-filters" style={{ display: 'flex', gap: '0.5rem', flex: '1 1 auto', alignItems: 'center' }}>
+              <div className="search-input-wrapper analysis-date-field" style={{ flex: 1 }}>
+                <span style={{ position: 'absolute', left: '1rem', color: '#94a3b8', fontSize: '0.85rem' }}>De:</span>
+                <input 
+                  type="date"
+                  className="input-field"
+                  value={startDate}
+                  onChange={e => setStartDate(e.target.value)}
+                  style={{ width: '100%', paddingLeft: '3rem' }}
+                />
+              </div>
+              <div className="search-input-wrapper analysis-date-field" style={{ flex: 1 }}>
+                <span style={{ position: 'absolute', left: '1rem', color: '#94a3b8', fontSize: '0.85rem' }}>Até:</span>
+                <input 
+                  type="date"
+                  className="input-field"
+                  value={endDate}
+                  onChange={e => setEndDate(e.target.value)}
+                  style={{ width: '100%', paddingLeft: '3rem' }}
+                />
+              </div>
             </div>
           </div>
-        </div>
+        )}
 
         {loading || loadingSubData ? (
           <div className="unltd-loading">
@@ -583,7 +995,139 @@ const CustomerAnalysis = () => {
           <div style={{ padding: '2rem', textAlign: 'center', color: '#ef4444' }}>
             <p>{error || subDataError || groupError}</p>
           </div>
+        ) : drillDownMode === 'titulos' ? (
+          /* TABELA DE TÍTULOS */
+          <div className="table-responsive">
+            <table className="data-table title-data-table">
+              <thead>
+                <tr>
+                  <th onClick={() => requestSort('numero')} style={{ cursor: 'pointer', userSelect: 'none' }}>
+                    <div style={{ display: 'flex', alignItems: 'center' }}>
+                      Nº Título
+                      {sortConfig?.key === 'numero' ? (sortConfig.direction === 'asc' ? <ArrowUp size={14} style={{ marginLeft: '0.25rem', color: '#3b82f6' }} /> : <ArrowDown size={14} style={{ marginLeft: '0.25rem', color: '#3b82f6' }} />) : <ArrowUpDown size={14} style={{ marginLeft: '0.25rem', opacity: 0.3 }} />}
+                    </div>
+                  </th>
+                  <th onClick={() => requestSort('operacao')} style={{ cursor: 'pointer', userSelect: 'none' }}>
+                    <div style={{ display: 'flex', alignItems: 'center' }}>
+                      Operação
+                      {sortConfig?.key === 'operacao' ? (sortConfig.direction === 'asc' ? <ArrowUp size={14} style={{ marginLeft: '0.25rem', color: '#3b82f6' }} /> : <ArrowDown size={14} style={{ marginLeft: '0.25rem', color: '#3b82f6' }} />) : <ArrowUpDown size={14} style={{ marginLeft: '0.25rem', opacity: 0.3 }} />}
+                    </div>
+                  </th>
+                  <th onClick={() => requestSort('sacado')} style={{ cursor: 'pointer', userSelect: 'none' }}>
+                    <div style={{ display: 'flex', alignItems: 'center' }}>
+                      Sacado
+                      {sortConfig?.key === 'sacado' ? (sortConfig.direction === 'asc' ? <ArrowUp size={14} style={{ marginLeft: '0.25rem', color: '#3b82f6' }} /> : <ArrowDown size={14} style={{ marginLeft: '0.25rem', color: '#3b82f6' }} />) : <ArrowUpDown size={14} style={{ marginLeft: '0.25rem', opacity: 0.3 }} />}
+                    </div>
+                  </th>
+                  <th onClick={() => requestSort('vencimento')} style={{ cursor: 'pointer', userSelect: 'none' }}>
+                    <div style={{ display: 'flex', alignItems: 'center' }}>
+                      Vencimento
+                      {sortConfig?.key === 'vencimento' ? (sortConfig.direction === 'asc' ? <ArrowUp size={14} style={{ marginLeft: '0.25rem', color: '#3b82f6' }} /> : <ArrowDown size={14} style={{ marginLeft: '0.25rem', color: '#3b82f6' }} />) : <ArrowUpDown size={14} style={{ marginLeft: '0.25rem', opacity: 0.3 }} />}
+                    </div>
+                  </th>
+                  <th onClick={() => requestSort('operacaoData')} style={{ cursor: 'pointer', userSelect: 'none' }}>
+                    <div style={{ display: 'flex', alignItems: 'center' }}>
+                      Data Operação
+                      {sortConfig?.key === 'operacaoData' ? (sortConfig.direction === 'asc' ? <ArrowUp size={14} style={{ marginLeft: '0.25rem', color: '#3b82f6' }} /> : <ArrowDown size={14} style={{ marginLeft: '0.25rem', color: '#3b82f6' }} />) : <ArrowUpDown size={14} style={{ marginLeft: '0.25rem', opacity: 0.3 }} />}
+                    </div>
+                  </th>
+                  <th onClick={() => requestSort('liquidacao')} style={{ cursor: 'pointer', userSelect: 'none' }}>
+                    <div style={{ display: 'flex', alignItems: 'center' }}>
+                      Liquidação
+                      {sortConfig?.key === 'liquidacao' ? (sortConfig.direction === 'asc' ? <ArrowUp size={14} style={{ marginLeft: '0.25rem', color: '#3b82f6' }} /> : <ArrowDown size={14} style={{ marginLeft: '0.25rem', color: '#3b82f6' }} />) : <ArrowUpDown size={14} style={{ marginLeft: '0.25rem', opacity: 0.3 }} />}
+                    </div>
+                  </th>
+                  <th onClick={() => requestSort('situacao')} style={{ cursor: 'pointer', userSelect: 'none' }}>
+                    <div style={{ display: 'flex', alignItems: 'center' }}>
+                      Situação
+                      {sortConfig?.key === 'situacao' ? (sortConfig.direction === 'asc' ? <ArrowUp size={14} style={{ marginLeft: '0.25rem', color: '#3b82f6' }} /> : <ArrowDown size={14} style={{ marginLeft: '0.25rem', color: '#3b82f6' }} />) : <ArrowUpDown size={14} style={{ marginLeft: '0.25rem', opacity: 0.3 }} />}
+                    </div>
+                  </th>
+                  <th onClick={() => requestSort('valorNominal')} style={{ cursor: 'pointer', userSelect: 'none' }}>
+                    <div style={{ display: 'flex', alignItems: 'center' }}>
+                      Valor Nominal (R$)
+                      {sortConfig?.key === 'valorNominal' ? (sortConfig.direction === 'asc' ? <ArrowUp size={14} style={{ marginLeft: '0.25rem', color: '#3b82f6' }} /> : <ArrowDown size={14} style={{ marginLeft: '0.25rem', color: '#3b82f6' }} />) : <ArrowUpDown size={14} style={{ marginLeft: '0.25rem', opacity: 0.3 }} />}
+                    </div>
+                  </th>
+                  <th onClick={() => requestSort('valorLiquido')} style={{ cursor: 'pointer', userSelect: 'none' }}>
+                    <div style={{ display: 'flex', alignItems: 'center' }}>
+                      Valor Líquido (R$)
+                      {sortConfig?.key === 'valorLiquido' ? (sortConfig.direction === 'asc' ? <ArrowUp size={14} style={{ marginLeft: '0.25rem', color: '#3b82f6' }} /> : <ArrowDown size={14} style={{ marginLeft: '0.25rem', color: '#3b82f6' }} />) : <ArrowUpDown size={14} style={{ marginLeft: '0.25rem', opacity: 0.3 }} />}
+                    </div>
+                  </th>
+                  <th style={{ textAlign: 'center' }}>Detalhes</th>
+                </tr>
+              </thead>
+              <tbody>
+                {displayTitles.map((title, idx) => (
+                  <tr 
+                    key={title.id || `${title.numero}-${idx}`}
+                    className="title-row-interactive"
+                    onClick={() => setSelectedTitleDetail(title)}
+                  >
+                    <td className="analysis-client-cell" data-label="Nº Título" style={{ fontWeight: 600, color: '#38bdf8' }}>
+                      {title.numero}
+                    </td>
+                    <td data-label="Operação" style={{ color: 'var(--text-muted, #94a3b8)' }}>
+                      {title.operacao}
+                    </td>
+                    <td data-label="Sacado" style={{ fontWeight: 500 }}>
+                      <TruncatedName value={title.sacado} />
+                    </td>
+                    <td data-label="Vencimento" style={{ color: title.vencido === 'Sim' ? '#ef4444' : 'inherit' }}>
+                      {formatDateDisplay(title.dataVencimento)}
+                    </td>
+                    <td data-label="Data Operação" style={{ color: 'var(--text-muted, #94a3b8)' }}>
+                      {formatDateDisplay(title.dataOperacao || title.dataEmissao)}
+                    </td>
+                    <td data-label="Liquidação" style={{ color: title.dataLiquidacao ? '#10b981' : 'var(--text-muted, #94a3b8)' }}>
+                      {formatDateDisplay(title.dataLiquidacao)}
+                    </td>
+                    <td data-label="Situação">
+                      {getSituacaoBadge(title.situacao, title.vencido)}
+                    </td>
+                    <td className="analysis-value-cell" data-label="Valor Nominal" style={{ fontWeight: 600 }}>
+                      {formatCurrency(title.valorNominal)}
+                    </td>
+                    <td className="analysis-value-cell" data-label="Valor Líquido" style={{ color: '#34d399', fontWeight: 600 }}>
+                      {formatCurrency(title.valorLiquido || title.valorPago || title.valorNominal)}
+                    </td>
+                    <td style={{ textAlign: 'center' }}>
+                      <button 
+                        type="button" 
+                        className="btn-view-title-detail"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setSelectedTitleDetail(title);
+                        }}
+                        title="Ver detalhes completos do título"
+                      >
+                        <Eye size={15} />
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+                {displayTitles.length === 0 && (
+                  <tr className="analysis-empty-row">
+                    <td colSpan={10} style={{ textAlign: 'center', padding: '3rem', color: '#94a3b8' }}>
+                      <Search size={48} style={{ margin: '0 auto 1rem', opacity: 0.2 }} />
+                      <p style={{ fontSize: '1.1rem' }}>Nenhum título encontrado para os filtros selecionados</p>
+                      <button 
+                        type="button" 
+                        className="btn-primary" 
+                        onClick={handleClearTitleFilters}
+                        style={{ marginTop: '0.75rem', display: 'inline-flex', alignItems: 'center', gap: '0.5rem' }}
+                      >
+                        <RotateCcw size={14} /> Redefinir Filtros de Títulos
+                      </button>
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
         ) : (
+          /* TABELA PADRÃO DE CLIENTES / SACADOS / UAs */
           <div className="table-responsive">
             <table className="data-table">
               <thead>
@@ -650,15 +1194,32 @@ const CustomerAnalysis = () => {
                   const groupKey = client.grupoEconomicoId ?? idx;
                   const isMembersOpen = groupMode && openGroupMembers === groupKey;
 
+                  const isSacadosMode = selectedCedente && drillDownMode === 'sacados';
+                  const isClickableCedente = !selectedCedente && !groupMode;
+
                   return (
                   <tr key={client.grupoEconomicoId ?? `${rowName}-${idx}`}>
                     <td
                       className="analysis-client-cell"
-                      data-label="Cedente"
-                      style={{ fontWeight: 600, cursor: selectedCedente || groupMode ? 'default' : 'pointer', color: selectedCedente || groupMode ? 'inherit' : '#3b82f6' }}
-                      onClick={(e) => !selectedCedente && !groupMode && handleCedenteClick(e, client.cedente)}
+                      data-label={selectedCedente ? (drillDownMode === 'sacados' ? 'Sacado' : 'UA') : 'Cedente'}
+                      style={{ 
+                        fontWeight: 600, 
+                        cursor: isClickableCedente || isSacadosMode ? 'pointer' : 'default', 
+                        color: isClickableCedente || isSacadosMode ? '#38bdf8' : 'inherit' 
+                      }}
+                      onClick={(e) => {
+                        if (isClickableCedente) {
+                          handleCedenteClick(e, client.cedente);
+                        } else if (isSacadosMode) {
+                          handleSacadoClick(client.sacado || rowName);
+                        }
+                      }}
+                      title={isSacadosMode ? `Clique para visualizar os títulos do sacado "${client.sacado || rowName}"` : undefined}
                     >
-                      <TruncatedName value={rowName} />
+                      <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem' }}>
+                        {isSacadosMode && <FileText size={14} style={{ color: '#38bdf8', opacity: 0.85, flexShrink: 0 }} />}
+                        <TruncatedName value={rowName} />
+                      </div>
                       {groupMode && client.cedentes && client.cedentes.length > 0 && (
                         <div
                           className={`economic-group-members-control ${isMembersOpen ? 'is-open' : ''}`}
@@ -741,6 +1302,7 @@ const CustomerAnalysis = () => {
         )}
       </div>
 
+      {/* POPOVER MODAL (Ao Clicar no Cedente) */}
       {popover && popover.visible && createPortal((() => {
         const currentClient = clients.find(c => c.cedente === popover.cedente);
         const hasNova = currentClient?.hasNova !== false;
@@ -762,7 +1324,7 @@ const CustomerAnalysis = () => {
               display: 'flex',
               flexDirection: 'column',
               gap: '0.75rem',
-              minWidth: '280px',
+              minWidth: '290px',
               boxShadow: '0 20px 40px -5px rgba(0, 0, 0, 0.6), 0 10px 15px -6px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(255,255,255,0.05)',
               animation: 'fadeIn 0.2s ease-out'
             }}
@@ -775,6 +1337,13 @@ const CustomerAnalysis = () => {
             
             {hasNova && (
               <>
+                <button 
+                  className="btn-primary" 
+                  style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', justifyContent: 'flex-start', padding: '0.75rem 1rem', background: '#0284c7', color: '#fff' }}
+                  onClick={() => handleSelectDrillDown('titulos')}
+                >
+                  <FileText size={18} /> Análise de Títulos
+                </button>
                 <button 
                   className="btn-primary" 
                   style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', justifyContent: 'flex-start', padding: '0.75rem 1rem' }}
@@ -816,6 +1385,172 @@ const CustomerAnalysis = () => {
           </div>
         );
       })(), document.body)}
+
+      {/* MODAL DE DETALHES DO TÍTULO */}
+      {selectedTitleDetail && createPortal(
+        <div 
+          className="title-detail-modal-backdrop" 
+          onClick={() => setSelectedTitleDetail(null)}
+        >
+          <div 
+            className="title-detail-modal glass" 
+            onClick={e => e.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="title-detail-heading"
+          >
+            <div className="title-detail-header">
+              <div className="title-detail-header-info">
+                <div className="title-detail-tag"><FileText size={16} /> Título Nº {selectedTitleDetail.numero}</div>
+                <h3 id="title-detail-heading">Detalhes do Título</h3>
+              </div>
+              <div className="title-detail-header-actions">
+                {getSituacaoBadge(selectedTitleDetail.situacao, selectedTitleDetail.vencido)}
+                <button 
+                  type="button" 
+                  className="title-detail-close-btn" 
+                  onClick={() => setSelectedTitleDetail(null)}
+                  aria-label="Fechar modal"
+                >
+                  <X size={20} />
+                </button>
+              </div>
+            </div>
+
+            <div className="title-detail-body">
+              {/* Entidades */}
+              <div className="title-detail-section">
+                <div className="title-detail-section-title"><Building2 size={16} /> Partes Envolvidas</div>
+                <div className="title-detail-grid-2">
+                  <div className="title-detail-field">
+                    <span className="field-label">Cedente (Cliente)</span>
+                    <span className="field-value strong">{selectedTitleDetail.cedente}</span>
+                    {selectedTitleDetail.documentoCedente && (
+                      <span className="field-sub">CNPJ/CPF: {selectedTitleDetail.documentoCedente}</span>
+                    )}
+                  </div>
+                  <div className="title-detail-field">
+                    <span className="field-label">Sacado (Pagador)</span>
+                    <span className="field-value strong">{selectedTitleDetail.sacado}</span>
+                    {selectedTitleDetail.documentoSacado && (
+                      <span className="field-sub">Doc: {selectedTitleDetail.documentoSacado}</span>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Valores Financeiros */}
+              <div className="title-detail-section">
+                <div className="title-detail-section-title"><DollarSign size={16} /> Informações Financeiras</div>
+                <div className="title-detail-grid-3">
+                  <div className="title-detail-field highlight-blue">
+                    <span className="field-label">Valor Nominal</span>
+                    <span className="field-value large">{formatCurrency(selectedTitleDetail.valorNominal)}</span>
+                  </div>
+                  <div className="title-detail-field highlight-green">
+                    <span className="field-label">Valor Líquido</span>
+                    <span className="field-value large">{formatCurrency(selectedTitleDetail.valorLiquido)}</span>
+                  </div>
+                  <div className="title-detail-field">
+                    <span className="field-label">Valor Pago</span>
+                    <span className="field-value large">{formatCurrency(selectedTitleDetail.valorPago)}</span>
+                  </div>
+                  {selectedTitleDetail.taxa !== undefined && selectedTitleDetail.taxa > 0 && (
+                    <div className="title-detail-field">
+                      <span className="field-label">Taxa</span>
+                      <span className="field-value">{selectedTitleDetail.taxa}% a.m.</span>
+                    </div>
+                  )}
+                  {selectedTitleDetail.desagio !== undefined && selectedTitleDetail.desagio > 0 && (
+                    <div className="title-detail-field">
+                      <span className="field-label">Deságio</span>
+                      <span className="field-value">{formatCurrency(selectedTitleDetail.desagio)}</span>
+                    </div>
+                  )}
+                  <div className="title-detail-field">
+                    <span className="field-label">Status de Vencimento</span>
+                    <span className={`field-value ${selectedTitleDetail.vencido === 'Sim' ? 'text-red' : 'text-green'}`}>
+                      {selectedTitleDetail.vencido === 'Sim' ? 'Sim (Em atraso)' : 'Em dia / Não vencido'}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Prazos e Datas */}
+              <div className="title-detail-section">
+                <div className="title-detail-section-title"><Calendar size={16} /> Cronograma de Datas</div>
+                <div className="title-detail-grid-4">
+                  <div className="title-detail-field">
+                    <span className="field-label">Data de Emissão</span>
+                    <span className="field-value">{formatDateDisplay(selectedTitleDetail.dataEmissao)}</span>
+                  </div>
+                  <div className="title-detail-field">
+                    <span className="field-label">Data de Operação</span>
+                    <span className="field-value">{formatDateDisplay(selectedTitleDetail.dataOperacao)}</span>
+                  </div>
+                  <div className="title-detail-field highlight-orange">
+                    <span className="field-label">Vencimento</span>
+                    <span className="field-value">{formatDateDisplay(selectedTitleDetail.dataVencimento)}</span>
+                  </div>
+                  <div className="title-detail-field">
+                    <span className="field-label">Data Liquidação</span>
+                    <span className="field-value">{formatDateDisplay(selectedTitleDetail.dataLiquidacao)}</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Dados da Operação */}
+              <div className="title-detail-section">
+                <div className="title-detail-section-title"><Layers size={16} /> Dados Operacionais e Lastro</div>
+                <div className="title-detail-grid-3">
+                  <div className="title-detail-field">
+                    <span className="field-label">Nº da Operação</span>
+                    <span className="field-value">{selectedTitleDetail.operacao || '-'}</span>
+                  </div>
+                  <div className="title-detail-field">
+                    <span className="field-label">Unidade Administrativa</span>
+                    <span className="field-value">{selectedTitleDetail.ua || 'Padrão'}</span>
+                  </div>
+                  <div className="title-detail-field">
+                    <span className="field-label">Tipo de Documento</span>
+                    <span className="field-value">{selectedTitleDetail.tipoDocumento || 'Duplicata'}</span>
+                  </div>
+                  {selectedTitleDetail.bancoCobrador && (
+                    <div className="title-detail-field">
+                      <span className="field-label">Banco Cobrador</span>
+                      <span className="field-value">{selectedTitleDetail.bancoCobrador}</span>
+                    </div>
+                  )}
+                  {selectedTitleDetail.codigoDoLastro && (
+                    <div className="title-detail-field">
+                      <span className="field-label">Código do Lastro</span>
+                      <span className="field-value">{selectedTitleDetail.codigoDoLastro}</span>
+                    </div>
+                  )}
+                  {selectedTitleDetail.chaveNfe && (
+                    <div className="title-detail-field" style={{ gridColumn: 'span 2' }}>
+                      <span className="field-label">Chave NF-e / Manifesto</span>
+                      <span className="field-value monospace">{selectedTitleDetail.chaveNfe}</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            <div className="title-detail-footer">
+              <button 
+                type="button" 
+                className="btn-primary" 
+                onClick={() => setSelectedTitleDetail(null)}
+                style={{ padding: '0.6rem 1.75rem' }}
+              >
+                Fechar Detalhes
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
     </div>
   );
 };

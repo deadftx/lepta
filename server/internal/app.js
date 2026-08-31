@@ -2331,6 +2331,156 @@ app.get('/api/analise-sacados/:cedente', requireSession, requirePermission('8.1'
   }
 });
 
+app.get('/api/analise-titulos/:cedente', requireSession, requirePermission('8.1'), async (req, res) => {
+  try {
+    const cedenteParams = req.params.cedente;
+    const normCedenteParams = normalizeStr(cedenteParams);
+
+    let titles = [];
+    let dataSource = 'api';
+
+    try {
+      const [apiTitulos, liquidacoes] = await Promise.all([
+        fetchTitulosDaAPI(req),
+        fetchLiquidacoesDaAPI(req).catch(() => [])
+      ]);
+
+      const mapLiquidacoes = new Map();
+      for (const liq of liquidacoes) {
+        if (liq.id) mapLiquidacoes.set(String(liq.id), liq);
+        if (liq.numero) mapLiquidacoes.set(String(liq.numero), liq);
+      }
+
+      const hoje = new Date();
+      hoje.setHours(0, 0, 0, 0);
+
+      for (const t of apiTitulos) {
+        const clienteTit = t.contaOperacional?.cliente?.entidade?.nome;
+        if (!clienteTit) continue;
+        const normCliente = normalizeStr(clienteTit);
+        const matchCliente = normCliente === normCedenteParams || 
+          (normCliente.length > 3 && normCedenteParams.length > 3 && (normCliente.includes(normCedenteParams) || normCedenteParams.includes(normCliente))) ||
+          stringSimilarity.compareTwoStrings(normCliente, normCedenteParams) >= 0.70;
+        
+        if (!matchCliente) continue;
+
+        const sitRaw = (t.situacao || '').toLowerCase();
+        let dataVenc = t.dataDeVencimento ? new Date(t.dataDeVencimento) : null;
+        if (dataVenc) dataVenc.setHours(0, 0, 0, 0);
+        const isAberto = sitRaw.includes('aberto');
+        const isLiquidado = sitRaw.includes('liquidado') || sitRaw.includes('liq.');
+        const isVencido = Boolean(isAberto && dataVenc && !Number.isNaN(dataVenc.getTime()) && dataVenc < hoje);
+
+        let sitLabel = 'Aberto';
+        if (isLiquidado) sitLabel = 'Liquidado';
+        else if (isVencido) sitLabel = 'Vencido';
+        else if (sitRaw.includes('recomprad')) sitLabel = 'Recomprado';
+        else if (sitRaw.includes('baixad')) sitLabel = 'Baixado';
+        else if (sitRaw.includes('quitado')) sitLabel = 'Quitado';
+        else if (t.situacao) sitLabel = t.situacao;
+
+        const liqInfo = mapLiquidacoes.get(String(t.id)) || mapLiquidacoes.get(String(t.numero));
+        const dataLiq = t.dataDeLiquidacao || t.dataDePagamento || liqInfo?.dataDeEfetivacao || liqInfo?.data || (isLiquidado ? (t.dataDaSituacao || t.dataDeVencimento) : null);
+        const dataOp = t.dataDeOperacao || t.operacao?.data || t.dataDeEmissao || t.dataDeCadastro || null;
+        const dataVencStr = t.dataDeVencimento || (dataVenc ? dataVenc.toISOString().split('T')[0] : null);
+
+        const valNominal = Number(t.valorNominal) || 0;
+        const valLiquido = Number(t.valorLiquido ?? t.valorNominal) || 0;
+        const valPago = Number(t.valorPago ?? (isLiquidado ? (liqInfo?.totalLiquido ?? valLiquido) : 0)) || 0;
+
+        titles.push({
+          id: String(t.id || t.numero || Math.random()),
+          numero: String(t.numero || t.numeroDoTitulo || t.id || '-'),
+          operacao: String(t.operacao?.numero || t.numeroDaOperacao || t.operacao || '-'),
+          cedente: clienteTit,
+          documentoCedente: t.contaOperacional?.cliente?.entidade?.documento || '',
+          sacado: t.sacado?.entidade?.nome || 'Não informado',
+          documentoSacado: t.sacado?.entidade?.documento || '',
+          ua: t.contaOperacional?.unidadeAdministrativa?.alias || t.contaOperacional?.unidadeAdministrativa?.nome || 'Padrão',
+          dataVencimento: dataVencStr,
+          dataOperacao: dataOp,
+          dataLiquidacao: dataLiq,
+          dataEmissao: t.dataDeEmissao || null,
+          situacao: sitLabel,
+          vencido: isVencido ? 'Sim' : 'Nao',
+          valorNominal: valNominal,
+          valorLiquido: valLiquido,
+          valorPago: valPago,
+          taxa: Number(t.taxa || 0),
+          desagio: Number(t.desagio || 0),
+          bancoCobrador: t.bancoCobrador?.nome || t.bancoCobrador || '',
+          tipoDocumento: t.tipoDeDocumento || t.especie || 'Duplicata',
+          chaveNfe: t.chaveNfe || t.manifesto || '',
+          codigoDoLastro: t.codigoDoLastro || ''
+        });
+      }
+    } catch (apiErr) {
+      console.log('Falha na API UNLTD (titulos do cedente), consultando BASE_SMARTFACTOR...', apiErr.message);
+      dataSource = 'db';
+    }
+
+    // Se API retornou vazio ou deu fallback, consultar BASE_SMARTFACTOR
+    if (titles.length === 0) {
+      try {
+        const sfRows = db.prepare(`
+          SELECT * FROM BASE_SMARTFACTOR 
+          WHERE LOWER(CLIENTE) LIKE ? OR CLIENTE LIKE ?
+          ORDER BY ID DESC
+          LIMIT 1000
+        `).all(`%${cedenteParams.trim().toLowerCase()}%`, `%${cedenteParams.trim()}%`);
+
+        if (sfRows.length > 0) {
+          dataSource = 'db';
+          titles = sfRows.map(r => {
+            const parseDateToIso = (dStr) => {
+              if (!dStr) return null;
+              if (dStr.includes('/')) {
+                const parts = dStr.split('/');
+                if (parts.length === 3) return `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
+              }
+              return dStr;
+            };
+
+            return {
+              id: String(r.ID || r.NUMERO),
+              numero: String(r.NUMERO || r.ID || '-'),
+              operacao: String(r.OPERACAO || '-'),
+              cedente: r.CLIENTE || cedenteParams,
+              documentoCedente: r.DOCUMENTO || '',
+              sacado: r.SACADO || 'Não informado',
+              documentoSacado: r.DOCUMENTO_SACADO || '',
+              ua: r.UA || 'SmartFactor',
+              dataVencimento: parseDateToIso(r.VENCIMENTO),
+              dataOperacao: parseDateToIso(r.CADASTRO || r.EMISSAO),
+              dataLiquidacao: parseDateToIso(r.DATA_SITUACAO),
+              dataEmissao: parseDateToIso(r.EMISSAO),
+              situacao: r.SITUACAO || (r.VENCIDO === 'Sim' ? 'Vencido' : 'Aberto'),
+              vencido: r.VENCIDO || 'Nao',
+              valorNominal: Number(r.VALOR_NOMINAL) || 0,
+              valorLiquido: Number(r.VALOR_LIQUIDO) || 0,
+              valorPago: Number(r.VALOR_PAGO) || 0,
+              taxa: Number(r.TAXA || 0),
+              desagio: Number(r.DESAGIO || 0),
+              bancoCobrador: r.BANCO_COBRADOR || '',
+              tipoDocumento: r.SIGLA || 'Duplicata',
+              chaveNfe: '',
+              codigoDoLastro: ''
+            };
+          });
+        }
+      } catch (dbErr) {
+        console.log('Aviso ao consultar BASE_SMARTFACTOR:', dbErr.message);
+      }
+    }
+
+    res.setHeader('x-data-source', dataSource);
+    res.json(titles);
+  } catch (err) {
+    console.error('Erro ao consultar analise de titulos:', err);
+    res.status(500).json({ error: 'Erro ao consultar analise de titulos', message: err.message });
+  }
+});
+
 app.get('/api/analise-ua/:cedente', requireSession, requirePermission('8.1'), async (req, res) => {
   try {
     const cedenteParams = req.params.cedente;
