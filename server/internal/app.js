@@ -933,15 +933,117 @@ function matchRegisteredManager(rawInput, managerList) {
   return null;
 }
 
+function extractManagerFromClientPayload(payload, document) {
+  if (!payload || typeof payload !== 'object') return { gerente: '', superintendente: '' };
+  
+  const entidade = payload.entidade || {};
+  let foundManager = '';
+  let foundSuperintendente = '';
+
+  // 1. Array de Agentes Comerciais (como mostrado na aba AGENTES COMERCIAIS do BitFin)
+  const agentesComerciaisLists = [
+    payload.agentesComerciais,
+    entidade.agentesComerciais,
+    payload.agentes,
+    entidade.agentes,
+    payload.colaboradores,
+    entidade.colaboradores,
+    payload.responsaveis,
+    entidade.responsaveis
+  ];
+
+  for (const list of agentesComerciaisLists) {
+    if (Array.isArray(list) && list.length > 0) {
+      for (const item of list) {
+        const name = item?.nome || item?.nomeCompleto || item?.colaborador?.nome || item?.agente?.nome || item?.usuario?.nome || (typeof item === 'string' ? item : '');
+        if (name && typeof name === 'string' && name.trim()) {
+          foundManager = name.trim();
+          break;
+        }
+      }
+      if (foundManager) break;
+    }
+  }
+
+  // 2. Contas Operacionais (agentes e gerentes dentro das contas operacionais)
+  if (!foundManager && Array.isArray(payload.contasOperacionais)) {
+    for (const acc of payload.contasOperacionais) {
+      if (Array.isArray(acc?.agentesComerciais) && acc.agentesComerciais.length > 0) {
+        const item = acc.agentesComerciais[0];
+        const name = item?.nome || item?.colaborador?.nome || item?.agente?.nome || item?.usuario?.nome;
+        if (name) {
+          foundManager = name.trim();
+          break;
+        }
+      }
+      const g = acc?.gerente?.nome || acc?.gerente || acc?.colaborador?.nome || acc?.colaborador;
+      if (g && typeof g === 'string') {
+        foundManager = g.trim();
+        break;
+      }
+      const s = acc?.superintendente?.nome || acc?.superintendente;
+      if (s && typeof s === 'string') {
+        foundSuperintendente = s.trim();
+      }
+    }
+  }
+
+  // 3. Campos diretos no payload ou entidade
+  if (!foundManager) {
+    foundManager = (typeof entidade.gerente === 'string' ? entidade.gerente : '') ||
+                   (typeof payload.gerente === 'string' ? payload.gerente : '') ||
+                   (typeof entidade.agenteComercial === 'string' ? entidade.agenteComercial : '') ||
+                   (typeof payload.agenteComercial === 'string' ? payload.agenteComercial : '') ||
+                   (payload.agenteComercial?.nome || entidade.agenteComercial?.nome || '');
+  }
+
+  // 4. Se ainda não achou, consulta no cache de títulos da API UNLTD/BitFin para este documento
+  if (!foundManager && document) {
+    const docClean = normalizeEntityDocument(document);
+    if (Array.isArray(unltdFullHistoryCache?.data)) {
+      for (const t of unltdFullHistoryCache.data) {
+        const tDoc = normalizeEntityDocument(t.contaOperacional?.cliente?.entidade?.documento);
+        if (tDoc === docClean) {
+          const gName = t.contaOperacional?.gerente?.nome || t.contaOperacional?.gerente || t.contaOperacional?.colaborador?.nome || t.contaOperacional?.colaborador || t.agenteComercial?.nome || t.agenteComercial;
+          if (gName && typeof gName === 'string') {
+            foundManager = gName.trim();
+            break;
+          }
+        }
+      }
+    }
+  }
+
+  // 5. Se ainda não achou, consulta na BASE_SMARTFACTOR
+  if (!foundManager && document && tableExists('BASE_SMARTFACTOR')) {
+    try {
+      const docClean = normalizeEntityDocument(document);
+      const sfRow = db.prepare(`
+        SELECT GERENTE FROM BASE_SMARTFACTOR 
+        WHERE (DOCUMENTO = ? OR DOCUMENTO = ?) AND GERENTE IS NOT NULL AND GERENTE != ''
+        LIMIT 1
+      `).get(document, docClean);
+      if (sfRow?.GERENTE) {
+        foundManager = sfRow.GERENTE.trim();
+      }
+    } catch {}
+  }
+
+  return {
+    gerente: foundManager,
+    superintendente: foundSuperintendente
+  };
+}
+
 function enrichClientWithManagers(payload) {
   if (!payload || typeof payload !== 'object') return payload;
   const entidade = payload.entidade || {};
-  
-  if (entidade.gerente === undefined || entidade.gerente === null || !entidade.gerente) {
-    const fromAccounts = (payload.contasOperacionais || [])
-      .map(acc => acc?.gerente?.nome || acc?.gerente || acc?.colaborador?.nome || acc?.colaborador)
-      .find(Boolean);
-    entidade.gerente = fromAccounts || payload.gerente || '';
+  const doc = entidade.documento || payload.documento;
+
+  const extracted = extractManagerFromClientPayload(payload, doc);
+
+  if (!entidade.gerente) {
+    entidade.gerente = extracted.gerente || '';
   }
 
   // Tenta vincular com gerentes cadastrados na lista oficial
@@ -959,7 +1061,7 @@ function enrichClientWithManagers(payload) {
     const fromAccounts = (payload.contasOperacionais || [])
       .map(acc => acc?.superintendente?.nome || acc?.superintendente)
       .find(Boolean);
-    entidade.superintendente = fromAccounts || payload.superintendente || 'Rafael Pereira';
+    entidade.superintendente = fromAccounts || payload.superintendente || extracted.superintendente || 'Rafael Pereira';
   }
   
   payload.entidade = entidade;
@@ -976,15 +1078,55 @@ async function fetchUnltdClientDetails(document, forceRefresh = false) {
   }
   if (!forceRefresh && cached?.pending) return cached.pending;
 
-  const pending = fetch(`https://lepta-backend.bit-unltd.com.br/entidades/cliente/${normalizedDocument}`, {
-    headers: { 'Authorization': `UNLTD-BackEnd ${UNLTD_TOKEN}` }
-  }).then(async response => {
-    if (response.status === 404) return null;
-    if (!response.ok) throw new Error(`UNLTD (cliente) respondeu ${response.status}`);
-    const payload = await response.json();
-    const data = Array.isArray(payload) ? (payload[0] || null) : payload;
-    return enrichClientWithManagers(data);
-  }).then(data => {
+  const pending = (async () => {
+    // 1. Busca dados do cliente
+    let clienteData = null;
+    try {
+      const resCli = await fetch(`https://lepta-backend.bit-unltd.com.br/entidades/cliente/${normalizedDocument}`, {
+        headers: { 'Authorization': `UNLTD-BackEnd ${UNLTD_TOKEN}` }
+      });
+      if (resCli.ok) {
+        const payload = await resCli.json();
+        clienteData = Array.isArray(payload) ? (payload[0] || null) : payload;
+      }
+    } catch (e) {
+      console.warn('Aviso ao buscar /entidades/cliente:', e.message);
+    }
+
+    // 2. Busca dados da entidade (que contém a seção AGENTES COMERCIAIS no BitFin)
+    let entidadeData = null;
+    try {
+      const resEnt = await fetch(`https://lepta-backend.bit-unltd.com.br/entidades/${normalizedDocument}`, {
+        headers: { 'Authorization': `UNLTD-BackEnd ${UNLTD_TOKEN}` }
+      });
+      if (resEnt.ok) {
+        const payload = await resEnt.json();
+        entidadeData = Array.isArray(payload) ? (payload[0] || null) : payload;
+      }
+    } catch (e) {
+      console.warn('Aviso ao buscar /entidades:', e.message);
+    }
+
+    if (!clienteData && !entidadeData) return null;
+
+    // Combina dados do cliente com os dados da entidade
+    const combined = clienteData || { entidade: entidadeData };
+    if (entidadeData) {
+      combined.entidade = {
+        ...(entidadeData || {}),
+        ...(combined.entidade || {})
+      };
+      if (entidadeData.agentesComerciais) combined.agentesComerciais = entidadeData.agentesComerciais;
+      if (entidadeData.agentes) combined.agentes = entidadeData.agentes;
+      if (entidadeData.colaboradores) combined.colaboradores = entidadeData.colaboradores;
+      if (entidadeData.responsaveis) combined.responsaveis = entidadeData.responsaveis;
+      if (entidadeData.grupoEconomico && !combined.entidade.grupoEconomico) {
+        combined.entidade.grupoEconomico = entidadeData.grupoEconomico;
+      }
+    }
+
+    return enrichClientWithManagers(combined);
+  })().then(data => {
     unltdClientDetailsCache.set(normalizedDocument, { data, updatedAt: Date.now(), pending: null });
     return data;
   }).finally(() => {
@@ -1139,14 +1281,45 @@ function composeClientRegistration(apiData, localRow) {
     .filter(contact => contact.fonte === 'local');
   const apiContacts = normalizeClientContacts(base?.entidade, 'api');
   const contacts = mergeClientContacts(localContacts, apiContacts);
+
+  const doc = normalizeEntityDocument(mergedData?.entidade?.documento || localRow?.documento || base?.entidade?.documento);
+
+  // Se override tiver gerente explicitamente preenchido pelo usuário (que não seja string vazia ou "Não informado"), usa ele
+  let effectiveGerente = override?.entidade?.gerente;
+  let effectiveSuperintendente = override?.entidade?.superintendente;
+
+  // Se não foi definido no override ou se está vazio, busca na base/API/entidade extraída
+  if (!effectiveGerente || effectiveGerente === 'Não informado' || !effectiveGerente.trim()) {
+    const extracted = extractManagerFromClientPayload(base, doc);
+    effectiveGerente = base?.entidade?.gerente || extracted.gerente || '';
+    if (!effectiveSuperintendente) {
+      effectiveSuperintendente = base?.entidade?.superintendente || extracted.superintendente || '';
+    }
+  }
+
+  // Tenta vincular com gerentes cadastrados na lista oficial (André Barroco, Mauro Blanes, Luiz Dantas, Rafael Pereira)
+  try {
+    ensureGerentesContasTable();
+    const registered = db.prepare(`SELECT * FROM gerentes_contas WHERE ativo = 1`).all();
+    const matched = matchRegisteredManager(effectiveGerente, registered);
+    if (matched) {
+      effectiveGerente = matched.nome;
+      effectiveSuperintendente = matched.superintendente_nome || (matched.cargo === 'SUPERINTENDENTE' ? matched.nome : 'Rafael Pereira');
+    }
+  } catch {}
+
+  if (!effectiveSuperintendente || effectiveSuperintendente === 'Sebastiao Neto') {
+    effectiveSuperintendente = 'Rafael Pereira';
+  }
+
   const data = mergedData?.entidade ? {
     ...mergedData,
     entidade: {
       ...mergedData.entidade,
-      documento: normalizeEntityDocument(mergedData.entidade.documento || localRow?.documento),
+      documento: doc,
       telefone: contacts[0]?.telefone || mergedData.entidade.telefone || '',
-      gerente: mergedData.entidade.gerente !== undefined ? mergedData.entidade.gerente : (base.entidade?.gerente || ''),
-      superintendente: mergedData.entidade.superintendente !== undefined ? mergedData.entidade.superintendente : (base.entidade?.superintendente || 'Sebastiao Neto'),
+      gerente: effectiveGerente,
+      superintendente: effectiveSuperintendente,
       contatos: contacts
     }
   } : mergedData;
