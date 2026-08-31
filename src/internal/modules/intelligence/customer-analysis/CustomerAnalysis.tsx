@@ -114,8 +114,6 @@ const TruncatedName = ({ value }: { value: string }) => {
 const CustomerAnalysis = () => {
   const navigate = useNavigate();
   const [searchTerm, setSearchTerm] = useState('');
-  const [startDate, setStartDate] = useState('');
-  const [endDate, setEndDate] = useState('');
   const [clients, setClients] = useState<ClientAnalysis[]>([]);
   const [economicGroups, setEconomicGroups] = useState<ClientAnalysis[]>([]);
   const [loading, setLoading] = useState(true);
@@ -239,19 +237,12 @@ const CustomerAnalysis = () => {
     const controller = new AbortController();
 
     const fetchClients = async () => {
-      if ((startDate && !endDate) || (!startDate && endDate)) {
-        setLoading(false);
-        return;
-      }
-
       try {
         setLoading(true);
         setError('');
         
         const queryParams = new URLSearchParams();
         queryParams.append('t', Date.now().toString());
-        if (startDate) queryParams.append('startDate', startDate);
-        if (endDate) queryParams.append('endDate', endDate);
 
         const requestOptions = {
           cache: 'no-store' as RequestCache,
@@ -305,7 +296,7 @@ const CustomerAnalysis = () => {
     fetchClients();
 
     return () => controller.abort();
-  }, [startDate, endDate]);
+  }, []);
 
   const handleCedenteClick = (e: React.MouseEvent, cedente: string) => {
     e.stopPropagation();
@@ -348,11 +339,7 @@ const CustomerAnalysis = () => {
     setSubDataError('');
     try {
       if (mode === 'titulos') {
-        const queryParams = new URLSearchParams();
-        if (startDate) queryParams.append('startDate', startDate);
-        if (endDate) queryParams.append('endDate', endDate);
-        
-        const url = `/api/analise-titulos/${encodeURIComponent(cedente)}${queryParams.toString() ? '?' + queryParams.toString() : ''}`;
+        const url = `/api/analise-titulos/${encodeURIComponent(cedente)}`;
         const response = await fetch(url, { headers: getAuthHeaders() });
         if (!response.ok) throw new Error('Erro ao buscar títulos da API');
         
@@ -369,11 +356,7 @@ const CustomerAnalysis = () => {
       else if (mode === 'ua') endpoint = '/api/analise-ua/';
       else if (mode === 'un') endpoint = '/api/analise-un/';
       
-      const queryParams = new URLSearchParams();
-      if (startDate) queryParams.append('startDate', startDate);
-      if (endDate) queryParams.append('endDate', endDate);
-      
-      const url = `${endpoint}${encodeURIComponent(cedente)}${queryParams.toString() ? '?' + queryParams.toString() : ''}`;
+      const url = `${endpoint}${encodeURIComponent(cedente)}`;
 
       const response = await fetch(url, { headers: getAuthHeaders() });
       if (!response.ok) throw new Error('Erro ao buscar dados da API');
@@ -407,12 +390,6 @@ const CustomerAnalysis = () => {
       setLoadingSubData(false);
     }
   };
-
-  useEffect(() => {
-    if (selectedCedente && drillDownMode) {
-      fetchSubData(selectedCedente, drillDownMode);
-    }
-  }, [startDate, endDate]);
 
   const handleSelectDrillDown = async (mode: 'sacados' | 'ua' | 'un' | 'titulos') => {
     if (!popover) return;
@@ -1026,8 +1003,8 @@ const CustomerAnalysis = () => {
           </div>
         ) : (
           /* FILTRO PADRÃO PARA CLIENTES / SACADOS / UAs */
-          <div className="analysis-filters">
-            <div className="search-input-wrapper">
+          <div className="analysis-filters" style={{ padding: '0 1.5rem 1.5rem 1.5rem' }}>
+            <div className="search-input-wrapper" style={{ width: '100%' }}>
               <Search size={18} />
               <input 
                 type="text" 
@@ -1035,30 +1012,8 @@ const CustomerAnalysis = () => {
                 placeholder={selectedCedente ? (drillDownMode === 'sacados' ? 'Buscar sacado...' : 'Buscar unidade...') : groupMode ? 'Buscar grupo financeiro...' : 'Buscar cliente (cedente)...'} 
                 value={searchTerm} 
                 onChange={e => setSearchTerm(e.target.value)} 
+                style={{ width: '100%' }}
               />
-            </div>
-            
-            <div className="analysis-date-filters">
-              <div className="search-input-wrapper analysis-date-field" style={{ flex: 1 }}>
-                <span style={{ position: 'absolute', left: '1rem', color: '#94a3b8', fontSize: '0.85rem' }}>De:</span>
-                <input 
-                  type="date" 
-                  className="input-field" 
-                  value={startDate} 
-                  onChange={e => setStartDate(e.target.value)} 
-                  style={{ width: '100%', paddingLeft: '3rem' }}
-                />
-              </div>
-              <div className="search-input-wrapper analysis-date-field" style={{ flex: 1 }}>
-                <span style={{ position: 'absolute', left: '1rem', color: '#94a3b8', fontSize: '0.85rem' }}>Até:</span>
-                <input 
-                  type="date" 
-                  className="input-field" 
-                  value={endDate} 
-                  onChange={e => setEndDate(e.target.value)} 
-                  style={{ width: '100%', paddingLeft: '3rem' }}
-                />
-              </div>
             </div>
           </div>
         )}
