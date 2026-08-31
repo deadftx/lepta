@@ -243,6 +243,10 @@ function ensureUserSecurityColumns() {
       ['secret_attempts', 'INTEGER NOT NULL DEFAULT 0'],
       ['access_locked', 'INTEGER NOT NULL DEFAULT 0'],
       ['fully_locked', 'INTEGER NOT NULL DEFAULT 0'],
+      ['microsoft_id', 'TEXT'],
+      ['microsoft_email', 'TEXT'],
+      ['auth_provider', "TEXT DEFAULT 'local'"],
+      ['last_sso_login', 'TEXT'],
       ['created_at', 'TEXT'],
       ['updated_at', 'TEXT']
     ];
@@ -2733,6 +2737,120 @@ app.post('/api/auth/login', authIpRateLimiter, loginRateLimiter, (req, res) => {
   }
 });
 
+app.post('/api/auth/microsoft', authIpRateLimiter, loginRateLimiter, async (req, res) => {
+  let email = String(req.body?.email || '').trim().toLowerCase();
+  const idToken = String(req.body?.idToken || '').trim();
+  const microsoftId = String(req.body?.microsoftId || '').trim();
+
+  let targetEmail = email;
+  let targetMicrosoftId = microsoftId;
+
+  // Se veio idToken da Microsoft (JWT), decodifica o payload para extrair email e oid
+  if (idToken) {
+    try {
+      const parts = idToken.split('.');
+      if (parts.length === 3) {
+        const payload = JSON.parse(Buffer.from(parts[1], 'base64').toString('utf8'));
+        targetEmail = String(payload.preferred_username || payload.email || payload.upn || targetEmail).trim().toLowerCase();
+        targetMicrosoftId = String(payload.oid || payload.sub || targetMicrosoftId).trim();
+      }
+    } catch (tokenErr) {
+      console.warn('Aviso ao decodificar token Microsoft:', tokenErr.message);
+    }
+  }
+
+  if (!targetEmail) {
+    return res.status(401).json({ error: 'Token corporativo Microsoft não fornecido ou inválido.' });
+  }
+
+  // Restringe acesso exclusivamente a contas com domínio corporativo @lepta.com.br
+  const isLeptaDomain = targetEmail.endsWith('@lepta.com.br') || targetEmail.endsWith('@lepta.com');
+  if (!isLeptaDomain && targetEmail !== 'leptamaster') {
+    return res.status(403).json({ 
+      error: 'Acesso restrito. Apenas contas corporativas com domínio @lepta.com.br são autorizadas.' 
+    });
+  }
+
+  try {
+    // Busca usuário existente pelo e-mail principal, microsoft_email, microsoft_id ou username
+    let user = db.prepare(`
+      SELECT * FROM usuarios_lepta
+      WHERE lower(email) = ? 
+         OR lower(microsoft_email) = ? 
+         OR (microsoft_id IS NOT NULL AND microsoft_id = ?) 
+         OR lower(username) = ?
+      LIMIT 1
+    `).get(targetEmail, targetEmail, targetMicrosoftId, targetEmail);
+
+    // Se o colaborador ainda não tem registro no sistema, cria automaticamente a conta no banco via AD
+    if (!user) {
+      const username = targetEmail.split('@')[0];
+      const userId = 'usr_' + Date.now();
+      const now = new Date().toISOString();
+      // Por padrão corporativo, apenas Financeiro > Reembolsos e Despesas ('7.4') e HOME vêm liberados
+      const defaultPermissions = JSON.stringify(['7.4']);
+
+      try {
+        db.prepare(`
+          INSERT INTO usuarios_lepta (
+            id, username, email, password, role, permissions,
+            microsoft_id, microsoft_email, auth_provider, last_sso_login,
+            login_attempts, secret_attempts, access_locked, fully_locked,
+            created_at, updated_at
+          ) VALUES (?, ?, ?, '', 'USER', ?, ?, ?, 'microsoft', datetime('now'), 0, 0, 0, 0, ?, ?)
+        `).run(
+          userId,
+          username,
+          targetEmail,
+          defaultPermissions,
+          targetMicrosoftId || null,
+          targetEmail,
+          now,
+          now
+        );
+        user = db.prepare(`SELECT * FROM usuarios_lepta WHERE id = ?`).get(userId);
+      } catch (insertErr) {
+        console.error('Erro ao auto-provisionar usuário Microsoft:', insertErr.message);
+        return res.status(500).json({ error: 'Erro ao registrar nova conta corporativa.' });
+      }
+    }
+
+    const isMaster = user?.role === 'MASTER' || user?.username === 'leptamaster';
+
+    if (user?.fully_locked && !isMaster) {
+      return res.status(423).json({ error: 'Acesso bloqueado. Solicite o desbloqueio ao administrador.', fullyLocked: true });
+    }
+    if (user?.access_locked && !isMaster) {
+      return res.status(423).json({ error: 'Acesso bloqueado. Solicite o desbloqueio ao administrador.', recoveryRequired: true });
+    }
+
+    // Vincula microsoft_id / microsoft_email e atualiza last_sso_login
+    try {
+      db.prepare(`
+        UPDATE usuarios_lepta SET 
+          microsoft_id = COALESCE(?, microsoft_id),
+          microsoft_email = COALESCE(?, microsoft_email, email),
+          auth_provider = CASE WHEN auth_provider = 'local' THEN 'both' ELSE auth_provider END,
+          last_sso_login = datetime('now'),
+          login_attempts = 0
+        WHERE id = ?
+      `).run(targetMicrosoftId || null, targetEmail || null, user.id);
+    } catch (updErr) {
+      console.warn('Aviso ao atualizar dados SSO do usuário:', updErr.message);
+    }
+
+    const freshUser = db.prepare(`SELECT * FROM usuarios_lepta WHERE id = ?`).get(user.id);
+    return res.json({ 
+      user: sanitizeUser(freshUser || user), 
+      token: createAuthSession(freshUser || user),
+      ssoMethod: 'Microsoft Entra ID'
+    });
+  } catch (error) {
+    console.error('Erro na autenticação Microsoft:', error.message);
+    return res.status(500).json({ error: 'Não foi possível autenticar com a conta Microsoft.', message: error.message });
+  }
+});
+
 app.get('/api/auth/me', requireSession, (req, res) => {
   const user = db.prepare(`SELECT * FROM usuarios_lepta WHERE id = ?`).get(req.authSession.userId);
   if (!user) return res.status(404).json({ error: 'Usuário não encontrado.' });
@@ -2851,19 +2969,9 @@ app.post('/api/auth/admin/unlock/:id', requireSession, requireMaster, (req, res)
   return res.json({ success: true });
 });
 
-const ASSIGNABLE_PERMISSION_IDS = new Set([
-  '4', '5', '6',
-  '7', '7.1', '7.2', '7.3', '7.4', '7.5',
-  '8', '8.1', '8.2', '8.3',
-  '9',
-  '10', '10.1', '10.2',
-  '11', '11.1', '11.2'
-]);
-
 function normalizeAssignablePermissions(value) {
   if (!Array.isArray(value)) return null;
-  return Array.from(new Set(value.map(String)))
-    .filter(permission => ASSIGNABLE_PERMISSION_IDS.has(permission));
+  return Array.from(new Set(value.map(v => String(v).trim()).filter(Boolean)));
 }
 
 app.post('/api/admin/users', requireSession, requireMaster, (req, res) => {
