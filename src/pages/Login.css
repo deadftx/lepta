@@ -192,6 +192,18 @@
   box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
 }
 
+.btn-sso-corporate.btn-sso-disabled,
+.btn-sso-corporate:disabled {
+  background: rgba(51, 65, 85, 0.35) !important;
+  color: #94a3b8 !important;
+  border: 1px dashed rgba(148, 163, 184, 0.25) !important;
+  cursor: not-allowed !important;
+  box-shadow: none !important;
+  opacity: 0.65;
+  filter: grayscale(0.9);
+  transform: none !important;
+}
+
 .btn-sso-corporate:hover:not(:disabled) {
   background: linear-gradient(135deg, #334155 0%, #1e293b 100%);
   border-color: #38bdf8;

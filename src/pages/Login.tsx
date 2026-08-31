@@ -297,17 +297,17 @@ const Login = () => {
               </div>
             )}
 
-            {/* Botão Oficial e Seguro de Acesso Microsoft */}
+            {/* Botão Oficial de Acesso Microsoft (Aguardando configuração ITFLUX) */}
             <div className="sso-section">
               <button
                 type="button"
-                className="btn-sso btn-sso-corporate"
+                className="btn-sso btn-sso-corporate btn-sso-disabled"
                 onClick={handleCorporateLogin}
-                disabled={loading || corporateLoading}
-                title="Entrar com conta corporativa Microsoft / Windows"
+                disabled={true}
+                title="EM CONSTRUÇÃO - AGUARDANDO CONFIGURAÇÃO ITFLUX"
               >
                 <MicrosoftIcon />
-                <span>{corporateLoading ? 'Conectando à Microsoft...' : 'Entrar com Conta Corporativa (Lepta)'}</span>
+                <span>Entrar com Conta Corporativa (Lepta)</span>
               </button>
             </div>
 
