@@ -14,12 +14,6 @@ const MicrosoftIcon = () => (
   </svg>
 );
 
-const WindowsIcon = () => (
-  <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
-    <path d="M0 3.449L9.75 2.1v9.451H0m10.949-9.602L24 0v11.4H10.949M0 12.6h9.75v9.451L0 20.699M10.949 12.6H24V24l-12.9-1.801"/>
-  </svg>
-);
-
 const Login = () => {
   const navigate = useNavigate();
   const location = useLocation();
@@ -31,8 +25,9 @@ const Login = () => {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [corporateLoading, setCorporateLoading] = useState(false);
 
-  // Microsoft Email Prompt Modal (para mobile ou login interativo)
+  // Microsoft Email Prompt Modal (fallback automático para celular / dispositivos sem sessão ativa do Windows)
   const [microsoftModalOpen, setMicrosoftModalOpen] = useState(false);
   const [microsoftEmail, setMicrosoftEmail] = useState('');
   const [microsoftLoading, setMicrosoftLoading] = useState(false);
@@ -80,20 +75,25 @@ const Login = () => {
     }
   };
 
-  // 1-Clique: Conecta diretamente com o usuário autenticado na máquina Windows (Exchange)
-  const handleWindowsDirectConnect = async () => {
+  // Botão Inteligente Único: Tenta login silencioso da máquina (1 clique) e, se não estiver autenticado, faz fallback transparente
+  const handleSmartCorporateLogin = async () => {
     setError('');
-    setLoading(true);
+    setCorporateLoading(true);
 
-    const result = await loginWithMicrosoft({
-      mode: 'windows_sso'
-    });
+    // 1. Tenta autenticação silenciosa direta com a conta ativa da máquina Windows / Exchange
+    const result = await loginWithMicrosoft({ mode: 'auto' });
 
-    setLoading(false);
+    setCorporateLoading(false);
     if (result.success) {
       navigateToDestination();
-    } else {
-      setError(result.error || 'Não foi possível autenticar diretamente com a conta da máquina.');
+      return;
+    }
+
+    // 2. Se for dispositivo mobile ou máquina sem sessão do domínio ativa, abre o login corporativo Microsoft
+    if (result.requireInteractive || !result.success) {
+      setMicrosoftError('');
+      setMicrosoftEmail('');
+      setMicrosoftModalOpen(true);
     }
   };
 
@@ -185,7 +185,7 @@ const Login = () => {
           email: emailToSearch,
           password: '',
           role: 'USER',
-          permissions: ['1']
+          permissions: ['7.4']
         };
 
         const createRes = await fetch(`${API_BASE_URL}/users`, {
@@ -311,29 +311,17 @@ const Login = () => {
               </div>
             )}
 
-            {/* Acesso Corporativo Microsoft & Windows */}
+            {/* Botão Único e Inteligente de Acesso Corporativo */}
             <div className="sso-section">
               <button
                 type="button"
-                className="btn-sso btn-sso-windows"
-                onClick={handleWindowsDirectConnect}
-                disabled={loading}
-                title="Conecta diretamente com o usuário conectado no Windows (1 clique)"
+                className="btn-sso btn-sso-corporate"
+                onClick={handleSmartCorporateLogin}
+                disabled={loading || corporateLoading}
+                title="Entrar com conta corporativa Microsoft / Windows"
               >
-                <WindowsIcon /> {loading ? 'Conectando...' : 'Conectar com Usuário do Windows (Exchange)'}
-              </button>
-
-              <button
-                type="button"
-                className="btn-sso btn-sso-microsoft"
-                onClick={() => {
-                  setMicrosoftError('');
-                  setMicrosoftModalOpen(true);
-                }}
-                disabled={loading}
-                title="Entrar com conta Microsoft corporativa da Lepta"
-              >
-                <MicrosoftIcon /> Entrar com Conta Microsoft (Lepta)
+                <MicrosoftIcon />
+                <span>{corporateLoading ? 'Conectando ao AD...' : 'Entrar com Conta Corporativa (Lepta)'}</span>
               </button>
             </div>
 
@@ -373,7 +361,7 @@ const Login = () => {
                 <button type="button" className="forgot-password" onClick={() => setIsRecoveryMode(true)}>Esqueci minha senha</button>
               </div>
 
-              <button type="submit" className="btn-primary login-submit" disabled={loading}>
+              <button type="submit" className="btn-primary login-submit" disabled={loading || corporateLoading}>
                 {loading ? 'Entrando...' : <>Entrar <ArrowRight size={18} /></>}
               </button>
 
@@ -504,7 +492,7 @@ const Login = () => {
         )}
       </div>
 
-      {/* Modal Interativo para Celular / E-mail Microsoft Corporativo */}
+      {/* Modal Interativo para Celular / Dispositivo Externo */}
       {microsoftModalOpen && (
         <div className="sso-modal-overlay" onClick={() => !microsoftLoading && setMicrosoftModalOpen(false)}>
           <div className="sso-modal-content" onClick={(e) => e.stopPropagation()}>
@@ -516,7 +504,7 @@ const Login = () => {
                     Conta Microsoft Lepta
                   </h3>
                   <p style={{ margin: 0, fontSize: '0.8rem', color: '#94a3b8' }}>
-                    Autentique com seu e-mail corporativo @lepta.com.br
+                    Informe seu e-mail corporativo @lepta.com.br
                   </p>
                 </div>
               </div>
@@ -556,7 +544,7 @@ const Login = () => {
               </div>
 
               <p style={{ fontSize: '0.78rem', color: '#94a3b8', margin: 0, lineHeight: 1.4 }}>
-                Sua conta será provisionada e vinculada automaticamente ao banco de dados no primeiro acesso corporativo.
+                Sua conta corporativa será autenticada e vinculada com segurança ao sistema.
               </p>
 
               <button

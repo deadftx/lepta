@@ -18,7 +18,7 @@ interface AuthContextType {
   isAuthenticated: boolean;
   user: User | null;
   login: (loginId: string, pass: string) => Promise<boolean>;
-  loginWithMicrosoft: (params: { email?: string; idToken?: string; microsoftId?: string; mode?: 'interactive' | 'windows_sso' | 'mock' }) => Promise<{ success: boolean; error?: string }>;
+  loginWithMicrosoft: (params?: { email?: string; idToken?: string; microsoftId?: string; mode?: 'auto' | 'interactive' | 'windows_sso' | 'mock' }) => Promise<{ success: boolean; requireInteractive?: boolean; error?: string }>;
   logout: () => void;
   isLoading: boolean;
 }
@@ -141,7 +141,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     }
   };
 
-  const loginWithMicrosoft = async (params: { email?: string; idToken?: string; microsoftId?: string; mode?: 'interactive' | 'windows_sso' | 'mock' }): Promise<{ success: boolean; error?: string }> => {
+  const loginWithMicrosoft = async (params: { email?: string; idToken?: string; microsoftId?: string; mode?: 'auto' | 'interactive' | 'windows_sso' | 'mock' } = {}): Promise<{ success: boolean; requireInteractive?: boolean; error?: string }> => {
     try {
       const res = await fetch(`${API_BASE_URL}/api/auth/microsoft`, {
         method: 'POST',
@@ -151,6 +151,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
       const data = await res.json();
       if (res.ok) {
+        if (data.requireInteractive) {
+          return { success: false, requireInteractive: true };
+        }
         setIsAuthenticated(true);
         setUser(data.user);
         localStorage.setItem('lepta_user', JSON.stringify(data.user));

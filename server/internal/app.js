@@ -2755,16 +2755,22 @@ app.post('/api/auth/microsoft', authIpRateLimiter, loginRateLimiter, async (req,
   let email = String(req.body?.email || '').trim().toLowerCase();
   const idToken = String(req.body?.idToken || '').trim();
   const microsoftId = String(req.body?.microsoftId || '').trim();
-  const mode = String(req.body?.mode || 'interactive'); // 'interactive' | 'windows_sso' | 'mock'
+  const mode = String(req.body?.mode || 'auto'); // 'auto' | 'windows_sso' | 'interactive'
 
   let targetEmail = email;
   let targetMicrosoftId = microsoftId;
 
-  // Se for modo windows_sso e não foi informado e-mail, detecta direto a conta da máquina Windows
-  if (mode === 'windows_sso' && !targetEmail) {
+  // Se modo for auto ou windows_sso e não foi informado e-mail/token, tenta detectar conta ativa da máquina Windows
+  if ((mode === 'auto' || mode === 'windows_sso') && !targetEmail && !idToken) {
     const detectedUpn = getWindowsLoggedUpn();
     if (detectedUpn) {
       targetEmail = detectedUpn;
+    } else {
+      // Não está em máquina Windows autenticada no domínio -> instrui frontend a abrir login interativo Microsoft
+      return res.status(200).json({ 
+        requireInteractive: true,
+        message: 'Dispositivo sem sessão ativa do Windows detectada. Prossiga com o login interativo da Microsoft.'
+      });
     }
   }
 
@@ -2810,11 +2816,8 @@ app.post('/api/auth/microsoft', authIpRateLimiter, loginRateLimiter, async (req,
       const username = targetEmail.split('@')[0];
       const userId = 'usr_' + Date.now();
       const now = new Date().toISOString();
-      const defaultPermissions = JSON.stringify([
-        '4', '5', '6', '7', '7.1', '7.2', '7.4', '7.5', 
-        '8', '8.1', '8.2', '8.3', '8.4', '8.5', '8.6', 
-        '10', '10.1', '10.2', '11', '11.1'
-      ]);
+      // Por padrão corporativo, apenas Financeiro > Reembolsos e Despesas ('7.4') e HOME vêm liberados
+      const defaultPermissions = JSON.stringify(['7.4']);
 
       try {
         db.prepare(`

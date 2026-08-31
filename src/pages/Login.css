@@ -161,29 +161,6 @@
   color: #fff;
 }
 
-@media (max-width: 520px) {
-  .login-page {
-    padding: 14px;
-  }
-
-  .login-container {
-    padding: 1.5rem;
-  }
-
-  .login-header h2 {
-    font-size: 1.7rem;
-  }
-
-  .login-options {
-    gap: 0.75rem;
-    align-items: center;
-  }
-
-  .forgot-password {
-    text-align: right;
-  }
-}
-
 /* Microsoft & Windows SSO Styles */
 .sso-section {
   display: flex;
@@ -198,43 +175,28 @@
   align-items: center;
   justify-content: center;
   gap: 0.75rem;
-  padding: 0.75rem 1rem;
+  padding: 0.85rem 1.25rem;
   border-radius: 10px;
-  font-size: 0.92rem;
+  font-size: 0.95rem;
   font-weight: 600;
   cursor: pointer;
   transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.14);
   outline: none;
 }
 
-.btn-sso-microsoft {
-  background: #2f2f2f;
-  background: linear-gradient(180deg, #2b2b2b 0%, #1f1f1f 100%);
+.btn-sso-corporate {
+  background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
   color: #ffffff;
-  border-color: rgba(255, 255, 255, 0.18);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
 }
 
-.btn-sso-microsoft:hover:not(:disabled) {
-  background: linear-gradient(180deg, #383838 0%, #262626 100%);
-  border-color: rgba(255, 255, 255, 0.35);
+.btn-sso-corporate:hover:not(:disabled) {
+  background: linear-gradient(135deg, #334155 0%, #1e293b 100%);
+  border-color: #38bdf8;
+  box-shadow: 0 6px 20px rgba(56, 189, 248, 0.25);
   transform: translateY(-1px);
-  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.35);
-}
-
-.btn-sso-windows {
-  background: rgba(0, 120, 212, 0.12);
-  color: #60a5fa;
-  border-color: rgba(0, 120, 212, 0.35);
-}
-
-.btn-sso-windows:hover:not(:disabled) {
-  background: rgba(0, 120, 212, 0.22);
-  border-color: #3b82f6;
-  color: #93c5fd;
-  transform: translateY(-1px);
-  box-shadow: 0 4px 14px rgba(0, 120, 212, 0.25);
 }
 
 .sso-divider {
@@ -259,7 +221,7 @@
   padding: 0 0.75rem;
 }
 
-/* Modal de Autenticação Rápida / Windows SSO */
+/* Modal Interativo para Celular / Dispositivos Externos */
 .sso-modal-overlay {
   position: fixed;
   top: 0;
@@ -291,30 +253,25 @@
   to { opacity: 1; transform: scale(1) translateY(0); }
 }
 
-.sso-accounts-list {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-  max-height: 220px;
-  overflow-y: auto;
-  margin: 1rem 0;
-  padding-right: 4px;
-}
+@media (max-width: 520px) {
+  .login-page {
+    padding: 14px;
+  }
 
-.sso-account-item {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0.75rem 1rem;
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 10px;
-  cursor: pointer;
-  transition: all 0.15s ease;
-  text-align: left;
-}
+  .login-container {
+    padding: 1.5rem;
+  }
 
-.sso-account-item:hover {
-  background: rgba(0, 120, 212, 0.15);
-  border-color: rgba(0, 120, 212, 0.4);
+  .login-header h2 {
+    font-size: 1.7rem;
+  }
+
+  .login-options {
+    gap: 0.75rem;
+    align-items: center;
+  }
+
+  .forgot-password {
+    text-align: right;
+  }
 }
