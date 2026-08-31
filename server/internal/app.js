@@ -1350,7 +1350,7 @@ app.delete('/api/clientes-cadastro/:documento', requireSession, requireClientReg
 // -------------------------------------------------------------
 // ROTAS: CADASTRO DE GERENTES E GESTORES (LEPTA INTELLIGENCE)
 // -------------------------------------------------------------
-app.get('/api/gerentes', requireSession, async (req, res) => {
+app.get('/api/gerentes', requireSession, (req, res) => {
   try {
     ensureGerentesContasTable();
     const gerentes = db.prepare(`
@@ -1359,13 +1359,13 @@ app.get('/api/gerentes', requireSession, async (req, res) => {
       ORDER BY CASE WHEN cargo = 'SUPERINTENDENTE' THEN 0 ELSE 1 END, nome ASC
     `).all();
 
-    // Map de gerente_id -> Set de documentos de cedentes únicos
+    // Map de gerente_id -> Set de documentos de cedentes únicos (rápido, sem bloqueio de rede)
     const cedentesByManager = new Map();
     for (const g of gerentes) {
       cedentesByManager.set(g.id, new Set());
     }
 
-    // 1. Clientes cadastrados no banco interno (clientes_cadastro)
+    // 1. Clientes cadastrados no banco interno (clientes_cadastro - instantâneo)
     const localRows = getAllLocalClientRows();
     for (const row of localRows) {
       const localComposed = composeClientRegistration(null, row);
@@ -1379,16 +1379,14 @@ app.get('/api/gerentes', requireSession, async (req, res) => {
       }
     }
 
-    // 2. Clientes da API BitFin / UNLTD
-    try {
-      const titles = await fetchTitulosDaAPI(req).catch(() => []);
-      for (const t of titles) {
+    // 2. Se já houver dados em cache em memória da API BitFin, utiliza sem esperar requisição externa
+    if (Array.isArray(unltdFullHistoryCache.data)) {
+      for (const t of unltdFullHistoryCache.data) {
         const cliente = t.contaOperacional?.cliente;
         const entidade = cliente?.entidade;
         const doc = normalizeEntityDocument(entidade?.documento);
         if (!doc) continue;
 
-        // Se já foi atribuído pelo banco interno, mantém prioridade do banco
         let alreadyAssigned = false;
         for (const docSet of cedentesByManager.values()) {
           if (docSet.has(doc)) {
@@ -1406,11 +1404,9 @@ app.get('/api/gerentes', requireSession, async (req, res) => {
           }
         }
       }
-    } catch (apiErr) {
-      console.warn('Aviso ao sincronizar gerentes com a API BitFin:', apiErr.message);
     }
 
-    // 3. Fallback no SmartFactor / BASE_NOVA
+    // 3. Fallback no SmartFactor / BASE_NOVA (tabela SQLite local, instantâneo)
     try {
       if (tableExists('BASE_SMARTFACTOR')) {
         const sfRows = db.prepare(`
