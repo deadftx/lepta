@@ -91,10 +91,10 @@ export default function MeetingRoomBooking() {
   const [checkingAvailability, setCheckingAvailability] = useState(false);
   const [conflictInfo, setConflictInfo] = useState<any | null>(null);
 
-  // Carrega agendamentos da API
-  const fetchAgendamentos = useCallback(async () => {
+  // Carrega agendamentos da API com suporte a polling silencioso
+  const fetchAgendamentos = useCallback(async (showLoading = true) => {
     try {
-      setRefreshing(true);
+      if (showLoading) setRefreshing(true);
       setError('');
 
       const params = new URLSearchParams();
@@ -122,15 +122,51 @@ export default function MeetingRoomBooking() {
       }
     } catch (err: any) {
       console.error('Erro ao buscar dados das salas:', err);
-      setError(err?.message || 'Erro ao carregar agendamentos.');
+      if (showLoading) setError(err?.message || 'Erro ao carregar agendamentos.');
     } finally {
       setLoading(false);
-      setRefreshing(false);
+      if (showLoading) setRefreshing(false);
     }
   }, [selectedMonth, filterSala, filterTipo, filterMinhas]);
 
+  // Realtime Live Engine: Polling silencioso a cada 3.5 segundos + sincronização de foco e entre abas (sem necessidade de F5)
   useEffect(() => {
-    fetchAgendamentos();
+    fetchAgendamentos(true);
+
+    const interval = setInterval(() => {
+      if (document.visibilityState === 'visible') {
+        fetchAgendamentos(false);
+      }
+    }, 3500);
+
+    const handleVisibilityAndFocus = () => {
+      if (document.visibilityState === 'visible') {
+        fetchAgendamentos(false);
+      }
+    };
+
+    const handleCustomUpdate = () => {
+      fetchAgendamentos(false);
+    };
+
+    const handleStorageUpdate = (e: StorageEvent) => {
+      if (e.key === 'lepta_meeting_rooms_last_update') {
+        fetchAgendamentos(false);
+      }
+    };
+
+    window.addEventListener('focus', handleVisibilityAndFocus);
+    document.addEventListener('visibilitychange', handleVisibilityAndFocus);
+    window.addEventListener('meeting-rooms-updated', handleCustomUpdate);
+    window.addEventListener('storage', handleStorageUpdate);
+
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('focus', handleVisibilityAndFocus);
+      document.removeEventListener('visibilitychange', handleVisibilityAndFocus);
+      window.removeEventListener('meeting-rooms-updated', handleCustomUpdate);
+      window.removeEventListener('storage', handleStorageUpdate);
+    };
   }, [fetchAgendamentos]);
 
   // Checagem de disponibilidade em tempo real no formulário
@@ -182,7 +218,7 @@ export default function MeetingRoomBooking() {
     };
   }, [isModalOpen, formSala, formData, formHorarioInicio, formHorarioFim]);
 
-  // Criação de novo agendamento
+  // Criação de novo agendamento com atualização imediata sem F5
   const handleCreateAgendamento = async (e: React.FormEvent) => {
     e.preventDefault();
     setFormError('');
@@ -229,9 +265,26 @@ export default function MeetingRoomBooking() {
         })
       });
 
-      const data = await res.json();
+      const novoAgendamento: AgendamentoSala = await res.json();
       if (!res.ok) {
-        throw new Error(data.error || 'Erro ao agendar sala de reunião.');
+        throw new Error((novoAgendamento as any).error || 'Erro ao agendar sala de reunião.');
+      }
+
+      // 1. Atualização OTIMISTA imediata no estado local (0ms de latência, sem F5)
+      setAgendamentos(prev => [novoAgendamento, ...prev.filter(item => item.id !== novoAgendamento.id)]);
+      setSelectedDay(novoAgendamento.data);
+
+      const agendamentoMes = novoAgendamento.data.substring(0, 7);
+      if (selectedMonth && selectedMonth !== agendamentoMes) {
+        setSelectedMonth(agendamentoMes);
+      }
+
+      // 2. Dispara evento de sincronização entre abas
+      try {
+        localStorage.setItem('lepta_meeting_rooms_last_update', String(Date.now()));
+        window.dispatchEvent(new CustomEvent('meeting-rooms-updated'));
+      } catch (e) {
+        // Ignora em caso de restrição de storage
       }
 
       setIsModalOpen(false);
@@ -245,8 +298,8 @@ export default function MeetingRoomBooking() {
       setFormObservacoes('');
       setConflictInfo(null);
 
-      // Atualiza lista
-      fetchAgendamentos();
+      // Re-sincroniza com o servidor em background
+      fetchAgendamentos(false);
     } catch (err: any) {
       setFormError(err?.message || 'Não foi possível agendar a reunião.');
     } finally {
@@ -254,7 +307,7 @@ export default function MeetingRoomBooking() {
     }
   };
 
-  // Cancelamento de agendamento
+  // Cancelamento de agendamento com atualização imediata sem F5
   const handleCancelAgendamento = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedAgendamento) return;
@@ -275,13 +328,24 @@ export default function MeetingRoomBooking() {
         throw new Error(data.error || 'Erro ao cancelar agendamento.');
       }
 
+      // 1. Atualização OTIMISTA imediata
+      setAgendamentos(prev => prev.map(item => item.id === selectedAgendamento.id ? { ...item, status: 'CANCELADO', motivo_cancelamento: cancelMotivo.trim() } : item));
+
+      // 2. Dispara evento de sincronização entre abas
+      try {
+        localStorage.setItem('lepta_meeting_rooms_last_update', String(Date.now()));
+        window.dispatchEvent(new CustomEvent('meeting-rooms-updated'));
+      } catch (e) {
+        // Ignora em caso de restrição de storage
+      }
+
       setIsCancelModalOpen(false);
       setIsDetailModalOpen(false);
       setSelectedAgendamento(null);
       setCancelMotivo('');
       setSuccessMsg('Agendamento cancelado com sucesso.');
       setTimeout(() => setSuccessMsg(''), 4000);
-      fetchAgendamentos();
+      fetchAgendamentos(false);
     } catch (err: any) {
       alert(err?.message || 'Erro ao cancelar agendamento.');
     } finally {
@@ -427,7 +491,7 @@ export default function MeetingRoomBooking() {
           </button>
           <button 
             className="mr-btn-secondary mr-btn-compact" 
-            onClick={fetchAgendamentos} 
+            onClick={() => fetchAgendamentos(true)} 
             disabled={refreshing}
             title="Atualizar dados"
           >
