@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import {
   Calendar, Clock, Users, Building, Plus,
   CalendarCheck, AlertCircle, CheckCircle2, XCircle,
-  ChevronLeft, ChevronRight, RefreshCw, User, FileText,
+  ChevronLeft, ChevronRight, ChevronDown, ChevronUp, RefreshCw, User, FileText,
   Briefcase, Globe, X, Info, Map as MapIcon
 } from 'lucide-react';
 import { API_BASE_URL, getAuthHeaders } from '../../../../config/api';
@@ -66,6 +66,7 @@ export default function MeetingRoomBooking() {
 
   // Modais
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isFloorPlanExpanded, setIsFloorPlanExpanded] = useState(false);
   const [isFloorPlanModalOpen, setIsFloorPlanModalOpen] = useState(false);
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
   const [isCancelModalOpen, setIsCancelModalOpen] = useState(false);
@@ -854,18 +855,33 @@ export default function MeetingRoomBooking() {
                 </div>
               )}
 
-              {/* 1. Escolha da Sala com Planta Interativa Integrada */}
+              {/* 1. Escolha da Sala com Botão de Expandir Planta Interativa */}
               <div className="mr-form-group">
-                <label className="mr-label">Selecione a Sala na Planta ou nos Cards: *</label>
-                
-                {/* Planta Interativa */}
-                <FloorPlanMeetingRooms
-                  selectedRoom={formSala}
-                  onSelectRoom={setFormSala}
-                />
+                <div className="mr-room-header-row">
+                  <label className="mr-label" style={{ margin: 0 }}>Qual sala você deseja utilizar? *</label>
+                  <button
+                    type="button"
+                    className={`mr-btn-toggle-map ${isFloorPlanExpanded ? 'active' : ''}`}
+                    onClick={() => setIsFloorPlanExpanded(!isFloorPlanExpanded)}
+                    title="Expandir ou recolher planta do escritório"
+                  >
+                    <MapIcon size={13} />
+                    <span>{isFloorPlanExpanded ? 'Ocultar Planta' : 'Ver na Planta Interativa'}</span>
+                    {isFloorPlanExpanded ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+                  </button>
+                </div>
+
+                {/* Acordeão com Planta Interativa */}
+                <div className={`mr-floorplan-accordion ${isFloorPlanExpanded ? 'open' : ''}`}>
+                  <FloorPlanMeetingRooms
+                    selectedRoom={formSala}
+                    onSelectRoom={setFormSala}
+                    compact
+                  />
+                </div>
 
                 {/* Cards Seletores de Sala */}
-                <div className="mr-room-cards-selector" style={{ marginTop: '0.65rem' }}>
+                <div className="mr-room-cards-selector">
                   <div
                     className={`mr-room-select-card ${formSala === 'Sala da Diretoria' ? 'selected card-purple' : ''}`}
                     onClick={() => setFormSala('Sala da Diretoria')}
@@ -875,7 +891,7 @@ export default function MeetingRoomBooking() {
                     </div>
                     <div className="mr-rsc-info">
                       <h4>Sala da Diretoria</h4>
-                      <p>Reuniões estratégicas e diretoria (inferior direita na planta)</p>
+                      <p>Reuniões estratégicas e diretoria (inferior direita)</p>
                     </div>
                   </div>
 
@@ -888,7 +904,7 @@ export default function MeetingRoomBooking() {
                     </div>
                     <div className="mr-rsc-info">
                       <h4>Sala 1</h4>
-                      <p>Reuniões de equipe e alinhamentos (superior central na planta)</p>
+                      <p>Reuniões de equipe e alinhamentos (superior central)</p>
                     </div>
                   </div>
                 </div>
