@@ -3401,7 +3401,26 @@ function getWindowsLoggedUpn() {
   return null;
 }
 
-app.post('/api/auth/microsoft', authIpRateLimiter, loginRateLimiter, async (req, res) => {
+function parseJwtPayload(token) {
+  if (!token || typeof token !== 'string') return null;
+  try {
+    const parts = token.split('.');
+    if (parts.length !== 3) return null;
+    const base64Url = parts[1];
+    const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+    const padded = base64.padEnd(base64.length + (4 - base64.length % 4) % 4, '=');
+    return JSON.parse(Buffer.from(padded, 'base64').toString('utf8'));
+  } catch (err) {
+    try {
+      return JSON.parse(Buffer.from(token.split('.')[1], 'base64url').toString('utf8'));
+    } catch (err2) {
+      console.warn('Falha ao decodificar JWT payload:', err2.message);
+      return null;
+    }
+  }
+}
+
+app.post('/api/auth/microsoft', authIpRateLimiter, async (req, res) => {
   let email = String(req.body?.email || '').trim().toLowerCase();
   const idToken = String(req.body?.idToken || '').trim();
   const microsoftId = String(req.body?.microsoftId || '').trim();
@@ -3416,7 +3435,6 @@ app.post('/api/auth/microsoft', authIpRateLimiter, loginRateLimiter, async (req,
     if (detectedUpn) {
       targetEmail = detectedUpn;
     } else {
-      // Não está em máquina Windows autenticada no domínio -> instrui frontend a abrir login interativo Microsoft
       return res.status(200).json({ 
         requireInteractive: true,
         message: 'Dispositivo sem sessão ativa do Windows detectada. Prossiga com o login interativo da Microsoft.'
@@ -3424,17 +3442,19 @@ app.post('/api/auth/microsoft', authIpRateLimiter, loginRateLimiter, async (req,
     }
   }
 
-  // Se veio idToken da Microsoft (JWT), decodifica o payload para extrair email e oid
+  // Se veio idToken da Microsoft (JWT), decodifica o payload de forma robusta
   if (idToken) {
-    try {
-      const parts = idToken.split('.');
-      if (parts.length === 3) {
-        const payload = JSON.parse(Buffer.from(parts[1], 'base64').toString('utf8'));
-        targetEmail = String(payload.preferred_username || payload.email || payload.upn || targetEmail).trim().toLowerCase();
-        targetMicrosoftId = String(payload.oid || payload.sub || targetMicrosoftId).trim();
-      }
-    } catch (tokenErr) {
-      console.warn('Aviso ao decodificar token Microsoft:', tokenErr.message);
+    const payload = parseJwtPayload(idToken);
+    if (payload) {
+      targetEmail = String(
+        payload.preferred_username ||
+        payload.email ||
+        payload.upn ||
+        payload.unique_name ||
+        payload.mail ||
+        targetEmail
+      ).trim().toLowerCase();
+      targetMicrosoftId = String(payload.oid || payload.sub || targetMicrosoftId).trim();
     }
   }
 

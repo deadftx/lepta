@@ -99,48 +99,43 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     let isCancelled = false;
 
     const initAuth = async () => {
-      // 1. Verifica se o usuário acabou de retornar do redirecionamento Microsoft
-      const hasAuthCode = typeof window !== 'undefined' && (
-        window.location.hash.includes('code=') ||
-        window.location.search.includes('code=') ||
-        window.location.hash.includes('id_token=') ||
-        window.location.search.includes('id_token=')
-      );
+      // 1. Processa retorno de redirecionamento da Microsoft se presente
+      try {
+        const response = await handleMicrosoftRedirect();
+        if (response && response.idToken && !isCancelled) {
+          const email = (
+            response.account?.username ||
+            (response.idTokenClaims as any)?.preferred_username ||
+            (response.idTokenClaims as any)?.email ||
+            ''
+          ).toLowerCase();
 
-      if (hasAuthCode) {
-        try {
-          const response = await handleMicrosoftRedirect();
-          if (response && response.idToken && !isCancelled) {
-            const email = (
-              response.account?.username ||
-              (response.idTokenClaims as any)?.preferred_username ||
-              (response.idTokenClaims as any)?.email ||
-              ''
-            ).toLowerCase();
+          const res = await fetch(`${API_BASE_URL}/api/auth/microsoft`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              idToken: response.idToken,
+              email
+            })
+          });
 
-            const res = await fetch(`${API_BASE_URL}/api/auth/microsoft`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                idToken: response.idToken,
-                email
-              })
-            });
-
-            const data = await res.json();
-            if (res.ok && data.user && data.token && !isCancelled) {
-              setIsAuthenticated(true);
-              setUser(data.user);
-              localStorage.setItem('lepta_user', JSON.stringify(data.user));
-              localStorage.setItem('lepta_auth_token', data.token);
-              window.history.replaceState(null, '', '/dashboard');
-              window.location.href = '/dashboard';
-              return;
-            }
+          const data = await res.json();
+          if (res.ok && data.user && data.token && !isCancelled) {
+            setIsAuthenticated(true);
+            setUser(data.user);
+            localStorage.setItem('lepta_user', JSON.stringify(data.user));
+            localStorage.setItem('lepta_auth_token', data.token);
+            try { sessionStorage.removeItem('lepta_auth_error'); } catch {}
+            window.history.replaceState(null, '', '/dashboard');
+            window.location.href = '/dashboard';
+            return;
+          } else if (data.error && !isCancelled) {
+            try { sessionStorage.setItem('lepta_auth_error', data.error); } catch {}
           }
-        } catch (err) {
-          console.error('Erro na autenticação Microsoft no carregamento:', err);
         }
+      } catch (err: any) {
+        console.error('Erro na autenticação Microsoft no carregamento:', err);
+        try { sessionStorage.setItem('lepta_auth_error', err?.message || 'Erro ao comunicar com a Microsoft.'); } catch {}
       }
 
       // 2. Valida sessão salva em localStorage

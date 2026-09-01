@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate, useLocation, useSearchParams } from 'react-router-dom';
 import { Lock, User, ArrowRight, AlertCircle, CheckCircle2, KeyRound, Mail, ArrowLeft, LogOut } from 'lucide-react';
 import { useAuth } from '../internal/core/AuthContext';
@@ -27,6 +27,17 @@ const Login = () => {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [corporateLoading, setCorporateLoading] = useState(false);
+
+  // Exibe erro de autenticação SSO capturado na inicialização
+  useEffect(() => {
+    try {
+      const storedError = sessionStorage.getItem('lepta_auth_error');
+      if (storedError) {
+        setError(storedError);
+        sessionStorage.removeItem('lepta_auth_error');
+      }
+    } catch {}
+  }, []);
 
   // Primeiro Acesso state
   const [isFirstAccessMode, setIsFirstAccessMode] = useState(false);
