@@ -14,7 +14,7 @@ export const msalConfig: Configuration = {
     postLogoutRedirectUri: typeof window !== 'undefined' ? window.location.origin : ''
   },
   cache: {
-    cacheLocation: 'sessionStorage'
+    cacheLocation: 'localStorage'
   }
 };
 
@@ -79,13 +79,24 @@ export async function authenticateWithMicrosoft(): Promise<{ idToken: string; em
   }
 
   // 2. Abre a janela oficial e segura da Microsoft (login.microsoftonline.com)
-  const popupResult = await msal.loginPopup(loginRequest);
-  if (popupResult && popupResult.idToken) {
-    return {
-      idToken: popupResult.idToken,
-      email: (popupResult.account?.username || '').toLowerCase(),
-      name: popupResult.account?.name || ''
-    };
+  try {
+    const popupResult = await msal.loginPopup(loginRequest);
+    if (popupResult && popupResult.idToken) {
+      return {
+        idToken: popupResult.idToken,
+        email: (popupResult.account?.username || '').toLowerCase(),
+        name: popupResult.account?.name || ''
+      };
+    }
+  } catch (popupErr: any) {
+    const errStr = String(popupErr?.message || popupErr || '');
+    if (errStr.includes('user_cancelled') || errStr.includes('User cancelled')) {
+      return null;
+    }
+    console.warn('Tentando fallback para redirecionamento direto:', popupErr);
+    // Se o popup foi bloqueado pelo navegador, aciona redirect completo
+    await msal.loginRedirect(loginRequest);
+    return null;
   }
 
   return null;
