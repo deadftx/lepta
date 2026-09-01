@@ -59,7 +59,7 @@ export const loginRequest: PopupRequest = {
 };
 
 /**
- * Autentica diretamente com a Microsoft (com detecção silenciosa do Windows ou janela oficial de login)
+ * Autentica com a Microsoft (tenta detecção silenciosa primeiro, ou redireciona de forma oficial e segura sem popups)
  */
 export async function authenticateWithMicrosoft(): Promise<{ idToken: string; email: string; name: string } | null> {
   const msal = await getMsalInstance();
@@ -75,29 +75,10 @@ export async function authenticateWithMicrosoft(): Promise<{ idToken: string; em
       };
     }
   } catch (silentErr) {
-    // Silently proceed to popup if silent SSO requires user confirmation
+    // Silently proceed to redirect
   }
 
-  // 2. Abre a janela oficial e segura da Microsoft (login.microsoftonline.com)
-  try {
-    const popupResult = await msal.loginPopup(loginRequest);
-    if (popupResult && popupResult.idToken) {
-      return {
-        idToken: popupResult.idToken,
-        email: (popupResult.account?.username || '').toLowerCase(),
-        name: popupResult.account?.name || ''
-      };
-    }
-  } catch (popupErr: any) {
-    const errStr = String(popupErr?.message || popupErr || '');
-    if (errStr.includes('user_cancelled') || errStr.includes('User cancelled')) {
-      return null;
-    }
-    console.warn('Tentando fallback para redirecionamento direto:', popupErr);
-    // Se o popup foi bloqueado pelo navegador, aciona redirect completo
-    await msal.loginRedirect(loginRequest);
-    return null;
-  }
-
+  // 2. Redirecionamento oficial sem popups (login.microsoftonline.com)
+  await msal.loginRedirect(loginRequest);
   return null;
 }
