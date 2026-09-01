@@ -38,18 +38,18 @@
   border-color: rgba(99, 102, 241, 0.45);
 }
 
-/* Acordeão de Expansão Suave da Planta */
+/* Acordeão de Expansão Suave da Planta (Sem cortar a imagem) */
 .mr-floorplan-accordion {
   max-height: 0;
   opacity: 0;
   overflow: hidden;
   transform: translateY(-6px) scale(0.98);
-  transition: max-height 0.35s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.25s ease, transform 0.25s ease, margin 0.25s ease;
+  transition: max-height 0.4s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.25s ease, transform 0.25s ease, margin 0.25s ease;
   margin-bottom: 0;
 }
 
 .mr-floorplan-accordion.open {
-  max-height: 480px;
+  max-height: 900px;
   opacity: 1;
   transform: translateY(0) scale(1);
   margin-bottom: 0.75rem;
@@ -71,20 +71,20 @@
 }
 
 .mr-floorplan-wrapper.compact {
-  padding: 0.5rem 0.6rem 0.4rem 0.6rem;
+  padding: 0.45rem 0.5rem;
 }
 
 .mr-floorplan-map {
   position: relative;
   width: 100%;
-  max-width: 540px;
+  max-width: 380px;
+  margin: 0 auto;
   line-height: 0;
   user-select: none;
   border-radius: 10px;
   overflow: hidden;
-  background: #1e293b;
   box-shadow: 0 6px 20px rgba(0, 0, 0, 0.6);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.1);
 }
 
 .mr-floorplan-img {
@@ -145,12 +145,12 @@
   display: inline-flex;
   align-items: center;
   gap: 0.3rem;
-  padding: 0.25rem 0.55rem;
+  padding: 0.22rem 0.5rem;
   border-radius: 6px;
   background: rgba(15, 23, 42, 0.95);
   border: 1px solid rgba(255, 255, 255, 0.15);
   color: #ffffff;
-  font-size: 0.74rem;
+  font-size: 0.72rem;
   font-weight: 700;
   letter-spacing: 0.02em;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
@@ -161,7 +161,7 @@
 }
 
 .mr-fp-hotspot:hover .mr-fp-label {
-  transform: scale(1.06);
+  transform: scale(1.05);
 }
 
 .mr-fp-hotspot.hotspot-sala1.selected .mr-fp-label {
@@ -211,7 +211,7 @@
 
 /* Texto de Dica */
 .mr-floorplan-hint {
-  margin-top: 0.4rem;
+  margin-top: 0.35rem;
   font-size: 0.72rem;
   color: #94a3b8;
   font-weight: 500;
