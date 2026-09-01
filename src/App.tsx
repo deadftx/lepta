@@ -34,7 +34,7 @@ import ProtectedRoute from './internal/core/ProtectedRoute';
 import InternalLayout from './internal/core/InternalLayout';
 import AccessRoute from './internal/core/AccessRoute';
 import { AuthProvider, useAuth } from './internal/core/AuthContext';
-import { getMsalInstance } from './config/msalConfig';
+import { handleMicrosoftRedirect } from './config/msalConfig';
 import './App.css';
 
 import { API_BASE_URL } from './config/api';
@@ -43,39 +43,36 @@ const AuthRedirectHandler = () => {
   const { loginWithMicrosoft, isAuthenticated } = useAuth();
 
   useEffect(() => {
-    const hasAuthPayload =
-      window.location.hash.includes('code=') ||
-      window.location.search.includes('code=') ||
-      window.location.hash.includes('id_token=') ||
-      window.location.search.includes('id_token=');
+    let isCancelled = false;
 
-    if (hasAuthPayload && !isAuthenticated) {
-      getMsalInstance().then(async (msal) => {
-        try {
-          const response = await msal.handleRedirectPromise();
-          if (response && response.idToken) {
-            const email = (
-              response.account?.username ||
-              (response.idTokenClaims as any)?.preferred_username ||
-              (response.idTokenClaims as any)?.email ||
-              ''
-            ).toLowerCase();
+    handleMicrosoftRedirect()
+      .then(async (response) => {
+        if (response && response.idToken && !isCancelled && !isAuthenticated) {
+          const email = (
+            response.account?.username ||
+            (response.idTokenClaims as any)?.preferred_username ||
+            (response.idTokenClaims as any)?.email ||
+            ''
+          ).toLowerCase();
 
-            const result = await loginWithMicrosoft({
-              idToken: response.idToken,
-              email
-            });
+          const result = await loginWithMicrosoft({
+            idToken: response.idToken,
+            email
+          });
 
-            if (result.success) {
-              window.history.replaceState(null, '', '/dashboard');
-              window.location.href = '/dashboard';
-            }
+          if (result.success && !isCancelled) {
+            window.history.replaceState(null, '', '/dashboard');
+            window.location.href = '/dashboard';
           }
-        } catch (err) {
-          console.error('Erro no processamento de autenticação Microsoft:', err);
         }
+      })
+      .catch((err) => {
+        console.error('Erro no processamento de autenticação Microsoft:', err);
       });
-    }
+
+    return () => {
+      isCancelled = true;
+    };
   }, [isAuthenticated, loginWithMicrosoft]);
 
   return null;

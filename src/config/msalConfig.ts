@@ -1,4 +1,4 @@
-import { PublicClientApplication, type Configuration, type PopupRequest } from '@azure/msal-browser';
+import { PublicClientApplication, type Configuration, type PopupRequest, type AuthenticationResult } from '@azure/msal-browser';
 
 // Microsoft Office 365 / Entra ID configuration (LeptaSys)
 // ID do aplicativo (cliente): 562eefd4-36bb-45af-822f-4377afa893ae
@@ -28,7 +28,6 @@ export async function getMsalInstance(): Promise<PublicClientApplication> {
   msalInitPromise = (async () => {
     const instance = new PublicClientApplication(msalConfig);
     await instance.initialize();
-    await instance.handleRedirectPromise();
     msalInstance = instance;
     return instance;
   })();
@@ -36,18 +35,15 @@ export async function getMsalInstance(): Promise<PublicClientApplication> {
   return msalInitPromise;
 }
 
-// Se a janela atual for um popup aberto pelo MSAL (tendo hash com code= ou window.opener), processa e fecha imediatamente
-if (typeof window !== 'undefined') {
-  const isAuthResponse = window.location.hash.includes('code=') ||
-    window.location.search.includes('code=') ||
-    window.location.hash.includes('id_token=') ||
-    window.location.search.includes('error=');
+let redirectPromise: Promise<AuthenticationResult | null> | null = null;
 
-  if (isAuthResponse || (window.opener && window.opener !== window)) {
-    getMsalInstance().catch(err => {
-      console.warn('MSAL callback handler warning:', err);
-    });
-  }
+export async function handleMicrosoftRedirect(): Promise<AuthenticationResult | null> {
+  if (redirectPromise) return redirectPromise;
+  redirectPromise = (async () => {
+    const msal = await getMsalInstance();
+    return await msal.handleRedirectPromise();
+  })();
+  return redirectPromise;
 }
 
 export const loginRequest: PopupRequest = {

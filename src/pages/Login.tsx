@@ -1,9 +1,9 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useNavigate, useLocation, useSearchParams } from 'react-router-dom';
 import { Lock, User, ArrowRight, AlertCircle, CheckCircle2, KeyRound, Mail, ArrowLeft, LogOut } from 'lucide-react';
 import { useAuth } from '../internal/core/AuthContext';
 import { API_BASE_URL } from '../config/api';
-import { authenticateWithMicrosoft, getMsalInstance } from '../config/msalConfig';
+import { authenticateWithMicrosoft } from '../config/msalConfig';
 import './Login.css';
 
 const MicrosoftIcon = () => (
@@ -43,37 +43,6 @@ const Login = () => {
   const [secretAnswer, setSecretAnswer] = useState('');
   const [recoveryPassword, setRecoveryPassword] = useState('');
   const [recoveryError, setRecoveryError] = useState('');
-
-  // Processa autenticação caso o navegador tenha retornado por redirect
-  useEffect(() => {
-    let isMounted = true;
-    const checkRedirectAuth = async () => {
-      try {
-        const msal = await getMsalInstance();
-        const response = await msal.handleRedirectPromise();
-        if (response && response.idToken && isMounted) {
-          setCorporateLoading(true);
-          const email = (response.account?.username || (response.idTokenClaims as any)?.preferred_username || (response.idTokenClaims as any)?.email || '').toLowerCase();
-          const result = await loginWithMicrosoft({
-            idToken: response.idToken,
-            email
-          });
-          if (isMounted) {
-            setCorporateLoading(false);
-            if (result.success) {
-              navigateToDestination();
-            } else {
-              setError(result.error || 'Acesso corporativo não autorizado.');
-            }
-          }
-        }
-      } catch (err: any) {
-        console.warn('MSAL redirect check:', err);
-      }
-    };
-    checkRedirectAuth();
-    return () => { isMounted = false; };
-  }, []);
 
   const navigateToDestination = () => {
     const fromState = (location.state as any)?.from;
