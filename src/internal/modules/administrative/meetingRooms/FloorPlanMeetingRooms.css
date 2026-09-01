@@ -218,4 +218,20 @@
   display: flex;
   align-items: center;
   gap: 0.3rem;
+  text-align: center;
+}
+
+@media (max-width: 500px) {
+  .mr-floorplan-map {
+    max-width: 280px;
+  }
+  .mr-fp-label {
+    font-size: 0.62rem;
+    padding: 0.12rem 0.35rem;
+    gap: 0.2rem;
+  }
+  .mr-fp-label svg {
+    width: 10px;
+    height: 10px;
+  }
 }

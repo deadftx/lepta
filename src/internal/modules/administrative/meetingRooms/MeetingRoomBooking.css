@@ -1,5 +1,6 @@
 /* ========================================================================= */
-/* ESTILOS ONE-PAGE (SEM ROLAGEM GERAL): AGENDAR SALA DE REUNIÃO (LEPTASYS)  */
+/* ESTILOS DE AGENDAMENTO DE SALAS DE REUNIÃO (LEPTASYS DARK THEME)          */
+/* 100% RESPONSIVO PARA DESKTOP, TABLET E CELULAR (MOBILE-FIRST POLISH)      */
 /* ========================================================================= */
 
 .mr-onepage-container {
@@ -24,14 +25,15 @@
 }
 
 /* ========================================================================= */
-/* 1. TOP BAR UNIFICADA (TÍTULO + MICRO-STATS + BOTÕES)                      */
+/* 1. TOP BAR (TÍTULO + MICRO-STATS + BOTÕES)                                */
 /* ========================================================================= */
 .mr-topbar {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  gap: 1rem;
+  gap: 0.85rem;
   flex-shrink: 0;
+  flex-wrap: wrap;
 }
 
 .mr-topbar-left {
@@ -54,16 +56,16 @@
 }
 
 .mr-title {
-  font-size: 1.3rem;
+  font-size: 1.25rem;
   font-weight: 800;
   color: #f8fafc;
   margin: 0;
   letter-spacing: -0.02em;
-  line-height: 1.1;
+  line-height: 1.15;
 }
 
 .mr-desc {
-  font-size: 0.78rem;
+  font-size: 0.76rem;
   color: #94a3b8;
   margin: 0.1rem 0 0 0;
 }
@@ -72,19 +74,21 @@
 .mr-micro-stats {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: 0.45rem;
+  flex-wrap: wrap;
 }
 
 .mr-stat-pill {
   display: inline-flex;
   align-items: center;
-  gap: 0.4rem;
-  padding: 0.3rem 0.65rem;
+  gap: 0.35rem;
+  padding: 0.28rem 0.6rem;
   border-radius: 8px;
-  font-size: 0.76rem;
+  font-size: 0.74rem;
   font-weight: 700;
   border: 1px solid transparent;
   backdrop-filter: blur(8px);
+  white-space: nowrap;
 }
 
 .mr-stat-pill.pill-blue { background: rgba(59, 130, 246, 0.14); color: #93c5fd; border-color: rgba(59, 130, 246, 0.28); }
@@ -101,7 +105,7 @@
 }
 
 .mr-sp-val {
-  font-size: 0.85rem;
+  font-size: 0.82rem;
   font-weight: 800;
   color: #ffffff;
 }
@@ -109,24 +113,27 @@
 .mr-topbar-actions {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: 0.45rem;
+  flex-wrap: wrap;
 }
 
-/* Botões Compactos */
+/* Botões */
 .mr-btn-primary {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 0.4rem;
   background: linear-gradient(135deg, #4f46e5 0%, #6366f1 100%);
   color: #ffffff;
   border: none;
-  padding: 0.48rem 0.95rem;
+  padding: 0.45rem 0.9rem;
   border-radius: 8px;
   font-size: 0.82rem;
   font-weight: 600;
   cursor: pointer;
   box-shadow: 0 4px 12px rgba(79, 70, 229, 0.3);
   transition: all 0.2s ease;
+  white-space: nowrap;
 }
 
 .mr-btn-primary:hover:not(:disabled) {
@@ -142,16 +149,18 @@
 .mr-btn-secondary {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 0.4rem;
   background: rgba(30, 41, 59, 0.8);
   color: #e2e8f0;
   border: 1px solid rgba(255, 255, 255, 0.1);
-  padding: 0.48rem 0.85rem;
+  padding: 0.45rem 0.8rem;
   border-radius: 8px;
   font-size: 0.82rem;
   font-weight: 600;
   cursor: pointer;
   transition: all 0.2s ease;
+  white-space: nowrap;
 }
 
 .mr-btn-secondary:hover:not(:disabled) {
@@ -163,6 +172,7 @@
 .mr-btn-danger {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 0.4rem;
   background: #dc2626;
   color: #ffffff;
@@ -180,13 +190,13 @@
 }
 
 .mr-btn-compact {
-  padding: 0.42rem 0.85rem;
-  font-size: 0.8rem;
+  padding: 0.4rem 0.75rem;
+  font-size: 0.78rem;
 }
 
 .mr-btn-sm {
-  padding: 0.35rem 0.65rem;
-  font-size: 0.76rem;
+  padding: 0.32rem 0.65rem;
+  font-size: 0.75rem;
 }
 
 .mr-btn-icon {
@@ -201,6 +211,7 @@
   justify-content: center;
   cursor: pointer;
   transition: all 0.2s;
+  flex-shrink: 0;
 }
 
 .mr-btn-icon:hover {
@@ -213,7 +224,7 @@
   color: #f87171;
 }
 
-/* Alertas Compactos */
+/* Alertas */
 .mr-alert-compact {
   display: flex;
   align-items: center;
@@ -238,26 +249,27 @@
 }
 
 /* ========================================================================= */
-/* 2. BARRA DE FILTROS COMPACTA                                              */
+/* 2. BARRA DE FILTROS E CONTROLES                                           */
 /* ========================================================================= */
 .mr-filter-bar {
   background: rgba(18, 24, 38, 0.8);
   border-radius: 12px;
-  padding: 0.4rem 0.75rem;
+  padding: 0.4rem 0.65rem;
   display: flex;
   justify-content: space-between;
   align-items: center;
-  gap: 0.75rem;
+  gap: 0.65rem;
   border: 1px solid rgba(255, 255, 255, 0.08);
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
   flex-shrink: 0;
+  flex-wrap: wrap;
 }
 
 .mr-filter-bar-left {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 0.6rem;
+  gap: 0.5rem;
 }
 
 .mr-month-nav-compact {
@@ -293,7 +305,7 @@
   font-weight: 700;
   color: #f8fafc;
   text-transform: capitalize;
-  min-width: 120px;
+  min-width: 110px;
   text-align: center;
 }
 
@@ -324,7 +336,7 @@
 }
 
 .mr-fp {
-  padding: 0.25rem 0.55rem;
+  padding: 0.22rem 0.55rem;
   border-radius: 6px;
   border: 1px solid transparent;
   background: transparent;
@@ -336,6 +348,7 @@
   align-items: center;
   gap: 0.3rem;
   transition: all 0.15s;
+  white-space: nowrap;
 }
 
 .mr-fp:hover {
@@ -381,6 +394,7 @@
   color: #cbd5e1;
   cursor: pointer;
   user-select: none;
+  white-space: nowrap;
 }
 
 .mr-checkbox-compact input {
@@ -409,6 +423,7 @@
   display: inline-flex;
   align-items: center;
   gap: 0.35rem;
+  white-space: nowrap;
 }
 
 .mr-mt-btn.active {
@@ -418,7 +433,7 @@
 }
 
 /* ========================================================================= */
-/* 3. ÁREA PRINCIPAL (100% VIEWPORT / NO-SCROLL)                             */
+/* 3. ÁREA PRINCIPAL                                                         */
 /* ========================================================================= */
 .mr-main-viewport {
   flex: 1;
@@ -440,7 +455,7 @@
   border-radius: 14px;
 }
 
-/* MODO CALENDÁRIO: SPLIT VIEW (LADO A LADO) */
+/* MODO CALENDÁRIO: SPLIT VIEW */
 .mr-calendar-split-container {
   display: grid;
   grid-template-columns: 1fr 340px;
@@ -473,7 +488,7 @@
 }
 
 .mr-weekday-col {
-  padding: 0.45rem 0.25rem;
+  padding: 0.45rem 0.2rem;
   text-align: center;
   font-size: 0.74rem;
   font-weight: 800;
@@ -527,7 +542,7 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 0.25rem;
+  margin-bottom: 0.2rem;
   flex-shrink: 0;
 }
 
@@ -540,9 +555,9 @@
 .mr-tag-hoje {
   background: #10b981;
   color: #ffffff;
-  font-size: 0.6rem;
+  font-size: 0.58rem;
   font-weight: 800;
-  padding: 0.05rem 0.3rem;
+  padding: 0.05rem 0.28rem;
   border-radius: 3px;
   text-transform: uppercase;
 }
@@ -574,12 +589,12 @@
   min-height: 0;
   display: flex;
   flex-direction: column;
-  gap: 0.2rem;
+  gap: 0.18rem;
   overflow: hidden;
 }
 
 .mr-micro-badge {
-  padding: 0.18rem 0.35rem;
+  padding: 0.16rem 0.35rem;
   border-radius: 4px;
   font-size: 0.68rem;
   font-weight: 600;
@@ -616,12 +631,12 @@
 }
 
 .mr-micro-more {
-  font-size: 0.65rem;
+  font-size: 0.64rem;
   color: #94a3b8;
   font-weight: 700;
 }
 
-/* Painel Direito: Agenda do Dia Selecionado (Sidebar) */
+/* Painel Direito: Agenda do Dia Selecionado */
 .mr-day-sidebar {
   background: rgba(18, 24, 38, 0.85);
   border-radius: 14px;
@@ -795,7 +810,7 @@
 
 .mr-agenda-compact-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
   gap: 0.75rem;
 }
 
@@ -855,6 +870,7 @@
   display: flex;
   align-items: center;
   gap: 0.35rem;
+  flex-wrap: wrap;
 }
 
 .mr-ac-title {
@@ -890,6 +906,7 @@
   border-radius: 4px;
   font-size: 0.68rem;
   font-weight: 700;
+  white-space: nowrap;
 }
 
 .mr-cpill {
@@ -904,12 +921,12 @@
 .pill-amber { background: rgba(245, 158, 11, 0.18); color: #fbbf24; border: 1px solid rgba(245, 158, 11, 0.3); }
 
 /* ========================================================================= */
-/* MODAIS (DARK THEME)                                                      */
+/* MODAIS                                                                    */
 /* ========================================================================= */
 .mr-modal-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(3, 7, 18, 0.8);
+  background: rgba(3, 7, 18, 0.82);
   backdrop-filter: blur(8px);
   display: flex;
   align-items: center;
@@ -917,6 +934,7 @@
   z-index: 1000;
   padding: 1rem;
   animation: mr-fade-in 0.2s ease;
+  box-sizing: border-box;
 }
 
 .mr-modal-content {
@@ -1284,27 +1302,275 @@
   to { transform: rotate(360deg); }
 }
 
-/* Responsividade */
+/* ========================================================================= */
+/* REGRAS ESPECÍFICAS DE RESPONSIVIDADE (TABLETS E CELULARES)                 */
+/* ========================================================================= */
+
 @media (max-width: 1024px) {
   .mr-calendar-split-container {
-    grid-template-columns: 1fr 280px;
+    grid-template-columns: 1fr 300px;
   }
 }
 
-@media (max-width: 800px) {
+@media (max-width: 840px) {
+  /* No celular/tablet pequeno, libera altura para rolagem natural da página */
   .mr-onepage-container {
     height: auto;
     max-height: none;
-    overflow-y: auto;
+    overflow-y: visible;
+    padding: 0.75rem;
+    gap: 0.75rem;
   }
+
+  .mr-main-viewport {
+    overflow: visible;
+    height: auto;
+  }
+
+  /* 1. Header no Celular */
+  .mr-topbar {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.65rem;
+  }
+
+  .mr-topbar-left {
+    width: 100%;
+  }
+
+  .mr-title {
+    font-size: 1.15rem;
+  }
+
+  .mr-micro-stats {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 0.35rem;
+    width: 100%;
+  }
+
+  .mr-stat-pill {
+    padding: 0.3rem 0.25rem;
+    font-size: 0.68rem;
+    justify-content: center;
+    min-width: 0;
+  }
+
+  .mr-sp-val {
+    font-size: 0.78rem;
+  }
+
+  .mr-topbar-actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1.3fr;
+    gap: 0.35rem;
+    width: 100%;
+  }
+
+  .mr-topbar-actions button {
+    padding: 0.45rem 0.3rem;
+    font-size: 0.74rem;
+    justify-content: center;
+  }
+
+  /* 2. Filtros e Controles no Celular */
+  .mr-filter-bar {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.55rem;
+    padding: 0.55rem;
+  }
+
+  .mr-filter-bar-left {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.5rem;
+    width: 100%;
+  }
+
+  .mr-month-nav-compact {
+    width: 100%;
+    box-sizing: border-box;
+    justify-content: space-between;
+    padding: 0.3rem 0.5rem;
+  }
+
+  .mr-month-title-sm {
+    flex: 1;
+    font-size: 0.85rem;
+  }
+
+  .mr-filter-pills-group {
+    width: 100%;
+    box-sizing: border-box;
+    overflow-x: auto;
+    white-space: nowrap;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    gap: 0.3rem;
+    padding: 0.25rem;
+  }
+
+  .mr-filter-pills-group::-webkit-scrollbar {
+    display: none;
+  }
+
+  .mr-fp {
+    padding: 0.3rem 0.6rem;
+    font-size: 0.74rem;
+    flex-shrink: 0;
+  }
+
+  .mr-mode-toggle {
+    width: 100%;
+    box-sizing: border-box;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .mr-mt-btn {
+    justify-content: center;
+    padding: 0.45rem;
+    font-size: 0.78rem;
+  }
+
+  /* 3. Calendário e Painel no Celular */
   .mr-calendar-split-container {
     grid-template-columns: 1fr;
     height: auto;
+    gap: 0.75rem;
   }
+
   .mr-calendar-pane {
-    height: 480px;
+    height: auto;
   }
+
+  .mr-weekday-col {
+    padding: 0.35rem 0.1rem;
+    font-size: 0.68rem;
+  }
+
+  .mr-calendar-grid-fill {
+    grid-template-columns: repeat(7, 1fr);
+    grid-auto-rows: minmax(56px, auto);
+    height: auto;
+  }
+
+  .mr-day-box {
+    min-height: 56px;
+    padding: 0.2rem;
+  }
+
+  .mr-day-number {
+    font-size: 0.75rem;
+  }
+
+  .mr-tag-hoje {
+    font-size: 0.52rem;
+    padding: 0.04rem 0.2rem;
+  }
+
+  .mr-quick-add {
+    display: none !important;
+  }
+
+  .mr-micro-badge {
+    padding: 0.1rem 0.25rem;
+    font-size: 0.6rem;
+    gap: 0.15rem;
+  }
+
+  .mr-mb-time {
+    font-size: 0.58rem;
+  }
+
   .mr-day-sidebar {
-    height: 320px;
+    height: auto;
+    max-height: 400px;
+  }
+
+  .mr-dsb-scroll-list {
+    max-height: 320px;
+    padding: 0.6rem;
+  }
+
+  /* 4. Agenda List no Celular */
+  .mr-agenda-compact-grid {
+    grid-template-columns: 1fr;
+    gap: 0.6rem;
+  }
+
+  .mr-agenda-card {
+    padding: 0.65rem;
+    gap: 0.65rem;
+  }
+
+  .mr-ac-left {
+    min-width: 54px;
+    padding-right: 0.5rem;
+  }
+
+  .mr-ac-day {
+    font-size: 1.2rem;
+  }
+
+  /* 5. Modais no Celular */
+  .mr-modal-overlay {
+    padding: 0;
+    align-items: flex-end;
+  }
+
+  .mr-modal-content {
+    border-radius: 16px 16px 0 0;
+    max-height: 92vh;
+    width: 100%;
+  }
+
+  .mr-form-row {
+    flex-direction: column;
+    gap: 0.65rem;
+  }
+
+  .flex-1, .flex-2 {
+    width: 100%;
+    min-width: 100%;
+  }
+
+  .mr-room-cards-selector {
+    grid-template-columns: 1fr;
+    gap: 0.5rem;
+  }
+
+  .mr-type-radio-group {
+    grid-template-columns: 1fr;
+    gap: 0.5rem;
+  }
+
+  .mr-detail-grid {
+    grid-template-columns: 1fr;
+    gap: 0.5rem;
+  }
+
+  .mr-modal-footer {
+    flex-direction: column-reverse;
+    gap: 0.45rem;
+  }
+
+  .mr-modal-footer button {
+    width: 100%;
+    justify-content: center;
+    padding: 0.6rem;
+  }
+}
+
+@media (max-width: 480px) {
+  .mr-micro-stats {
+    grid-template-columns: 1fr 1fr;
+  }
+  .mr-topbar-actions {
+    grid-template-columns: 1fr 1fr;
+  }
+  .mr-topbar-actions button:last-child {
+    grid-column: span 2;
   }
 }
