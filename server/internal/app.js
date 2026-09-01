@@ -440,11 +440,12 @@ function sanitizeUser(row) {
     login_attempts, secret_attempts,
     ...safeUser
   } = parsed;
+  const isMicrosoftUser = parsed.auth_provider === 'microsoft' || Boolean(parsed.microsoft_id) || Boolean(parsed.microsoft_email);
   return {
     ...safeUser,
     accessLocked: Boolean(parsed.access_locked),
     fullyLocked: Boolean(parsed.fully_locked),
-    requiresSecuritySetup: !parsed.secret_question || !parsed.secret_answer
+    requiresSecuritySetup: !isMicrosoftUser && (!parsed.secret_question || !parsed.secret_answer)
   };
 }
 

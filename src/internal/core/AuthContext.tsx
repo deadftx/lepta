@@ -88,34 +88,95 @@ const SecuritySetup = ({ onComplete, onLogout }: { onComplete: (user: User) => v
   );
 };
 
+import { handleMicrosoftRedirect } from '../../config/msalConfig';
+
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
 
   useEffect(() => {
-    const storedUser = localStorage.getItem('lepta_user');
-    const token = localStorage.getItem('lepta_auth_token');
-    if (!storedUser || !token) {
-      setIsLoading(false);
-      return;
-    }
+    let isCancelled = false;
 
-    fetch(`${API_BASE_URL}/api/auth/me`, {
-      headers: { Authorization: `Bearer ${token}` }
-    })
-      .then(async response => {
+    const initAuth = async () => {
+      // 1. Verifica se o usuário acabou de retornar do redirecionamento Microsoft
+      const hasAuthCode = typeof window !== 'undefined' && (
+        window.location.hash.includes('code=') ||
+        window.location.search.includes('code=') ||
+        window.location.hash.includes('id_token=') ||
+        window.location.search.includes('id_token=')
+      );
+
+      if (hasAuthCode) {
+        try {
+          const response = await handleMicrosoftRedirect();
+          if (response && response.idToken && !isCancelled) {
+            const email = (
+              response.account?.username ||
+              (response.idTokenClaims as any)?.preferred_username ||
+              (response.idTokenClaims as any)?.email ||
+              ''
+            ).toLowerCase();
+
+            const res = await fetch(`${API_BASE_URL}/api/auth/microsoft`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                idToken: response.idToken,
+                email
+              })
+            });
+
+            const data = await res.json();
+            if (res.ok && data.user && data.token && !isCancelled) {
+              setIsAuthenticated(true);
+              setUser(data.user);
+              localStorage.setItem('lepta_user', JSON.stringify(data.user));
+              localStorage.setItem('lepta_auth_token', data.token);
+              window.history.replaceState(null, '', '/dashboard');
+              window.location.href = '/dashboard';
+              return;
+            }
+          }
+        } catch (err) {
+          console.error('Erro na autenticação Microsoft no carregamento:', err);
+        }
+      }
+
+      // 2. Valida sessão salva em localStorage
+      const storedUser = localStorage.getItem('lepta_user');
+      const token = localStorage.getItem('lepta_auth_token');
+      if (!storedUser || !token) {
+        if (!isCancelled) setIsLoading(false);
+        return;
+      }
+
+      try {
+        const response = await fetch(`${API_BASE_URL}/api/auth/me`, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
         if (!response.ok) throw new Error('Sessão inválida');
         const result = await response.json();
-        setUser(result.user);
-        setIsAuthenticated(true);
-        localStorage.setItem('lepta_user', JSON.stringify(result.user));
-      })
-      .catch(() => {
-        localStorage.removeItem('lepta_user');
-        localStorage.removeItem('lepta_auth_token');
-      })
-      .finally(() => setIsLoading(false));
+        if (!isCancelled) {
+          setUser(result.user);
+          setIsAuthenticated(true);
+          localStorage.setItem('lepta_user', JSON.stringify(result.user));
+        }
+      } catch {
+        if (!isCancelled) {
+          localStorage.removeItem('lepta_user');
+          localStorage.removeItem('lepta_auth_token');
+        }
+      } finally {
+        if (!isCancelled) setIsLoading(false);
+      }
+    };
+
+    initAuth();
+
+    return () => {
+      isCancelled = true;
+    };
   }, []);
 
   const login = async (loginId: string, pass: string): Promise<boolean> => {

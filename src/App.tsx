@@ -33,50 +33,10 @@ import MonitorDashboard from './internal/modules/monitor/MonitorDashboard';
 import ProtectedRoute from './internal/core/ProtectedRoute';
 import InternalLayout from './internal/core/InternalLayout';
 import AccessRoute from './internal/core/AccessRoute';
-import { AuthProvider, useAuth } from './internal/core/AuthContext';
-import { handleMicrosoftRedirect } from './config/msalConfig';
+import { AuthProvider } from './internal/core/AuthContext';
 import './App.css';
 
 import { API_BASE_URL } from './config/api';
-
-const AuthRedirectHandler = () => {
-  const { loginWithMicrosoft, isAuthenticated } = useAuth();
-
-  useEffect(() => {
-    let isCancelled = false;
-
-    handleMicrosoftRedirect()
-      .then(async (response) => {
-        if (response && response.idToken && !isCancelled && !isAuthenticated) {
-          const email = (
-            response.account?.username ||
-            (response.idTokenClaims as any)?.preferred_username ||
-            (response.idTokenClaims as any)?.email ||
-            ''
-          ).toLowerCase();
-
-          const result = await loginWithMicrosoft({
-            idToken: response.idToken,
-            email
-          });
-
-          if (result.success && !isCancelled) {
-            window.history.replaceState(null, '', '/dashboard');
-            window.location.href = '/dashboard';
-          }
-        }
-      })
-      .catch((err) => {
-        console.error('Erro no processamento de autenticação Microsoft:', err);
-      });
-
-    return () => {
-      isCancelled = true;
-    };
-  }, [isAuthenticated, loginWithMicrosoft]);
-
-  return null;
-};
 
 const PublicLayout = () => {
   useEffect(() => {
@@ -113,7 +73,6 @@ const PublicLayout = () => {
 function App() {
   return (
     <AuthProvider>
-      <AuthRedirectHandler />
       <Router>
         <Routes>
           {/* Rotas Públicas com Navbar e Footer */}
