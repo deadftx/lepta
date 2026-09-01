@@ -55,26 +55,45 @@ export const loginRequest: PopupRequest = {
 };
 
 /**
- * Autentica com a Microsoft (tenta detecção silenciosa primeiro, ou redireciona de forma oficial e segura sem popups)
+ * Autentica com a Microsoft (usa janela Popup oficial com fallback para redirecionamento)
  */
 export async function authenticateWithMicrosoft(): Promise<{ idToken: string; email: string; name: string } | null> {
   const msal = await getMsalInstance();
 
-  // 1. Tenta autenticação silenciosa com a conta corporativa conectada no Windows (Exchange / AzureAD)
+  // 1. Tenta autenticação via janela Popup oficial da Microsoft (mais rápida e evita perda de estado da página)
   try {
-    const silentResult = await msal.ssoSilent(loginRequest);
-    if (silentResult && silentResult.idToken) {
+    const popupResult = await msal.loginPopup(loginRequest);
+    if (popupResult && popupResult.idToken) {
       return {
-        idToken: silentResult.idToken,
-        email: (silentResult.account?.username || '').toLowerCase(),
-        name: silentResult.account?.name || ''
+        idToken: popupResult.idToken,
+        email: (
+          popupResult.account?.username ||
+          (popupResult.idTokenClaims as any)?.preferred_username ||
+          (popupResult.idTokenClaims as any)?.email ||
+          ''
+        ).toLowerCase(),
+        name: popupResult.account?.name || ''
       };
     }
-  } catch (silentErr) {
-    // Silently proceed to redirect
+  } catch (popupErr: any) {
+    const errCode = popupErr?.errorCode || popupErr?.message || '';
+    
+    // Se o usuário fechou a janela de login por vontade própria, cancela sem erro
+    if (errCode.includes('user_cancelled')) {
+      return null;
+    }
+
+    // Se o navegador bloqueou a abertura do popup, faz fallback para redirecionamento completo
+    if (errCode.includes('popup_window_error') || errCode.includes('empty_window_error')) {
+      console.warn('Popup bloqueado pelo navegador. Redirecionando para login.microsoftonline.com...');
+      await msal.loginRedirect(loginRequest);
+      return null;
+    }
+
+    // Se for outro erro (ex: post_request_failed de rede/CORS), repassa o erro para tratamento
+    console.error('Falha na autenticação Microsoft via Popup:', popupErr);
+    throw popupErr;
   }
 
-  // 2. Redirecionamento oficial sem popups (login.microsoftonline.com)
-  await msal.loginRedirect(loginRequest);
   return null;
 }

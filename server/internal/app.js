@@ -12,6 +12,7 @@ import { registerDatabaseSyncRoutes } from './modules/database/routes.js';
 import { registerPowerBiRoutes } from './modules/database/biRoutes.js';
 import { registerGrafenoRoutes } from './modules/finance/grafenoRoutes.js';
 import { registerPurchaseRoutes } from './modules/purchases/routes.js';
+import { registerMeetingRoomRoutes } from './modules/administrative/meetingRooms/routes.js';
 import { registerNotificationRoutes } from './modules/notifications/routes.js';
 import { registerEmailConfigRoutes } from './modules/administration/emailRoutes.js';
 import { registerConfirmationRoutes } from './modules/confirmation/routes.js';
@@ -4009,6 +4010,12 @@ registerPurchaseRoutes(app, {
   requireSession,
   requirePermission,
   requireMaster
+});
+
+registerMeetingRoomRoutes(app, {
+  db,
+  requireSession,
+  requirePermission
 });
 
 registerNotificationRoutes(app, {

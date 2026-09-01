@@ -26,6 +26,7 @@ import ManagerRegistration from './internal/modules/intelligence/manager-registr
 import DatabaseManagement from './internal/modules/database/DatabaseManagement';
 import PurchaseApproval from './internal/modules/administrative/purchases/PurchaseApproval';
 import PurchaseWorkflowConfig from './internal/modules/administrative/purchases/PurchaseWorkflowConfig';
+import MeetingRoomBooking from './internal/modules/administrative/meetingRooms/MeetingRoomBooking';
 import EmailConfig from './internal/modules/administration/access/EmailConfig';
 import ConfirmationSystem from './internal/modules/confirmation/ConfirmationSystem';
 import ConfirmationAnalise from './internal/modules/confirmation/ConfirmationAnalise';
@@ -102,6 +103,7 @@ function App() {
               <Route path="/intelligence/cadastro-gerentes" element={<AccessRoute permission="8.7"><ManagerRegistration /></AccessRoute>} />
               <Route path="/administrativo/compras" element={<AccessRoute permission="11.1"><PurchaseApproval /></AccessRoute>} />
               <Route path="/administrativo/configuracao-compras" element={<AccessRoute permission="11.2"><PurchaseWorkflowConfig /></AccessRoute>} />
+              <Route path="/administrativo/salas-reuniao" element={<AccessRoute permission="11.3"><MeetingRoomBooking /></AccessRoute>} />
               <Route path="/confirmacao/sistema" element={<AccessRoute permission="10.1"><ConfirmationSystem /></AccessRoute>} />
               <Route path="/confirmacao/analise" element={<AccessRoute permission="10.2"><ConfirmationAnalise /></AccessRoute>} />
               <Route path="/banco-de-dados" element={<AccessRoute permission="9"><DatabaseManagement /></AccessRoute>} />

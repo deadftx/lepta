@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { LogOut, User, ShieldAlert, Shield, UserPlus, Users, ChevronDown, ChevronRight, LayoutDashboard, Sliders, Home, Calendar, Menu, X, Wallet, FileSpreadsheet, BrainCircuit, Database, ClipboardCheck, ContactRound, ShieldCheck, Landmark, Briefcase, ShoppingCart, SlidersHorizontal, DollarSign, Mail, Search, TrendingUp, UserCheck } from 'lucide-react';
+import { LogOut, User, ShieldAlert, Shield, UserPlus, Users, ChevronDown, ChevronRight, LayoutDashboard, Sliders, Home, Calendar, CalendarCheck, Menu, X, Wallet, FileSpreadsheet, BrainCircuit, Database, ClipboardCheck, ContactRound, ShieldCheck, Landmark, Briefcase, ShoppingCart, SlidersHorizontal, DollarSign, Mail, Search, TrendingUp, UserCheck } from 'lucide-react';
 import { useNavigate, Outlet, Link, useLocation } from 'react-router-dom';
 import { useAuth } from './AuthContext';
 import NotificationBell from './NotificationBell';
@@ -210,7 +210,7 @@ const InternalLayout = () => {
               )}
             </div>
           )}
-          {hasAnyPermission(user, ['11.1', '11.2']) && (
+          {hasAnyPermission(user, ['11.1', '11.2', '11.3', '11']) && (
             <div className="nav-menu-group">
               <div 
                 className={`nav-item nav-item-parent ${isAdministrativeActive ? 'active' : ''}`}
@@ -233,6 +233,11 @@ const InternalLayout = () => {
                   {hasAccess('11.2') && (
                     <Link to="/administrativo/configuracao-compras" className={navItemClass('/administrativo/configuracao-compras')}>
                       <SlidersHorizontal size={18} /> Configuração de Esteira de Compras
+                    </Link>
+                  )}
+                  {hasAccess('11.3') && (
+                    <Link to="/administrativo/salas-reuniao" className={navItemClass('/administrativo/salas-reuniao')}>
+                      <CalendarCheck size={18} /> Agendar Sala de Reunião
                     </Link>
                   )}
                 </div>
