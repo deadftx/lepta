@@ -51,6 +51,13 @@ export const permissionGroups: PermissionGroup[] = [
       { id: '11.3', name: 'Agendar Sala de Reunião' }
     ]
   },
+  {
+    id: '12',
+    name: 'Cobrança',
+    children: [
+      { id: '12.1', name: 'Análise de Vencidos' }
+    ]
+  },
   { id: '9', name: 'Banco de Dados' },
   { id: '5', name: 'Dashboards' },
   { id: '4', name: 'Business Intelligence' }
@@ -60,7 +67,8 @@ const legacyChildren: Record<string, string[]> = {
   '7': ['7.1', '7.2', '7.4', '7.5'],
   '8': ['8.1', '8.2', '8.3', '8.4', '8.5', '8.6', '8.7'],
   '10': ['10.1', '10.2'],
-  '11': ['11.1', '11.2', '11.3']
+  '11': ['11.1', '11.2', '11.3'],
+  '12': ['12.1']
 };
 
 export const allPermissionIds = permissionGroups.flatMap(group =>

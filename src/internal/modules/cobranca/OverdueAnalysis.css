@@ -1,0 +1,512 @@
+/* ========================================================================= */
+/* ESTILOS: COBRANÇA > ANÁLISE DE VENCIDOS (LEPTASYS DARK THEME)              */
+/* ========================================================================= */
+
+.ov-page-container {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  padding: 1.5rem 2rem;
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+  color: #f1f5f9;
+  font-family: inherit;
+  animation: ov-fade-in 0.25s ease-out;
+}
+
+@keyframes ov-fade-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* 1. Header */
+.ov-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
+.ov-header-left {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+}
+
+.ov-icon-badge {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  background: linear-gradient(135deg, #dc2626 0%, #f97316 100%);
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 4px 14px rgba(220, 38, 38, 0.4);
+  flex-shrink: 0;
+}
+
+.ov-title {
+  font-size: 1.45rem;
+  font-weight: 800;
+  color: #f8fafc;
+  margin: 0;
+  letter-spacing: -0.02em;
+}
+
+.ov-subtitle {
+  font-size: 0.82rem;
+  color: #94a3b8;
+  margin: 0.2rem 0 0 0;
+}
+
+.ov-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  flex-wrap: wrap;
+}
+
+/* Botões */
+.ov-btn-primary {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+  color: #ffffff;
+  border: none;
+  padding: 0.55rem 1.1rem;
+  border-radius: 8px;
+  font-size: 0.85rem;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 4px 12px rgba(16, 185, 129, 0.35);
+  transition: all 0.2s ease;
+}
+
+.ov-btn-primary:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 16px rgba(16, 185, 129, 0.45);
+}
+
+.ov-btn-secondary {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  background: rgba(30, 41, 59, 0.8);
+  color: #e2e8f0;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  padding: 0.55rem 0.95rem;
+  border-radius: 8px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.ov-btn-secondary:hover:not(:disabled) {
+  background: rgba(51, 65, 85, 0.9);
+  color: #ffffff;
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+/* 2. KPI Summary Cards */
+.ov-kpis-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 1rem;
+}
+
+.ov-kpi-card {
+  background: rgba(18, 24, 38, 0.85);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  padding: 1.1rem 1.25rem;
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+  backdrop-filter: blur(12px);
+  position: relative;
+  overflow: hidden;
+}
+
+.ov-kpi-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 4px;
+  height: 100%;
+}
+
+.kpi-red::before { background: #ef4444; }
+.kpi-orange::before { background: #f97316; }
+.kpi-purple::before { background: #a855f7; }
+.kpi-blue::before { background: #3b82f6; }
+
+.ov-kpi-icon {
+  width: 42px;
+  height: 42px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.kpi-red .ov-kpi-icon { background: rgba(239, 68, 68, 0.18); color: #f87171; }
+.kpi-orange .ov-kpi-icon { background: rgba(249, 115, 22, 0.18); color: #fb923c; }
+.kpi-purple .ov-kpi-icon { background: rgba(168, 85, 247, 0.18); color: #c084fc; }
+.kpi-blue .ov-kpi-icon { background: rgba(59, 130, 246, 0.18); color: #60a5fa; }
+
+.ov-kpi-content {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.ov-kpi-label {
+  font-size: 0.74rem;
+  font-weight: 700;
+  color: #94a3b8;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.ov-kpi-value {
+  font-size: 1.3rem;
+  font-weight: 800;
+  color: #f8fafc;
+  line-height: 1.1;
+}
+
+/* Aging Filter Bar */
+.ov-aging-bar {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 0.65rem;
+  background: rgba(15, 23, 42, 0.7);
+  padding: 0.65rem;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.ov-aging-tab {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 0.65rem;
+  border-radius: 8px;
+  background: rgba(30, 41, 59, 0.4);
+  border: 1.5px solid transparent;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  text-align: center;
+}
+
+.ov-aging-tab:hover {
+  background: rgba(51, 65, 85, 0.5);
+  border-color: rgba(255, 255, 255, 0.15);
+}
+
+.ov-aging-tab.active {
+  background: rgba(239, 68, 68, 0.15);
+  border-color: #ef4444;
+  box-shadow: 0 0 12px rgba(239, 68, 68, 0.3);
+}
+
+.ov-aging-tab-title {
+  font-size: 0.76rem;
+  font-weight: 700;
+  color: #cbd5e1;
+}
+
+.ov-aging-tab-val {
+  font-size: 0.95rem;
+  font-weight: 800;
+  color: #f8fafc;
+  margin-top: 0.2rem;
+}
+
+.ov-aging-tab-sub {
+  font-size: 0.68rem;
+  color: #94a3b8;
+  margin-top: 0.1rem;
+}
+
+/* 3. Barra de Filtros Avançados */
+.ov-filters-card {
+  background: rgba(18, 24, 38, 0.85);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  padding: 1rem 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+}
+
+.ov-filters-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 0.75rem;
+}
+
+.ov-filter-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.ov-filter-label {
+  font-size: 0.74rem;
+  font-weight: 700;
+  color: #94a3b8;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.ov-input,
+.ov-select {
+  width: 100%;
+  padding: 0.5rem 0.7rem;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(15, 23, 42, 0.85);
+  color: #f8fafc;
+  font-size: 0.82rem;
+  font-family: inherit;
+  box-sizing: border-box;
+  transition: all 0.15s ease;
+}
+
+.ov-input:focus,
+.ov-select:focus {
+  outline: none;
+  border-color: #38bdf8;
+  box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.25);
+  background: rgba(15, 23, 42, 0.95);
+}
+
+.ov-filters-bottom {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-top: 0.5rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.ov-badge-count {
+  font-size: 0.8rem;
+  color: #94a3b8;
+  font-weight: 600;
+}
+
+.ov-badge-count strong {
+  color: #f8fafc;
+}
+
+.ov-btn-clear {
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: #cbd5e1;
+  padding: 0.35rem 0.75rem;
+  border-radius: 6px;
+  font-size: 0.76rem;
+  font-weight: 600;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  transition: all 0.15s;
+}
+
+.ov-btn-clear:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #ffffff;
+}
+
+/* 4. Tabela de Títulos */
+.ov-table-container {
+  background: rgba(18, 24, 38, 0.85);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.3);
+}
+
+.ov-table-scroll {
+  max-height: 560px;
+  overflow: auto;
+}
+
+.ov-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.82rem;
+  text-align: left;
+}
+
+.ov-table th {
+  background: rgba(15, 23, 42, 0.95);
+  color: #94a3b8;
+  font-weight: 700;
+  text-transform: uppercase;
+  font-size: 0.72rem;
+  letter-spacing: 0.04em;
+  padding: 0.75rem 0.85rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  white-space: nowrap;
+}
+
+.ov-table td {
+  padding: 0.75rem 0.85rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  color: #cbd5e1;
+  vertical-align: middle;
+}
+
+.ov-table tbody tr:hover {
+  background: rgba(30, 41, 59, 0.6);
+}
+
+/* Links Interativos */
+.ov-cedente-link {
+  color: #38bdf8;
+  font-weight: 700;
+  cursor: pointer;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  transition: all 0.15s;
+}
+
+.ov-cedente-link:hover {
+  color: #7dd3fc;
+  text-decoration: underline;
+}
+
+.ov-doc-sub {
+  font-size: 0.7rem;
+  color: #64748b;
+  display: block;
+  margin-top: 0.1rem;
+}
+
+/* Badges de Aging */
+.ov-badge-aging {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.22rem 0.55rem;
+  border-radius: 6px;
+  font-size: 0.72rem;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.aging-yellow { background: rgba(234, 179, 8, 0.18); color: #facc15; border: 1px solid rgba(234, 179, 8, 0.35); }
+.aging-orange { background: rgba(249, 115, 22, 0.18); color: #fb923c; border: 1px solid rgba(249, 115, 22, 0.35); }
+.aging-red { background: rgba(239, 68, 68, 0.2); color: #f87171; border: 1px solid rgba(239, 68, 68, 0.4); }
+.aging-purple { background: rgba(168, 85, 247, 0.2); color: #c084fc; border: 1px solid rgba(168, 85, 247, 0.4); }
+
+.ov-val-nominal {
+  font-weight: 700;
+  color: #f8fafc;
+}
+
+/* Popover do Cedente */
+.popover-modal {
+  background: rgba(15, 23, 42, 0.95);
+  backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+}
+
+.popover-close {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  background: transparent;
+  border: none;
+  color: #94a3b8;
+  cursor: pointer;
+}
+
+.popover-close:hover {
+  color: #ffffff;
+}
+
+.popover-title {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: #cbd5e1;
+  margin-bottom: 0.5rem;
+  padding-right: 20px;
+}
+
+.popover-title span {
+  color: #38bdf8;
+  font-weight: 800;
+}
+
+.popover-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  width: 100%;
+  padding: 0.65rem 0.85rem;
+  border-radius: 8px;
+  border: none;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s;
+  text-align: left;
+  color: #ffffff;
+}
+
+.popover-btn:hover {
+  transform: translateX(3px);
+  filter: brightness(1.1);
+}
+
+/* Responsividade */
+@media (max-width: 1024px) {
+  .ov-kpis-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .ov-aging-bar {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 640px) {
+  .ov-page-container {
+    padding: 1rem;
+  }
+  .ov-kpis-grid {
+    grid-template-columns: 1fr;
+  }
+  .ov-aging-bar {
+    grid-template-columns: 1fr;
+  }
+  .ov-header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .ov-header-actions {
+    width: 100%;
+  }
+  .ov-header-actions button {
+    flex: 1;
+  }
+}

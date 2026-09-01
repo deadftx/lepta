@@ -27,6 +27,9 @@ const InternalLayout = () => {
 
   const isConfirmationActive = location.pathname.startsWith('/confirmacao');
   const [isConfirmationOpen, setIsConfirmationOpen] = useState(true);
+
+  const isCobrancaActive = location.pathname.startsWith('/cobranca');
+  const [isCobrancaOpen, setIsCobrancaOpen] = useState(true);
   
   // Mobile sidebar state
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
@@ -267,6 +270,30 @@ const InternalLayout = () => {
                   {hasAccess('10.2') && (
                     <Link to="/confirmacao/analise" className={navItemClass('/confirmacao/analise')}>
                       <Search size={18} /> Análise de Confirmação
+                    </Link>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+          {hasAnyPermission(user, ['12.1', '12']) && (
+            <div className="nav-menu-group">
+              <div
+                className={`nav-item nav-item-parent ${isCobrancaActive ? 'active' : ''}`}
+                onClick={() => setIsCobrancaOpen(!isCobrancaOpen)}
+                style={{ cursor: 'pointer', justifyContent: 'space-between' }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                  <DollarSign size={20} /> Cobrança
+                </div>
+                {isCobrancaOpen ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+              </div>
+
+              {isCobrancaOpen && (
+                <div className="nav-submenu" style={{ paddingLeft: '1rem' }}>
+                  {hasAccess('12.1') && (
+                    <Link to="/cobranca/analise-vencidos" className={navItemClass('/cobranca/analise-vencidos')}>
+                      <FileSpreadsheet size={18} /> Análise de Vencidos
                     </Link>
                   )}
                 </div>

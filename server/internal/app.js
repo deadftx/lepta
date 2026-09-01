@@ -3137,6 +3137,284 @@ app.get('/api/analise-titulos/:cedente', requireSession, requirePermission('8.1'
   }
 });
 
+// =========================================================================
+// MÓDULO COBRANÇA: ANÁLISE DE TÍTULOS VENCIDOS (BITFIN API / UNLTD)
+// =========================================================================
+app.get('/api/cobranca/vencidos', requireSession, requirePermission('12.1', '12'), async (req, res) => {
+  try {
+    const {
+      cedente,
+      sacado,
+      data_venc_inicio,
+      data_venc_fim,
+      data_op_inicio,
+      data_op_fim,
+      valor_min,
+      valor_max,
+      faixa_atraso,
+      busca
+    } = req.query;
+
+    let titles = [];
+    let dataSource = 'api';
+
+    try {
+      const [apiTitulos, liquidacoes] = await Promise.all([
+        fetchTitulosDaAPI(req),
+        fetchLiquidacoesDaAPI(req).catch(() => [])
+      ]);
+
+      const mapLiquidacoes = new Map();
+      for (const liq of liquidacoes) {
+        if (liq.id) mapLiquidacoes.set(String(liq.id), liq);
+        if (liq.numero) mapLiquidacoes.set(String(liq.numero), liq);
+      }
+
+      const hoje = new Date();
+      hoje.setHours(0, 0, 0, 0);
+
+      for (const t of apiTitulos) {
+        const clienteTit = t.contaOperacional?.cliente?.entidade?.nome;
+        if (!clienteTit) continue;
+
+        const sitRaw = (t.situacao || '').toLowerCase();
+        let dataVenc = t.dataDeVencimento ? new Date(t.dataDeVencimento) : null;
+        if (dataVenc) dataVenc.setHours(0, 0, 0, 0);
+
+        const isLiquidado = sitRaw.includes('liquidado') || sitRaw.includes('liq.') || sitRaw.includes('pago') || sitRaw.includes('quitado');
+        const isRecomprado = sitRaw.includes('recomprad') || sitRaw.includes('baixad');
+        
+        // Título vencido: não liquidado/recomprado e data de vencimento anterior a hoje
+        if (isLiquidado || isRecomprado || !dataVenc || Number.isNaN(dataVenc.getTime()) || dataVenc >= hoje) {
+          continue;
+        }
+
+        const diasAtraso = Math.floor((hoje.getTime() - dataVenc.getTime()) / (1000 * 60 * 60 * 24));
+        if (diasAtraso < 1) continue;
+
+        const dataOp = t.dataDeOperacao || t.operacao?.data || t.dataDeEmissao || t.dataDeCadastro || null;
+        const dataVencStr = t.dataDeVencimento || dataVenc.toISOString().split('T')[0];
+        const valNominal = Number(t.valorNominal) || 0;
+        const valLiquido = Number(t.valorLiquido ?? t.valorNominal) || 0;
+
+        titles.push({
+          id: String(t.id || t.numero || Math.random()),
+          numero: String(t.numero || t.numeroDoTitulo || t.id || '-'),
+          operacao: String(t.operacao?.numero || t.numeroDaOperacao || t.operacao || '-'),
+          cedente: clienteTit,
+          documentoCedente: t.contaOperacional?.cliente?.entidade?.documento || '',
+          sacado: t.sacado?.entidade?.nome || 'Não informado',
+          documentoSacado: t.sacado?.entidade?.documento || '',
+          ua: t.contaOperacional?.unidadeAdministrativa?.alias || t.contaOperacional?.unidadeAdministrativa?.nome || 'Padrão',
+          dataVencimento: dataVencStr,
+          dataOperacao: dataOp,
+          dataEmissao: t.dataDeEmissao || null,
+          diasAtraso,
+          situacao: 'Vencido',
+          valorNominal: valNominal,
+          valorLiquido: valLiquido,
+          taxa: Number(t.taxa || 0),
+          desagio: Number(t.desagio || 0),
+          bancoCobrador: t.bancoCobrador?.nome || t.bancoCobrador || '',
+          tipoDocumento: extractTipoDocumento(t),
+          chaveNfe: t.chaveNfe || t.manifesto || '',
+          codigoDoLastro: t.codigoDoLastro || ''
+        });
+      }
+    } catch (apiErr) {
+      console.log('Falha na API UNLTD ao buscar títulos para cobrança, consultando BASE_SMARTFACTOR...', apiErr.message);
+      dataSource = 'db';
+    }
+
+    // Se API retornou vazio ou deu fallback, consultar BASE_SMARTFACTOR
+    if (titles.length === 0) {
+      try {
+        const hoje = new Date();
+        hoje.setHours(0, 0, 0, 0);
+
+        const sfRows = db.prepare(`
+          SELECT * FROM BASE_SMARTFACTOR 
+          WHERE (VENCIDO = 'Sim' OR LOWER(SITUACAO) LIKE '%vencid%')
+          ORDER BY ID DESC
+          LIMIT 3000
+        `).all();
+
+        if (sfRows.length > 0) {
+          dataSource = 'db';
+          titles = sfRows.map(r => {
+            const parseDateToIso = (dStr) => {
+              if (!dStr) return null;
+              if (dStr.includes('/')) {
+                const parts = dStr.split('/');
+                if (parts.length === 3) return `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
+              }
+              return dStr;
+            };
+
+            const dataVencIso = parseDateToIso(r.VENCIMENTO);
+            let diasAtraso = 1;
+            if (dataVencIso) {
+              const dV = new Date(dataVencIso);
+              dV.setHours(0, 0, 0, 0);
+              if (!Number.isNaN(dV.getTime()) && dV < hoje) {
+                diasAtraso = Math.floor((hoje.getTime() - dV.getTime()) / (1000 * 60 * 60 * 24));
+              }
+            }
+
+            return {
+              id: String(r.ID || r.NUMERO),
+              numero: String(r.NUMERO || r.ID || '-'),
+              operacao: String(r.OPERACAO || '-'),
+              cedente: r.CLIENTE || 'Cliente Não Informado',
+              documentoCedente: r.DOCUMENTO || '',
+              sacado: r.SACADO || 'Não informado',
+              documentoSacado: r.DOCUMENTO_SACADO || '',
+              ua: r.UA || 'SmartFactor',
+              dataVencimento: dataVencIso,
+              dataOperacao: parseDateToIso(r.CADASTRO || r.EMISSAO),
+              dataEmissao: parseDateToIso(r.EMISSAO),
+              diasAtraso: Math.max(1, diasAtraso),
+              situacao: 'Vencido',
+              valorNominal: Number(r.VALOR_NOMINAL) || 0,
+              valorLiquido: Number(r.VALOR_LIQUIDO) || 0,
+              taxa: Number(r.TAXA || 0),
+              desagio: Number(r.DESAGIO || 0),
+              bancoCobrador: r.BANCO_COBRADOR || '',
+              tipoDocumento: extractTipoDocumento(r),
+              chaveNfe: '',
+              codigoDoLastro: ''
+            };
+          });
+        }
+      } catch (dbErr) {
+        console.log('Aviso ao consultar BASE_SMARTFACTOR em cobrança:', dbErr.message);
+      }
+    }
+
+    // Lista única para preenchimento de selects/autocompletes
+    const setCedentes = new Set();
+    const setSacados = new Set();
+    titles.forEach(t => {
+      if (t.cedente) setCedentes.add(t.cedente);
+      if (t.sacado && t.sacado !== 'Não informado') setSacados.add(t.sacado);
+    });
+
+    const cedentesList = Array.from(setCedentes).sort();
+    const sacadosList = Array.from(setSacados).sort();
+
+    // Aplicação de filtros dinâmicos
+    let filteredTitles = titles;
+
+    if (cedente && typeof cedente === 'string' && cedente.trim()) {
+      const normQuery = normalizeStr(cedente);
+      filteredTitles = filteredTitles.filter(t => normalizeStr(t.cedente).includes(normQuery));
+    }
+
+    if (sacado && typeof sacado === 'string' && sacado.trim()) {
+      const normQuery = normalizeStr(sacado);
+      filteredTitles = filteredTitles.filter(t => normalizeStr(t.sacado).includes(normQuery));
+    }
+
+    if (data_venc_inicio && typeof data_venc_inicio === 'string') {
+      filteredTitles = filteredTitles.filter(t => t.dataVencimento && t.dataVencimento >= data_venc_inicio);
+    }
+
+    if (data_venc_fim && typeof data_venc_fim === 'string') {
+      filteredTitles = filteredTitles.filter(t => t.dataVencimento && t.dataVencimento <= data_venc_fim);
+    }
+
+    if (data_op_inicio && typeof data_op_inicio === 'string') {
+      filteredTitles = filteredTitles.filter(t => t.dataOperacao && t.dataOperacao >= data_op_inicio);
+    }
+
+    if (data_op_fim && typeof data_op_fim === 'string') {
+      filteredTitles = filteredTitles.filter(t => t.dataOperacao && t.dataOperacao <= data_op_fim);
+    }
+
+    if (valor_min && !Number.isNaN(Number(valor_min))) {
+      filteredTitles = filteredTitles.filter(t => t.valorNominal >= Number(valor_min));
+    }
+
+    if (valor_max && !Number.isNaN(Number(valor_max))) {
+      filteredTitles = filteredTitles.filter(t => t.valorNominal <= Number(valor_max));
+    }
+
+    if (faixa_atraso && typeof faixa_atraso === 'string') {
+      if (faixa_atraso === '1-30') {
+        filteredTitles = filteredTitles.filter(t => t.diasAtraso <= 30);
+      } else if (faixa_atraso === '31-60') {
+        filteredTitles = filteredTitles.filter(t => t.diasAtraso >= 31 && t.diasAtraso <= 60);
+      } else if (faixa_atraso === '61-90') {
+        filteredTitles = filteredTitles.filter(t => t.diasAtraso >= 61 && t.diasAtraso <= 90);
+      } else if (faixa_atraso === '>90') {
+        filteredTitles = filteredTitles.filter(t => t.diasAtraso > 90);
+      }
+    }
+
+    if (busca && typeof busca === 'string' && busca.trim()) {
+      const q = normalizeStr(busca);
+      filteredTitles = filteredTitles.filter(t => 
+        normalizeStr(t.numero).includes(q) ||
+        normalizeStr(t.operacao).includes(q) ||
+        normalizeStr(t.cedente).includes(q) ||
+        normalizeStr(t.sacado).includes(q) ||
+        normalizeStr(t.documentoCedente).includes(q) ||
+        normalizeStr(t.documentoSacado).includes(q) ||
+        normalizeStr(t.chaveNfe).includes(q)
+      );
+    }
+
+    // Ordenação padrão: maior número de dias em atraso primeiro (ou mais recente)
+    filteredTitles.sort((a, b) => b.diasAtraso - a.diasAtraso || b.valorNominal - a.valorNominal);
+
+    // Métricas / KPIs calculados sobre os títulos filtrados
+    const totalValorNominal = filteredTitles.reduce((acc, curr) => acc + (curr.valorNominal || 0), 0);
+    const totalValorLiquido = filteredTitles.reduce((acc, curr) => acc + (curr.valorLiquido || 0), 0);
+    const totalQtd = filteredTitles.length;
+    const uniqueCedentes = new Set(filteredTitles.map(t => t.cedente)).size;
+    const uniqueSacados = new Set(filteredTitles.map(t => t.sacado)).size;
+
+    // Métricas por faixas de aging
+    const faixas = {
+      ate30: {
+        qtd: filteredTitles.filter(t => t.diasAtraso <= 30).length,
+        valor: filteredTitles.filter(t => t.diasAtraso <= 30).reduce((acc, curr) => acc + curr.valorNominal, 0)
+      },
+      de31a60: {
+        qtd: filteredTitles.filter(t => t.diasAtraso >= 31 && t.diasAtraso <= 60).length,
+        valor: filteredTitles.filter(t => t.diasAtraso >= 31 && t.diasAtraso <= 60).reduce((acc, curr) => acc + curr.valorNominal, 0)
+      },
+      de61a90: {
+        qtd: filteredTitles.filter(t => t.diasAtraso >= 61 && t.diasAtraso <= 90).length,
+        valor: filteredTitles.filter(t => t.diasAtraso >= 61 && t.diasAtraso <= 90).reduce((acc, curr) => acc + curr.valorNominal, 0)
+      },
+      acima90: {
+        qtd: filteredTitles.filter(t => t.diasAtraso > 90).length,
+        valor: filteredTitles.filter(t => t.diasAtraso > 90).reduce((acc, curr) => acc + curr.valorNominal, 0)
+      }
+    };
+
+    res.setHeader('x-data-source', dataSource);
+    res.json({
+      titulos: filteredTitles,
+      totalRegistros: titles.length,
+      kpis: {
+        totalValorNominal,
+        totalValorLiquido,
+        totalQtd,
+        uniqueCedentes,
+        uniqueSacados,
+        faixas
+      },
+      cedentesList,
+      sacadosList
+    });
+  } catch (err) {
+    console.error('Erro ao buscar títulos vencidos para cobrança:', err);
+    res.status(500).json({ error: 'Erro ao processar análise de vencidos', message: err.message });
+  }
+});
+
 app.get('/api/analise-ua/:cedente', requireSession, requirePermission('8.1'), async (req, res) => {
   try {
     const cedenteParams = req.params.cedente;
