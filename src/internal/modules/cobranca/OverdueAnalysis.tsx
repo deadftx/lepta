@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import {
   FileSpreadsheet, RefreshCw, X,
   Download, AlertTriangle, Clock, Building2, User, FileText,
-  ContactRound, TrendingUp, DollarSign, Eye, ArrowUpDown
+  ContactRound, TrendingUp, DollarSign, Eye, ArrowUpDown, Tag, ShieldAlert
 } from 'lucide-react';
 import { API_BASE_URL, getAuthHeaders } from '../../../config/api';
 import './OverdueAnalysis.css';
@@ -70,6 +70,8 @@ const OverdueAnalysis = () => {
   const [kpis, setKpis] = useState<KpisOverdue | null>(null);
   const [cedentesList, setCedentesList] = useState<string[]>([]);
   const [sacadosList, setSacadosList] = useState<string[]>([]);
+  const [tiposList, setTiposList] = useState<string[]>([]);
+  const [situacoesList, setSituacoesList] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
@@ -79,6 +81,8 @@ const OverdueAnalysis = () => {
   const [filtroBusca, setFiltroBusca] = useState('');
   const [filtroCedente, setFiltroCedente] = useState('');
   const [filtroSacado, setFiltroSacado] = useState('');
+  const [filtroTipoDoc, setFiltroTipoDoc] = useState<string>('TODOS');
+  const [filtroSituacao, setFiltroSituacao] = useState<string>('TODAS');
   const [filtroDataVencInicio, setFiltroDataVencInicio] = useState('');
   const [filtroDataVencFim, setFiltroDataVencFim] = useState('');
   const [filtroDataOpInicio, setFiltroDataOpInicio] = useState('');
@@ -109,6 +113,8 @@ const OverdueAnalysis = () => {
       const params = new URLSearchParams();
       if (filtroCedente) params.append('cedente', filtroCedente);
       if (filtroSacado) params.append('sacado', filtroSacado);
+      if (filtroTipoDoc !== 'TODOS') params.append('tipo_documento', filtroTipoDoc);
+      if (filtroSituacao !== 'TODAS') params.append('situacao', filtroSituacao);
       if (filtroDataVencInicio) params.append('data_venc_inicio', filtroDataVencInicio);
       if (filtroDataVencFim) params.append('data_venc_fim', filtroDataVencFim);
       if (filtroDataOpInicio) params.append('data_op_inicio', filtroDataOpInicio);
@@ -134,6 +140,8 @@ const OverdueAnalysis = () => {
       setKpis(data.kpis || null);
       if (data.cedentesList) setCedentesList(data.cedentesList);
       if (data.sacadosList) setSacadosList(data.sacadosList);
+      if (data.tiposList) setTiposList(data.tiposList);
+      if (data.situacoesList) setSituacoesList(data.situacoesList);
     } catch (err: any) {
       console.error('Erro ao buscar vencidos:', err);
       setError(err?.message || 'Erro ao carregar títulos vencidos.');
@@ -142,9 +150,9 @@ const OverdueAnalysis = () => {
       setRefreshing(false);
     }
   }, [
-    filtroCedente, filtroSacado, filtroDataVencInicio, filtroDataVencFim,
-    filtroDataOpInicio, filtroDataOpFim, filtroValorMin, filtroValorMax,
-    filtroFaixaAtraso, filtroBusca
+    filtroCedente, filtroSacado, filtroTipoDoc, filtroSituacao,
+    filtroDataVencInicio, filtroDataVencFim, filtroDataOpInicio, filtroDataOpFim,
+    filtroValorMin, filtroValorMax, filtroFaixaAtraso, filtroBusca
   ]);
 
   useEffect(() => {
@@ -182,6 +190,8 @@ const OverdueAnalysis = () => {
     setFiltroBusca('');
     setFiltroCedente('');
     setFiltroSacado('');
+    setFiltroTipoDoc('TODOS');
+    setFiltroSituacao('TODAS');
     setFiltroDataVencInicio('');
     setFiltroDataVencFim('');
     setFiltroDataOpInicio('');
@@ -238,7 +248,7 @@ const OverdueAnalysis = () => {
       });
 
       // Título do Relatório
-      worksheet.mergeCells('A1:L1');
+      worksheet.mergeCells('A1:N1');
       const titleCell = worksheet.getCell('A1');
       titleCell.value = 'LEPTA - RELATÓRIO DE ANÁLISE DE TÍTULOS VENCIDOS (COBRANÇA)';
       titleCell.font = { name: 'Calibri', size: 14, bold: true, color: { argb: 'FFFFFFFF' } };
@@ -247,7 +257,7 @@ const OverdueAnalysis = () => {
       worksheet.getRow(1).height = 30;
 
       // Metadados / Resumo
-      worksheet.mergeCells('A2:L2');
+      worksheet.mergeCells('A2:N2');
       const metaCell = worksheet.getCell('A2');
       metaCell.value = `Exportado em: ${new Date().toLocaleString('pt-BR')} | Total Vencido: ${formatCurrency(kpis?.totalValorNominal || 0)} | Total de Títulos: ${sortedTitulos.length} | Origem: ${dataSource.toUpperCase()}`;
       metaCell.font = { name: 'Calibri', size: 10, italic: true, color: { argb: 'FF64748B' } };
@@ -259,6 +269,7 @@ const OverdueAnalysis = () => {
       // Cabeçalhos das Colunas
       const headers = [
         { header: 'Nº Título', key: 'numero', width: 16 },
+        { header: 'Tipo', key: 'tipoDocumento', width: 15 },
         { header: 'Operação', key: 'operacao', width: 14 },
         { header: 'Cedente', key: 'cedente', width: 34 },
         { header: 'CNPJ/CPF Cedente', key: 'documentoCedente', width: 20 },
@@ -267,6 +278,7 @@ const OverdueAnalysis = () => {
         { header: 'Vencimento', key: 'dataVencimento', width: 14 },
         { header: 'Data Operação', key: 'dataOperacao', width: 14 },
         { header: 'Dias em Atraso', key: 'diasAtraso', width: 15 },
+        { header: 'Situação', key: 'situacao', width: 16 },
         { header: 'Valor Nominal (R$)', key: 'valorNominal', width: 20 },
         { header: 'Unidade (UA)', key: 'ua', width: 18 },
         { header: 'Banco Cobrador', key: 'bancoCobrador', width: 22 }
@@ -292,6 +304,7 @@ const OverdueAnalysis = () => {
       sortedTitulos.forEach((t) => {
         const row = worksheet.addRow([
           t.numero,
+          t.tipoDocumento || '-',
           t.operacao,
           t.cedente,
           t.documentoCedente,
@@ -300,6 +313,7 @@ const OverdueAnalysis = () => {
           formatDate(t.dataVencimento),
           formatDate(t.dataOperacao),
           t.diasAtraso,
+          t.situacao || 'Vencido',
           t.valorNominal,
           t.ua,
           t.bancoCobrador || '-'
@@ -310,26 +324,28 @@ const OverdueAnalysis = () => {
         // Formatação de valores e alinhamentos
         row.getCell(1).alignment = { horizontal: 'center', vertical: 'middle' };
         row.getCell(2).alignment = { horizontal: 'center', vertical: 'middle' };
-        row.getCell(7).alignment = { horizontal: 'center', vertical: 'middle' };
+        row.getCell(3).alignment = { horizontal: 'center', vertical: 'middle' };
         row.getCell(8).alignment = { horizontal: 'center', vertical: 'middle' };
         row.getCell(9).alignment = { horizontal: 'center', vertical: 'middle' };
-        row.getCell(9).font = { bold: true, color: { argb: t.diasAtraso > 60 ? 'FFDC2626' : 'FFD97706' } };
+        row.getCell(10).alignment = { horizontal: 'center', vertical: 'middle' };
+        row.getCell(10).font = { bold: true, color: { argb: t.diasAtraso > 60 ? 'FFDC2626' : 'FFD97706' } };
+        row.getCell(11).alignment = { horizontal: 'center', vertical: 'middle' };
 
-        row.getCell(10).numFmt = '"R$" #,##0.00;[Red]-"R$" #,##0.00';
-        row.getCell(10).alignment = { horizontal: 'right', vertical: 'middle' };
-        row.getCell(10).font = { bold: true };
+        row.getCell(12).numFmt = '"R$" #,##0.00;[Red]-"R$" #,##0.00';
+        row.getCell(12).alignment = { horizontal: 'right', vertical: 'middle' };
+        row.getCell(12).font = { bold: true };
       });
 
       // Linha de Totalizador
       const totalRowIndex = sortedTitulos.length + 5;
-      worksheet.mergeCells(`A${totalRowIndex}:I${totalRowIndex}`);
+      worksheet.mergeCells(`A${totalRowIndex}:K${totalRowIndex}`);
       const totalLabelCell = worksheet.getCell(`A${totalRowIndex}`);
       totalLabelCell.value = 'TOTAL GERAL FILTRADO:';
       totalLabelCell.font = { name: 'Calibri', size: 11, bold: true };
       totalLabelCell.alignment = { horizontal: 'right', vertical: 'middle' };
 
-      const totalValCell = worksheet.getCell(`J${totalRowIndex}`);
-      totalValCell.value = { formula: `SUM(J5:J${totalRowIndex - 1})` };
+      const totalValCell = worksheet.getCell(`L${totalRowIndex}`);
+      totalValCell.value = { formula: `SUM(L5:L${totalRowIndex - 1})` };
       totalValCell.numFmt = '"R$" #,##0.00';
       totalValCell.font = { name: 'Calibri', size: 12, bold: true, color: { argb: 'FFDC2626' } };
       totalValCell.alignment = { horizontal: 'right', vertical: 'middle' };
@@ -387,7 +403,7 @@ const OverdueAnalysis = () => {
           <div>
             <h1 className="ov-title">Cobrança - Análise de Vencidos</h1>
             <p className="ov-subtitle">
-              Gestão de títulos em atraso provenientes da API do BitFin com filtros dinâmicos e detalhamento por cedente.
+              Gestão de títulos em atraso (API BitFin) com detalhamento por cedente, tipo de documento e filtros avançados.
             </p>
           </div>
         </div>
@@ -546,6 +562,34 @@ const OverdueAnalysis = () => {
               ))}
             </datalist>
           </div>
+
+          <div className="ov-filter-group">
+            <label className="ov-filter-label">Tipo do Título</label>
+            <select
+              className="ov-select"
+              value={filtroTipoDoc}
+              onChange={(e) => setFiltroTipoDoc(e.target.value)}
+            >
+              <option value="TODOS">Todos os Tipos</option>
+              {tiposList.map((tp) => (
+                <option key={tp} value={tp}>{tp}</option>
+              ))}
+            </select>
+          </div>
+
+          <div className="ov-filter-group">
+            <label className="ov-filter-label">Situação / Status</label>
+            <select
+              className="ov-select"
+              value={filtroSituacao}
+              onChange={(e) => setFiltroSituacao(e.target.value)}
+            >
+              <option value="TODAS">Todas as Situações</option>
+              {situacoesList.map((st) => (
+                <option key={st} value={st}>{st}</option>
+              ))}
+            </select>
+          </div>
         </div>
 
         <div className="ov-filters-row">
@@ -650,6 +694,7 @@ const OverdueAnalysis = () => {
                     Cedente (Cliente) <ArrowUpDown size={12} />
                   </th>
                   <th>Sacado</th>
+                  <th>Tipo</th>
                   <th>Nº Título</th>
                   <th>Operação</th>
                   <th onClick={() => handleSort('dataVencimento')} style={{ cursor: 'pointer' }}>
@@ -658,6 +703,7 @@ const OverdueAnalysis = () => {
                   <th onClick={() => handleSort('diasAtraso')} style={{ cursor: 'pointer' }}>
                     Atraso (Aging) <ArrowUpDown size={12} />
                   </th>
+                  <th>Situação</th>
                   <th onClick={() => handleSort('valorNominal')} style={{ cursor: 'pointer', textAlign: 'right' }}>
                     Valor Nominal <ArrowUpDown size={12} />
                   </th>
@@ -690,12 +736,28 @@ const OverdueAnalysis = () => {
                       )}
                     </td>
                     <td>
-                      <span style={{ fontFamily: 'monospace', fontWeight: 700, color: '#38bdf8' }}>
+                      <span style={{ 
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '3px',
+                        background: 'rgba(56, 189, 248, 0.15)',
+                        color: '#38bdf8',
+                        padding: '0.15rem 0.45rem',
+                        borderRadius: '4px',
+                        fontSize: '0.72rem',
+                        fontWeight: 700
+                      }}>
+                        <Tag size={10} />
+                        {t.tipoDocumento || '-'}
+                      </span>
+                    </td>
+                    <td>
+                      <span style={{ fontFamily: 'monospace', fontWeight: 700, color: '#f8fafc' }}>
                         {t.numero}
                       </span>
                     </td>
                     <td>
-                      <span style={{ fontFamily: 'monospace', color: '#cbd5e1' }}>
+                      <span style={{ fontFamily: 'monospace', color: '#94a3b8' }}>
                         {t.operacao}
                       </span>
                     </td>
@@ -705,6 +767,19 @@ const OverdueAnalysis = () => {
                     </td>
                     <td>
                       {renderAgingBadge(t.diasAtraso)}
+                    </td>
+                    <td>
+                      <span style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '3px',
+                        fontSize: '0.72rem',
+                        fontWeight: 600,
+                        color: t.situacao.toLowerCase().includes('vencid') ? '#f87171' : '#fb923c'
+                      }}>
+                        <ShieldAlert size={11} />
+                        {t.situacao}
+                      </span>
                     </td>
                     <td style={{ textAlign: 'right' }}>
                       <span className="ov-val-nominal">{formatCurrency(t.valorNominal)}</span>
@@ -890,8 +965,18 @@ const OverdueAnalysis = () => {
               </div>
 
               <div>
+                <span style={{ color: '#64748b', fontSize: '0.72rem', textTransform: 'uppercase' }}>Tipo do Título</span>
+                <p style={{ margin: '0.1rem 0 0 0', fontWeight: 700, color: '#38bdf8' }}>{selectedTitleDetail.tipoDocumento || '-'}</p>
+              </div>
+
+              <div>
                 <span style={{ color: '#64748b', fontSize: '0.72rem', textTransform: 'uppercase' }}>Operação</span>
                 <p style={{ margin: '0.1rem 0 0 0', fontWeight: 700 }}>{selectedTitleDetail.operacao}</p>
+              </div>
+
+              <div>
+                <span style={{ color: '#64748b', fontSize: '0.72rem', textTransform: 'uppercase' }}>Situação / Status</span>
+                <p style={{ margin: '0.1rem 0 0 0', fontWeight: 700, color: '#f87171' }}>{selectedTitleDetail.situacao}</p>
               </div>
 
               <div style={{ gridColumn: 'span 2' }}>

@@ -3145,6 +3145,8 @@ app.get('/api/cobranca/vencidos', requireSession, requirePermission('12.1', '12'
     const {
       cedente,
       sacado,
+      tipo_documento,
+      situacao,
       data_venc_inicio,
       data_venc_fim,
       data_op_inicio,
@@ -3157,6 +3159,38 @@ app.get('/api/cobranca/vencidos', requireSession, requirePermission('12.1', '12'
 
     let titles = [];
     let dataSource = 'api';
+
+    // Helper para identificar e excluir Cobrança Simples
+    const isCobrancaSimples = (item) => {
+      if (!item) return false;
+      const checkStrings = [
+        item.modalidade,
+        item.operacao?.modalidade,
+        item.tipoDeOperacao,
+        item.operacao?.tipoDeOperacao,
+        item.tipo,
+        item.operacao?.tipo,
+        item.produto,
+        item.operacao?.produto,
+        item.carteira,
+        item.operacao?.carteira,
+        item.tipoDocumento,
+        item.MODALIDADE,
+        item.TIPO,
+        item.PRODUTO,
+        item.CARTEIRA,
+        item.TIPO_DOCUMENTO
+      ];
+
+      for (const cs of checkStrings) {
+        if (!cs) continue;
+        const s = (typeof cs === 'string' ? cs : (cs.nome || cs.descricao || cs.alias || cs.tipo || '')).toLowerCase();
+        if (s.includes('simples') || s.includes('custodia') || s.includes('custódia')) {
+          return true;
+        }
+      }
+      return false;
+    };
 
     try {
       const [apiTitulos, liquidacoes] = await Promise.all([
@@ -3177,14 +3211,19 @@ app.get('/api/cobranca/vencidos', requireSession, requirePermission('12.1', '12'
         const clienteTit = t.contaOperacional?.cliente?.entidade?.nome;
         if (!clienteTit) continue;
 
+        // Excluir títulos que sejam Cobrança Simples
+        if (isCobrancaSimples(t)) {
+          continue;
+        }
+
         const sitRaw = (t.situacao || '').toLowerCase();
         let dataVenc = t.dataDeVencimento ? new Date(t.dataDeVencimento) : null;
         if (dataVenc) dataVenc.setHours(0, 0, 0, 0);
 
+        // Exclui apenas se foi liquidado, pago, quitado ou recomprado
         const isLiquidado = sitRaw.includes('liquidado') || sitRaw.includes('liq.') || sitRaw.includes('pago') || sitRaw.includes('quitado');
         const isRecomprado = sitRaw.includes('recomprad') || sitRaw.includes('baixad');
         
-        // Título vencido: não liquidado/recomprado e data de vencimento anterior a hoje
         if (isLiquidado || isRecomprado || !dataVenc || Number.isNaN(dataVenc.getTime()) || dataVenc >= hoje) {
           continue;
         }
@@ -3196,6 +3235,12 @@ app.get('/api/cobranca/vencidos', requireSession, requirePermission('12.1', '12'
         const dataVencStr = t.dataDeVencimento || dataVenc.toISOString().split('T')[0];
         const valNominal = Number(t.valorNominal) || 0;
         const valLiquido = Number(t.valorLiquido ?? t.valorNominal) || 0;
+        const tipoDoc = extractTipoDocumento(t);
+
+        let sitLabel = 'Vencido';
+        if (t.situacao && typeof t.situacao === 'string' && t.situacao.trim()) {
+          sitLabel = t.situacao.trim();
+        }
 
         titles.push({
           id: String(t.id || t.numero || Math.random()),
@@ -3210,13 +3255,13 @@ app.get('/api/cobranca/vencidos', requireSession, requirePermission('12.1', '12'
           dataOperacao: dataOp,
           dataEmissao: t.dataDeEmissao || null,
           diasAtraso,
-          situacao: 'Vencido',
+          situacao: sitLabel,
           valorNominal: valNominal,
           valorLiquido: valLiquido,
           taxa: Number(t.taxa || 0),
           desagio: Number(t.desagio || 0),
           bancoCobrador: t.bancoCobrador?.nome || t.bancoCobrador || '',
-          tipoDocumento: extractTipoDocumento(t),
+          tipoDocumento: tipoDoc,
           chaveNfe: t.chaveNfe || t.manifesto || '',
           codigoDoLastro: t.codigoDoLastro || ''
         });
@@ -3234,73 +3279,89 @@ app.get('/api/cobranca/vencidos', requireSession, requirePermission('12.1', '12'
 
         const sfRows = db.prepare(`
           SELECT * FROM BASE_SMARTFACTOR 
-          WHERE (VENCIDO = 'Sim' OR LOWER(SITUACAO) LIKE '%vencid%')
+          WHERE (VENCIDO = 'Sim' OR LOWER(SITUACAO) LIKE '%vencid%' OR (VENCIMENTO IS NOT NULL AND VENCIMENTO != ''))
           ORDER BY ID DESC
-          LIMIT 3000
+          LIMIT 4000
         `).all();
 
         if (sfRows.length > 0) {
           dataSource = 'db';
-          titles = sfRows.map(r => {
-            const parseDateToIso = (dStr) => {
-              if (!dStr) return null;
-              if (dStr.includes('/')) {
-                const parts = dStr.split('/');
-                if (parts.length === 3) return `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
-              }
-              return dStr;
-            };
+          titles = sfRows
+            .filter(r => !isCobrancaSimples(r))
+            .map(r => {
+              const parseDateToIso = (dStr) => {
+                if (!dStr) return null;
+                if (dStr.includes('/')) {
+                  const parts = dStr.split('/');
+                  if (parts.length === 3) return `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
+                }
+                return dStr;
+              };
 
-            const dataVencIso = parseDateToIso(r.VENCIMENTO);
-            let diasAtraso = 1;
-            if (dataVencIso) {
-              const dV = new Date(dataVencIso);
-              dV.setHours(0, 0, 0, 0);
-              if (!Number.isNaN(dV.getTime()) && dV < hoje) {
-                diasAtraso = Math.floor((hoje.getTime() - dV.getTime()) / (1000 * 60 * 60 * 24));
+              const dataVencIso = parseDateToIso(r.VENCIMENTO);
+              let diasAtraso = 0;
+              if (dataVencIso) {
+                const dV = new Date(dataVencIso);
+                dV.setHours(0, 0, 0, 0);
+                if (!Number.isNaN(dV.getTime()) && dV < hoje) {
+                  diasAtraso = Math.floor((hoje.getTime() - dV.getTime()) / (1000 * 60 * 60 * 24));
+                }
               }
-            }
 
-            return {
-              id: String(r.ID || r.NUMERO),
-              numero: String(r.NUMERO || r.ID || '-'),
-              operacao: String(r.OPERACAO || '-'),
-              cedente: r.CLIENTE || 'Cliente Não Informado',
-              documentoCedente: r.DOCUMENTO || '',
-              sacado: r.SACADO || 'Não informado',
-              documentoSacado: r.DOCUMENTO_SACADO || '',
-              ua: r.UA || 'SmartFactor',
-              dataVencimento: dataVencIso,
-              dataOperacao: parseDateToIso(r.CADASTRO || r.EMISSAO),
-              dataEmissao: parseDateToIso(r.EMISSAO),
-              diasAtraso: Math.max(1, diasAtraso),
-              situacao: 'Vencido',
-              valorNominal: Number(r.VALOR_NOMINAL) || 0,
-              valorLiquido: Number(r.VALOR_LIQUIDO) || 0,
-              taxa: Number(r.TAXA || 0),
-              desagio: Number(r.DESAGIO || 0),
-              bancoCobrador: r.BANCO_COBRADOR || '',
-              tipoDocumento: extractTipoDocumento(r),
-              chaveNfe: '',
-              codigoDoLastro: ''
-            };
-          });
+              const sit = r.SITUACAO || (diasAtraso > 0 ? 'Vencido' : 'Aberto');
+              const sitLow = sit.toLowerCase();
+              if (sitLow.includes('liquidado') || sitLow.includes('pago') || sitLow.includes('quitado') || sitLow.includes('recomprad') || diasAtraso < 1) {
+                return null;
+              }
+
+              return {
+                id: String(r.ID || r.NUMERO),
+                numero: String(r.NUMERO || r.ID || '-'),
+                operacao: String(r.OPERACAO || '-'),
+                cedente: r.CLIENTE || 'Cliente Não Informado',
+                documentoCedente: r.DOCUMENTO || '',
+                sacado: r.SACADO || 'Não informado',
+                documentoSacado: r.DOCUMENTO_SACADO || '',
+                ua: r.UA || 'SmartFactor',
+                dataVencimento: dataVencIso,
+                dataOperacao: parseDateToIso(r.CADASTRO || r.EMISSAO),
+                dataEmissao: parseDateToIso(r.EMISSAO),
+                diasAtraso: Math.max(1, diasAtraso),
+                situacao: sit,
+                valorNominal: Number(r.VALOR_NOMINAL) || 0,
+                valorLiquido: Number(r.VALOR_LIQUIDO) || 0,
+                taxa: Number(r.TAXA || 0),
+                desagio: Number(r.DESAGIO || 0),
+                bancoCobrador: r.BANCO_COBRADOR || '',
+                tipoDocumento: extractTipoDocumento(r),
+                chaveNfe: '',
+                codigoDoLastro: ''
+              };
+            })
+            .filter(Boolean);
         }
       } catch (dbErr) {
         console.log('Aviso ao consultar BASE_SMARTFACTOR em cobrança:', dbErr.message);
       }
     }
 
-    // Lista única para preenchimento de selects/autocompletes
+    // Listas únicas para preenchimento de selects/autocompletes
     const setCedentes = new Set();
     const setSacados = new Set();
+    const setTipos = new Set();
+    const setSituacoes = new Set();
+
     titles.forEach(t => {
       if (t.cedente) setCedentes.add(t.cedente);
       if (t.sacado && t.sacado !== 'Não informado') setSacados.add(t.sacado);
+      if (t.tipoDocumento && t.tipoDocumento !== '-') setTipos.add(t.tipoDocumento);
+      if (t.situacao) setSituacoes.add(t.situacao);
     });
 
     const cedentesList = Array.from(setCedentes).sort();
     const sacadosList = Array.from(setSacados).sort();
+    const tiposList = Array.from(setTipos).sort();
+    const situacoesList = Array.from(setSituacoes).sort();
 
     // Aplicação de filtros dinâmicos
     let filteredTitles = titles;
@@ -3313,6 +3374,16 @@ app.get('/api/cobranca/vencidos', requireSession, requirePermission('12.1', '12'
     if (sacado && typeof sacado === 'string' && sacado.trim()) {
       const normQuery = normalizeStr(sacado);
       filteredTitles = filteredTitles.filter(t => normalizeStr(t.sacado).includes(normQuery));
+    }
+
+    if (tipo_documento && typeof tipo_documento === 'string' && tipo_documento.trim() && tipo_documento !== 'TODOS') {
+      const normQuery = normalizeStr(tipo_documento);
+      filteredTitles = filteredTitles.filter(t => normalizeStr(t.tipoDocumento).includes(normQuery));
+    }
+
+    if (situacao && typeof situacao === 'string' && situacao.trim() && situacao !== 'TODAS') {
+      const normQuery = normalizeStr(situacao);
+      filteredTitles = filteredTitles.filter(t => normalizeStr(t.situacao).includes(normQuery));
     }
 
     if (data_venc_inicio && typeof data_venc_inicio === 'string') {
@@ -3360,6 +3431,8 @@ app.get('/api/cobranca/vencidos', requireSession, requirePermission('12.1', '12'
         normalizeStr(t.sacado).includes(q) ||
         normalizeStr(t.documentoCedente).includes(q) ||
         normalizeStr(t.documentoSacado).includes(q) ||
+        normalizeStr(t.tipoDocumento).includes(q) ||
+        normalizeStr(t.situacao).includes(q) ||
         normalizeStr(t.chaveNfe).includes(q)
       );
     }
@@ -3407,7 +3480,9 @@ app.get('/api/cobranca/vencidos', requireSession, requirePermission('12.1', '12'
         faixas
       },
       cedentesList,
-      sacadosList
+      sacadosList,
+      tiposList,
+      situacoesList
     });
   } catch (err) {
     console.error('Erro ao buscar títulos vencidos para cobrança:', err);
