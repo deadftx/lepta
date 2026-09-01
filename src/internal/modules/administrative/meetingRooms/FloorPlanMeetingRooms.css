@@ -1,0 +1,164 @@
+/* ========================================================================= */
+/* PLANTA INTERATIVA DAS SALAS DE REUNIÃO (LEPTASYS DARK THEME)               */
+/* ========================================================================= */
+
+.mr-floorplan-wrapper {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 100%;
+  position: relative;
+  background: rgba(15, 23, 42, 0.5);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  padding: 0.6rem 0.8rem 0.4rem 0.8rem;
+  box-sizing: border-box;
+}
+
+.mr-floorplan-wrapper.compact {
+  padding: 0.35rem 0.5rem 0.25rem 0.5rem;
+}
+
+.mr-floorplan-map {
+  position: relative;
+  width: 100%;
+  max-width: 580px;
+  line-height: 0;
+  user-select: none;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.mr-floorplan-img {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+  pointer-events: none;
+}
+
+/* Hotspots Interativos */
+.mr-fp-hotspot {
+  position: absolute;
+  border: 2px solid transparent;
+  background: transparent;
+  border-radius: 8px;
+  cursor: pointer;
+  padding: 0;
+  margin: 0;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  outline: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10;
+}
+
+/* Hotspot Sala 1 (Azul) */
+.mr-fp-hotspot.hotspot-sala1:hover {
+  background: rgba(59, 130, 246, 0.28);
+  border-color: #60a5fa;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.3), 0 0 20px rgba(59, 130, 246, 0.6);
+  transform: scale(1.02);
+}
+
+.mr-fp-hotspot.hotspot-sala1.selected {
+  background: rgba(59, 130, 246, 0.32);
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.35), 0 0 24px rgba(59, 130, 246, 0.7);
+}
+
+/* Hotspot Sala da Diretoria (Roxo) */
+.mr-fp-hotspot.hotspot-diretoria:hover {
+  background: rgba(168, 85, 247, 0.28);
+  border-color: #c084fc;
+  box-shadow: 0 0 0 3px rgba(168, 85, 247, 0.3), 0 0 20px rgba(168, 85, 247, 0.6);
+  transform: scale(1.02);
+}
+
+.mr-fp-hotspot.hotspot-diretoria.selected {
+  background: rgba(168, 85, 247, 0.32);
+  border-color: #a855f7;
+  box-shadow: 0 0 0 3px rgba(168, 85, 247, 0.35), 0 0 24px rgba(168, 85, 247, 0.7);
+}
+
+/* Labels Flutuantes sobre as Salas */
+.mr-fp-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.25rem 0.55rem;
+  border-radius: 6px;
+  background: rgba(15, 23, 42, 0.92);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: #ffffff;
+  font-size: 0.74rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+  pointer-events: none;
+  white-space: nowrap;
+  transition: all 0.2s ease;
+  backdrop-filter: blur(8px);
+}
+
+.mr-fp-hotspot:hover .mr-fp-label {
+  transform: scale(1.06);
+}
+
+.mr-fp-hotspot.hotspot-sala1.selected .mr-fp-label {
+  background: rgba(30, 58, 138, 0.95);
+  border-color: #60a5fa;
+  color: #bfdbfe;
+}
+
+.mr-fp-hotspot.hotspot-diretoria.selected .mr-fp-label {
+  background: rgba(88, 28, 135, 0.95);
+  border-color: #c084fc;
+  color: #f3e8ff;
+}
+
+.mr-fp-check {
+  margin-left: 0.15rem;
+  color: #34d399;
+}
+
+/* Indicador de Pulso */
+.mr-fp-pulse {
+  position: absolute;
+  inset: -4px;
+  border-radius: 10px;
+  pointer-events: none;
+  animation: fp-pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+.pulse-blue {
+  border: 2px solid rgba(59, 130, 246, 0.6);
+}
+
+.pulse-purple {
+  border: 2px solid rgba(168, 85, 247, 0.6);
+}
+
+@keyframes fp-pulse {
+  0%, 100% {
+    opacity: 0.8;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.2;
+    transform: scale(1.03);
+  }
+}
+
+/* Texto de Dica */
+.mr-floorplan-hint {
+  margin-top: 0.35rem;
+  font-size: 0.72rem;
+  color: #94a3b8;
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+}

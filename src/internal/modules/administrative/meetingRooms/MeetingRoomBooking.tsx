@@ -3,10 +3,11 @@ import {
   Calendar, Clock, Users, Building, Plus,
   CalendarCheck, AlertCircle, CheckCircle2, XCircle,
   ChevronLeft, ChevronRight, RefreshCw, User, FileText,
-  Briefcase, Globe, X, Info
+  Briefcase, Globe, X, Info, Map as MapIcon
 } from 'lucide-react';
 import { API_BASE_URL, getAuthHeaders } from '../../../../config/api';
 import { useAuth } from '../../../core/AuthContext';
+import FloorPlanMeetingRooms from './FloorPlanMeetingRooms';
 import './MeetingRoomBooking.css';
 
 export interface AgendamentoSala {
@@ -59,12 +60,13 @@ export default function MeetingRoomBooking() {
   const [filterSala, setFilterSala] = useState<string>('TODAS');
   const [filterTipo, setFilterTipo] = useState<string>('TODOS');
   const [filterMinhas, setFilterMinhas] = useState(false);
-  const [selectedDay, setSelectedDay] = useState<string | null>(() => {
+  const [selectedDay, setSelectedDay] = useState<string>(() => {
     return new Date().toISOString().split('T')[0];
   });
 
   // Modais
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isFloorPlanModalOpen, setIsFloorPlanModalOpen] = useState(false);
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
   const [isCancelModalOpen, setIsCancelModalOpen] = useState(false);
   const [selectedAgendamento, setSelectedAgendamento] = useState<AgendamentoSala | null>(null);
@@ -360,179 +362,168 @@ export default function MeetingRoomBooking() {
     return map;
   }, [agendamentos]);
 
-  // Lista filtrada para a visualização de Agenda / Linha do Tempo
+  // Lista de reuniões para o dia selecionado no painel lateral
+  const selectedDayMeetings = useMemo(() => {
+    return agendamentosPorDia.get(selectedDay) || [];
+  }, [agendamentosPorDia, selectedDay]);
+
+  // Lista filtrada para a visualização de Agenda Geral
   const agendaList = useMemo(() => {
     let list = [...agendamentos];
-    if (selectedDay) {
-      list = list.filter(item => item.data === selectedDay);
-    }
     return list.sort((a, b) => {
       if (a.data !== b.data) return a.data.localeCompare(b.data);
       return a.horario_inicio.localeCompare(b.horario_inicio);
     });
-  }, [agendamentos, selectedDay]);
+  }, [agendamentos]);
 
   const todayStr = new Date().toISOString().split('T')[0];
 
   return (
-    <div className="meeting-rooms-container">
-      {/* Header */}
-      <div className="mr-header">
-        <div className="mr-header-left">
-          <div className="mr-icon-badge">
-            <CalendarCheck size={28} />
+    <div className="mr-onepage-container">
+      {/* 1. Header Compacto com Micro-Stats Integrados */}
+      <header className="mr-topbar">
+        <div className="mr-topbar-left">
+          <div className="mr-icon-badge-sm">
+            <CalendarCheck size={20} />
           </div>
           <div>
-            <h1>Agendar Sala de Reunião</h1>
-            <p>Controle de reservas e disponibilidade das salas da Lepta</p>
+            <h1 className="mr-title">Agendar Sala de Reunião</h1>
+            <p className="mr-desc">Controle de reservas e disponibilidade das salas da Lepta</p>
           </div>
         </div>
-        <div className="mr-header-actions">
+
+        {/* Micro-Stats Pills */}
+        <div className="mr-micro-stats">
+          <div className="mr-stat-pill pill-blue" title="Reuniões agendadas para hoje">
+            <span className="mr-sp-label">Hoje</span>
+            <span className="mr-sp-val">{stats?.reunioesHoje ?? 0}</span>
+          </div>
+          <div className="mr-stat-pill pill-green" title="Total de reuniões no mês">
+            <span className="mr-sp-label">Mês</span>
+            <span className="mr-sp-val">{stats?.totalMes ?? 0}</span>
+          </div>
+          <div className="mr-stat-pill pill-purple" title="Agendamentos futuros na Sala da Diretoria">
+            <Briefcase size={12} />
+            <span className="mr-sp-label">Diretoria</span>
+            <span className="mr-sp-val">{stats?.salaDiretoriaFuturas ?? 0}</span>
+          </div>
+          <div className="mr-stat-pill pill-indigo" title="Agendamentos futuros na Sala 1">
+            <Users size={12} />
+            <span className="mr-sp-label">Sala 1</span>
+            <span className="mr-sp-val">{stats?.sala1Futuras ?? 0}</span>
+          </div>
+        </div>
+
+        {/* Ações Rápidas */}
+        <div className="mr-topbar-actions">
           <button 
-            className="mr-btn-secondary" 
+            className="mr-btn-secondary mr-btn-compact" 
+            onClick={() => setIsFloorPlanModalOpen(true)}
+            title="Ver planta interativa do escritório"
+          >
+            <MapIcon size={14} />
+            <span>Planta das Salas</span>
+          </button>
+          <button 
+            className="mr-btn-secondary mr-btn-compact" 
             onClick={fetchAgendamentos} 
             disabled={refreshing}
             title="Atualizar dados"
           >
-            <RefreshCw size={16} className={refreshing ? 'spin' : ''} />
-            Atualizar
+            <RefreshCw size={14} className={refreshing ? 'spin' : ''} />
+            <span>Atualizar</span>
           </button>
           <button 
-            className="mr-btn-primary"
+            className="mr-btn-primary mr-btn-compact"
             onClick={() => {
               setFormData(selectedDay || todayStr);
               setFormError('');
               setIsModalOpen(true);
             }}
           >
-            <Plus size={18} />
-            Novo Agendamento
+            <Plus size={16} />
+            <span>Novo Agendamento</span>
           </button>
         </div>
-      </div>
+      </header>
 
-      {/* Alertas */}
+      {/* Alertas Flutuantes Rápidos */}
       {successMsg && (
-        <div className="mr-alert mr-alert-success">
-          <CheckCircle2 size={18} />
+        <div className="mr-alert-compact mr-alert-success">
+          <CheckCircle2 size={16} />
           <span>{successMsg}</span>
         </div>
       )}
       {error && (
-        <div className="mr-alert mr-alert-error">
-          <AlertCircle size={18} />
+        <div className="mr-alert-compact mr-alert-error">
+          <AlertCircle size={16} />
           <span>{error}</span>
         </div>
       )}
 
-      {/* Stats Cards */}
-      <div className="mr-stats-grid">
-        <div className="mr-stat-card">
-          <div className="mr-stat-icon icon-blue">
-            <Calendar size={22} />
-          </div>
-          <div className="mr-stat-info">
-            <span className="mr-stat-label">Reuniões Hoje</span>
-            <span className="mr-stat-value">{stats?.reunioesHoje ?? 0}</span>
-          </div>
-        </div>
-
-        <div className="mr-stat-card">
-          <div className="mr-stat-icon icon-emerald">
-            <CalendarCheck size={22} />
-          </div>
-          <div className="mr-stat-info">
-            <span className="mr-stat-label">Total no Mês</span>
-            <span className="mr-stat-value">{stats?.totalMes ?? 0}</span>
-          </div>
-        </div>
-
-        <div className="mr-stat-card">
-          <div className="mr-stat-icon icon-purple">
-            <Briefcase size={22} />
-          </div>
-          <div className="mr-stat-info">
-            <span className="mr-stat-label">Sala da Diretoria</span>
-            <span className="mr-stat-value">{stats?.salaDiretoriaFuturas ?? 0}</span>
-            <span className="mr-stat-sub">agendamentos futuros</span>
-          </div>
-        </div>
-
-        <div className="mr-stat-card">
-          <div className="mr-stat-icon icon-indigo">
-            <Users size={22} />
-          </div>
-          <div className="mr-stat-info">
-            <span className="mr-stat-label">Sala 1</span>
-            <span className="mr-stat-value">{stats?.sala1Futuras ?? 0}</span>
-            <span className="mr-stat-sub">agendamentos futuros</span>
-          </div>
-        </div>
-      </div>
-
-      {/* Barra de Filtros e Controles */}
-      <div className="mr-controls-card">
-        <div className="mr-controls-left">
+      {/* 2. Barra de Filtros e Controles (Linha Única) */}
+      <div className="mr-filter-bar">
+        <div className="mr-filter-bar-left">
           {/* Navegação de Mês */}
-          <div className="mr-month-nav">
-            <button className="mr-nav-btn" onClick={handlePrevMonth} title="Mês anterior">
-              <ChevronLeft size={18} />
+          <div className="mr-month-nav-compact">
+            <button className="mr-nav-btn-sm" onClick={handlePrevMonth} title="Mês anterior">
+              <ChevronLeft size={16} />
             </button>
-            <span className="mr-month-title">{formattedMonthName}</span>
-            <button className="mr-nav-btn" onClick={handleNextMonth} title="Próximo mês">
-              <ChevronRight size={18} />
+            <span className="mr-month-title-sm">{formattedMonthName}</span>
+            <button className="mr-nav-btn-sm" onClick={handleNextMonth} title="Próximo mês">
+              <ChevronRight size={16} />
             </button>
-            <button className="mr-btn-today" onClick={handleCurrentMonth}>
+            <button className="mr-btn-today-sm" onClick={handleCurrentMonth}>
               Hoje
             </button>
           </div>
 
           {/* Filtro por Sala */}
-          <div className="mr-filter-group">
+          <div className="mr-filter-pills-group">
             <button
-              className={`mr-filter-pill ${filterSala === 'TODAS' ? 'active' : ''}`}
+              className={`mr-fp ${filterSala === 'TODAS' ? 'active' : ''}`}
               onClick={() => setFilterSala('TODAS')}
             >
               Todas as Salas
             </button>
             <button
-              className={`mr-filter-pill pill-purple ${filterSala === 'Sala da Diretoria' ? 'active' : ''}`}
+              className={`mr-fp pill-purple ${filterSala === 'Sala da Diretoria' ? 'active' : ''}`}
               onClick={() => setFilterSala('Sala da Diretoria')}
             >
-              <Briefcase size={14} /> Sala da Diretoria
+              <Briefcase size={12} /> Sala da Diretoria
             </button>
             <button
-              className={`mr-filter-pill pill-blue ${filterSala === 'Sala 1' ? 'active' : ''}`}
+              className={`mr-fp pill-blue ${filterSala === 'Sala 1' ? 'active' : ''}`}
               onClick={() => setFilterSala('Sala 1')}
             >
-              <Users size={14} /> Sala 1
+              <Users size={12} /> Sala 1
             </button>
           </div>
 
           {/* Filtro por Tipo */}
-          <div className="mr-filter-group">
+          <div className="mr-filter-pills-group">
             <button
-              className={`mr-filter-pill ${filterTipo === 'TODOS' ? 'active' : ''}`}
+              className={`mr-fp ${filterTipo === 'TODOS' ? 'active' : ''}`}
               onClick={() => setFilterTipo('TODOS')}
             >
               Todos os Tipos
             </button>
             <button
-              className={`mr-filter-pill pill-green ${filterTipo === 'Interna' ? 'active' : ''}`}
+              className={`mr-fp pill-green ${filterTipo === 'Interna' ? 'active' : ''}`}
               onClick={() => setFilterTipo('Interna')}
             >
-              <Building size={14} /> Interna
+              <Building size={12} /> Interna
             </button>
             <button
-              className={`mr-filter-pill pill-amber ${filterTipo === 'Externa' ? 'active' : ''}`}
+              className={`mr-fp pill-amber ${filterTipo === 'Externa' ? 'active' : ''}`}
               onClick={() => setFilterTipo('Externa')}
             >
-              <Globe size={14} /> Externa
+              <Globe size={12} /> Externa
             </button>
           </div>
 
           {/* Checkbox Apenas Minhas */}
-          <label className="mr-checkbox-label">
+          <label className="mr-checkbox-compact">
             <input
               type="checkbox"
               checked={filterMinhas}
@@ -542,108 +533,109 @@ export default function MeetingRoomBooking() {
           </label>
         </div>
 
-        {/* Alternância de Modo (Calendário vs Agenda) */}
-        <div className="mr-view-toggle">
+        {/* Alternância de Modo */}
+        <div className="mr-mode-toggle">
           <button
-            className={`mr-toggle-btn ${viewMode === 'CALENDAR' ? 'active' : ''}`}
+            className={`mr-mt-btn ${viewMode === 'CALENDAR' ? 'active' : ''}`}
             onClick={() => setViewMode('CALENDAR')}
           >
-            <Calendar size={16} />
-            Grade Calendário
+            <Calendar size={14} />
+            <span>Grade Calendário</span>
           </button>
           <button
-            className={`mr-toggle-btn ${viewMode === 'AGENDA' ? 'active' : ''}`}
+            className={`mr-mt-btn ${viewMode === 'AGENDA' ? 'active' : ''}`}
             onClick={() => setViewMode('AGENDA')}
           >
-            <Clock size={16} />
-            Lista Agenda
+            <Clock size={14} />
+            <span>Lista Agenda</span>
           </button>
         </div>
       </div>
 
-      {/* Corpo Principal: Calendário ou Agenda */}
-      {loading ? (
-        <div className="mr-loading-card">
-          <RefreshCw size={32} className="spin mr-spinner" />
-          <p>Carregando agenda de salas...</p>
-        </div>
-      ) : viewMode === 'CALENDAR' ? (
-        <div className="mr-calendar-wrapper">
-          {/* Cabeçalho dos dias da semana */}
-          <div className="mr-weekdays-header">
-            {['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'].map(d => (
-              <div key={d} className="mr-weekday-cell">{d}</div>
-            ))}
+      {/* 3. Área de Conteúdo Principal (100% Viewport, Split Screen no modo Calendário) */}
+      <div className="mr-main-viewport">
+        {loading ? (
+          <div className="mr-loading-viewport">
+            <RefreshCw size={28} className="spin mr-spinner" />
+            <span>Carregando agenda de salas...</span>
           </div>
+        ) : viewMode === 'CALENDAR' ? (
+          /* MODO CALENDÁRIO COM PAINEL LATERAL INTEGRADO (ONE-PAGE) */
+          <div className="mr-calendar-split-container">
+            {/* LADO ESQUERDO: Grade do Calendário Mensal */}
+            <div className="mr-calendar-pane">
+              <div className="mr-weekdays-row">
+                {['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'].map(d => (
+                  <div key={d} className="mr-weekday-col">{d}</div>
+                ))}
+              </div>
 
-          {/* Grade de dias */}
-          <div className="mr-days-grid">
-            {calendarDays.map((day, idx) => {
-              const dayMeetings = agendamentosPorDia.get(day.dateStr) || [];
-              const isToday = day.dateStr === todayStr;
-              const isSelected = day.dateStr === selectedDay;
+              <div className="mr-calendar-grid-fill">
+                {calendarDays.map((day, idx) => {
+                  const dayMeetings = agendamentosPorDia.get(day.dateStr) || [];
+                  const isToday = day.dateStr === todayStr;
+                  const isSelected = day.dateStr === selectedDay;
 
-              return (
-                <div
-                  key={idx}
-                  className={`mr-day-cell ${!day.isCurrentMonth ? 'other-month' : ''} ${isToday ? 'is-today' : ''} ${isSelected ? 'is-selected' : ''}`}
-                  onClick={() => {
-                    setSelectedDay(day.dateStr);
-                  }}
-                >
-                  <div className="mr-day-top">
-                    <span className="mr-day-num">{day.dayNumber}</span>
-                    {isToday && <span className="mr-today-tag">Hoje</span>}
-                    <button
-                      className="mr-day-add-btn"
-                      title="Agendar neste dia"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setFormData(day.dateStr);
-                        setIsModalOpen(true);
-                      }}
+                  return (
+                    <div
+                      key={idx}
+                      className={`mr-day-box ${!day.isCurrentMonth ? 'other-month' : ''} ${isToday ? 'is-today' : ''} ${isSelected ? 'is-selected' : ''}`}
+                      onClick={() => setSelectedDay(day.dateStr)}
                     >
-                      <Plus size={12} />
-                    </button>
-                  </div>
-
-                  {/* Badges de reuniões no dia */}
-                  <div className="mr-day-meetings">
-                    {dayMeetings.slice(0, 3).map(m => (
-                      <div
-                        key={m.id}
-                        className={`mr-meeting-badge ${m.sala === 'Sala da Diretoria' ? 'badge-diretoria' : 'badge-sala1'}`}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setSelectedAgendamento(m);
-                          setIsDetailModalOpen(true);
-                        }}
-                        title={`${m.sala} (${m.horario_inicio} - ${m.horario_fim}): ${m.titulo} - Solicitante: ${m.solicitante_nome}`}
-                      >
-                        <span className="mr-badge-time">{m.horario_inicio}</span>
-                        <span className="mr-badge-title">{m.titulo}</span>
+                      <div className="mr-day-box-top">
+                        <span className="mr-day-number">{day.dayNumber}</span>
+                        {isToday && <span className="mr-tag-hoje">Hoje</span>}
+                        <button
+                          className="mr-quick-add"
+                          title="Agendar neste dia"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setFormData(day.dateStr);
+                            setIsModalOpen(true);
+                          }}
+                        >
+                          <Plus size={11} />
+                        </button>
                       </div>
-                    ))}
-                    {dayMeetings.length > 3 && (
-                      <div className="mr-meeting-more">
-                        +{dayMeetings.length - 3} mais
-                      </div>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
 
-          {/* Painel inferior: Detalhes do Dia Selecionado */}
-          {selectedDay && (
-            <div className="mr-selected-day-panel">
-              <div className="mr-sd-header">
+                      <div className="mr-day-box-badges">
+                        {dayMeetings.slice(0, 2).map((m: AgendamentoSala) => (
+                          <div
+                            key={m.id}
+                            className={`mr-micro-badge ${m.sala === 'Sala da Diretoria' ? 'badge-diretoria' : 'badge-sala1'}`}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setSelectedAgendamento(m);
+                              setIsDetailModalOpen(true);
+                            }}
+                            title={`${m.sala} (${m.horario_inicio} - ${m.horario_fim}): ${m.titulo}`}
+                          >
+                            <span className="mr-mb-time">{m.horario_inicio}</span>
+                            <span className="mr-mb-title">{m.titulo}</span>
+                          </div>
+                        ))}
+                        {dayMeetings.length > 2 && (
+                          <div className="mr-micro-more">
+                            +{dayMeetings.length - 2} mais
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* LADO DIREITO: Painel Lateral com Reuniões do Dia Selecionado */}
+            <aside className="mr-day-sidebar">
+              <div className="mr-dsb-header">
                 <div>
-                  <h3>
-                    Reuniões para {new Date(selectedDay + 'T00:00:00').toLocaleDateString('pt-BR', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' })}
+                  <h3 className="mr-dsb-date">
+                    {new Date(selectedDay + 'T00:00:00').toLocaleDateString('pt-BR', { weekday: 'short', day: '2-digit', month: 'short' })}
                   </h3>
-                  <p>{agendamentosPorDia.get(selectedDay)?.length || 0} agendamento(s) confirmado(s)</p>
+                  <span className="mr-dsb-count">
+                    {selectedDayMeetings.length} reunião(ões) confirmada(s)
+                  </span>
                 </div>
                 <button
                   className="mr-btn-primary mr-btn-sm"
@@ -651,217 +643,239 @@ export default function MeetingRoomBooking() {
                     setFormData(selectedDay);
                     setIsModalOpen(true);
                   }}
+                  title="Agendar reunião para o dia selecionado"
                 >
-                  <Plus size={16} /> Agendar neste dia
+                  <Plus size={14} /> Agendar
                 </button>
               </div>
 
-              {(!agendamentosPorDia.get(selectedDay) || agendamentosPorDia.get(selectedDay)!.length === 0) ? (
-                <div className="mr-empty-day">
-                  <Calendar size={32} />
-                  <p>Nenhuma reunião agendada para esta data. Salas livres para agendamento!</p>
-                </div>
-              ) : (
-                <div className="mr-day-cards-grid">
-                  {agendamentosPorDia.get(selectedDay)!.map(m => (
-                    <div 
-                      key={m.id} 
-                      className={`mr-card-item ${m.sala === 'Sala da Diretoria' ? 'card-diretoria' : 'card-sala1'}`}
+              <div className="mr-dsb-scroll-list">
+                {selectedDayMeetings.length === 0 ? (
+                  <div className="mr-dsb-empty">
+                    <Calendar size={32} />
+                    <h4>Salas Livres</h4>
+                    <p>Nenhum agendamento para este dia.</p>
+                    <button
+                      className="mr-btn-secondary mr-btn-sm"
                       onClick={() => {
-                        setSelectedAgendamento(m);
-                        setIsDetailModalOpen(true);
+                        setFormData(selectedDay);
+                        setIsModalOpen(true);
                       }}
                     >
-                      <div className="mr-card-top">
-                        <span className={`mr-room-pill ${m.sala === 'Sala da Diretoria' ? 'pill-purple' : 'pill-blue'}`}>
-                          {m.sala === 'Sala da Diretoria' ? <Briefcase size={13} /> : <Users size={13} />}
-                          {m.sala}
-                        </span>
-                        <span className={`mr-type-pill ${m.tipo_reuniao === 'Interna' ? 'pill-green' : 'pill-amber'}`}>
-                          {m.tipo_reuniao === 'Interna' ? <Building size={13} /> : <Globe size={13} />}
-                          {m.tipo_reuniao}
-                        </span>
-                      </div>
+                      <Plus size={14} /> Reservar Horário
+                    </button>
+                  </div>
+                ) : (
+                  selectedDayMeetings.map((m: AgendamentoSala) => {
+                    const isOwner = user?.id === m.solicitante_id || user?.role === 'MASTER';
 
-                      <h4 className="mr-card-title">{m.titulo}</h4>
-
-                      <div className="mr-card-details">
-                        <div className="mr-detail-row">
-                          <Clock size={14} />
-                          <span>{m.horario_inicio} às {m.horario_fim}</span>
-                        </div>
-                        {m.empresa && (
-                          <div className="mr-detail-row">
-                            <Building size={14} />
-                            <span>Empresa: <strong>{m.empresa}</strong></span>
-                          </div>
-                        )}
-                        <div className="mr-detail-row">
-                          <User size={14} />
-                          <span>Solicitante: <strong>{m.solicitante_nome}</strong></span>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-      ) : (
-        /* Visualização em Lista / Linha do Tempo */
-        <div className="mr-agenda-wrapper">
-          <div className="mr-agenda-header">
-            <h3>Linha do Tempo de Agendamentos</h3>
-            {selectedDay && (
-              <button className="mr-btn-clear-filter" onClick={() => setSelectedDay(null)}>
-                Limpar filtro de dia ({selectedDay})
-              </button>
-            )}
-          </div>
-
-          {agendaList.length === 0 ? (
-            <div className="mr-empty-card">
-              <Calendar size={48} />
-              <h4>Nenhum agendamento encontrado</h4>
-              <p>Nenhuma reunião encontrada para os filtros selecionados.</p>
-              <button 
-                className="mr-btn-primary"
-                onClick={() => setIsModalOpen(true)}
-              >
-                <Plus size={16} /> Criar Primeiro Agendamento
-              </button>
-            </div>
-          ) : (
-            <div className="mr-timeline-list">
-              {agendaList.map(m => {
-                const isPast = m.data < todayStr;
-                const isOwner = user?.id === m.solicitante_id || user?.role === 'MASTER';
-
-                return (
-                  <div key={m.id} className={`mr-timeline-card ${m.sala === 'Sala da Diretoria' ? 'border-purple' : 'border-blue'}`}>
-                    <div className="mr-tl-left">
-                      <div className="mr-tl-date">
-                        <span className="mr-tl-day">{new Date(m.data + 'T00:00:00').getDate()}</span>
-                        <span className="mr-tl-month">{new Date(m.data + 'T00:00:00').toLocaleDateString('pt-BR', { month: 'short' }).toUpperCase()}</span>
-                      </div>
-                      <div className="mr-tl-time">
-                        <Clock size={14} />
-                        <span>{m.horario_inicio} - {m.horario_fim}</span>
-                      </div>
-                    </div>
-
-                    <div className="mr-tl-body">
-                      <div className="mr-tl-pills">
-                        <span className={`mr-room-pill ${m.sala === 'Sala da Diretoria' ? 'pill-purple' : 'pill-blue'}`}>
-                          {m.sala === 'Sala da Diretoria' ? <Briefcase size={13} /> : <Users size={13} />}
-                          {m.sala}
-                        </span>
-                        <span className={`mr-type-pill ${m.tipo_reuniao === 'Interna' ? 'pill-green' : 'pill-amber'}`}>
-                          {m.tipo_reuniao === 'Interna' ? <Building size={13} /> : <Globe size={13} />}
-                          Reunião {m.tipo_reuniao}
-                        </span>
-                        {m.empresa && (
-                          <span className="mr-company-pill">
-                            <Building size={13} /> {m.empresa}
-                          </span>
-                        )}
-                      </div>
-
-                      <h4 className="mr-tl-title">{m.titulo}</h4>
-
-                      {m.participantes && (
-                        <p className="mr-tl-participants">
-                          <Users size={14} /> <strong>Participantes:</strong> {m.participantes}
-                        </p>
-                      )}
-
-                      {m.observacoes && (
-                        <p className="mr-tl-notes">
-                          <Info size={14} /> {m.observacoes}
-                        </p>
-                      )}
-
-                      <div className="mr-tl-footer">
-                        <span className="mr-tl-requester">
-                          Solicitado por: <strong>{m.solicitante_nome}</strong>
-                        </span>
-                      </div>
-                    </div>
-
-                    <div className="mr-tl-actions">
-                      <button
-                        className="mr-btn-icon"
-                        title="Ver detalhes"
+                    return (
+                      <div 
+                        key={m.id} 
+                        className={`mr-dsb-card ${m.sala === 'Sala da Diretoria' ? 'card-diretoria' : 'card-sala1'}`}
                         onClick={() => {
                           setSelectedAgendamento(m);
                           setIsDetailModalOpen(true);
                         }}
                       >
-                        <FileText size={16} />
-                      </button>
-                      {isOwner && !isPast && (
-                        <button
-                          className="mr-btn-icon icon-danger"
-                          title="Cancelar reunião"
-                          onClick={() => {
-                            setSelectedAgendamento(m);
-                            setIsCancelModalOpen(true);
-                          }}
-                        >
-                          <XCircle size={16} />
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
+                        <div className="mr-dsb-card-top">
+                          <span className={`mr-rpill ${m.sala === 'Sala da Diretoria' ? 'pill-purple' : 'pill-blue'}`}>
+                            {m.sala === 'Sala da Diretoria' ? <Briefcase size={11} /> : <Users size={11} />}
+                            {m.sala}
+                          </span>
+                          <span className={`mr-tpill ${m.tipo_reuniao === 'Interna' ? 'pill-green' : 'pill-amber'}`}>
+                            {m.tipo_reuniao}
+                          </span>
+                        </div>
+
+                        <h4 className="mr-dsb-card-title">{m.titulo}</h4>
+
+                        <div className="mr-dsb-card-rows">
+                          <div className="mr-row-item">
+                            <Clock size={12} />
+                            <span><strong>{m.horario_inicio} às {m.horario_fim}</strong></span>
+                          </div>
+                          {m.empresa && (
+                            <div className="mr-row-item">
+                              <Building size={12} />
+                              <span>Empresa: {m.empresa}</span>
+                            </div>
+                          )}
+                          <div className="mr-row-item">
+                            <User size={12} />
+                            <span>Solicitante: {m.solicitante_nome}</span>
+                          </div>
+                        </div>
+
+                        <div className="mr-dsb-card-actions">
+                          <button
+                            className="mr-link-btn"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setSelectedAgendamento(m);
+                              setIsDetailModalOpen(true);
+                            }}
+                          >
+                            <FileText size={12} /> Detalhes
+                          </button>
+                          {isOwner && m.data >= todayStr && (
+                            <button
+                              className="mr-link-btn text-danger"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setSelectedAgendamento(m);
+                                setIsCancelModalOpen(true);
+                              }}
+                            >
+                              <XCircle size={12} /> Cancelar
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            </aside>
+          </div>
+        ) : (
+          /* MODO LISTA AGENDA */
+          <div className="mr-agenda-fill-container">
+            <div className="mr-agenda-scrollable">
+              {agendaList.length === 0 ? (
+                <div className="mr-empty-card">
+                  <Calendar size={40} />
+                  <h4>Nenhum agendamento encontrado</h4>
+                  <p>Nenhuma reunião encontrada para os filtros selecionados.</p>
+                  <button className="mr-btn-primary" onClick={() => setIsModalOpen(true)}>
+                    <Plus size={16} /> Criar Primeiro Agendamento
+                  </button>
+                </div>
+              ) : (
+                <div className="mr-agenda-compact-grid">
+                  {agendaList.map((m: AgendamentoSala) => {
+                    const isPast = m.data < todayStr;
+                    const isOwner = user?.id === m.solicitante_id || user?.role === 'MASTER';
+
+                    return (
+                      <div key={m.id} className={`mr-agenda-card ${m.sala === 'Sala da Diretoria' ? 'border-purple' : 'border-blue'}`}>
+                        <div className="mr-ac-left">
+                          <span className="mr-ac-day">{new Date(m.data + 'T00:00:00').getDate()}</span>
+                          <span className="mr-ac-month">{new Date(m.data + 'T00:00:00').toLocaleDateString('pt-BR', { month: 'short' }).toUpperCase()}</span>
+                          <span className="mr-ac-time"><Clock size={11} /> {m.horario_inicio}-{m.horario_fim}</span>
+                        </div>
+
+                        <div className="mr-ac-body">
+                          <div className="mr-ac-pills">
+                            <span className={`mr-rpill ${m.sala === 'Sala da Diretoria' ? 'pill-purple' : 'pill-blue'}`}>
+                              {m.sala}
+                            </span>
+                            <span className={`mr-tpill ${m.tipo_reuniao === 'Interna' ? 'pill-green' : 'pill-amber'}`}>
+                              {m.tipo_reuniao}
+                            </span>
+                            {m.empresa && (
+                              <span className="mr-cpill">
+                                <Building size={11} /> {m.empresa}
+                              </span>
+                            )}
+                          </div>
+
+                          <h4 className="mr-ac-title">{m.titulo}</h4>
+
+                          {m.participantes && (
+                            <p className="mr-ac-desc">
+                              <Users size={12} /> <strong>Part.:</strong> {m.participantes}
+                            </p>
+                          )}
+
+                          <span className="mr-ac-user">
+                            Por: <strong>{m.solicitante_nome}</strong>
+                          </span>
+                        </div>
+
+                        <div className="mr-ac-actions">
+                          <button
+                            className="mr-btn-icon"
+                            title="Ver detalhes"
+                            onClick={() => {
+                              setSelectedAgendamento(m);
+                              setIsDetailModalOpen(true);
+                            }}
+                          >
+                            <FileText size={15} />
+                          </button>
+                          {isOwner && !isPast && (
+                            <button
+                              className="mr-btn-icon icon-danger"
+                              title="Cancelar reunião"
+                              onClick={() => {
+                                setSelectedAgendamento(m);
+                                setIsCancelModalOpen(true);
+                              }}
+                            >
+                              <XCircle size={15} />
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
-          )}
-        </div>
-      )}
+          </div>
+        )}
+      </div>
 
       {/* ========================================================================= */}
-      {/* MODAL: NOVO AGENDAMENTO */}
+      {/* MODAL: NOVO AGENDAMENTO COM PLANTA INTERATIVA */}
       {/* ========================================================================= */}
       {isModalOpen && (
         <div className="mr-modal-overlay" onClick={() => setIsModalOpen(false)}>
-          <div className="mr-modal-content" onClick={e => e.stopPropagation()}>
+          <div className="mr-modal-content mr-modal-lg" onClick={e => e.stopPropagation()}>
             <div className="mr-modal-header">
               <div className="mr-modal-header-icon">
-                <CalendarCheck size={24} />
+                <CalendarCheck size={22} />
               </div>
               <div>
                 <h2>Novo Agendamento de Sala</h2>
-                <p>Reserve uma sala de reunião para alinhamentos ou encontros com clientes</p>
+                <p>Selecione a sala pela planta interativa ou pelos cards abaixo</p>
               </div>
               <button className="mr-modal-close" onClick={() => setIsModalOpen(false)}>
-                <X size={20} />
+                <X size={18} />
               </button>
             </div>
 
             <form onSubmit={handleCreateAgendamento} className="mr-form">
               {formError && (
                 <div className="mr-form-alert mr-alert-error">
-                  <AlertCircle size={18} />
+                  <AlertCircle size={16} />
                   <span>{formError}</span>
                 </div>
               )}
 
-              {/* 1. Escolha da Sala */}
+              {/* 1. Escolha da Sala com Planta Interativa Integrada */}
               <div className="mr-form-group">
-                <label className="mr-label">Qual sala você deseja utilizar? *</label>
-                <div className="mr-room-cards-selector">
+                <label className="mr-label">Selecione a Sala na Planta ou nos Cards: *</label>
+                
+                {/* Planta Interativa */}
+                <FloorPlanMeetingRooms
+                  selectedRoom={formSala}
+                  onSelectRoom={setFormSala}
+                />
+
+                {/* Cards Seletores de Sala */}
+                <div className="mr-room-cards-selector" style={{ marginTop: '0.65rem' }}>
                   <div
                     className={`mr-room-select-card ${formSala === 'Sala da Diretoria' ? 'selected card-purple' : ''}`}
                     onClick={() => setFormSala('Sala da Diretoria')}
                   >
                     <div className="mr-rsc-icon">
-                      <Briefcase size={22} />
+                      <Briefcase size={20} />
                     </div>
                     <div className="mr-rsc-info">
                       <h4>Sala da Diretoria</h4>
-                      <p>Reuniões estratégicas, diretoria e apresentações executivas</p>
+                      <p>Reuniões estratégicas e diretoria (inferior direita na planta)</p>
                     </div>
                   </div>
 
@@ -870,11 +884,11 @@ export default function MeetingRoomBooking() {
                     onClick={() => setFormSala('Sala 1')}
                   >
                     <div className="mr-rsc-icon">
-                      <Users size={22} />
+                      <Users size={20} />
                     </div>
                     <div className="mr-rsc-info">
                       <h4>Sala 1</h4>
-                      <p>Reuniões de equipe, alinhamentos diários e fornecedores</p>
+                      <p>Reuniões de equipe e alinhamentos (superior central na planta)</p>
                     </div>
                   </div>
                 </div>
@@ -895,7 +909,7 @@ export default function MeetingRoomBooking() {
                 </div>
 
                 <div className="mr-form-group flex-1">
-                  <label className="mr-label">Horário de Início *</label>
+                  <label className="mr-label">Horário Início *</label>
                   <input
                     type="time"
                     className="mr-input"
@@ -906,7 +920,7 @@ export default function MeetingRoomBooking() {
                 </div>
 
                 <div className="mr-form-group flex-1">
-                  <label className="mr-label">Horário de Término *</label>
+                  <label className="mr-label">Horário Término *</label>
                   <input
                     type="time"
                     className="mr-input"
@@ -921,22 +935,22 @@ export default function MeetingRoomBooking() {
               <div className="mr-availability-check">
                 {checkingAvailability ? (
                   <div className="mr-av-status av-checking">
-                    <RefreshCw size={15} className="spin" />
+                    <RefreshCw size={14} className="spin" />
                     <span>Verificando disponibilidade da sala...</span>
                   </div>
                 ) : conflictInfo ? (
                   <div className="mr-av-status av-conflict">
-                    <XCircle size={18} />
+                    <XCircle size={16} />
                     <div>
                       <strong>Horário Indisponível na {formSala}!</strong>
                       <p>
-                        Já existe agendamento das <strong>{conflictInfo.horario_inicio} às {conflictInfo.horario_fim}</strong> por {conflictInfo.solicitante_nome} ({conflictInfo.titulo}).
+                        Já reservada das <strong>{conflictInfo.horario_inicio} às {conflictInfo.horario_fim}</strong> por {conflictInfo.solicitante_nome} ({conflictInfo.titulo}).
                       </p>
                     </div>
                   </div>
                 ) : (
                   <div className="mr-av-status av-available">
-                    <CheckCircle2 size={16} />
+                    <CheckCircle2 size={15} />
                     <span>🟢 {formSala} está livre nesta data e horário!</span>
                   </div>
                 )}
@@ -944,7 +958,7 @@ export default function MeetingRoomBooking() {
 
               {/* 3. Tipo de Reunião (Interna ou Externa) */}
               <div className="mr-form-group">
-                <label className="mr-label">Reunião Interna ou Externa? *</label>
+                <label className="mr-label">Tipo de Reunião *</label>
                 <div className="mr-type-radio-group">
                   <label className={`mr-type-radio ${formTipo === 'Interna' ? 'selected' : ''}`}>
                     <input
@@ -957,7 +971,7 @@ export default function MeetingRoomBooking() {
                     <Building size={16} />
                     <div>
                       <strong>Reunião Interna</strong>
-                      <span>Apenas equipe interna Lepta</span>
+                      <span>Apenas equipe Lepta</span>
                     </div>
                   </label>
 
@@ -972,7 +986,7 @@ export default function MeetingRoomBooking() {
                     <Globe size={16} />
                     <div>
                       <strong>Reunião Externa</strong>
-                      <span>Com clientes, parceiros ou fornecedores</span>
+                      <span>Clientes e parceiros</span>
                     </div>
                   </label>
                 </div>
@@ -981,11 +995,11 @@ export default function MeetingRoomBooking() {
               {/* 4. Título e Empresa */}
               <div className="mr-form-row">
                 <div className="mr-form-group flex-2">
-                  <label className="mr-label">Título / Assunto da Reunião *</label>
+                  <label className="mr-label">Título / Assunto *</label>
                   <input
                     type="text"
                     className="mr-input"
-                    placeholder="Ex: Alinhamento Semanal de Operações, Apresentação FIDC..."
+                    placeholder="Ex: Alinhamento Operacional, Apresentação FIDC..."
                     value={formTitulo}
                     onChange={e => setFormTitulo(e.target.value)}
                     required
@@ -999,7 +1013,7 @@ export default function MeetingRoomBooking() {
                   <input
                     type="text"
                     className="mr-input"
-                    placeholder={formTipo === 'Externa' ? 'Ex: Banco Master, Grafeno...' : 'Ex: Lepta Gestora'}
+                    placeholder={formTipo === 'Externa' ? 'Ex: Banco Master, Grafeno...' : 'Ex: Lepta'}
                     value={formEmpresa}
                     onChange={e => setFormEmpresa(e.target.value)}
                     required={formTipo === 'Externa'}
@@ -1013,19 +1027,19 @@ export default function MeetingRoomBooking() {
                 <input
                   type="text"
                   className="mr-input"
-                  placeholder="Ex: Arthur, Gabriel, Diretor Financeiro, Representante Banco..."
+                  placeholder="Ex: Arthur, Gabriel, Diretor Financeiro..."
                   value={formParticipantes}
                   onChange={e => setFormParticipantes(e.target.value)}
                 />
               </div>
 
-              {/* 6. Observações / Recursos */}
+              {/* 6. Observações */}
               <div className="mr-form-group">
-                <label className="mr-label">Observações / Recursos Necessários</label>
-                <textarea
-                  className="mr-textarea"
-                  rows={2}
-                  placeholder="Ex: Ligar projetor/TV, preparar café para 4 pessoas, videoconferência via Teams..."
+                <label className="mr-label">Observações / Recursos</label>
+                <input
+                  type="text"
+                  className="mr-input"
+                  placeholder="Ex: Projetor/TV ligado, café para 4 pessoas, Teams..."
                   value={formObservacoes}
                   onChange={e => setFormObservacoes(e.target.value)}
                 />
@@ -1046,18 +1060,97 @@ export default function MeetingRoomBooking() {
                   className="mr-btn-primary"
                   disabled={submitting || !!conflictInfo}
                 >
-                  {submitting ? (
-                    <>
-                      <RefreshCw size={16} className="spin" /> Salvando...
-                    </>
-                  ) : (
-                    <>
-                      <CheckCircle2 size={18} /> Confirmar Agendamento
-                    </>
-                  )}
+                  {submitting ? 'Salvando...' : 'Confirmar Agendamento'}
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* MODAL: PLANTA INTERATIVA DO ESCRITÓRIO (VISUALIZAÇÃO / SELEÇÃO)          */}
+      {/* ========================================================================= */}
+      {isFloorPlanModalOpen && (
+        <div className="mr-modal-overlay" onClick={() => setIsFloorPlanModalOpen(false)}>
+          <div className="mr-modal-content mr-modal-lg" onClick={e => e.stopPropagation()}>
+            <div className="mr-modal-header">
+              <div className="mr-modal-header-icon">
+                <MapIcon size={22} />
+              </div>
+              <div>
+                <h2>Planta do Escritório — Salas de Reunião</h2>
+                <p>Localização espacial e acesso rápido para agendamentos</p>
+              </div>
+              <button className="mr-modal-close" onClick={() => setIsFloorPlanModalOpen(false)}>
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="mr-detail-body">
+              <FloorPlanMeetingRooms
+                selectedRoom={filterSala}
+                onSelectRoom={(room) => {
+                  setFilterSala(room);
+                  setFormSala(room);
+                }}
+              />
+
+              <div className="mr-room-cards-selector" style={{ marginTop: '0.5rem' }}>
+                <div
+                  className={`mr-room-select-card ${filterSala === 'Sala da Diretoria' ? 'selected card-purple' : ''}`}
+                  onClick={() => {
+                    setFilterSala('Sala da Diretoria');
+                    setFormSala('Sala da Diretoria');
+                  }}
+                >
+                  <div className="mr-rsc-icon">
+                    <Briefcase size={20} />
+                  </div>
+                  <div className="mr-rsc-info">
+                    <h4>Sala da Diretoria</h4>
+                    <p>Reuniões estratégicas e diretoria (inferior direita)</p>
+                  </div>
+                </div>
+
+                <div
+                  className={`mr-room-select-card ${filterSala === 'Sala 1' ? 'selected card-blue' : ''}`}
+                  onClick={() => {
+                    setFilterSala('Sala 1');
+                    setFormSala('Sala 1');
+                  }}
+                >
+                  <div className="mr-rsc-icon">
+                    <Users size={20} />
+                  </div>
+                  <div className="mr-rsc-info">
+                    <h4>Sala 1</h4>
+                    <p>Reuniões de equipe e fornecedores (superior central)</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="mr-modal-footer">
+              <button
+                type="button"
+                className="mr-btn-secondary"
+                onClick={() => setIsFloorPlanModalOpen(false)}
+              >
+                Fechar
+              </button>
+              <button
+                type="button"
+                className="mr-btn-primary"
+                onClick={() => {
+                  setIsFloorPlanModalOpen(false);
+                  setFormData(selectedDay || todayStr);
+                  setIsModalOpen(true);
+                }}
+              >
+                <Plus size={16} /> Agendar nesta Sala
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -1070,49 +1163,49 @@ export default function MeetingRoomBooking() {
           <div className="mr-modal-content mr-modal-sm" onClick={e => e.stopPropagation()}>
             <div className="mr-modal-header">
               <div className="mr-modal-header-icon">
-                <Info size={24} />
+                <Info size={22} />
               </div>
               <div>
                 <h2>Detalhes do Agendamento</h2>
                 <p>{selectedAgendamento.sala}</p>
               </div>
               <button className="mr-modal-close" onClick={() => setIsDetailModalOpen(false)}>
-                <X size={20} />
+                <X size={18} />
               </button>
             </div>
 
             <div className="mr-detail-body">
               <div className="mr-detail-block">
-                <span className="mr-db-label">Assunto / Título:</span>
+                <span className="mr-db-label">Assunto:</span>
                 <h3 className="mr-db-value-lg">{selectedAgendamento.titulo}</h3>
               </div>
 
               <div className="mr-detail-grid">
                 <div className="mr-detail-item">
                   <span className="mr-db-label">Data:</span>
-                  <span className="mr-db-val">
+                  <span className="mr-db-val font-semibold">
                     {new Date(selectedAgendamento.data + 'T00:00:00').toLocaleDateString('pt-BR', { dateStyle: 'full' })}
                   </span>
                 </div>
 
                 <div className="mr-detail-item">
                   <span className="mr-db-label">Horário:</span>
-                  <span className="mr-db-val font-bold">
+                  <span className="mr-db-val text-indigo font-bold">
                     {selectedAgendamento.horario_inicio} às {selectedAgendamento.horario_fim}
                   </span>
                 </div>
 
                 <div className="mr-detail-item">
                   <span className="mr-db-label">Sala:</span>
-                  <span className={`mr-room-pill ${selectedAgendamento.sala === 'Sala da Diretoria' ? 'pill-purple' : 'pill-blue'}`}>
+                  <span className={`mr-rpill ${selectedAgendamento.sala === 'Sala da Diretoria' ? 'pill-purple' : 'pill-blue'}`}>
                     {selectedAgendamento.sala}
                   </span>
                 </div>
 
                 <div className="mr-detail-item">
                   <span className="mr-db-label">Tipo:</span>
-                  <span className={`mr-type-pill ${selectedAgendamento.tipo_reuniao === 'Interna' ? 'pill-green' : 'pill-amber'}`}>
-                    Reunião {selectedAgendamento.tipo_reuniao}
+                  <span className={`mr-tpill ${selectedAgendamento.tipo_reuniao === 'Interna' ? 'pill-green' : 'pill-amber'}`}>
+                    {selectedAgendamento.tipo_reuniao}
                   </span>
                 </div>
 
@@ -1174,14 +1267,14 @@ export default function MeetingRoomBooking() {
           <div className="mr-modal-content mr-modal-sm" onClick={e => e.stopPropagation()}>
             <div className="mr-modal-header">
               <div className="mr-modal-header-icon icon-danger-bg">
-                <XCircle size={24} />
+                <XCircle size={22} />
               </div>
               <div>
                 <h2>Cancelar Agendamento</h2>
                 <p>Liberar a {selectedAgendamento.sala} para outros colaboradores</p>
               </div>
               <button className="mr-modal-close" onClick={() => setIsCancelModalOpen(false)}>
-                <X size={20} />
+                <X size={18} />
               </button>
             </div>
 

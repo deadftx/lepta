@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Planta Interativa — Salas de Reunião</title>
+<style>
+  :root {
+    --accent: #38bdf8;
+    --accent-soft: rgba(56, 189, 248, 0.22);
+    --accent-glow: rgba(56, 189, 248, 0.5);
+    --panel: rgba(15, 23, 42, 0.95);
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0;
+    min-height: 100%;
+    background: #07090F;
+    font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+  }
+  .page {
+    min-height: 100vh;
+    display: grid;
+    place-items: center;
+    padding: 20px;
+  }
+  .map {
+    position: relative;
+    width: min(100%, 1100px);
+    line-height: 0;
+    user-select: none;
+  }
+  .map img {
+    display: block;
+    width: 100%;
+    height: auto;
+    border-radius: 12px;
+    box-shadow: 0 18px 50px rgba(0,0,0,.6);
+  }
+  .hotspot {
+    position: absolute;
+    border: 2px solid transparent;
+    background: transparent;
+    border-radius: 10px;
+    cursor: pointer;
+    transition: background .16s ease, border-color .16s ease, box-shadow .16s ease, transform .16s ease;
+    outline: none;
+  }
+  .hotspot:hover,
+  .hotspot:focus-visible {
+    background: var(--accent-soft);
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.2), 0 0 24px var(--accent-glow);
+    transform: scale(1.01);
+  }
+  .hotspot.selected {
+    background: rgba(56, 189, 248, 0.25);
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.25), 0 0 28px var(--accent-glow);
+  }
+  .hotspot.hotspot-diretoria:hover,
+  .hotspot.hotspot-diretoria.selected {
+    border-color: #a855f7;
+    background: rgba(168, 85, 247, 0.25);
+    box-shadow: 0 0 0 3px rgba(168, 85, 247, 0.25), 0 0 28px rgba(168, 85, 247, 0.6);
+  }
+  .hotspot.hotspot-sala1:hover,
+  .hotspot.hotspot-sala1.selected {
+    border-color: #3b82f6;
+    background: rgba(59, 130, 246, 0.25);
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.25), 0 0 28px rgba(59, 130, 246, 0.6);
+  }
+  .label {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%,-50%);
+    padding: 8px 12px;
+    border-radius: 8px;
+    background: var(--panel);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    color: #fff;
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: .02em;
+    opacity: 0;
+    transition: opacity .16s ease, transform .16s ease;
+    pointer-events: none;
+    white-space: nowrap;
+    box-shadow: 0 8px 24px rgba(0,0,0,.5);
+  }
+  .hotspot:hover .label,
+  .hotspot:focus-visible .label,
+  .hotspot.selected .label {
+    opacity: 1;
+    transform: translate(-50%,-50%) scale(1.02);
+  }
+  .status {
+    position: fixed;
+    left: 50%;
+    bottom: 24px;
+    transform: translateX(-50%);
+    max-width: calc(100vw - 36px);
+    padding: 10px 16px;
+    border-radius: 10px;
+    background: rgba(15, 23, 42, 0.95);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    color: #fff;
+    font-size: 14px;
+    font-weight: 600;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity .18s ease;
+    box-shadow: 0 10px 30px rgba(0,0,0,.5);
+  }
+  .status.show { opacity: 1; }
+</style>
+</head>
+<body>
+<div class="page">
+  <div class="map" id="floorPlan" aria-label="Planta interativa">
+    <img src="public/images/planta_escritorio.png" alt="Planta do Escritório">
+
+    <!-- Sala 1 (superior/central) -->
+    <button
+      class="hotspot hotspot-sala1"
+      aria-label="Sala 1"
+      title="Sala 1"
+      style="left:26.7%; top:21.9%; width:23.7%; height:15.3%;"
+      data-room="Sala 1">
+      <span class="label">👥 Sala 1</span>
+    </button>
+
+    <!-- Sala da Diretoria (inferior/direita) -->
+    <button
+      class="hotspot hotspot-diretoria"
+      aria-label="Sala da Diretoria"
+      title="Sala da Diretoria"
+      style="left:69.0%; top:64.0%; width:26.0%; height:17.0%;"
+      data-room="Sala da Diretoria">
+      <span class="label">👔 Sala da Diretoria</span>
+    </button>
+  </div>
+</div>
+
+<div class="status" id="status" role="status" aria-live="polite"></div>
+
+<script>
+  const rooms = document.querySelectorAll('.hotspot');
+  const status = document.getElementById('status');
+
+  rooms.forEach(room => {
+    room.addEventListener('click', () => {
+      rooms.forEach(r => r.classList.remove('selected'));
+      room.classList.add('selected');
+      status.textContent = room.dataset.room + ' selecionada';
+      status.classList.add('show');
+      clearTimeout(room._timer);
+      room._timer = setTimeout(() => status.classList.remove('show'), 1600);
+    });
+  });
+</script>
+</body>
+</html>
