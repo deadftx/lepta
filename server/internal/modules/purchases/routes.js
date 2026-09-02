@@ -965,30 +965,12 @@ export function registerPurchaseRoutes(app, {
       })();
 
       const atualizado = db.prepare(`SELECT * FROM compras_requisicoes WHERE id = ?`).get(id);
-      return res.json({ success: true, requisicao: atualizado });
     } catch (error) {
       console.error('Erro ao rejeitar solicitação no jurídico:', error.message);
       return res.status(500).json({ error: 'Erro ao registrar rejeição jurídica no banco.' });
     }
   });
-        ORDER BY 
-          CASE 
-            WHEN r.status = 'REABERTO' THEN 0
-            WHEN r.status = 'PENDENTE' THEN 1
-            WHEN r.status = 'REVISAO' THEN 2
-            WHEN r.status = 'AGUARDANDO_RESPOSTA_APROVADOR' THEN 3
-            WHEN r.status = 'AGUARDANDO_RESPOSTA_SOLICITANTE' THEN 4
-            ELSE 5
-          END,
-          r.updated_at DESC
-      `).all();
 
-      return res.json(rows);
-    } catch (error) {
-      console.error('Erro ao carregar fila de aprovação:', error.message);
-      return res.status(500).json({ error: 'Erro ao carregar fila de aprovação.' });
-    }
-  });
 
   // --- ROTA: SOLICITAÇÕES ARQUIVADAS (APROVADAS, NEGADAS E ARQUIVADAS MANUALMENTE) ---
   app.get('/api/compras/arquivadas', requireSession, requireAccess, (req, res) => {

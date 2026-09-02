@@ -4388,16 +4388,6 @@ app.put('/api/admin/users/:id/permissions', requireSession, requireMaster, (req,
   }
 });
 
-function parseStringArray(value) {
-  if (Array.isArray(value)) return value.map(String);
-  try {
-    const parsed = JSON.parse(value || '[]');
-    return Array.isArray(parsed) ? parsed.map(String) : [];
-  } catch {
-    return [];
-  }
-}
-
 function isAllowedPowerBiUrl(value) {
   try {
     const url = new URL(String(value || '').trim());
@@ -4450,10 +4440,6 @@ function readPowerBiDashboardRows() {
 
 function getAuthenticatedUser(req) {
   return db.prepare(`SELECT * FROM usuarios_lepta WHERE id = ?`).get(req.authSession.userId);
-}
-
-function hasPermission(user, permission) {
-  return user?.role === 'MASTER' || parseStringArray(user?.permissions).includes(String(permission));
 }
 
 function requirePowerBiManager(req, res, next) {
