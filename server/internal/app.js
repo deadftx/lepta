@@ -304,10 +304,26 @@ function ensureGerentesContasTable() {
     // 1. Superintendente Padrão
     insertStmt.run('sup_rafael_pereira', 'Rafael Pereira', 'rafael.pereira@lepta.com.br', 'SUPERINTENDENTE', null, null, now, now);
 
-    // 2. Gerentes Vinculados ao Rafael Pereira
+    // 2. Gerentes da equipe cadastrada e da tabela oficial de gerentes
     insertStmt.run('ger_andre_barroco', 'André Barroco', 'andre.barroco@lepta.com.br', 'GERENTE', 'sup_rafael_pereira', 'Rafael Pereira', now, now);
     insertStmt.run('ger_mauro_blanes', 'Mauro Blanes', 'mauro.blanes@lepta.com.br', 'GERENTE', 'sup_rafael_pereira', 'Rafael Pereira', now, now);
     insertStmt.run('ger_luiz_dantas', 'Luiz Dantas', 'luiz.dantas@lepta.com.br', 'GERENTE', 'sup_rafael_pereira', 'Rafael Pereira', now, now);
+
+    // Sincroniza qualquer outro gerente existente na tabela 'gerentes' da carteira
+    try {
+      if (tableExists('gerentes')) {
+        const rows = db.prepare('SELECT * FROM gerentes').all();
+        for (const g of rows) {
+          if (!g.nome) continue;
+          const slug = g.nome.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]/g, '_');
+          const id = `ger_${slug}`;
+          const email = `${slug.replace(/_/g, '.')}@lepta.com.br`;
+          insertStmt.run(id, g.nome, email, 'GERENTE', 'sup_rafael_pereira', 'Rafael Pereira', now, now);
+        }
+      }
+    } catch (syncErr) {
+      console.warn('Aviso ao sincronizar gerentes para gerentes_contas:', syncErr.message);
+    }
   } catch (error) {
     console.error('Erro em ensureGerentesContasTable:', error.message);
   }
@@ -1617,22 +1633,58 @@ app.get('/api/gerentes', requireSession, (req, res) => {
       cedentesByManager.set(g.id, new Set());
     }
 
-    // 1. Clientes cadastrados no banco interno (clientes_cadastro - instantâneo)
-    const localRows = getAllLocalClientRows();
-    for (const row of localRows) {
-      const localComposed = composeClientRegistration(null, row);
-      const doc = normalizeEntityDocument(row.documento);
-      const gName = localComposed.data?.entidade?.gerente;
-      if (gName && doc) {
-        const matched = matchRegisteredManager(gName, gerentes);
-        if (matched && cedentesByManager.has(matched.id)) {
-          cedentesByManager.get(matched.id).add(doc);
+    // 1. Vincular cedentes da base da carteira / BitFin (cedentes / fidc_cedentes / cedentes_cnpjs)
+    try {
+      const cedTable = tableExists('cedentes') ? 'cedentes' : (tableExists('fidc_cedentes') ? 'fidc_cedentes' : null);
+      if (cedTable && tableExists('gerentes')) {
+        const rows = db.prepare(`
+          SELECT 
+            c.cnpj_raiz,
+            c.nome,
+            COALESCE(cn.cnpj, c.cnpj_raiz) as documento,
+            g.id as gerente_id,
+            g.nome as gerente_nome
+          FROM ${cedTable} c
+          JOIN gerentes g ON g.id = c.gerente_id
+          LEFT JOIN (
+            SELECT cnpj_raiz, MIN(cnpj) as cnpj 
+            FROM cedentes_cnpjs 
+            GROUP BY cnpj_raiz
+          ) cn ON cn.cnpj_raiz = c.cnpj_raiz
+        `).all();
+
+        for (const row of rows) {
+          const doc = normalizeEntityDocument(row.documento) || row.cnpj_raiz;
+          if (!doc) continue;
+
+          const matched = matchRegisteredManager(row.gerente_nome, gerentes);
+          if (matched && cedentesByManager.has(matched.id)) {
+            cedentesByManager.get(matched.id).add(doc);
+          }
         }
       }
+    } catch (cedErr) {
+      console.warn('Aviso ao mapear cedentes da carteira:', cedErr.message);
     }
 
-    // 2. Se já houver dados em cache em memória da API BitFin, utiliza sem esperar requisição externa
-    if (Array.isArray(unltdFullHistoryCache.data)) {
+    // 2. Clientes cadastrados no banco interno (clientes_cadastro)
+    try {
+      const localRows = getAllLocalClientRows();
+      for (const row of localRows) {
+        const localComposed = composeClientRegistration(null, row);
+        const doc = normalizeEntityDocument(row.documento);
+        const gName = localComposed.data?.entidade?.gerente;
+        if (gName && doc) {
+          const matched = matchRegisteredManager(gName, gerentes);
+          if (matched && cedentesByManager.has(matched.id)) {
+            cedentesByManager.get(matched.id).add(doc);
+          }
+        }
+      }
+    } catch {}
+
+    // 3. Se houver dados em cache em memória da API BitFin, enriquece cedentes adicionais
+    if (Array.isArray(unltdFullHistoryCache?.data)) {
       for (const t of unltdFullHistoryCache.data) {
         const cliente = t.contaOperacional?.cliente;
         const entidade = cliente?.entidade;
@@ -1658,42 +1710,24 @@ app.get('/api/gerentes', requireSession, (req, res) => {
       }
     }
 
-    // 3. Fallback no SmartFactor / BASE_NOVA (tabela SQLite local, instantâneo)
-    try {
-      if (tableExists('BASE_SMARTFACTOR')) {
-        const sfRows = db.prepare(`
-          SELECT DISTINCT CLIENTE, DOCUMENTO, GERENTE 
-          FROM BASE_SMARTFACTOR 
-          WHERE GERENTE IS NOT NULL AND GERENTE != ''
-        `).all();
-        for (const s of sfRows) {
-          const doc = normalizeEntityDocument(s.DOCUMENTO) || s.CLIENTE;
-          if (!doc) continue;
-
-          let alreadyAssigned = false;
-          for (const docSet of cedentesByManager.values()) {
-            if (docSet.has(doc)) {
-              alreadyAssigned = true;
-              break;
-            }
-          }
-          if (alreadyAssigned) continue;
-
-          const matched = matchRegisteredManager(s.GERENTE, gerentes);
-          if (matched && cedentesByManager.has(matched.id)) {
-            cedentesByManager.get(matched.id).add(doc);
-          }
-        }
-      }
-    } catch (err) {
-      console.warn('Aviso ao contar gerentes no SmartFactor:', err.message);
-    }
-
     const enriched = gerentes.map(g => {
       const docSet = cedentesByManager.get(g.id);
+      let count = docSet ? docSet.size : 0;
+      if (g.cargo === 'SUPERINTENDENTE') {
+        const allDocs = new Set();
+        for (const sub of gerentes) {
+          if (sub.superintendente_id === g.id || sub.id === g.id) {
+            const subSet = cedentesByManager.get(sub.id);
+            if (subSet) {
+              for (const d of subSet) allDocs.add(d);
+            }
+          }
+        }
+        count = allDocs.size;
+      }
       return {
         ...g,
-        totalCedentes: docSet ? docSet.size : 0
+        totalCedentes: count
       };
     });
 
@@ -1785,93 +1819,120 @@ app.get('/api/gerentes/:id/cedentes', requireSession, async (req, res) => {
 
     const cedentesMap = new Map();
 
-    // 1. Clientes cadastrados internamente com override / local (maior precedência)
-    const localRows = getAllLocalClientRows();
-    for (const row of localRows) {
-      const localComposed = composeClientRegistration(null, row);
-      const gName = localComposed.data?.entidade?.gerente;
-      if (gName) {
-        const matched = matchRegisteredManager(gName, gerentes);
-        if (matched && matched.id === gerente.id) {
-          const doc = row.documento;
-          const entity = localComposed.data?.entidade || {};
-          cedentesMap.set(doc, {
-            documento: doc,
-            nome: entity.nome || 'Cliente Interno',
-            email: entity.email || '-',
-            telefone: entity.telefone || '-',
-            tipo: entity.tipo || 'PJ',
-            gerente: gerente.nome,
-            superintendente: gerente.superintendente_nome || (gerente.cargo === 'SUPERINTENDENTE' ? gerente.nome : 'Rafael Pereira'),
-            source: localComposed.source,
-            updatedAt: localComposed.updatedAt
-          });
+    // 1. Buscar cedentes vinculados diretamente na carteira / BitFin (cedentes / fidc_cedentes / cedentes_cnpjs)
+    try {
+      const cedTable = tableExists('cedentes') ? 'cedentes' : (tableExists('fidc_cedentes') ? 'fidc_cedentes' : null);
+      if (cedTable && tableExists('gerentes')) {
+        const rows = db.prepare(`
+          SELECT 
+            c.cnpj_raiz,
+            c.nome,
+            COALESCE(cn.cnpj, c.cnpj_raiz) as documento,
+            g.id as gerente_id,
+            g.nome as gerente_nome
+          FROM ${cedTable} c
+          JOIN gerentes g ON g.id = c.gerente_id
+          LEFT JOIN (
+            SELECT cnpj_raiz, MIN(cnpj) as cnpj 
+            FROM cedentes_cnpjs 
+            GROUP BY cnpj_raiz
+          ) cn ON cn.cnpj_raiz = c.cnpj_raiz
+        `).all();
+
+        for (const row of rows) {
+          const matched = matchRegisteredManager(row.gerente_nome, gerentes);
+          const isManagerMatch = matched && (
+            matched.id === gerente.id || 
+            (gerente.cargo === 'SUPERINTENDENTE' && (matched.superintendente_id === gerente.id || matched.id === gerente.id))
+          );
+
+          if (isManagerMatch) {
+            const doc = normalizeEntityDocument(row.documento) || row.cnpj_raiz;
+            cedentesMap.set(doc, {
+              documento: row.documento,
+              nome: row.nome,
+              email: '-',
+              telefone: '-',
+              tipo: 'PJ',
+              gerente: row.gerente_nome,
+              superintendente: gerente.superintendente_nome || (gerente.cargo === 'SUPERINTENDENTE' ? gerente.nome : 'Rafael Pereira'),
+              source: 'BitFin / Carteira'
+            });
+          }
         }
       }
+    } catch (cedErr) {
+      console.warn('Aviso ao buscar cedentes da carteira para o gerente:', cedErr.message);
     }
 
-    // 2. Clientes na API BitFin / UNLTD
+    // 2. Clientes cadastrados internamente com override / local (maior precedência)
     try {
-      const titles = await fetchTitulosDaAPI(req).catch(() => []);
-      for (const t of titles) {
+      const localRows = getAllLocalClientRows();
+      for (const row of localRows) {
+        const localComposed = composeClientRegistration(null, row);
+        const gName = localComposed.data?.entidade?.gerente;
+        if (gName) {
+          const matched = matchRegisteredManager(gName, gerentes);
+          const isMatch = matched && (
+            matched.id === gerente.id || 
+            (gerente.cargo === 'SUPERINTENDENTE' && (matched.superintendente_id === gerente.id || matched.id === gerente.id))
+          );
+          if (isMatch) {
+            const doc = row.documento;
+            const entity = localComposed.data?.entidade || {};
+            cedentesMap.set(doc, {
+              documento: doc,
+              nome: entity.nome || 'Cliente Interno',
+              email: entity.email || '-',
+              telefone: entity.telefone || '-',
+              tipo: entity.tipo || 'PJ',
+              gerente: matched.nome,
+              superintendente: gerente.superintendente_nome || (gerente.cargo === 'SUPERINTENDENTE' ? gerente.nome : 'Rafael Pereira'),
+              source: localComposed.source,
+              updatedAt: localComposed.updatedAt
+            });
+          }
+        }
+      }
+    } catch {}
+
+    // 3. Clientes e contatos na API BitFin / UNLTD
+    if (Array.isArray(unltdFullHistoryCache?.data)) {
+      for (const t of unltdFullHistoryCache.data) {
         const cliente = t.contaOperacional?.cliente;
         const entidade = cliente?.entidade;
         if (!entidade?.nome) continue;
         const doc = normalizeEntityDocument(entidade.documento);
-        if (!doc || cedentesMap.has(doc)) continue;
+        if (!doc) continue;
 
         const gName = entidade.gerente || t.contaOperacional?.gerente?.nome || t.contaOperacional?.gerente || t.contaOperacional?.colaborador?.nome || t.contaOperacional?.colaborador;
         if (gName) {
           const matched = matchRegisteredManager(gName, gerentes);
-          if (matched && matched.id === gerente.id) {
-            cedentesMap.set(doc, {
-              documento: doc,
-              nome: entidade.nome,
-              email: entidade.email || '-',
-              telefone: entidade.telefone || '-',
-              tipo: entidade.tipo || 'PJ',
-              gerente: gerente.nome,
-              superintendente: gerente.superintendente_nome || (gerente.cargo === 'SUPERINTENDENTE' ? gerente.nome : 'Rafael Pereira'),
-              source: 'BitFin API'
-            });
+          const isMatch = matched && (
+            matched.id === gerente.id || 
+            (gerente.cargo === 'SUPERINTENDENTE' && (matched.superintendente_id === gerente.id || matched.id === gerente.id))
+          );
+
+          if (isMatch) {
+            if (cedentesMap.has(doc)) {
+              const existing = cedentesMap.get(doc);
+              if (entidade.email && existing.email === '-') existing.email = entidade.email;
+              if (entidade.telefone && existing.telefone === '-') existing.telefone = entidade.telefone;
+            } else {
+              cedentesMap.set(doc, {
+                documento: entidade.documento || doc,
+                nome: entidade.nome,
+                email: entidade.email || '-',
+                telefone: entidade.telefone || '-',
+                tipo: entidade.tipo || 'PJ',
+                gerente: matched.nome,
+                superintendente: gerente.superintendente_nome || (gerente.cargo === 'SUPERINTENDENTE' ? gerente.nome : 'Rafael Pereira'),
+                source: 'BitFin API'
+              });
+            }
           }
         }
       }
-    } catch (apiErr) {
-      console.warn('Aviso ao buscar cedentes da API para o gerente:', apiErr.message);
-    }
-
-    // 3. Fallback no SmartFactor / BASE_NOVA
-    try {
-      if (tableExists('BASE_SMARTFACTOR')) {
-        const sfRows = db.prepare(`
-          SELECT DISTINCT CLIENTE, DOCUMENTO, GERENTE, UA
-          FROM BASE_SMARTFACTOR
-          WHERE GERENTE IS NOT NULL AND GERENTE != ''
-        `).all();
-
-        for (const sf of sfRows) {
-          const doc = normalizeEntityDocument(sf.DOCUMENTO) || sf.CLIENTE;
-          if (!doc || cedentesMap.has(doc)) continue;
-
-          const matched = matchRegisteredManager(sf.GERENTE, gerentes);
-          if (matched && matched.id === gerente.id) {
-            cedentesMap.set(doc, {
-              documento: sf.DOCUMENTO || '-',
-              nome: sf.CLIENTE,
-              email: '-',
-              telefone: '-',
-              tipo: 'PJ',
-              gerente: gerente.nome,
-              superintendente: gerente.superintendente_nome || (gerente.cargo === 'SUPERINTENDENTE' ? gerente.nome : 'Rafael Pereira'),
-              ua: sf.UA || '-',
-              source: 'SmartFactor'
-            });
-          }
-        }
-      }
-    } catch (sfErr) {
-      console.warn('Aviso ao consultar BASE_SMARTFACTOR:', sfErr.message);
     }
 
     const list = Array.from(cedentesMap.values()).sort((a, b) => a.nome.localeCompare(b.nome));
@@ -3264,7 +3325,35 @@ app.get('/api/cobranca/vencidos', requireSession, requirePermission('12.1', '12'
     // Helper: Identificar e excluir Cobrança Simples ou Domicílio Simples (busca por simples, CS, DS)
     const isCobrancaSimplesOuDomicilioSimples = (item) => {
       if (!item) return false;
+
+      // Extrai recursivamente todos os textos de objetos e propriedades (exceto entidades de cliente/sacado)
+      const extractTexts = (val, depth = 0) => {
+        if (!val || depth > 4) return [];
+        if (typeof val === 'string') return [val];
+        if (typeof val === 'number') return [String(val)];
+        if (Array.isArray(val)) {
+          return val.flatMap(v => extractTexts(v, depth + 1));
+        }
+        if (typeof val === 'object') {
+          const res = [];
+          for (const [k, v] of Object.entries(val)) {
+            const kLow = k.toLowerCase();
+            if (['cliente', 'sacado', 'cedente', 'entidade', 'socio', 'socios'].includes(kLow)) {
+              continue;
+            }
+            res.push(...extractTexts(v, depth + 1));
+          }
+          return res;
+        }
+        return [];
+      };
+
       const checkFields = [
+        item.contaOperacional,
+        item.operacao?.contaOperacional,
+        item.cobranca,
+        item.tipoCobranca,
+        item.tipoDeCobranca,
         item.modalidade,
         item.operacao?.modalidade,
         item.MODALIDADE,
@@ -3294,6 +3383,7 @@ app.get('/api/cobranca/vencidos', requireSession, requirePermission('12.1', '12'
         item.obs,
         item.descricao,
         item.DESCRICAO,
+        item.operacao?.descricao,
         item.bancoCobrador,
         item.BANCO_COBRADOR,
         item.SIGLA,
@@ -3304,42 +3394,29 @@ app.get('/api/cobranca/vencidos', requireSession, requirePermission('12.1', '12'
         item.NUMERO
       ];
 
-      for (const cf of checkFields) {
-        if (!cf) continue;
-        const texts = [];
-        if (typeof cf === 'string') {
-          texts.push(cf);
-        } else if (typeof cf === 'object') {
-          if (cf.nome) texts.push(cf.nome);
-          if (cf.descricao) texts.push(cf.descricao);
-          if (cf.alias) texts.push(cf.alias);
-          if (cf.sigla) texts.push(cf.sigla);
-          if (cf.tipo) texts.push(cf.tipo);
-          if (cf.titulo) texts.push(cf.titulo);
-          if (cf.codigo) texts.push(String(cf.codigo));
-        }
+      const allTexts = checkFields.flatMap(f => extractTexts(f));
 
-        for (const raw of texts) {
-          if (!raw || typeof raw !== 'string') continue;
-          const s = raw.trim().toLowerCase();
-          if (!s) continue;
+      for (const raw of allTexts) {
+        if (!raw || typeof raw !== 'string') continue;
+        const s = raw.trim().toLowerCase();
+        if (!s) continue;
 
-          // 1. Termo "simples" (cobre Cobrança Simples, Domicílio Simples, etc.)
-          if (s.includes('simples')) return true;
+        // 1. Termo "simples" (cobre "Cobrança Simples", "002175 - Cobrança Simples (DM)", "Domicílio Simples", etc.)
+        if (s.includes('simples')) return true;
 
-          // 2. Termo "custodia" ou "custódia"
-          if (s.includes('custodia') || s.includes('custódia')) return true;
+        // 2. Termo "custodia" ou "custódia"
+        if (s.includes('custodia') || s.includes('custódia')) return true;
 
-          // 3. Termo "domicilio" ou "domicílio"
-          if (s.includes('domicilio') || s.includes('domicílio')) return true;
+        // 3. Termo "domicilio" ou "domicílio"
+        if (s.includes('domicilio') || s.includes('domicílio')) return true;
 
-          // 4. Siglas CS ou DS
-          if (s === 'cs' || s === 'ds' || s === 'c.s.' || s === 'd.s.') return true;
-          if (/\b(cs|ds)\b/i.test(s)) return true;
-          if (s.startsWith('cs-') || s.startsWith('ds-') || s.startsWith('cs/') || s.startsWith('ds/') || s.startsWith('cs ') || s.startsWith('ds ')) return true;
-          if (s.endsWith(' cs') || s.endsWith(' ds') || s.includes('(cs)') || s.includes('(ds)')) return true;
-        }
+        // 4. Siglas CS ou DS (como palavra isolada, prefixo ou sufixo)
+        if (s === 'cs' || s === 'ds' || s === 'c.s.' || s === 'd.s.') return true;
+        if (/\b(cs|ds)\b/i.test(s)) return true;
+        if (s.startsWith('cs-') || s.startsWith('ds-') || s.startsWith('cs/') || s.startsWith('ds/') || s.startsWith('cs ') || s.startsWith('ds ')) return true;
+        if (s.endsWith(' cs') || s.endsWith(' ds') || s.includes('(cs)') || s.includes('(ds)')) return true;
       }
+
       return false;
     };
 
@@ -3455,6 +3532,10 @@ app.get('/api/cobranca/vencidos', requireSession, requirePermission('12.1', '12'
           sitLabel = t.situacao.trim();
         }
 
+        const contaOpNome = t.contaOperacional?.descricao || t.contaOperacional?.nome || t.contaOperacional?.alias || (typeof t.contaOperacional === 'string' ? t.contaOperacional : '');
+        const modalidadeNome = t.modalidade || t.operacao?.modalidade || t.tipoDeOperacao || '';
+        const carteiraNome = t.carteira || t.operacao?.carteira || '';
+
         titles.push({
           id: String(t.id || t.numero || Math.random()),
           numero: String(t.numero || t.numeroDoTitulo || t.id || '-'),
@@ -3464,6 +3545,9 @@ app.get('/api/cobranca/vencidos', requireSession, requirePermission('12.1', '12'
           sacado: t.sacado?.entidade?.nome || 'Não informado',
           documentoSacado: t.sacado?.entidade?.documento || '',
           ua: t.contaOperacional?.unidadeAdministrativa?.alias || t.contaOperacional?.unidadeAdministrativa?.nome || 'Padrão',
+          contaOperacional: contaOpNome,
+          modalidade: modalidadeNome,
+          carteira: carteiraNome,
           dataVencimento: dataVencIso,
           dataOperacao: dataOp,
           dataEmissao: parseDateToIso(t.dataDeEmissao) || null,
@@ -3525,6 +3609,9 @@ app.get('/api/cobranca/vencidos', requireSession, requirePermission('12.1', '12'
                 sacado: r.SACADO || 'Não informado',
                 documentoSacado: r.DOCUMENTO_SACADO || '',
                 ua: r.UA || 'SmartFactor',
+                contaOperacional: r.UA || '',
+                modalidade: r.PRODUTO || '',
+                carteira: r.SIGLA || '',
                 dataVencimento: dataVencIso,
                 dataOperacao: parseDateToIso(r.CADASTRO || r.EMISSAO),
                 dataEmissao: parseDateToIso(r.EMISSAO),

@@ -31,6 +31,9 @@ export interface TituloVencido {
   tipoDocumento?: string;
   chaveNfe?: string;
   codigoDoLastro?: string;
+  contaOperacional?: string;
+  modalidade?: string;
+  carteira?: string;
 }
 
 export interface KpisOverdue {
@@ -114,12 +117,35 @@ const isEmAbertoEstrito = (t: TituloVencido): boolean => {
 // Regra 2: Exclusão de Cobrança Simples ou Domicílio Simples (busca por simples, CS, DS)
 const isCobrancaSimplesOuDomicilioSimples = (t: TituloVencido | any): boolean => {
   if (!t) return false;
+
+  const extractTexts = (val: any, depth = 0): string[] => {
+    if (!val || depth > 4) return [];
+    if (typeof val === 'string') return [val];
+    if (typeof val === 'number') return [String(val)];
+    if (Array.isArray(val)) return val.flatMap(v => extractTexts(v, depth + 1));
+    if (typeof val === 'object') {
+      const res: string[] = [];
+      for (const [k, v] of Object.entries(val)) {
+        const kLow = k.toLowerCase();
+        if (['cliente', 'sacado', 'cedente', 'entidade', 'socio', 'socios'].includes(kLow)) continue;
+        res.push(...extractTexts(v, depth + 1));
+      }
+      return res;
+    }
+    return [];
+  };
+
   const fields = [
-    t.tipoDocumento,
-    t.tipo,
+    t.contaOperacional,
+    t.operacao,
+    t.cobranca,
+    t.tipoCobranca,
+    t.tipoDeCobranca,
     t.modalidade,
     t.produto,
     t.carteira,
+    t.tipoDocumento,
+    t.tipo,
     t.tipoOperacao,
     t.natureza,
     t.especie,
@@ -127,12 +153,13 @@ const isCobrancaSimplesOuDomicilioSimples = (t: TituloVencido | any): boolean =>
     t.descricao,
     t.bancoCobrador,
     t.numero,
-    t.operacao
+    t.ua
   ];
 
-  for (const f of fields) {
-    if (!f || typeof f !== 'string') continue;
-    const s = f.trim().toLowerCase();
+  const allTexts = fields.flatMap(f => extractTexts(f));
+
+  for (const raw of allTexts) {
+    const s = raw.trim().toLowerCase();
     if (!s) continue;
 
     // 1. Termo simples
