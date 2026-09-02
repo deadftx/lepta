@@ -90,6 +90,22 @@ const ManagerRegistration = () => {
     }
   };
 
+  const handleSyncAndRefresh = async () => {
+    try {
+      setLoading(true);
+      await fetch(`${API_BASE_URL}/api/gerentes/sync`, {
+        method: 'POST',
+        headers: authHeaders()
+      }).catch(() => {});
+      await fetchManagers();
+    } catch (err: any) {
+      console.error('Erro ao sincronizar:', err);
+      await fetchManagers();
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
     fetchManagers();
   }, []);
@@ -234,7 +250,7 @@ const ManagerRegistration = () => {
           </p>
         </div>
         <div className="manager-header-actions">
-          <button className="btn-refresh-managers" onClick={fetchManagers} title="Atualizar dados">
+          <button className="btn-refresh-managers" onClick={handleSyncAndRefresh} title="Sincronizar e atualizar dados (API BitFin + Banco)">
             <RefreshCw size={16} className={loading ? 'spin-animation' : ''} />
           </button>
           <button className="btn-add-manager" onClick={openCreateModal}>

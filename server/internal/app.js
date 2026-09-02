@@ -876,12 +876,26 @@ async function fetchFullTitulosHistory() {
   const currentYear = new Date().getUTCFullYear();
   const allTitulos = [];
 
-  for (let year = UNLTD_INITIAL_YEAR; year <= UNLTD_FINAL_YEAR_LIMIT; year++) {
-    const yearTitulos = await fetchTitulosRange(`${year}-01-01`, `${year}-12-31`);
-    allTitulos.push(...yearTitulos);
+  // Busca imediatamente o ano atual para disponibilização rápida (2-3 segundos)
+  try {
+    const currentYearTitulos = await fetchTitulosRange(`${currentYear}-01-01`, `${currentYear}-12-31`);
+    allTitulos.push(...currentYearTitulos);
+    unltdFullHistoryCache.data = deduplicateTitulos(allTitulos);
+    unltdFullHistoryCache.updatedAt = Date.now();
+  } catch (e) {
+    console.warn(`Aviso ao carregar títulos do ano atual (${currentYear}):`, e.message);
+  }
 
-    // Só encerra depois do ano atual para não confundir lacunas históricas com fim da base.
-    if (year > currentYear && yearTitulos.length === 0) break;
+  // Continua em background para anos anteriores sem bloquear requisições imediatas
+  for (let year = currentYear - 1; year >= UNLTD_INITIAL_YEAR; year--) {
+    try {
+      const yearTitulos = await fetchTitulosRange(`${year}-01-01`, `${year}-12-31`);
+      allTitulos.push(...yearTitulos);
+      unltdFullHistoryCache.data = deduplicateTitulos(allTitulos);
+      unltdFullHistoryCache.updatedAt = Date.now();
+    } catch (e) {
+      console.warn(`Aviso ao carregar títulos do ano ${year}:`, e.message);
+    }
   }
 
   return deduplicateTitulos(allTitulos);
@@ -1690,109 +1704,312 @@ app.delete('/api/clientes-cadastro/:documento', requireSession, requireClientReg
 // -------------------------------------------------------------
 // ROTAS: CADASTRO DE GERENTES E GESTORES (LEPTA INTELLIGENCE)
 // -------------------------------------------------------------
-app.get('/api/gerentes', requireSession, (req, res) => {
+function ensureGerentesCedentesCacheTable() {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS gerentes_cedentes_cache (
+      documento TEXT PRIMARY KEY,
+      nome TEXT NOT NULL,
+      email TEXT DEFAULT '-',
+      telefone TEXT DEFAULT '-',
+      tipo TEXT DEFAULT 'PJ',
+      gerente_id TEXT,
+      gerente_nome TEXT,
+      superintendente_nome TEXT,
+      source TEXT DEFAULT 'BitFin API',
+      updated_at TEXT NOT NULL
+    );
+  `);
+}
+
+function upsertDiscoveredCedente({ documento, nome, email, telefone, tipo, gerenteId, gerenteNome, superintendenteNome, source }) {
+  const doc = normalizeEntityDocument(documento);
+  if (!doc) return;
+  try {
+    ensureGerentesCedentesCacheTable();
+    const existing = db.prepare(`SELECT * FROM gerentes_cedentes_cache WHERE documento = ?`).get(doc);
+    const now = new Date().toISOString();
+    if (!existing) {
+      db.prepare(`
+        INSERT INTO gerentes_cedentes_cache (documento, nome, email, telefone, tipo, gerente_id, gerente_nome, superintendente_nome, source, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        doc,
+        nome || 'Cliente BitFin',
+        email || '-',
+        telefone || '-',
+        tipo || 'PJ',
+        gerenteId || null,
+        gerenteNome || null,
+        superintendenteNome || null,
+        source || 'BitFin API',
+        now
+      );
+    } else {
+      const newEmail = (email && email !== '-') ? email : existing.email;
+      const newTel = (telefone && telefone !== '-') ? telefone : existing.telefone;
+      const newGId = gerenteId || existing.gerente_id;
+      const newGNome = gerenteNome || existing.gerente_nome;
+      const newSup = superintendenteNome || existing.superintendente_nome;
+      const newSource = (source && !existing.source?.includes(source)) ? `${existing.source} + ${source}` : existing.source;
+      db.prepare(`
+        UPDATE gerentes_cedentes_cache SET
+          nome = COALESCE(?, nome),
+          email = ?,
+          telefone = ?,
+          gerente_id = ?,
+          gerente_nome = ?,
+          superintendente_nome = ?,
+          source = ?,
+          updated_at = ?
+        WHERE documento = ?
+      `).run(nome || existing.nome, newEmail, newTel, newGId, newGNome, newSup, newSource, now, doc);
+    }
+  } catch (err) {
+    console.warn('Aviso ao salvar cedente descoberto no cache:', err.message);
+  }
+}
+
+function getCarteiraCedentesRows() {
+  const hasFidc = tableExists('fidc_cedentes');
+  const hasCed = tableExists('cedentes');
+  if ((!hasFidc && !hasCed) || !tableExists('gerentes')) return [];
+
+  const unionParts = [];
+  if (hasFidc) unionParts.push('SELECT cnpj_raiz, nome, estado, setor_id, gerente_id FROM fidc_cedentes WHERE gerente_id IS NOT NULL');
+  if (hasCed) unionParts.push('SELECT cnpj_raiz, nome, estado, setor_id, gerente_id FROM cedentes WHERE gerente_id IS NOT NULL');
+
+  const cnpjParts = [];
+  if (tableExists('fidc_cedentes_cnpjs')) cnpjParts.push('SELECT cnpj_raiz, MIN(cnpj) as cnpj FROM fidc_cedentes_cnpjs GROUP BY cnpj_raiz');
+  if (tableExists('cedentes_cnpjs')) cnpjParts.push('SELECT cnpj_raiz, MIN(cnpj) as cnpj FROM cedentes_cnpjs GROUP BY cnpj_raiz');
+
+  const cnpjsSubquery = cnpjParts.length > 0 ? cnpjParts.join(' UNION ') : 'SELECT NULL as cnpj_raiz, NULL as cnpj WHERE 1=0';
+
+  return db.prepare(`
+    SELECT 
+      c.cnpj_raiz,
+      c.nome,
+      COALESCE(cn.cnpj, c.cnpj_raiz) as documento,
+      g.id as gerente_id,
+      g.nome as gerente_nome
+    FROM (${unionParts.join(' UNION ')}) c
+    JOIN gerentes g ON g.id = c.gerente_id
+    LEFT JOIN (${cnpjsSubquery}) cn ON cn.cnpj_raiz = c.cnpj_raiz
+  `).all();
+}
+
+function syncLocalDatabaseCedentes(gerentes) {
+  ensureGerentesCedentesCacheTable();
+
+  // 1. Clientes cadastrados no banco interno (clientes_cadastro)
+  try {
+    ensureClientRegistrationTableForWrite();
+    const localRows = getAllLocalClientRows();
+    for (const row of localRows) {
+      const localComposed = composeClientRegistration(null, row);
+      const doc = normalizeEntityDocument(row.documento);
+      const gName = extractManagerName(localComposed.data?.entidade) ||
+                    extractManagerName(localComposed.data) ||
+                    localComposed.data?.entidade?.gerente ||
+                    localComposed.data?.gerente;
+      if (gName && doc) {
+        const matched = matchRegisteredManager(gName, gerentes);
+        if (matched) {
+          upsertDiscoveredCedente({
+            documento: doc,
+            nome: localComposed.data?.entidade?.nome || localComposed.data?.nome || 'Cliente Interno',
+            email: localComposed.data?.entidade?.email || localComposed.data?.email || '-',
+            telefone: localComposed.data?.entidade?.telefone || localComposed.data?.telefone || '-',
+            tipo: localComposed.data?.entidade?.tipo || 'PJ',
+            gerenteId: matched.id,
+            gerenteNome: matched.nome,
+            superintendenteNome: matched.superintendente_nome || (matched.cargo === 'SUPERINTENDENTE' ? matched.nome : 'Rafael Pereira'),
+            source: 'Banco de Dados (Cadastro Manual)'
+          });
+        }
+      }
+    }
+  } catch (e) {
+    console.warn('Aviso ao sincronizar clientes_cadastro:', e.message);
+  }
+
+  // 2. Cedentes da Carteira (fidc_cedentes / cedentes)
+  try {
+    const rows = getCarteiraCedentesRows();
+    for (const row of rows) {
+      const doc = normalizeEntityDocument(row.documento) || row.cnpj_raiz;
+      if (!doc) continue;
+      const matched = matchRegisteredManager(row.gerente_nome, gerentes);
+      if (matched) {
+        upsertDiscoveredCedente({
+          documento: doc,
+          nome: row.nome,
+          email: '-',
+          telefone: '-',
+          tipo: 'PJ',
+          gerenteId: matched.id,
+          gerenteNome: row.gerente_nome,
+          superintendenteNome: matched.superintendente_nome || (matched.cargo === 'SUPERINTENDENTE' ? matched.nome : 'Rafael Pereira'),
+          source: 'Banco de Dados (Carteira)'
+        });
+      }
+    }
+  } catch (e) {
+    console.warn('Aviso ao sincronizar carteira:', e.message);
+  }
+}
+
+let isSyncingBitfin = false;
+
+async function syncBitfinApiData(gerentes) {
+  if (!UNLTD_TOKEN || isSyncingBitfin) return;
+  isSyncingBitfin = true;
+  try {
+    const currentYear = new Date().getUTCFullYear();
+    const years = [currentYear, currentYear - 1]; // 2026 e 2025
+
+    for (const year of years) {
+      // A. Operações do ano
+      try {
+        const opsRes = await fetch('https://lepta-backend.bit-unltd.com.br/recebiveis/operacoes', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `UNLTD-BackEnd ${UNLTD_TOKEN}`
+          },
+          body: JSON.stringify({
+            tipoDeData: 'Cadastro',
+            dataInicial: `${year}-01-01T00:00:00.000Z`,
+            dataFinal: `${year}-12-31T23:59:59.999Z`
+          })
+        });
+        if (opsRes.ok) {
+          const ops = await opsRes.json();
+          if (Array.isArray(ops)) {
+            for (const op of ops) {
+              const doc = normalizeEntityDocument(
+                op.contaOperacional?.cliente?.entidade?.documento ||
+                op.cliente?.documento ||
+                op.cedente?.documento ||
+                op.cedente_cnpj
+              );
+              if (!doc) continue;
+              const gName = extractManagerName(op);
+              if (gName) {
+                const matched = matchRegisteredManager(gName, gerentes);
+                if (matched) {
+                  const nome = (
+                    op.contaOperacional?.cliente?.entidade?.nome ||
+                    op.cliente?.nome ||
+                    op.cedente?.nome ||
+                    op.cedente_nome ||
+                    'Cliente BitFin'
+                  ).trim();
+                  const email = op.contaOperacional?.cliente?.entidade?.email || op.cliente?.email || '-';
+                  const tel = op.contaOperacional?.cliente?.entidade?.telefone || op.cliente?.telefone || '-';
+                  upsertDiscoveredCedente({
+                    documento: doc,
+                    nome,
+                    email,
+                    telefone: tel,
+                    tipo: 'PJ',
+                    gerenteId: matched.id,
+                    gerenteNome: matched.nome,
+                    superintendenteNome: matched.superintendente_nome || (matched.cargo === 'SUPERINTENDENTE' ? matched.nome : 'Rafael Pereira'),
+                    source: 'API BitFin (Operações)'
+                  });
+                }
+              }
+            }
+          }
+        }
+      } catch (err) {
+        console.warn(`Aviso ao buscar operações de ${year}:`, err.message);
+      }
+
+      // B. Títulos do ano
+      try {
+        const titulos = await fetchTitulosRange(`${year}-01-01`, `${year}-12-31`);
+        for (const t of titulos) {
+          const doc = normalizeEntityDocument(
+            t.contaOperacional?.cliente?.entidade?.documento ||
+            t.cliente?.documento ||
+            t.cedente_cnpj ||
+            t.documentoCliente
+          );
+          if (!doc) continue;
+          const gName = extractManagerName(t);
+          if (gName) {
+            const matched = matchRegisteredManager(gName, gerentes);
+            if (matched) {
+              const nome = (
+                t.contaOperacional?.cliente?.entidade?.nome ||
+                t.cliente?.nome ||
+                t.cedente_nome ||
+                t.cliente ||
+                'Cliente BitFin'
+              ).trim();
+              const email = t.contaOperacional?.cliente?.entidade?.email || t.cliente?.email || '-';
+              const tel = t.contaOperacional?.cliente?.entidade?.telefone || t.cliente?.telefone || '-';
+              upsertDiscoveredCedente({
+                documento: doc,
+                nome,
+                email,
+                telefone: tel,
+                tipo: 'PJ',
+                gerenteId: matched.id,
+                gerenteNome: matched.nome,
+                superintendenteNome: matched.superintendente_nome || (matched.cargo === 'SUPERINTENDENTE' ? matched.nome : 'Rafael Pereira'),
+                source: 'API BitFin (Títulos)'
+              });
+            }
+          }
+        }
+      } catch (err) {
+        console.warn(`Aviso ao buscar títulos de ${year}:`, err.message);
+      }
+    }
+  } finally {
+    isSyncingBitfin = false;
+  }
+}
+
+app.get('/api/gerentes', requireSession, async (req, res) => {
   try {
     ensureGerentesContasTable();
+    ensureGerentesCedentesCacheTable();
+
     const gerentes = db.prepare(`
       SELECT * FROM gerentes_contas 
       WHERE ativo = 1 
       ORDER BY CASE WHEN cargo = 'SUPERINTENDENTE' THEN 0 ELSE 1 END, nome ASC
     `).all();
 
-    // Map de gerente_id -> Set de documentos de cedentes únicos (rápido, sem bloqueio de rede)
+    // 1. Sincroniza banco local (clientes_cadastro + carteira)
+    syncLocalDatabaseCedentes(gerentes);
+
+    // 2. Se o cache estiver vazio ou com poucos registros e houver token UNLTD, dispara sync com API em background
+    const cachedCount = db.prepare(`SELECT count(*) as count FROM gerentes_cedentes_cache`).get()?.count || 0;
+    if (UNLTD_TOKEN && !isSyncingBitfin && cachedCount < 2) {
+      syncBitfinApiData(gerentes).catch(() => {});
+    }
+
+    // 3. Lê todos os cedentes mapeados no cache
+    const allCedentes = db.prepare(`SELECT * FROM gerentes_cedentes_cache`).all();
+
     const cedentesByManager = new Map();
     for (const g of gerentes) {
       cedentesByManager.set(g.id, new Set());
     }
 
-    // 1. Vincular cedentes da base da carteira / BitFin (cedentes / fidc_cedentes / cedentes_cnpjs)
-    try {
-      const hasFidc = tableExists('fidc_cedentes');
-      const hasCed = tableExists('cedentes');
-      if ((hasFidc || hasCed) && tableExists('gerentes')) {
-        const unionParts = [];
-        if (hasFidc) unionParts.push('SELECT cnpj_raiz, nome, estado, setor_id, gerente_id FROM fidc_cedentes WHERE gerente_id IS NOT NULL');
-        if (hasCed) unionParts.push('SELECT cnpj_raiz, nome, estado, setor_id, gerente_id FROM cedentes WHERE gerente_id IS NOT NULL');
-
-        const cnpjParts = [];
-        if (tableExists('fidc_cedentes_cnpjs')) cnpjParts.push('SELECT cnpj_raiz, MIN(cnpj) as cnpj FROM fidc_cedentes_cnpjs GROUP BY cnpj_raiz');
-        if (tableExists('cedentes_cnpjs')) cnpjParts.push('SELECT cnpj_raiz, MIN(cnpj) as cnpj FROM cedentes_cnpjs GROUP BY cnpj_raiz');
-
-        const cnpjsSubquery = cnpjParts.length > 0 ? cnpjParts.join(' UNION ') : 'SELECT NULL as cnpj_raiz, NULL as cnpj WHERE 1=0';
-
-        const rows = db.prepare(`
-          SELECT 
-            c.cnpj_raiz,
-            c.nome,
-            COALESCE(cn.cnpj, c.cnpj_raiz) as documento,
-            g.id as gerente_id,
-            g.nome as gerente_nome
-          FROM (${unionParts.join(' UNION ')}) c
-          JOIN gerentes g ON g.id = c.gerente_id
-          LEFT JOIN (${cnpjsSubquery}) cn ON cn.cnpj_raiz = c.cnpj_raiz
-        `).all();
-
-        for (const row of rows) {
-          const doc = normalizeEntityDocument(row.documento) || row.cnpj_raiz;
-          if (!doc) continue;
-
-          const matched = matchRegisteredManager(row.gerente_nome, gerentes);
-          if (matched && cedentesByManager.has(matched.id)) {
-            cedentesByManager.get(matched.id).add(doc);
-          }
+    for (const c of allCedentes) {
+      if (c.gerente_id && cedentesByManager.has(c.gerente_id)) {
+        cedentesByManager.get(c.gerente_id).add(c.documento);
+      } else if (c.gerente_nome) {
+        const matched = matchRegisteredManager(c.gerente_nome, gerentes);
+        if (matched && cedentesByManager.has(matched.id)) {
+          cedentesByManager.get(matched.id).add(c.documento);
         }
       }
-    } catch (cedErr) {
-      console.warn('Aviso ao mapear cedentes da carteira:', cedErr.message);
-    }
-
-    // 2. Clientes cadastrados no banco interno (clientes_cadastro)
-    try {
-      const localRows = getAllLocalClientRows();
-      for (const row of localRows) {
-        const localComposed = composeClientRegistration(null, row);
-        const doc = normalizeEntityDocument(row.documento);
-        const gName = extractManagerName(localComposed.data?.entidade) || localComposed.data?.entidade?.gerente;
-        if (gName && doc) {
-          const matched = matchRegisteredManager(gName, gerentes);
-          if (matched && cedentesByManager.has(matched.id)) {
-            cedentesByManager.get(matched.id).add(doc);
-          }
-        }
-      }
-    } catch {}
-
-    // 3. Se houver dados em cache em memória da API BitFin, enriquece cedentes adicionais
-    if (Array.isArray(unltdFullHistoryCache?.data)) {
-      for (const t of unltdFullHistoryCache.data) {
-        const doc = normalizeEntityDocument(
-          t.contaOperacional?.cliente?.entidade?.documento ||
-          t.cliente?.documento ||
-          t.cedente_cnpj ||
-          t.documentoCliente
-        );
-        if (!doc) continue;
-
-        let alreadyAssigned = false;
-        for (const docSet of cedentesByManager.values()) {
-          if (docSet.has(doc)) {
-            alreadyAssigned = true;
-            break;
-          }
-        }
-        if (alreadyAssigned) continue;
-
-        const gName = extractManagerName(t);
-        if (gName) {
-          const matched = matchRegisteredManager(gName, gerentes);
-          if (matched && cedentesByManager.has(matched.id)) {
-            cedentesByManager.get(matched.id).add(doc);
-          }
-        }
-      }
-    } else if (UNLTD_TOKEN && !unltdFullHistoryCache?.pending) {
-      // Dispara carregamento em background para que próximas requisições já tenham os títulos completos
-      fetchTitulosDaAPI({ query: {} }).catch(() => {});
     }
 
     const enriched = gerentes.map(g => {
@@ -1894,158 +2111,85 @@ app.delete('/api/gerentes/:id', requireSession, (req, res) => {
   }
 });
 
+app.post('/api/gerentes/sync', requireSession, async (req, res) => {
+  try {
+    ensureGerentesContasTable();
+    ensureGerentesCedentesCacheTable();
+    const gerentes = db.prepare(`SELECT * FROM gerentes_contas WHERE ativo = 1`).all();
+    syncLocalDatabaseCedentes(gerentes);
+    if (UNLTD_TOKEN) {
+      await syncBitfinApiData(gerentes);
+    }
+    const count = db.prepare(`SELECT count(*) as count FROM gerentes_cedentes_cache`).get()?.count || 0;
+    return res.json({ success: true, totalCedentes: count });
+  } catch (error) {
+    console.error('Erro ao sincronizar gerentes e cedentes:', error.message);
+    return res.status(500).json({ error: 'Erro ao sincronizar gerentes e cedentes.', message: error.message });
+  }
+});
+
 app.get('/api/gerentes/:id/cedentes', requireSession, async (req, res) => {
   try {
     ensureGerentesContasTable();
+    ensureGerentesCedentesCacheTable();
+
     const id = req.params.id;
     const gerentes = db.prepare(`SELECT * FROM gerentes_contas WHERE ativo = 1`).all();
     const gerente = gerentes.find(g => g.id === id);
     if (!gerente) return res.status(404).json({ error: 'Gerente não encontrado.' });
 
+    // Sincroniza dados locais (clientes_cadastro + carteira)
+    syncLocalDatabaseCedentes(gerentes);
+
+    // Lê todos os cedentes mapeados no cache
+    const allCedentes = db.prepare(`SELECT * FROM gerentes_cedentes_cache`).all();
+
     const cedentesMap = new Map();
 
-    // 1. Buscar cedentes vinculados diretamente na carteira / BitFin (cedentes / fidc_cedentes / cedentes_cnpjs)
-    try {
-      const hasFidc = tableExists('fidc_cedentes');
-      const hasCed = tableExists('cedentes');
-      if ((hasFidc || hasCed) && tableExists('gerentes')) {
-        const unionParts = [];
-        if (hasFidc) unionParts.push('SELECT cnpj_raiz, nome, estado, setor_id, gerente_id FROM fidc_cedentes WHERE gerente_id IS NOT NULL');
-        if (hasCed) unionParts.push('SELECT cnpj_raiz, nome, estado, setor_id, gerente_id FROM cedentes WHERE gerente_id IS NOT NULL');
+    for (const c of allCedentes) {
+      let isMatch = false;
 
-        const cnpjParts = [];
-        if (tableExists('fidc_cedentes_cnpjs')) cnpjParts.push('SELECT cnpj_raiz, MIN(cnpj) as cnpj FROM fidc_cedentes_cnpjs GROUP BY cnpj_raiz');
-        if (tableExists('cedentes_cnpjs')) cnpjParts.push('SELECT cnpj_raiz, MIN(cnpj) as cnpj FROM cedentes_cnpjs GROUP BY cnpj_raiz');
-
-        const cnpjsSubquery = cnpjParts.length > 0 ? cnpjParts.join(' UNION ') : 'SELECT NULL as cnpj_raiz, NULL as cnpj WHERE 1=0';
-
-        const rows = db.prepare(`
-          SELECT 
-            c.cnpj_raiz,
-            c.nome,
-            COALESCE(cn.cnpj, c.cnpj_raiz) as documento,
-            g.id as gerente_id,
-            g.nome as gerente_nome
-          FROM (${unionParts.join(' UNION ')}) c
-          JOIN gerentes g ON g.id = c.gerente_id
-          LEFT JOIN (${cnpjsSubquery}) cn ON cn.cnpj_raiz = c.cnpj_raiz
-        `).all();
-
-        for (const row of rows) {
-          const matched = matchRegisteredManager(row.gerente_nome, gerentes);
-          const isManagerMatch = matched && (
-            matched.id === gerente.id || 
-            (gerente.cargo === 'SUPERINTENDENTE' && (matched.superintendente_id === gerente.id || matched.id === gerente.id))
-          );
-
-          if (isManagerMatch) {
-            const doc = normalizeEntityDocument(row.documento) || row.cnpj_raiz;
-            cedentesMap.set(doc, {
-              documento: row.documento,
-              nome: row.nome,
-              email: '-',
-              telefone: '-',
-              tipo: 'PJ',
-              gerente: row.gerente_nome,
-              superintendente: gerente.superintendente_nome || (gerente.cargo === 'SUPERINTENDENTE' ? gerente.nome : 'Rafael Pereira'),
-              source: 'BitFin / Carteira'
-            });
+      // 1. Match por ID direto ou por vínculo de superintendência
+      if (c.gerente_id) {
+        if (c.gerente_id === gerente.id) {
+          isMatch = true;
+        } else if (gerente.cargo === 'SUPERINTENDENTE') {
+          const sub = gerentes.find(g => g.id === c.gerente_id);
+          if (sub && (sub.superintendente_id === gerente.id || sub.id === gerente.id)) {
+            isMatch = true;
           }
         }
       }
-    } catch (cedErr) {
-      console.warn('Aviso ao buscar cedentes da carteira para o gerente:', cedErr.message);
-    }
 
-    // 2. Clientes cadastrados internamente com override / local (maior precedência)
-    try {
-      const localRows = getAllLocalClientRows();
-      for (const row of localRows) {
-        const localComposed = composeClientRegistration(null, row);
-        const gName = extractManagerName(localComposed.data?.entidade) || localComposed.data?.entidade?.gerente;
-        if (gName) {
-          const matched = matchRegisteredManager(gName, gerentes);
-          const isMatch = matched && (
-            matched.id === gerente.id || 
-            (gerente.cargo === 'SUPERINTENDENTE' && (matched.superintendente_id === gerente.id || matched.id === gerente.id))
-          );
-          if (isMatch) {
-            const doc = row.documento;
-            const entity = localComposed.data?.entidade || {};
-            cedentesMap.set(doc, {
-              documento: doc,
-              nome: entity.nome || 'Cliente Interno',
-              email: entity.email || '-',
-              telefone: entity.telefone || '-',
-              tipo: entity.tipo || 'PJ',
-              gerente: matched.nome,
-              superintendente: gerente.superintendente_nome || (gerente.cargo === 'SUPERINTENDENTE' ? gerente.nome : 'Rafael Pereira'),
-              source: localComposed.source,
-              updatedAt: localComposed.updatedAt
-            });
+      // 2. Match por nome do gerente
+      if (!isMatch && c.gerente_nome) {
+        const matched = matchRegisteredManager(c.gerente_nome, gerentes);
+        if (matched) {
+          if (matched.id === gerente.id) {
+            isMatch = true;
+          } else if (gerente.cargo === 'SUPERINTENDENTE' && (matched.superintendente_id === gerente.id || matched.id === gerente.id)) {
+            isMatch = true;
           }
         }
       }
-    } catch {}
 
-    // 3. Clientes e contatos na API BitFin / UNLTD
-    if (!unltdFullHistoryCache?.data && UNLTD_TOKEN) {
-      try {
-        await fetchTitulosDaAPI({ query: {} });
-      } catch (apiErr) {
-        console.warn('Aviso ao carregar títulos da API UNLTD em /cedentes:', apiErr.message);
+      if (isMatch) {
+        cedentesMap.set(c.documento, {
+          documento: c.documento,
+          nome: c.nome,
+          email: c.email || '-',
+          telefone: c.telefone || '-',
+          tipo: c.tipo || 'PJ',
+          gerente: c.gerente_nome || gerente.nome,
+          superintendente: c.superintendente_nome || gerente.superintendente_nome || (gerente.cargo === 'SUPERINTENDENTE' ? gerente.nome : 'Rafael Pereira'),
+          source: c.source || 'BitFin API'
+        });
       }
     }
 
-    if (Array.isArray(unltdFullHistoryCache?.data)) {
-      for (const t of unltdFullHistoryCache.data) {
-        const doc = normalizeEntityDocument(
-          t.contaOperacional?.cliente?.entidade?.documento ||
-          t.cliente?.documento ||
-          t.cedente_cnpj ||
-          t.documentoCliente
-        );
-        if (!doc) continue;
-
-        const gName = extractManagerName(t);
-        if (gName) {
-          const matched = matchRegisteredManager(gName, gerentes);
-          const isMatch = matched && (
-            matched.id === gerente.id || 
-            (gerente.cargo === 'SUPERINTENDENTE' && (matched.superintendente_id === gerente.id || matched.id === gerente.id))
-          );
-
-          if (isMatch) {
-            const nomeCliente = (
-              t.contaOperacional?.cliente?.entidade?.nome ||
-              t.cliente?.nome ||
-              t.cedente_nome ||
-              t.cliente ||
-              'Cliente BitFin'
-            ).trim();
-
-            const emailCliente = t.contaOperacional?.cliente?.entidade?.email || t.cliente?.email || '-';
-            const telCliente = t.contaOperacional?.cliente?.entidade?.telefone || t.cliente?.telefone || '-';
-
-            if (cedentesMap.has(doc)) {
-              const existing = cedentesMap.get(doc);
-              if (emailCliente !== '-' && existing.email === '-') existing.email = emailCliente;
-              if (telCliente !== '-' && existing.telefone === '-') existing.telefone = telCliente;
-            } else {
-              cedentesMap.set(doc, {
-                documento: doc,
-                nome: nomeCliente,
-                email: emailCliente,
-                telefone: telCliente,
-                tipo: 'PJ',
-                gerente: matched.nome,
-                superintendente: gerente.superintendente_nome || (gerente.cargo === 'SUPERINTENDENTE' ? gerente.nome : 'Rafael Pereira'),
-                source: 'BitFin API'
-              });
-            }
-          }
-        }
-      }
+    // Se o gestor não tiver nenhum cedente no cache e o token da API estiver configurado, dispara sync em background
+    if (cedentesMap.size === 0 && UNLTD_TOKEN && !isSyncingBitfin) {
+      syncBitfinApiData(gerentes).catch(() => {});
     }
 
     const list = Array.from(cedentesMap.values()).sort((a, b) => a.nome.localeCompare(b.nome));
@@ -5064,4 +5208,19 @@ app.listen(PORT, () => {
   console.log(`🚀 SERVIDOR SQLITE EXPRESS RODANDO NA PORTA ${PORT}`);
   console.log(`🗄️  Banco de Dados: database.sqlite`);
   console.log(`===========================================\n`);
+
+  // Pré-carrega gestores e cedentes do banco local e da API BitFin em background
+  setTimeout(() => {
+    try {
+      ensureGerentesContasTable();
+      ensureGerentesCedentesCacheTable();
+      const gerentes = db.prepare(`SELECT * FROM gerentes_contas WHERE ativo = 1`).all();
+      syncLocalDatabaseCedentes(gerentes);
+      if (UNLTD_TOKEN) {
+        syncBitfinApiData(gerentes).catch(e => console.warn('Aviso no background sync de gerentes:', e.message));
+      }
+    } catch (e) {
+      console.warn('Aviso ao iniciar sync automático de gerentes:', e.message);
+    }
+  }, 2000);
 });
