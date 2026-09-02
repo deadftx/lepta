@@ -4,6 +4,7 @@ import { useNavigate, Outlet, Link, useLocation } from 'react-router-dom';
 import { useAuth } from './AuthContext';
 import NotificationBell from './NotificationBell';
 import TopHeaderTicker from './TopHeaderTicker';
+import SystemSearchModal from './SystemSearchModal';
 import './styles/Dashboard.css';
 import { hasAnyPermission, hasPermission } from './permissions';
 import { API_BASE_URL, getAuthHeaders } from '../../config/api';
@@ -13,26 +14,40 @@ const InternalLayout = () => {
   const location = useLocation();
   const { logout, user } = useAuth();
 
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
+
   const isPermissionsActive = location.pathname.startsWith('/permissions');
-  const [isPermissionsOpen, setIsPermissionsOpen] = useState(true);
+  const [isPermissionsOpen, setIsPermissionsOpen] = useState(false);
   
   const isFinanceActive = location.pathname.startsWith('/financeiro');
-  const [isFinanceOpen, setIsFinanceOpen] = useState(true);
+  const [isFinanceOpen, setIsFinanceOpen] = useState(false);
 
   const isIntelligenceActive = location.pathname.startsWith('/intelligence');
-  const [isIntelligenceOpen, setIsIntelligenceOpen] = useState(true);
+  const [isIntelligenceOpen, setIsIntelligenceOpen] = useState(false);
 
   const isAdministrativeActive = location.pathname.startsWith('/administrativo');
-  const [isAdministrativeOpen, setIsAdministrativeOpen] = useState(true);
+  const [isAdministrativeOpen, setIsAdministrativeOpen] = useState(false);
 
   const isConfirmationActive = location.pathname.startsWith('/confirmacao');
-  const [isConfirmationOpen, setIsConfirmationOpen] = useState(true);
+  const [isConfirmationOpen, setIsConfirmationOpen] = useState(false);
 
   const isCobrancaActive = location.pathname.startsWith('/cobranca');
-  const [isCobrancaOpen, setIsCobrancaOpen] = useState(true);
+  const [isCobrancaOpen, setIsCobrancaOpen] = useState(false);
   
   // Mobile sidebar state
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
+
+  // Global shortcut (Ctrl+K or Cmd+K) to toggle search modal
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        setIsSearchOpen(prev => !prev);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
 
   // Close sidebar on navigation on mobile
   useEffect(() => {
@@ -365,6 +380,18 @@ const InternalLayout = () => {
             <button className="mobile-menu-btn" onClick={() => setIsMobileSidebarOpen(true)}>
               <Menu size={24} />
             </button>
+
+            <button 
+              className="header-search-btn" 
+              onClick={() => setIsSearchOpen(true)}
+              title="Buscar módulos, recursos ou termos no sistema (Ctrl + K)"
+            >
+              <div className="header-search-icon-circle">
+                <Search size={15} />
+              </div>
+              <span className="header-search-label">Buscar no sistema...</span>
+              <span className="header-search-shortcut">Ctrl K</span>
+            </button>
           </div>
 
           <TopHeaderTicker />
@@ -378,6 +405,12 @@ const InternalLayout = () => {
           <Outlet />
         </div>
       </main>
+
+      {/* Global System Search & Navigation Assistant */}
+      <SystemSearchModal
+        isOpen={isSearchOpen}
+        onClose={() => setIsSearchOpen(false)}
+      />
     </div>
   );
 };

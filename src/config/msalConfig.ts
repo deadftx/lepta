@@ -47,7 +47,7 @@ export async function handleMicrosoftRedirect(): Promise<AuthenticationResult | 
 }
 
 export const loginRequest: PopupRequest = {
-  scopes: ['User.Read'],
+  scopes: ['User.Read', 'openid', 'profile', 'email'],
   prompt: 'select_account'
 };
 

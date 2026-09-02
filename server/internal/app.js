@@ -3797,9 +3797,11 @@ app.post('/api/auth/microsoft', authIpRateLimiter, async (req, res) => {
   }
 
   // Se veio idToken da Microsoft (JWT), decodifica o payload de forma robusta
+  let jwtTenantId = null;
   if (idToken) {
     const payload = parseJwtPayload(idToken);
     if (payload) {
+      jwtTenantId = payload.tid || null;
       targetEmail = String(
         payload.preferred_username ||
         payload.email ||
@@ -3816,11 +3818,12 @@ app.post('/api/auth/microsoft', authIpRateLimiter, async (req, res) => {
     return res.status(401).json({ error: 'Token corporativo Microsoft não fornecido ou inválido.' });
   }
 
-  // Restringe acesso exclusivamente a contas com domínio corporativo @lepta.com.br
-  const isLeptaDomain = targetEmail.endsWith('@lepta.com.br') || targetEmail.endsWith('@lepta.com');
+  // Restringe acesso a contas com domínio corporativo @lepta.com.br ou autenticadas no tenant oficial do Microsoft Entra ID
+  const isFromTenant = jwtTenantId === 'f376d8b7-1a55-4cfb-a8e1-3e2799e0918e';
+  const isLeptaDomain = targetEmail.endsWith('@lepta.com.br') || targetEmail.endsWith('@lepta.com') || targetEmail.endsWith('@leptacapital.com.br') || isFromTenant;
   if (!isLeptaDomain && targetEmail !== 'leptamaster') {
     return res.status(403).json({ 
-      error: 'Acesso restrito. Apenas contas corporativas com domínio @lepta.com.br são autorizadas.' 
+      error: 'Acesso restrito. Apenas contas corporativas com domínio @lepta.com.br ou autorizadas no Microsoft Entra ID são permitidas.' 
     });
   }
 
@@ -3835,13 +3838,13 @@ app.post('/api/auth/microsoft', authIpRateLimiter, async (req, res) => {
       LIMIT 1
     `).get(targetEmail, targetEmail, targetMicrosoftId, targetEmail);
 
-    // Se o colaborador ainda não tem registro no sistema, cria automaticamente a conta no banco via AD
+    // Se o colaborador ainda não tem registro no sistema, cria automaticamente a conta no banco com as permissões padrão:
+    // Home (livre para todos autenticados) + Administrativo > Solicitação Financeira ('11.1') + Administrativo > Agendar Sala de Reunião ('11.3')
     if (!user) {
       const username = targetEmail.split('@')[0];
       const userId = 'usr_' + Date.now();
       const now = new Date().toISOString();
-      // Por padrão corporativo, apenas Financeiro > Reembolsos e Despesas ('7.4') e HOME vêm liberados
-      const defaultPermissions = JSON.stringify(['7.4']);
+      const defaultPermissions = JSON.stringify(['11.1', '11.3']);
 
       try {
         db.prepare(`
