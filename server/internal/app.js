@@ -3237,37 +3237,179 @@ app.get('/api/cobranca/vencidos', requireSession, requirePermission('12.1', '12'
     let titles = [];
     let dataSource = 'api';
 
-    // Helper para identificar e excluir Cobrança Simples
-    const isCobrancaSimples = (item) => {
+    // Helper para converter qualquer formato de data para 'YYYY-MM-DD'
+    const parseDateToIso = (dStr) => {
+      if (!dStr) return null;
+      if (typeof dStr === 'string') {
+        const trimmed = dStr.trim();
+        if (trimmed.includes('/')) {
+          const parts = trimmed.split('/');
+          if (parts.length === 3) {
+            const dia = parts[0].padStart(2, '0');
+            const mes = parts[1].padStart(2, '0');
+            const ano = parts[2].length === 2 ? `20${parts[2]}` : parts[2];
+            return `${ano}-${mes}-${dia}`;
+          }
+        }
+        if (/^\d{4}-\d{2}-\d{2}/.test(trimmed)) {
+          return trimmed.slice(0, 10);
+        }
+      }
+      if (dStr instanceof Date && !Number.isNaN(dStr.getTime())) {
+        return dStr.toISOString().slice(0, 10);
+      }
+      return null;
+    };
+
+    // Helper: Identificar e excluir Cobrança Simples ou Domicílio Simples (busca por simples, CS, DS)
+    const isCobrancaSimplesOuDomicilioSimples = (item) => {
       if (!item) return false;
-      const checkStrings = [
+      const checkFields = [
         item.modalidade,
         item.operacao?.modalidade,
+        item.MODALIDADE,
         item.tipoDeOperacao,
         item.operacao?.tipoDeOperacao,
+        item.tipoOperacao,
+        item.TIPO_OPERACAO,
         item.tipo,
         item.operacao?.tipo,
+        item.TIPO,
         item.produto,
         item.operacao?.produto,
+        item.PRODUTO,
         item.carteira,
         item.operacao?.carteira,
-        item.tipoDocumento,
-        item.MODALIDADE,
-        item.TIPO,
-        item.PRODUTO,
         item.CARTEIRA,
-        item.TIPO_DOCUMENTO
+        item.tipoDocumento,
+        item.tipoDeDocumento,
+        item.TIPO_DOCUMENTO,
+        item.documentoTipo,
+        item.especie,
+        item.ESPECIE,
+        item.natureza,
+        item.operacao?.natureza,
+        item.observacao,
+        item.OBSERVACAO,
+        item.obs,
+        item.descricao,
+        item.DESCRICAO,
+        item.bancoCobrador,
+        item.BANCO_COBRADOR,
+        item.SIGLA,
+        item.sigla,
+        item.operacao?.sigla,
+        item.operacao?.numero,
+        item.numero,
+        item.NUMERO
       ];
 
-      for (const cs of checkStrings) {
-        if (!cs) continue;
-        const s = (typeof cs === 'string' ? cs : (cs.nome || cs.descricao || cs.alias || cs.tipo || '')).toLowerCase();
-        if (s.includes('simples') || s.includes('custodia') || s.includes('custódia')) {
-          return true;
+      for (const cf of checkFields) {
+        if (!cf) continue;
+        const texts = [];
+        if (typeof cf === 'string') {
+          texts.push(cf);
+        } else if (typeof cf === 'object') {
+          if (cf.nome) texts.push(cf.nome);
+          if (cf.descricao) texts.push(cf.descricao);
+          if (cf.alias) texts.push(cf.alias);
+          if (cf.sigla) texts.push(cf.sigla);
+          if (cf.tipo) texts.push(cf.tipo);
+          if (cf.titulo) texts.push(cf.titulo);
+          if (cf.codigo) texts.push(String(cf.codigo));
+        }
+
+        for (const raw of texts) {
+          if (!raw || typeof raw !== 'string') continue;
+          const s = raw.trim().toLowerCase();
+          if (!s) continue;
+
+          // 1. Termo "simples" (cobre Cobrança Simples, Domicílio Simples, etc.)
+          if (s.includes('simples')) return true;
+
+          // 2. Termo "custodia" ou "custódia"
+          if (s.includes('custodia') || s.includes('custódia')) return true;
+
+          // 3. Termo "domicilio" ou "domicílio"
+          if (s.includes('domicilio') || s.includes('domicílio')) return true;
+
+          // 4. Siglas CS ou DS
+          if (s === 'cs' || s === 'ds' || s === 'c.s.' || s === 'd.s.') return true;
+          if (/\b(cs|ds)\b/i.test(s)) return true;
+          if (s.startsWith('cs-') || s.startsWith('ds-') || s.startsWith('cs/') || s.startsWith('ds/') || s.startsWith('cs ') || s.startsWith('ds ')) return true;
+          if (s.endsWith(' cs') || s.endsWith(' ds') || s.includes('(cs)') || s.includes('(ds)')) return true;
         }
       }
       return false;
     };
+
+    // Helper: Identificar se o título está efetivamente em aberto
+    const isEmAberto = (item, mapLiquidacoes = null) => {
+      if (!item) return false;
+
+      // 1. Se consta no mapa de liquidações da API
+      if (mapLiquidacoes) {
+        if (item.id && mapLiquidacoes.has(String(item.id))) return false;
+        if (item.numero && mapLiquidacoes.has(String(item.numero))) return false;
+        if (item.numeroDoTitulo && mapLiquidacoes.has(String(item.numeroDoTitulo))) return false;
+      }
+
+      // 2. Flags booleanas
+      if (item.liquidado === true || item.baixado === true || item.quitado === true || item.pago === true || item.recomprado === true) {
+        return false;
+      }
+
+      // 3. Situações que indicam que o título NÃO está em aberto
+      const sitFields = [
+        item.situacao,
+        item.status,
+        item.SITUACAO,
+        item.statusTitulo,
+        item.estado,
+        item.operacao?.situacao
+      ];
+
+      for (const sf of sitFields) {
+        if (!sf) continue;
+        const sit = (typeof sf === 'string' ? sf : (sf.nome || sf.descricao || '')).trim().toLowerCase();
+        if (!sit) continue;
+
+        if (
+          sit.includes('liquidado') ||
+          sit.includes('liq.') ||
+          sit.includes('pago') ||
+          sit.includes('quitado') ||
+          sit.includes('recomprad') ||
+          sit.includes('recompra') ||
+          sit === 'baixado' ||
+          sit.startsWith('baixado') ||
+          sit.includes('cancelad') ||
+          sit.includes('rejeitad') ||
+          sit.includes('estornad') ||
+          sit.includes('devolvido')
+        ) {
+          return false;
+        }
+      }
+
+      // 4. Saldo devedor zerado ou negativo
+      const saldoDevedor = Number(item.saldoDevedor ?? item.SALDO_DEVEDOR ?? item.saldo);
+      if (!Number.isNaN(saldoDevedor) && saldoDevedor <= 0 && (item.saldoDevedor !== undefined || item.SALDO_DEVEDOR !== undefined || item.saldo !== undefined)) {
+        return false;
+      }
+
+      // 5. Valor pago >= valor nominal
+      const valNom = Number(item.valorNominal ?? item.VALOR_NOMINAL);
+      const valPago = Number(item.valorPago ?? item.VALOR_PAGO);
+      if (valNom > 0 && !Number.isNaN(valPago) && valPago >= valNom) {
+        return false;
+      }
+
+      return true;
+    };
+
+    // Data de hoje no fuso horário do Brasil (America/Sao_Paulo) em YYYY-MM-DD
+    const hojeStr = new Intl.DateTimeFormat('fr-CA', { timeZone: 'America/Sao_Paulo' }).format(new Date());
 
     try {
       const [apiTitulos, liquidacoes] = await Promise.all([
@@ -3281,35 +3423,29 @@ app.get('/api/cobranca/vencidos', requireSession, requirePermission('12.1', '12'
         if (liq.numero) mapLiquidacoes.set(String(liq.numero), liq);
       }
 
-      const hoje = new Date();
-      hoje.setHours(0, 0, 0, 0);
-
       for (const t of apiTitulos) {
         const clienteTit = t.contaOperacional?.cliente?.entidade?.nome;
         if (!clienteTit) continue;
 
-        // Excluir títulos que sejam Cobrança Simples
-        if (isCobrancaSimples(t)) {
+        // Regra 2: Titulos de COBRANÇA SIMPLES ou DOMICIO SIMPLES (buscar por simples, ou CS ou DS) não podem entrar na lista
+        if (isCobrancaSimplesOuDomicilioSimples(t)) {
           continue;
         }
 
-        const sitRaw = (t.situacao || '').toLowerCase();
-        let dataVenc = t.dataDeVencimento ? new Date(t.dataDeVencimento) : null;
-        if (dataVenc) dataVenc.setHours(0, 0, 0, 0);
-
-        // Exclui apenas se foi liquidado, pago, quitado ou recomprado
-        const isLiquidado = sitRaw.includes('liquidado') || sitRaw.includes('liq.') || sitRaw.includes('pago') || sitRaw.includes('quitado');
-        const isRecomprado = sitRaw.includes('recomprad') || sitRaw.includes('baixad');
-        
-        if (isLiquidado || isRecomprado || !dataVenc || Number.isNaN(dataVenc.getTime()) || dataVenc >= hoje) {
-          continue;
+        // Regra 1: o título PRECISA estar em aberto com data de vencimento < que a data atual
+        const dataVencIso = parseDateToIso(t.dataDeVencimento || t.dataVencimento || t.vencimento);
+        if (!dataVencIso || dataVencIso >= hojeStr) {
+          continue; // Vencimento igual ou maior que hoje NÃO é vencido
         }
 
-        const diasAtraso = Math.floor((hoje.getTime() - dataVenc.getTime()) / (1000 * 60 * 60 * 24));
-        if (diasAtraso < 1) continue;
+        if (!isEmAberto(t, mapLiquidacoes)) {
+          continue; // Título não está em aberto
+        }
 
-        const dataOp = t.dataDeOperacao || t.operacao?.data || t.dataDeEmissao || t.dataDeCadastro || null;
-        const dataVencStr = t.dataDeVencimento || dataVenc.toISOString().split('T')[0];
+        const diffMs = new Date(`${hojeStr}T12:00:00Z`).getTime() - new Date(`${dataVencIso}T12:00:00Z`).getTime();
+        const diasAtraso = Math.max(1, Math.floor(diffMs / (1000 * 60 * 60 * 24)));
+
+        const dataOp = parseDateToIso(t.dataDeOperacao || t.operacao?.data || t.dataDeEmissao || t.dataDeCadastro || null);
         const valNominal = Number(t.valorNominal) || 0;
         const valLiquido = Number(t.valorLiquido ?? t.valorNominal) || 0;
         const tipoDoc = extractTipoDocumento(t);
@@ -3328,9 +3464,9 @@ app.get('/api/cobranca/vencidos', requireSession, requirePermission('12.1', '12'
           sacado: t.sacado?.entidade?.nome || 'Não informado',
           documentoSacado: t.sacado?.entidade?.documento || '',
           ua: t.contaOperacional?.unidadeAdministrativa?.alias || t.contaOperacional?.unidadeAdministrativa?.nome || 'Padrão',
-          dataVencimento: dataVencStr,
+          dataVencimento: dataVencIso,
           dataOperacao: dataOp,
-          dataEmissao: t.dataDeEmissao || null,
+          dataEmissao: parseDateToIso(t.dataDeEmissao) || null,
           diasAtraso,
           situacao: sitLabel,
           valorNominal: valNominal,
@@ -3351,45 +3487,34 @@ app.get('/api/cobranca/vencidos', requireSession, requirePermission('12.1', '12'
     // Se API retornou vazio ou deu fallback, consultar BASE_SMARTFACTOR
     if (titles.length === 0) {
       try {
-        const hoje = new Date();
-        hoje.setHours(0, 0, 0, 0);
-
         const sfRows = db.prepare(`
           SELECT * FROM BASE_SMARTFACTOR 
-          WHERE (VENCIDO = 'Sim' OR LOWER(SITUACAO) LIKE '%vencid%' OR (VENCIMENTO IS NOT NULL AND VENCIMENTO != ''))
+          WHERE (
+            (LOWER(SITUACAO) = 'aberto' OR LOWER(SITUACAO) LIKE 'aberto%')
+            AND LOWER(SITUACAO) NOT LIKE '%quitad%'
+            AND LOWER(SITUACAO) NOT LIKE '%baixad%'
+            AND LOWER(SITUACAO) NOT LIKE '%rejeitad%'
+            AND LOWER(SITUACAO) NOT LIKE '%liquid%'
+            AND (SALDO_DEVEDOR IS NULL OR SALDO_DEVEDOR > 0)
+          )
           ORDER BY ID DESC
-          LIMIT 4000
+          LIMIT 5000
         `).all();
 
         if (sfRows.length > 0) {
           dataSource = 'db';
           titles = sfRows
-            .filter(r => !isCobrancaSimples(r))
+            .filter(r => !isCobrancaSimplesOuDomicilioSimples(r) && isEmAberto(r))
             .map(r => {
-              const parseDateToIso = (dStr) => {
-                if (!dStr) return null;
-                if (dStr.includes('/')) {
-                  const parts = dStr.split('/');
-                  if (parts.length === 3) return `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
-                }
-                return dStr;
-              };
-
-              const dataVencIso = parseDateToIso(r.VENCIMENTO);
-              let diasAtraso = 0;
-              if (dataVencIso) {
-                const dV = new Date(dataVencIso);
-                dV.setHours(0, 0, 0, 0);
-                if (!Number.isNaN(dV.getTime()) && dV < hoje) {
-                  diasAtraso = Math.floor((hoje.getTime() - dV.getTime()) / (1000 * 60 * 60 * 24));
-                }
-              }
-
-              const sit = r.SITUACAO || (diasAtraso > 0 ? 'Vencido' : 'Aberto');
-              const sitLow = sit.toLowerCase();
-              if (sitLow.includes('liquidado') || sitLow.includes('pago') || sitLow.includes('quitado') || sitLow.includes('recomprad') || diasAtraso < 1) {
+              const dataVencIso = parseDateToIso(r.VENCIMENTO || r.VENCIMENTO_EFETIVO);
+              if (!dataVencIso || dataVencIso >= hojeStr) {
                 return null;
               }
+
+              const diffMs = new Date(`${hojeStr}T12:00:00Z`).getTime() - new Date(`${dataVencIso}T12:00:00Z`).getTime();
+              const diasAtraso = Math.max(1, Math.floor(diffMs / (1000 * 60 * 60 * 24)));
+
+              const sit = r.SITUACAO || 'Vencido';
 
               return {
                 id: String(r.ID || r.NUMERO),

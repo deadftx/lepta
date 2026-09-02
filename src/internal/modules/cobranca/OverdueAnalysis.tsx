@@ -62,6 +62,133 @@ const formatDate = (dateStr?: string | null) => {
   return dateStr;
 };
 
+const getIsoDateString = (dateStr?: string | null): string | null => {
+  if (!dateStr) return null;
+  const trimmed = dateStr.trim();
+  if (trimmed.includes('/')) {
+    const parts = trimmed.split('/');
+    if (parts.length === 3) {
+      const d = parts[0].padStart(2, '0');
+      const m = parts[1].padStart(2, '0');
+      const y = parts[2].length === 2 ? `20${parts[2]}` : parts[2];
+      return `${y}-${m}-${d}`;
+    }
+  }
+  if (/^\d{4}-\d{2}-\d{2}/.test(trimmed)) {
+    return trimmed.slice(0, 10);
+  }
+  return null;
+};
+
+// Regra 1: Título vencido com dataVencimento < dataAtual (fuso Brasil)
+const isVencidoEstrito = (dateStr?: string | null): boolean => {
+  const vencIso = getIsoDateString(dateStr);
+  if (!vencIso) return false;
+  const hojeStr = new Intl.DateTimeFormat('fr-CA', { timeZone: 'America/Sao_Paulo' }).format(new Date());
+  return vencIso < hojeStr;
+};
+
+// Regra 1: Título em aberto (não liquidado, pago, quitado, recomprado ou baixado)
+const isEmAbertoEstrito = (t: TituloVencido): boolean => {
+  if (!t) return false;
+  const sit = String(t.situacao || '').trim().toLowerCase();
+  if (
+    sit.includes('liquidado') ||
+    sit.includes('liq.') ||
+    sit.includes('pago') ||
+    sit.includes('quitado') ||
+    sit.includes('recomprad') ||
+    sit.includes('recompra') ||
+    sit === 'baixado' ||
+    sit.startsWith('baixado') ||
+    sit.includes('cancelad') ||
+    sit.includes('rejeitad') ||
+    sit.includes('estornad') ||
+    sit.includes('devolvido')
+  ) {
+    return false;
+  }
+  return true;
+};
+
+// Regra 2: Exclusão de Cobrança Simples ou Domicílio Simples (busca por simples, CS, DS)
+const isCobrancaSimplesOuDomicilioSimples = (t: TituloVencido | any): boolean => {
+  if (!t) return false;
+  const fields = [
+    t.tipoDocumento,
+    t.tipo,
+    t.modalidade,
+    t.produto,
+    t.carteira,
+    t.tipoOperacao,
+    t.natureza,
+    t.especie,
+    t.observacao,
+    t.descricao,
+    t.bancoCobrador,
+    t.numero,
+    t.operacao
+  ];
+
+  for (const f of fields) {
+    if (!f || typeof f !== 'string') continue;
+    const s = f.trim().toLowerCase();
+    if (!s) continue;
+
+    // 1. Termo simples
+    if (s.includes('simples')) return true;
+
+    // 2. Termo custodia
+    if (s.includes('custodia') || s.includes('custódia')) return true;
+
+    // 3. Termo domicilio
+    if (s.includes('domicilio') || s.includes('domicílio')) return true;
+
+    // 4. Siglas CS ou DS isoladas ou como prefixo/sufixo
+    if (s === 'cs' || s === 'ds' || s === 'c.s.' || s === 'd.s.') return true;
+    if (/\b(cs|ds)\b/i.test(s)) return true;
+    if (s.startsWith('cs-') || s.startsWith('ds-') || s.startsWith('cs/') || s.startsWith('ds/') || s.startsWith('cs ') || s.startsWith('ds ')) return true;
+    if (s.endsWith(' cs') || s.endsWith(' ds') || s.includes('(cs)') || s.includes('(ds)')) return true;
+  }
+  return false;
+};
+
+const computeKpis = (titulosList: TituloVencido[]): KpisOverdue => {
+  const totalValorNominal = titulosList.reduce((acc, curr) => acc + (curr.valorNominal || 0), 0);
+  const totalValorLiquido = titulosList.reduce((acc, curr) => acc + (curr.valorLiquido || 0), 0);
+  const totalQtd = titulosList.length;
+  const uniqueCedentes = new Set(titulosList.map(t => t.cedente)).size;
+  const uniqueSacados = new Set(titulosList.map(t => t.sacado)).size;
+
+  const faixas = {
+    ate30: {
+      qtd: titulosList.filter(t => t.diasAtraso <= 30).length,
+      valor: titulosList.filter(t => t.diasAtraso <= 30).reduce((acc, curr) => acc + (curr.valorNominal || 0), 0)
+    },
+    de31a60: {
+      qtd: titulosList.filter(t => t.diasAtraso >= 31 && t.diasAtraso <= 60).length,
+      valor: titulosList.filter(t => t.diasAtraso >= 31 && t.diasAtraso <= 60).reduce((acc, curr) => acc + (curr.valorNominal || 0), 0)
+    },
+    de61a90: {
+      qtd: titulosList.filter(t => t.diasAtraso >= 61 && t.diasAtraso <= 90).length,
+      valor: titulosList.filter(t => t.diasAtraso >= 61 && t.diasAtraso <= 90).reduce((acc, curr) => acc + (curr.valorNominal || 0), 0)
+    },
+    acima90: {
+      qtd: titulosList.filter(t => t.diasAtraso > 90).length,
+      valor: titulosList.filter(t => t.diasAtraso > 90).reduce((acc, curr) => acc + (curr.valorNominal || 0), 0)
+    }
+  };
+
+  return {
+    totalValorNominal,
+    totalValorLiquido,
+    totalQtd,
+    uniqueCedentes,
+    uniqueSacados,
+    faixas
+  };
+};
+
 const OverdueAnalysis = () => {
   const navigate = useNavigate();
 
@@ -136,12 +263,34 @@ const OverdueAnalysis = () => {
       setDataSource(source);
 
       const data = await res.json();
-      setTitulos(data.titulos || []);
-      setKpis(data.kpis || null);
-      if (data.cedentesList) setCedentesList(data.cedentesList);
-      if (data.sacadosList) setSacadosList(data.sacadosList);
-      if (data.tiposList) setTiposList(data.tiposList);
-      if (data.situacoesList) setSituacoesList(data.situacoesList);
+      const rawList: TituloVencido[] = Array.isArray(data.titulos) ? data.titulos : [];
+
+      // Filtro estrito:
+      // 1- Título em aberto com data de vencimento < data atual (Brasil)
+      // 2- Exclusão de Cobrança Simples e Domicílio Simples (busca por simples, CS, DS)
+      const validTitulos = rawList.filter(t =>
+        isEmAbertoEstrito(t) &&
+        isVencidoEstrito(t.dataVencimento) &&
+        !isCobrancaSimplesOuDomicilioSimples(t)
+      );
+
+      setTitulos(validTitulos);
+      setKpis(computeKpis(validTitulos));
+
+      const setCed = new Set<string>();
+      const setSac = new Set<string>();
+      const setTip = new Set<string>();
+      const setSit = new Set<string>();
+      validTitulos.forEach(t => {
+        if (t.cedente) setCed.add(t.cedente);
+        if (t.sacado && t.sacado !== 'Não informado') setSac.add(t.sacado);
+        if (t.tipoDocumento && t.tipoDocumento !== '-') setTip.add(t.tipoDocumento);
+        if (t.situacao) setSit.add(t.situacao);
+      });
+      setCedentesList(Array.from(setCed).sort());
+      setSacadosList(Array.from(setSac).sort());
+      setTiposList(Array.from(setTip).sort());
+      setSituacoesList(Array.from(setSit).sort());
     } catch (err: any) {
       console.error('Erro ao buscar vencidos:', err);
       setError(err?.message || 'Erro ao carregar títulos vencidos.');
