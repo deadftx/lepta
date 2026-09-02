@@ -51,13 +51,10 @@ export const loginRequest: PopupRequest = {
   prompt: 'select_account'
 };
 
-/**
- * Autentica com a Microsoft (usa janela Popup oficial com fallback automático para redirecionamento)
- */
 export async function authenticateWithMicrosoft(): Promise<{ idToken: string; email: string; name: string } | null> {
   const msal = await getMsalInstance();
 
-  // 1. Tenta autenticação via janela Popup oficial da Microsoft
+  // Tenta autenticação via janela Popup oficial da Microsoft
   try {
     const popupResult = await msal.loginPopup(loginRequest);
     if (popupResult && popupResult.idToken) {
@@ -80,12 +77,8 @@ export async function authenticateWithMicrosoft(): Promise<{ idToken: string; em
       return null;
     }
 
-    console.warn('Popup falhou ou bloqueado (' + errCode + '). Executando redirecionamento completo via loginRedirect...');
-    
-    // Em caso de post_request_failed, popup_window_error ou qualquer restrição de CORS no popup,
-    // fazemos o fallback automático para o fluxo oficial de redirecionamento (Redirect Flow)
-    await msal.loginRedirect(loginRequest);
-    return null;
+    console.error('Erro na autenticação por popup MSAL:', popupErr);
+    throw popupErr;
   }
 
   return null;

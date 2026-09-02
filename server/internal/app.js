@@ -75,13 +75,13 @@ app.use((req, res, next) => {
     "base-uri 'self'",
     "object-src 'none'",
     "frame-ancestors 'self'",
-    "form-action 'self'",
-    "script-src 'self'",
+    "form-action 'self' https://login.microsoftonline.com https://*.microsoftonline.com",
+    "script-src 'self' 'unsafe-inline'",
     "style-src 'self' 'unsafe-inline'",
     "img-src 'self' data: blob:",
     "font-src 'self' data:",
-    "connect-src 'self'",
-    "frame-src https://app.powerbi.com https://*.powerbi.com"
+    "connect-src 'self' https://login.microsoftonline.com https://*.microsoftonline.com https://graph.microsoft.com",
+    "frame-src 'self' https://login.microsoftonline.com https://*.microsoftonline.com https://app.powerbi.com https://*.powerbi.com"
   ].join('; '));
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('X-Frame-Options', 'SAMEORIGIN');
