@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { LogOut, User, ShieldAlert, Shield, UserPlus, Users, ChevronDown, ChevronRight, LayoutDashboard, Sliders, Home, Calendar, CalendarCheck, Menu, X, Wallet, FileSpreadsheet, BrainCircuit, Database, ClipboardCheck, ContactRound, ShieldCheck, Landmark, Briefcase, ShoppingCart, SlidersHorizontal, DollarSign, Mail, Search, TrendingUp, UserCheck } from 'lucide-react';
+import { LogOut, User, ShieldAlert, Shield, UserPlus, Users, ChevronDown, ChevronRight, LayoutDashboard, Sliders, Home, Calendar, CalendarCheck, Menu, X, Wallet, FileSpreadsheet, BrainCircuit, Database, ClipboardCheck, ContactRound, ShieldCheck, Landmark, Briefcase, ShoppingCart, SlidersHorizontal, DollarSign, Mail, Search, TrendingUp, UserCheck, Scale, FileCheck } from 'lucide-react';
 import { useNavigate, Outlet, Link, useLocation } from 'react-router-dom';
 import { useAuth } from './AuthContext';
 import NotificationBell from './NotificationBell';
@@ -33,6 +33,9 @@ const InternalLayout = () => {
 
   const isCobrancaActive = location.pathname.startsWith('/cobranca');
   const [isCobrancaOpen, setIsCobrancaOpen] = useState(false);
+
+  const isLegalActive = location.pathname.startsWith('/juridico');
+  const [isLegalOpen, setIsLegalOpen] = useState(false);
   
   // Mobile sidebar state
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
@@ -309,6 +312,30 @@ const InternalLayout = () => {
                   {hasAccess('12.1') && (
                     <Link to="/cobranca/analise-vencidos" className={navItemClass('/cobranca/analise-vencidos')}>
                       <FileSpreadsheet size={18} /> Análise de Vencidos
+                    </Link>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+          {hasAnyPermission(user, ['13.1', '13']) && (
+            <div className="nav-menu-group">
+              <div
+                className={`nav-item nav-item-parent ${isLegalActive ? 'active' : ''}`}
+                onClick={() => setIsLegalOpen(!isLegalOpen)}
+                style={{ cursor: 'pointer', justifyContent: 'space-between' }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                  <Scale size={20} /> Jurídico
+                </div>
+                {isLegalOpen ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+              </div>
+
+              {isLegalOpen && (
+                <div className="nav-submenu" style={{ paddingLeft: '1rem' }}>
+                  {hasAccess('13.1') && (
+                    <Link to="/juridico/aprovacao-pagamentos" className={navItemClass('/juridico/aprovacao-pagamentos')}>
+                      <FileCheck size={18} /> Aprovação de Pagamentos
                     </Link>
                   )}
                 </div>

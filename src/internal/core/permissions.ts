@@ -58,6 +58,13 @@ export const permissionGroups: PermissionGroup[] = [
       { id: '12.1', name: 'Análise de Vencidos' }
     ]
   },
+  {
+    id: '13',
+    name: 'Jurídico',
+    children: [
+      { id: '13.1', name: 'Aprovação de Pagamentos' }
+    ]
+  },
   { id: '9', name: 'Banco de Dados' },
   { id: '5', name: 'Dashboards' },
   { id: '4', name: 'Business Intelligence' }
@@ -86,9 +93,40 @@ export const normalizePermissions = (permissions: string[] = []) => {
 export const hasPermission = (user: User | null, permissionId: string) => {
   if (!user) return false;
   if (user.role === 'MASTER') return true;
+
+  // 1. Verifica permissões diretas ou já combinadas no objeto do usuário
   const perms = normalizePermissions(user.permissions);
   if (perms.includes(permissionId)) return true;
   if (permissionId === '8.6' && (perms.includes('8.1') || perms.includes('8'))) return true;
+
+  // 2. Fallback resiliente: verifica grupos cacheados no navegador
+  try {
+    const cachedGroups = localStorage.getItem('lepta_groups_cache');
+    if (cachedGroups) {
+      const groups = JSON.parse(cachedGroups);
+      if (Array.isArray(groups)) {
+        const uId = String(user.id);
+        const uEmail = (user.email || '').toLowerCase().trim();
+        const uGrpId = String(user.groupId || user.group_id || '');
+
+        for (const g of groups) {
+          if (!g) continue;
+          const matchById = uGrpId && String(g.id) === uGrpId;
+          const matchByList = Array.isArray(g.userIds) && g.userIds.some((x: any) => {
+            const str = String(x).toLowerCase().trim();
+            return str === uId.toLowerCase() || (uEmail && str === uEmail);
+          });
+
+          if (matchById || matchByList) {
+            const groupPerms = normalizePermissions(g.permissions || []);
+            if (groupPerms.includes(permissionId)) return true;
+            if (permissionId === '8.6' && (groupPerms.includes('8.1') || groupPerms.includes('8'))) return true;
+          }
+        }
+      }
+    }
+  } catch {}
+
   return false;
 };
 

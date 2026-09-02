@@ -451,6 +451,28 @@ export const systemSearchItems: SearchItem[] = [
   },
 
   // ==========================================
+  // GRUPO JURÍDICO
+  // ==========================================
+  {
+    id: 'legal-payment-approval',
+    title: 'Aprovação de Pagamentos (Jurídico)',
+    category: 'Jurídico',
+    breadcrumb: ['Grupos', 'Jurídico', 'Aprovação de Pagamentos'],
+    path: '/juridico/aprovacao-pagamentos',
+    permissionId: '13.1',
+    description: 'Validação e parecer jurídico prévio para solicitações financeiras com valores iguais ou superiores a R$ 2.000,00.',
+    explanation: 'Acesse Grupos > Jurídico > Aprovação de Pagamentos para analisar e emitir parecer ou anexar contratos em solicitações ≥ R$ 2.000.',
+    tags: ['Jurídico', 'Aprovação ≥ 2000', 'Contratos', 'Parecer Jurídico', 'Minutas', 'Compliance'],
+    keywords: [
+      'juridico', 'aprovacao de pagamentos', 'aprovacao juridica', 'parecer juridico', 'analise juridica',
+      'pagamento acima de 2000', 'solicitacao acima de 2000', '2000', '2 mil', 'contratos', 'minuta', 'minutas',
+      'aditivo', 'conformidade', 'compliance', 'parecer', 'advogado', 'validacao juridica'
+    ],
+    icon: 'Scale',
+    badge: 'Submenu'
+  },
+
+  // ==========================================
   // ADMINISTRAÇÃO & PERMISSÕES (MASTER)
   // ==========================================
   {

@@ -11,6 +11,26 @@ export default defineConfig({
         target: 'https://lepta.com.br',
         changeOrigin: true,
         secure: true
+      },
+      '/groups': {
+        target: 'https://lepta.com.br',
+        changeOrigin: true,
+        secure: true
+      },
+      '/users': {
+        target: 'https://lepta.com.br',
+        changeOrigin: true,
+        secure: true
+      },
+      '/databaseTables': {
+        target: 'https://lepta.com.br',
+        changeOrigin: true,
+        secure: true
+      },
+      '/calendarEvents': {
+        target: 'https://lepta.com.br',
+        changeOrigin: true,
+        secure: true
       }
     }
   }

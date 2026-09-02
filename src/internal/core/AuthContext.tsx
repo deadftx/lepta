@@ -8,6 +8,9 @@ export interface User {
   email?: string;
   role: 'MASTER' | 'USER';
   groupId?: string;
+  group_id?: string;
+  groupName?: string;
+  directPermissions?: string[];
   permissions: string[];
   requiresSecuritySetup?: boolean;
   accessLocked?: boolean;
@@ -90,10 +93,111 @@ const SecuritySetup = ({ onComplete, onLogout }: { onComplete: (user: User) => v
 
 import { handleMicrosoftRedirect } from '../../config/msalConfig';
 
+async function enrichUserWithGroupPermissions(rawUser: User, authToken?: string): Promise<User> {
+  if (!rawUser || rawUser.role === 'MASTER') return rawUser;
+
+  try {
+    const token = authToken || localStorage.getItem('lepta_auth_token');
+    let groups: any[] = [];
+
+    // Tenta carregar do cache para enriquecimento instantâneo
+    try {
+      const cached = localStorage.getItem('lepta_groups_cache');
+      if (cached) groups = JSON.parse(cached);
+    } catch {}
+
+    // Busca grupos atualizados na API
+    if (token) {
+      try {
+        let res = await fetch(`${API_BASE_URL}/api/groups`, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        if (res.ok && res.headers.get('content-type')?.includes('application/json')) {
+          const apiGroups = await res.json();
+          if (Array.isArray(apiGroups) && apiGroups.length > 0) {
+            groups = apiGroups;
+            localStorage.setItem('lepta_groups_cache', JSON.stringify(apiGroups));
+          }
+        } else {
+          let res2 = await fetch(`${API_BASE_URL}/groups`, {
+            headers: { Authorization: `Bearer ${token}` }
+          });
+          if (res2.ok && res2.headers.get('content-type')?.includes('application/json')) {
+            const apiGroups2 = await res2.json();
+            if (Array.isArray(apiGroups2) && apiGroups2.length > 0) {
+              groups = apiGroups2;
+              localStorage.setItem('lepta_groups_cache', JSON.stringify(apiGroups2));
+            }
+          }
+        }
+      } catch {}
+    }
+
+    if (!Array.isArray(groups) || groups.length === 0) return rawUser;
+
+    const uId = String(rawUser.id);
+    const uEmail = (rawUser.email || '').toLowerCase().trim();
+    const uGrpId = String(rawUser.groupId || rawUser.group_id || '');
+
+    const matchingGroups = groups.filter(g => {
+      if (!g) return false;
+      const matchById = uGrpId && String(g.id) === uGrpId;
+      const matchByList = Array.isArray(g.userIds) && g.userIds.some((x: any) => {
+        const str = String(x).toLowerCase().trim();
+        return str === uId.toLowerCase() || (uEmail && str === uEmail);
+      });
+      return matchById || matchByList;
+    });
+
+    if (matchingGroups.length === 0) return rawUser;
+
+    const groupPerms = matchingGroups.flatMap(g => Array.isArray(g.permissions) ? g.permissions : []);
+    const directPerms = Array.isArray(rawUser.directPermissions) && rawUser.directPermissions.length > 0
+      ? rawUser.directPermissions
+      : (rawUser.permissions || []);
+
+    const effective = Array.from(new Set([...directPerms, ...groupPerms]));
+
+    return {
+      ...rawUser,
+      groupId: rawUser.groupId || rawUser.group_id || matchingGroups[0]?.id,
+      group_id: rawUser.group_id || rawUser.groupId || matchingGroups[0]?.id,
+      groupName: rawUser.groupName || matchingGroups[0]?.name,
+      directPermissions: directPerms,
+      permissions: effective
+    };
+  } catch (err) {
+    console.warn('Erro ao enriquecer permissões do grupo:', err);
+    return rawUser;
+  }
+}
+
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
+
+  const refreshUserPermissions = async () => {
+    const token = localStorage.getItem('lepta_auth_token');
+    const stored = localStorage.getItem('lepta_user');
+    if (!token || !stored) return;
+    try {
+      const parsed = JSON.parse(stored);
+      const enriched = await enrichUserWithGroupPermissions(parsed, token);
+      setUser(enriched);
+      localStorage.setItem('lepta_user', JSON.stringify(enriched));
+    } catch {}
+  };
+
+  useEffect(() => {
+    const handlePermissionsUpdated = () => {
+      refreshUserPermissions();
+    };
+    window.addEventListener('lepta_permissions_updated', handlePermissionsUpdated);
+    return () => {
+      window.removeEventListener('lepta_permissions_updated', handlePermissionsUpdated);
+    };
+  }, []);
 
   useEffect(() => {
     let isCancelled = false;
@@ -121,9 +225,10 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
           const data = await res.json();
           if (res.ok && data.user && data.token && !isCancelled) {
+            const enriched = await enrichUserWithGroupPermissions(data.user, data.token);
             setIsAuthenticated(true);
-            setUser(data.user);
-            localStorage.setItem('lepta_user', JSON.stringify(data.user));
+            setUser(enriched);
+            localStorage.setItem('lepta_user', JSON.stringify(enriched));
             localStorage.setItem('lepta_auth_token', data.token);
             try { sessionStorage.removeItem('lepta_auth_error'); } catch {}
             window.history.replaceState(null, '', '/dashboard');
@@ -146,6 +251,15 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         return;
       }
 
+      // Restaura imediatamente do localStorage com dados em cache para não piscar a tela
+      try {
+        const parsed = JSON.parse(storedUser);
+        if (parsed && !isCancelled) {
+          setUser(parsed);
+          setIsAuthenticated(true);
+        }
+      } catch {}
+
       try {
         const response = await fetch(`${API_BASE_URL}/api/auth/me`, {
           headers: { Authorization: `Bearer ${token}` }
@@ -153,9 +267,10 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         if (!response.ok) throw new Error('Sessão inválida');
         const result = await response.json();
         if (!isCancelled) {
-          setUser(result.user);
+          const enriched = await enrichUserWithGroupPermissions(result.user, token);
+          setUser(enriched);
           setIsAuthenticated(true);
-          localStorage.setItem('lepta_user', JSON.stringify(result.user));
+          localStorage.setItem('lepta_user', JSON.stringify(enriched));
         }
       } catch {
         if (!isCancelled) {
@@ -184,9 +299,10 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
       if (res.ok) {
         const { user: authenticatedUser, token } = await res.json();
+        const enriched = await enrichUserWithGroupPermissions(authenticatedUser, token);
         setIsAuthenticated(true);
-        setUser(authenticatedUser);
-        localStorage.setItem('lepta_user', JSON.stringify(authenticatedUser));
+        setUser(enriched);
+        localStorage.setItem('lepta_user', JSON.stringify(enriched));
         localStorage.setItem('lepta_auth_token', token);
         return true;
       }
@@ -210,16 +326,16 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         if (data.requireInteractive) {
           return { success: false, requireInteractive: true };
         }
+        const enriched = await enrichUserWithGroupPermissions(data.user, data.token);
         setIsAuthenticated(true);
-        setUser(data.user);
-        localStorage.setItem('lepta_user', JSON.stringify(data.user));
+        setUser(enriched);
+        localStorage.setItem('lepta_user', JSON.stringify(enriched));
         localStorage.setItem('lepta_auth_token', data.token);
         return { success: true };
       }
-      return { success: false, error: data.error || 'Não foi possível autenticar com a conta Microsoft.' };
-    } catch (error) {
-      console.error("Erro na autenticação Microsoft:", error);
-      return { success: false, error: 'Erro de conexão com o servidor.' };
+      return { success: false, error: data.error || 'Erro ao autenticar com a Microsoft.' };
+    } catch (error: any) {
+      return { success: false, error: error?.message || 'Erro de conexão com o servidor.' };
     }
   };
 

@@ -249,6 +249,7 @@ function ensureUserSecurityColumns() {
       ['microsoft_email', 'TEXT'],
       ['auth_provider', "TEXT DEFAULT 'local'"],
       ['last_sso_login', 'TEXT'],
+      ['group_id', 'TEXT'],
       ['created_at', 'TEXT'],
       ['updated_at', 'TEXT']
     ];
@@ -433,6 +434,63 @@ function decryptSecret(value) {
   return Buffer.concat([decipher.update(Buffer.from(encrypted, 'hex')), decipher.final()]).toString('utf8');
 }
 
+function parseStringArray(value) {
+  if (Array.isArray(value)) return value.map(String);
+  try {
+    const parsed = JSON.parse(value || '[]');
+    return Array.isArray(parsed) ? parsed.map(String) : [];
+  } catch {
+    return [];
+  }
+}
+
+function getAllGroups() {
+  try {
+    if (!tableExists('groups')) return [];
+    const rows = db.prepare(`SELECT * FROM "groups"`).all();
+    if (usesJsonContentStorage('groups')) {
+      return rows.map(parseJsonContentRow);
+    }
+    return rows.map(parseRow);
+  } catch {
+    return [];
+  }
+}
+
+function getUserEffectivePermissions(user) {
+  if (!user) return [];
+  if (user.role === 'MASTER') return ['*'];
+
+  const directPerms = parseStringArray(user.permissions);
+  const effectiveSet = new Set(directPerms);
+
+  const allGroups = getAllGroups();
+  const userGroupId = user.group_id || user.groupId;
+
+  for (const grp of allGroups) {
+    if (!grp) continue;
+    const isMemberById = userGroupId && String(grp.id) === String(userGroupId);
+    const isMemberByList = Array.isArray(grp.userIds) && grp.userIds.some(uid =>
+      String(uid) === String(user.id) ||
+      (user.email && String(uid).toLowerCase() === String(user.email).toLowerCase())
+    );
+
+    if (isMemberById || isMemberByList) {
+      const groupPerms = parseStringArray(grp.permissions);
+      groupPerms.forEach(p => effectiveSet.add(p));
+    }
+  }
+
+  return [...effectiveSet];
+}
+
+function hasPermission(user, permission) {
+  if (!user) return false;
+  if (user.role === 'MASTER') return true;
+  const effective = getUserEffectivePermissions(user);
+  return effective.includes(String(permission));
+}
+
 function sanitizeUser(row) {
   if (!row) return null;
   const parsed = parseRow(row);
@@ -442,8 +500,23 @@ function sanitizeUser(row) {
     ...safeUser
   } = parsed;
   const isMicrosoftUser = parsed.auth_provider === 'microsoft' || Boolean(parsed.microsoft_id) || Boolean(parsed.microsoft_email);
+
+  const effectivePermissions = getUserEffectivePermissions(parsed);
+  const userGroupId = parsed.group_id || parsed.groupId || null;
+  let userGroupName = null;
+  if (userGroupId) {
+    const allGroups = getAllGroups();
+    const g = allGroups.find(grp => String(grp.id) === String(userGroupId));
+    if (g) userGroupName = g.name;
+  }
+
   return {
     ...safeUser,
+    groupId: userGroupId,
+    group_id: userGroupId,
+    groupName: userGroupName,
+    directPermissions: parseStringArray(parsed.permissions),
+    permissions: effectivePermissions,
     accessLocked: Boolean(parsed.access_locked),
     fullyLocked: Boolean(parsed.fully_locked),
     requiresSecuritySetup: !isMicrosoftUser && (!parsed.secret_question || !parsed.secret_answer)
@@ -486,7 +559,11 @@ function requireSessionPurpose(allowedPurposes = ['auth']) {
       return res.status(423).json({ error: 'Acesso bloqueado.' });
     }
     req.authSession = { ...session, role: user.role };
-    req.authUser = user;
+    req.authUser = {
+      ...user,
+      permissions: getUserEffectivePermissions(user),
+      directPermissions: parseStringArray(user.permissions)
+    };
 
     // Atualiza presence e last_seen_at do usuário no SQLite em tempo real para o Monitor
     try {
@@ -4481,7 +4558,7 @@ function validateGenericData(data) {
 }
 
 function restrictUserWriteFields(data) {
-  const allowedFields = new Set(['id', 'username', 'email', 'role', 'permissions']);
+  const allowedFields = new Set(['id', 'username', 'email', 'role', 'permissions', 'group_id', 'groupId']);
   for (const key of Object.keys(data)) {
     if (!allowedFields.has(key)) delete data[key];
   }
@@ -4501,7 +4578,7 @@ function parseJsonContentRow(row) {
   }
 }
 
-app.get('/:table', resolveGenericTable, requireSession, authorizeGenericTable, (req, res, next) => {
+app.get(['/:table', '/api/:table', '/api/table/:table'], resolveGenericTable, requireSession, authorizeGenericTable, (req, res, next) => {
   const table = req.genericTable;
   if (isReservedPowerBiTable(table)) return next();
   try {
@@ -4521,7 +4598,7 @@ app.get('/:table', resolveGenericTable, requireSession, authorizeGenericTable, (
   }
 });
 
-app.get('/:table/:id', resolveGenericTable, requireSession, authorizeGenericTable, (req, res, next) => {
+app.get(['/:table/:id', '/api/:table/:id', '/api/table/:table/:id'], resolveGenericTable, requireSession, authorizeGenericTable, (req, res, next) => {
   const table = req.genericTable;
   if (isReservedPowerBiTable(table)) return next();
   try {
@@ -4543,7 +4620,7 @@ app.get('/:table/:id', resolveGenericTable, requireSession, authorizeGenericTabl
   }
 });
 
-app.post('/:table', resolveGenericTable, requireSession, authorizeGenericTable, (req, res) => {
+app.post(['/:table', '/api/:table', '/api/table/:table'], resolveGenericTable, requireSession, authorizeGenericTable, (req, res) => {
   const table = req.genericTable;
   if (isReservedPowerBiTable(table)) return res.status(410).json({ error: 'Use a API dedicada de dashboards do Power BI.' });
   const data = { ...req.body };
@@ -4557,6 +4634,27 @@ app.post('/:table', resolveGenericTable, requireSession, authorizeGenericTable, 
     if (usesJsonContentStorage(table)) {
       db.prepare(`INSERT INTO "${table}" (id, json_content) VALUES (?, ?)`)
         .run(data.id, JSON.stringify(data));
+      
+      // Sincroniza membros do grupo em usuarios_lepta
+      if (table === 'groups' && Array.isArray(data.userIds)) {
+        try {
+          const targetGroupId = String(data.id);
+          const newMemberIds = new Set(data.userIds.map(String));
+          const allUsers = db.prepare(`SELECT id, group_id FROM usuarios_lepta`).all();
+          for (const u of allUsers) {
+            if (newMemberIds.has(String(u.id))) {
+              if (u.group_id !== targetGroupId) {
+                db.prepare(`UPDATE usuarios_lepta SET group_id = ? WHERE id = ?`).run(targetGroupId, u.id);
+              }
+            } else if (u.group_id === targetGroupId) {
+              db.prepare(`UPDATE usuarios_lepta SET group_id = NULL WHERE id = ?`).run(u.id);
+            }
+          }
+        } catch (syncErr) {
+          console.warn('Aviso ao sincronizar usuarios do grupo:', syncErr.message);
+        }
+      }
+
       return res.status(201).json(data);
     }
     const keys = validateGenericData(data);
@@ -4579,7 +4677,7 @@ app.post('/:table', resolveGenericTable, requireSession, authorizeGenericTable, 
   }
 });
 
-app.put('/:table/:id', resolveGenericTable, requireSession, authorizeGenericTable, (req, res) => {
+app.put(['/:table/:id', '/api/:table/:id', '/api/table/:table/:id'], resolveGenericTable, requireSession, authorizeGenericTable, (req, res) => {
   const table = req.genericTable;
   if (isReservedPowerBiTable(table)) return res.status(410).json({ error: 'Use a API dedicada de dashboards do Power BI.' });
   const id = req.params.id;
@@ -4591,6 +4689,27 @@ app.put('/:table/:id', resolveGenericTable, requireSession, authorizeGenericTabl
     if (usesJsonContentStorage(table)) {
       db.prepare(`INSERT OR REPLACE INTO "${table}" (id, json_content) VALUES (?, ?)`)
         .run(id, JSON.stringify(data));
+
+      // Sincroniza membros do grupo em usuarios_lepta
+      if (table === 'groups' && Array.isArray(data.userIds)) {
+        try {
+          const targetGroupId = String(id);
+          const newMemberIds = new Set(data.userIds.map(String));
+          const allUsers = db.prepare(`SELECT id, group_id FROM usuarios_lepta`).all();
+          for (const u of allUsers) {
+            if (newMemberIds.has(String(u.id))) {
+              if (u.group_id !== targetGroupId) {
+                db.prepare(`UPDATE usuarios_lepta SET group_id = ? WHERE id = ?`).run(targetGroupId, u.id);
+              }
+            } else if (u.group_id === targetGroupId) {
+              db.prepare(`UPDATE usuarios_lepta SET group_id = NULL WHERE id = ?`).run(u.id);
+            }
+          }
+        } catch (syncErr) {
+          console.warn('Aviso ao sincronizar usuarios do grupo:', syncErr.message);
+        }
+      }
+
       return res.json(data);
     }
     const keys = validateGenericData(data);

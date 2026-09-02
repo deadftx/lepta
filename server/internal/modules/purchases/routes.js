@@ -62,6 +62,13 @@ export function registerPurchaseRoutes(app, {
       updated_by TEXT
     );
 
+    CREATE TABLE IF NOT EXISTS compras_papeis_grupos (
+      group_id TEXT PRIMARY KEY,
+      papel TEXT NOT NULL DEFAULT 'REQUISITANTE', -- 'APROVADOR' ou 'REQUISITANTE'
+      updated_at TEXT NOT NULL,
+      updated_by TEXT
+    );
+
     CREATE TABLE IF NOT EXISTS compras_requisicoes (
       id TEXT PRIMARY KEY,
       numero INTEGER,
@@ -177,6 +184,12 @@ export function registerPurchaseRoutes(app, {
       { name: 'pausado_por_nome', sql: 'ALTER TABLE compras_requisicoes ADD COLUMN pausado_por_nome TEXT' },
       { name: 'motivo_pausa', sql: 'ALTER TABLE compras_requisicoes ADD COLUMN motivo_pausa TEXT' },
       { name: 'status_anterior', sql: 'ALTER TABLE compras_requisicoes ADD COLUMN status_anterior TEXT' },
+      { name: 'requer_juridico', sql: 'ALTER TABLE compras_requisicoes ADD COLUMN requer_juridico INTEGER DEFAULT 0' },
+      { name: 'juridico_status', sql: "ALTER TABLE compras_requisicoes ADD COLUMN juridico_status TEXT DEFAULT 'DISPENSADO'" },
+      { name: 'juridico_aprovador_id', sql: 'ALTER TABLE compras_requisicoes ADD COLUMN juridico_aprovador_id TEXT' },
+      { name: 'juridico_aprovador_nome', sql: 'ALTER TABLE compras_requisicoes ADD COLUMN juridico_aprovador_nome TEXT' },
+      { name: 'juridico_motivo', sql: 'ALTER TABLE compras_requisicoes ADD COLUMN juridico_motivo TEXT' },
+      { name: 'juridico_decidido_em', sql: 'ALTER TABLE compras_requisicoes ADD COLUMN juridico_decidido_em TEXT' },
     ];
     for (const col of requiredCols) {
       if (!cols.includes(col.name)) {
@@ -204,23 +217,114 @@ export function registerPurchaseRoutes(app, {
 
   const FORMAS_PAGAMENTO_VALIDAS = ['PIX', 'BOLETO', 'CREDITO'];
 
-  // Middleware de acesso: permite usuários com permissão 11.1 (Aprovação de Compras), 7.3 (Solicitações Financeiras) ou Master
-  const requireAccess = requirePermission(['11.1', '7.3', '11', '7']);
+  // Middleware de acesso: permite usuários com permissão 11.1 (Aprovação de Compras), 7.3 (Solicitações Financeiras), 13.1 (Jurídico) ou Master
+  const requireAccess = requirePermission(['11.1', '7.3', '11', '7', '13.1', '13']);
+
+  function getAllGroupsList() {
+    try {
+      const rowExists = db.prepare(`SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'groups'`).get();
+      if (!rowExists) return [];
+      const hasJson = db.prepare(`SELECT 1 FROM pragma_table_info('groups') WHERE name = 'json_content'`).get();
+      const rows = db.prepare(`SELECT * FROM "groups"`).all();
+      if (hasJson) {
+        return rows.map(r => {
+          try { return { id: r.id, ...JSON.parse(r.json_content || '{}') }; } catch { return { id: r.id }; }
+        });
+      }
+      return rows;
+    } catch {
+      return [];
+    }
+  }
 
   function getUserRoleInPurchases(userId, userGlobalRole) {
     if (userGlobalRole === 'MASTER') return 'APROVADOR';
+
+    // 1. Verifica se há papel explícito do usuário
     const row = db.prepare(`SELECT papel FROM compras_papeis_usuarios WHERE user_id = ?`).get(userId);
+    if (row?.papel === 'APROVADOR') return 'APROVADOR';
+
+    // 2. Verifica se o usuário pertence a algum grupo configurado como APROVADOR
+    try {
+      const approverGroups = db.prepare(`SELECT group_id FROM compras_papeis_grupos WHERE papel = 'APROVADOR'`).all();
+      const approverGroupIds = new Set(approverGroups.map(g => String(g.group_id)));
+
+      if (approverGroupIds.size > 0) {
+        const user = db.prepare(`SELECT * FROM usuarios_lepta WHERE id = ?`).get(userId);
+        const userGroupId = user?.group_id || user?.groupId;
+        if (userGroupId && approverGroupIds.has(String(userGroupId))) {
+          return 'APROVADOR';
+        }
+
+        const allGroups = getAllGroupsList();
+        for (const grp of allGroups) {
+          if (approverGroupIds.has(String(grp.id)) && Array.isArray(grp.userIds)) {
+            if (grp.userIds.some(uid => String(uid) === String(userId) || (user?.email && String(uid).toLowerCase() === String(user.email).toLowerCase()))) {
+              return 'APROVADOR';
+            }
+          }
+        }
+      }
+    } catch (err) {
+      console.warn('Aviso ao consultar papel de compras por grupo:', err.message);
+    }
+
     return row?.papel || 'REQUISITANTE';
   }
 
   function getAllApproverUserIds() {
     try {
-      const rows = db.prepare(`
-        SELECT user_id FROM compras_papeis_usuarios WHERE papel = 'APROVADOR'
-        UNION
-        SELECT id as user_id FROM usuarios_lepta WHERE role = 'MASTER'
-      `).all();
-      return rows.map(r => r.user_id);
+      const approverSet = new Set();
+
+      // 1. Todos os MASTER
+      const masters = db.prepare(`SELECT id FROM usuarios_lepta WHERE role = 'MASTER'`).all();
+      masters.forEach(m => approverSet.add(m.id));
+
+      // 2. Todos os Aprovadores individuais
+      const directApprovers = db.prepare(`SELECT user_id FROM compras_papeis_usuarios WHERE papel = 'APROVADOR'`).all();
+      directApprovers.forEach(a => approverSet.add(a.user_id));
+
+      // 3. Todos os membros de grupos Aprovadores
+      const approverGroups = db.prepare(`SELECT group_id FROM compras_papeis_grupos WHERE papel = 'APROVADOR'`).all();
+      const approverGroupIds = new Set(approverGroups.map(g => String(g.group_id)));
+
+      if (approverGroupIds.size > 0) {
+        const allUsers = db.prepare(`SELECT id, email, group_id FROM usuarios_lepta`).all();
+        for (const u of allUsers) {
+          if (u.group_id && approverGroupIds.has(String(u.group_id))) {
+            approverSet.add(u.id);
+          }
+        }
+
+        const allGroups = getAllGroupsList();
+        for (const grp of allGroups) {
+          if (approverGroupIds.has(String(grp.id)) && Array.isArray(grp.userIds)) {
+            grp.userIds.forEach(uid => {
+              const found = allUsers.find(u => String(u.id) === String(uid) || (u.email && String(u.email).toLowerCase() === String(uid).toLowerCase()));
+              if (found) approverSet.add(found.id);
+            });
+          }
+        }
+      }
+
+      return [...approverSet];
+    } catch {
+      return [];
+    }
+  }
+
+  function getAllLegalApproverUserIds() {
+    try {
+      const users = db.prepare(`SELECT id, role, permissions FROM usuarios_lepta`).all();
+      return users.filter(u => {
+        if (u.role === 'MASTER') return true;
+        try {
+          const perms = JSON.parse(u.permissions || '[]');
+          return perms.includes('13.1') || perms.includes('13');
+        } catch {
+          return false;
+        }
+      }).map(u => u.id);
     } catch {
       return [];
     }
@@ -266,13 +370,18 @@ export function registerPurchaseRoutes(app, {
   app.get('/api/compras/configuracao/usuarios', requireSession, requirePermission(['11.2', '11']), (req, res) => {
     try {
       const users = db.prepare(`
-        SELECT id, username, email, role, permissions
+        SELECT id, username, email, role, permissions, group_id
         FROM usuarios_lepta
         ORDER BY role DESC, username ASC
       `).all();
 
       const roles = db.prepare(`SELECT user_id, papel, updated_at, updated_by FROM compras_papeis_usuarios`).all();
       const roleMap = new Map(roles.map(r => [r.user_id, r]));
+
+      const approverGroups = db.prepare(`SELECT group_id FROM compras_papeis_grupos WHERE papel = 'APROVADOR'`).all();
+      const approverGroupIds = new Set(approverGroups.map(g => String(g.group_id)));
+      const allGroups = getAllGroupsList();
+      const groupNameMap = new Map(allGroups.map(g => [String(g.id), g.name || g.id]));
 
       const result = users.map(u => {
         let permissions = [];
@@ -283,13 +392,33 @@ export function registerPurchaseRoutes(app, {
         const hasAdminAccess = u.role === 'MASTER' || permissions.includes('11') || permissions.includes('11.1') || permissions.includes('11.2') || permissions.includes('7.3');
         const roleInfo = roleMap.get(u.id);
 
+        let inheritedFromGroup = null;
+        if (u.group_id && approverGroupIds.has(String(u.group_id))) {
+          inheritedFromGroup = groupNameMap.get(String(u.group_id)) || 'Grupo';
+        } else {
+          for (const grp of allGroups) {
+            if (approverGroupIds.has(String(grp.id)) && Array.isArray(grp.userIds)) {
+              if (grp.userIds.some(uid => String(uid) === String(u.id) || (u.email && String(uid).toLowerCase() === String(u.email).toLowerCase()))) {
+                inheritedFromGroup = grp.name || 'Grupo';
+                break;
+              }
+            }
+          }
+        }
+
+        const effectiveRole = u.role === 'MASTER' ? 'APROVADOR' : (roleInfo?.papel === 'APROVADOR' || Boolean(inheritedFromGroup) ? 'APROVADOR' : 'REQUISITANTE');
+
         return {
           id: u.id,
           username: u.username || u.id,
           email: u.email || '',
           globalRole: u.role,
+          groupId: u.group_id || null,
+          groupName: u.group_id ? groupNameMap.get(String(u.group_id)) || null : null,
           hasAdminAccess,
-          purchasesRole: u.role === 'MASTER' ? 'APROVADOR' : (roleInfo?.papel || 'REQUISITANTE'),
+          purchasesRole: effectiveRole,
+          directPurchasesRole: roleInfo?.papel || 'REQUISITANTE',
+          inheritedFromGroup,
           updatedAt: roleInfo?.updated_at || null,
           updatedBy: roleInfo?.updated_by || null
         };
@@ -331,8 +460,70 @@ export function registerPurchaseRoutes(app, {
 
       return res.json({ success: true, userId, papel, updatedAt: now, updatedBy });
     } catch (error) {
-      console.error('Erro ao salvar papel do usuário em compras:', error.message);
-      return res.status(500).json({ error: 'Erro ao salvar configuração.' });
+      console.error('Erro ao atualizar papel do usuário em compras:', error.message);
+      return res.status(500).json({ error: 'Erro ao salvar configuração do usuário.' });
+    }
+  });
+
+  // --- ROTA: CONFIGURAÇÃO DE GRUPOS / SETORES NA ESTEIRA ---
+  app.get('/api/compras/configuracao/grupos', requireSession, requirePermission(['11.2', '11']), (req, res) => {
+    try {
+      const allGroups = getAllGroupsList();
+      const groupRoles = db.prepare(`SELECT group_id, papel, updated_at, updated_by FROM compras_papeis_grupos`).all();
+      const roleMap = new Map(groupRoles.map(r => [String(r.group_id), r]));
+      const allUsers = db.prepare(`SELECT id, username, email, group_id FROM usuarios_lepta`).all();
+
+      const result = allGroups.map(g => {
+        const roleInfo = roleMap.get(String(g.id));
+        const members = allUsers.filter(u => 
+          String(u.group_id) === String(g.id) || 
+          (Array.isArray(g.userIds) && g.userIds.some(uid => String(uid) === String(u.id) || (u.email && String(uid).toLowerCase() === String(u.email).toLowerCase())))
+        );
+
+        return {
+          id: g.id,
+          name: g.name,
+          permissions: Array.isArray(g.permissions) ? g.permissions : [],
+          purchasesRole: roleInfo?.papel || 'REQUISITANTE',
+          memberCount: members.length,
+          members: members.map(m => ({ id: m.id, username: m.username || m.id, email: m.email || '' })),
+          updatedAt: roleInfo?.updated_at || null,
+          updatedBy: roleInfo?.updated_by || null
+        };
+      });
+
+      return res.json(result);
+    } catch (error) {
+      console.error('Erro ao listar configuração de grupos na esteira:', error.message);
+      return res.status(500).json({ error: 'Erro ao carregar configuração de grupos.' });
+    }
+  });
+
+  app.put('/api/compras/configuracao/grupos/:groupId', requireSession, requirePermission(['11.2', '11']), (req, res) => {
+    const { groupId } = req.params;
+    const { papel } = req.body;
+
+    if (!['APROVADOR', 'REQUISITANTE'].includes(papel)) {
+      return res.status(400).json({ error: 'Papel inválido. Deve ser APROVADOR ou REQUISITANTE.' });
+    }
+
+    try {
+      const now = new Date().toISOString();
+      const updatedBy = req.authUser.username || req.authUser.id;
+
+      db.prepare(`
+        INSERT INTO compras_papeis_grupos (group_id, papel, updated_at, updated_by)
+        VALUES (?, ?, ?, ?)
+        ON CONFLICT(group_id) DO UPDATE SET
+          papel = excluded.papel,
+          updated_at = excluded.updated_at,
+          updated_by = excluded.updated_by
+      `).run(groupId, papel, now, updatedBy);
+
+      return res.json({ success: true, groupId, papel, updatedAt: now, updatedBy });
+    } catch (error) {
+      console.error('Erro ao atualizar papel do grupo em compras:', error.message);
+      return res.status(500).json({ error: 'Erro ao salvar configuração do grupo.' });
     }
   });
 
@@ -418,15 +609,30 @@ export function registerPurchaseRoutes(app, {
           totalQtd += itQtd;
         }
 
+        let requerJuridico = totalValor >= 2000;
+        if (!requerJuridico) {
+          for (const it of itens) {
+            const itVal = Number(it.valor) * Math.max(1, Number(it.quantidade || 1));
+            if (itVal >= 2000 || Number(it.valor) >= 2000) {
+              requerJuridico = true;
+              break;
+            }
+          }
+        }
+
+        const initialStatus = requerJuridico ? 'AGUARDANDO_JURIDICO' : 'PENDENTE';
+        const initialJuridicoStatus = requerJuridico ? 'PENDENTE' : 'DISPENSADO';
+
         // 1. Inserção transacional da requisição pai
         db.prepare(`
           INSERT INTO compras_requisicoes (
             id, numero, tipo_destino, empresa_pagadora, categoria, fornecedor_nome, fornecedor_contato, forma_pagamento,
             quantidade_parcelas, departamento_centro_custo, produto_servico,
             valor, quantidade, observacoes, status, arquivado, arquivado_manualmente,
+            requer_juridico, juridico_status,
             solicitante_id, solicitante_nome, solicitante_email,
             created_at, updated_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'PENDENTE', 0, 0, ?, ?, ?, ?, ?)
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?, ?, ?, ?, ?, ?, ?)
         `).run(
           id,
           count,
@@ -442,6 +648,9 @@ export function registerPurchaseRoutes(app, {
           totalValor,
           totalQtd,
           firstItem.observacoes || '',
+          initialStatus,
+          requerJuridico ? 1 : 0,
+          initialJuridicoStatus,
           req.authUser.id,
           solicitanteNome,
           req.authUser.email || '',
@@ -506,15 +715,25 @@ export function registerPurchaseRoutes(app, {
           });
         }
 
-        // 3. Dispara notificação para todos os APROVADORES
-        const approverIds = getAllApproverUserIds().filter(uid => uid !== req.authUser.id);
+        // 3. Dispara notificação apropriada (Jurídico se >= 2000, ou Aprovadores gerais se < 2000)
         const totalFormatado = formatBrl(totalValor);
-        notifyUsers(db, approverIds, {
-          titulo: `💳 Nova Solicitação Financeira (${id})`,
-          mensagem: `${solicitanteNome} solicitou ${mainProdutoServico} (${totalFormatado} - ${itens.length} ${itens.length === 1 ? 'item' : 'itens'})`,
-          tipo: 'COMPRAS_NOVA_REQUISICAO',
-          link: '/administrativo/compras'
-        });
+        if (requerJuridico) {
+          const legalUserIds = getAllLegalApproverUserIds().filter(uid => uid !== req.authUser.id);
+          notifyUsers(db, legalUserIds, {
+            titulo: `⚖️ Solicitação Pendente de Aprovação Jurídica (${id})`,
+            mensagem: `${solicitanteNome} solicitou ${mainProdutoServico} (${totalFormatado}) que requer validação jurídica prévia (≥ R$ 2.000).`,
+            tipo: 'COMPRAS_NOVA_REQUISICAO',
+            link: '/juridico/aprovacao-pagamentos'
+          });
+        } else {
+          const approverIds = getAllApproverUserIds().filter(uid => uid !== req.authUser.id);
+          notifyUsers(db, approverIds, {
+            titulo: `💳 Nova Solicitação Financeira (${id})`,
+            mensagem: `${solicitanteNome} solicitou ${mainProdutoServico} (${totalFormatado} - ${itens.length} ${itens.length === 1 ? 'item' : 'itens'})`,
+            tipo: 'COMPRAS_NOVA_REQUISICAO',
+            link: '/administrativo/compras'
+          });
+        }
       })();
 
       const nova = db.prepare(`SELECT * FROM compras_requisicoes WHERE id = ?`).get(id);
@@ -559,7 +778,199 @@ export function registerPurchaseRoutes(app, {
           COALESCE((SELECT COUNT(*) FROM compras_requisicoes_itens i WHERE i.requisicao_id = r.id), 1) as total_itens,
           COALESCE((SELECT COUNT(*) FROM compras_anexos a WHERE a.requisicao_id = r.id), 0) as total_anexos
         FROM compras_requisicoes r
-        WHERE r.arquivado = 0 AND r.status IN ('PENDENTE', 'REABERTO', 'REVISAO', 'AGUARDANDO_RESPOSTA_APROVADOR', 'AGUARDANDO_RESPOSTA_SOLICITANTE')
+        WHERE r.arquivado = 0 
+          AND r.status IN ('PENDENTE', 'REABERTO', 'REVISAO', 'AGUARDANDO_RESPOSTA_APROVADOR', 'AGUARDANDO_RESPOSTA_SOLICITANTE')
+          AND r.status != 'AGUARDANDO_JURIDICO'
+        ORDER BY 
+          CASE 
+            WHEN r.status = 'REABERTO' THEN 0
+            WHEN r.status = 'PENDENTE' THEN 1
+            WHEN r.status = 'REVISAO' THEN 2
+            WHEN r.status = 'AGUARDANDO_RESPOSTA_APROVADOR' THEN 3
+            WHEN r.status = 'AGUARDANDO_RESPOSTA_SOLICITANTE' THEN 4
+            ELSE 5
+          END,
+          r.updated_at DESC
+      `).all();
+
+      return res.json(rows);
+    } catch (error) {
+      console.error('Erro ao carregar fila de aprovação:', error.message);
+      return res.status(500).json({ error: 'Erro ao carregar fila de aprovação.' });
+    }
+  });
+
+  // --- ROTA: FILA DE APROVAÇÃO DO JURÍDICO (SOLICITAÇÕES >= R$ 2.000) ---
+  app.get('/api/compras/juridico/fila', requireSession, requirePermission(['13.1', '13']), (req, res) => {
+    try {
+      const rows = db.prepare(`
+        SELECT r.*,
+          (SELECT COUNT(*) FROM compras_mensagens m WHERE m.requisicao_id = r.id) as total_mensagens,
+          COALESCE((SELECT COUNT(*) FROM compras_requisicoes_itens i WHERE i.requisicao_id = r.id), 1) as total_itens,
+          COALESCE((SELECT COUNT(*) FROM compras_anexos a WHERE a.requisicao_id = r.id), 0) as total_anexos
+        FROM compras_requisicoes r
+        WHERE r.arquivado = 0 AND r.status = 'AGUARDANDO_JURIDICO'
+        ORDER BY r.created_at DESC
+      `).all();
+
+      return res.json(rows);
+    } catch (error) {
+      console.error('Erro ao carregar fila do jurídico:', error.message);
+      return res.status(500).json({ error: 'Erro ao carregar fila de aprovação jurídica.' });
+    }
+  });
+
+  // --- ROTA: HISTÓRICO GERAL DO JURÍDICO (SOLICITAÇÕES APROVADAS / REJEITADAS / AVALIADAS PELO JURÍDICO) ---
+  app.get('/api/compras/juridico/historico', requireSession, requirePermission(['13.1', '13']), (req, res) => {
+    try {
+      const rows = db.prepare(`
+        SELECT r.*,
+          (SELECT COUNT(*) FROM compras_mensagens m WHERE m.requisicao_id = r.id) as total_mensagens,
+          COALESCE((SELECT COUNT(*) FROM compras_requisicoes_itens i WHERE i.requisicao_id = r.id), 1) as total_itens,
+          COALESCE((SELECT COUNT(*) FROM compras_anexos a WHERE a.requisicao_id = r.id), 0) as total_anexos
+        FROM compras_requisicoes r
+        WHERE r.requer_juridico = 1 OR r.status = 'NEGADO_JURIDICO' OR r.juridico_status IN ('APROVADO', 'REJEITADO')
+        ORDER BY COALESCE(r.juridico_decidido_em, r.decidido_em, r.updated_at) DESC
+      `).all();
+
+      return res.json(rows);
+    } catch (error) {
+      console.error('Erro ao carregar histórico do jurídico:', error.message);
+      return res.status(500).json({ error: 'Erro ao carregar histórico jurídico.' });
+    }
+  });
+
+  // --- ROTA: APROVAÇÃO PELO JURÍDICO (PERMITE OBSERVAÇÃO/PARECER OPCIONAL E LIBERA PARA APROVADORES GERAIS) ---
+  app.post('/api/compras/requisicoes/:id/juridico-aprovar', requireSession, requirePermission(['13.1', '13']), (req, res) => {
+    const { id } = req.params;
+    const observacao = String(req.body?.observacoes || req.body?.motivo || '').trim();
+
+    try {
+      const requisicao = db.prepare(`SELECT * FROM compras_requisicoes WHERE id = ?`).get(id);
+      if (!requisicao) return res.status(404).json({ error: 'Solicitação não encontrada.' });
+      if (requisicao.status !== 'AGUARDANDO_JURIDICO') {
+        return res.status(400).json({ error: 'Esta solicitação não está pendente de aprovação jurídica.' });
+      }
+
+      const now = new Date().toISOString();
+      const legalName = req.authUser.username || req.authUser.id;
+
+      db.transaction(() => {
+        db.prepare(`
+          UPDATE compras_requisicoes
+          SET status = 'PENDENTE',
+              juridico_status = 'APROVADO',
+              juridico_aprovador_id = ?,
+              juridico_aprovador_nome = ?,
+              juridico_motivo = ?,
+              juridico_decidido_em = ?,
+              updated_at = ?
+          WHERE id = ?
+        `).run(req.authUser.id, legalName, observacao, now, now, id);
+
+        const msgTexto = `⚖️ Parecer JURÍDICO APROVADO por ${legalName}.${observacao ? ` Observação: "${observacao}"` : ''}`;
+
+        db.prepare(`
+          INSERT INTO compras_mensagens (id, requisicao_id, autor_id, autor_nome, autor_role, mensagem, created_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?)
+        `).run(randomUUID(), id, req.authUser.id, legalName, 'JURIDICO', msgTexto, now);
+
+        // 1. Notifica os aprovadores gerais para continuarem a esteira
+        const approverIds = getAllApproverUserIds().filter(uid => uid !== req.authUser.id);
+        const totalFormatado = formatBrl(requisicao.valor);
+        notifyUsers(db, approverIds, {
+          titulo: `💳 Solicitação Aprovada pelo Jurídico (${requisicao.id})`,
+          mensagem: `O Jurídico (${legalName}) aprovou a solicitação de ${requisicao.solicitante_nome} (${totalFormatado}). Agora disponível para aprovação gerencial.`,
+          tipo: 'COMPRAS_NOVA_REQUISICAO',
+          link: '/administrativo/compras'
+        });
+
+        // 2. Notifica o solicitante
+        if (requisicao.solicitante_id !== req.authUser.id) {
+          createNotification(db, {
+            userId: requisicao.solicitante_id,
+            titulo: `⚖️ Parecer Jurídico Aprovado (${requisicao.id})`,
+            mensagem: `Sua solicitação (${requisicao.produto_servico}) foi validada e aprovada pelo Jurídico e seguiu para a esteira de aprovação.`,
+            tipo: 'COMPRAS_APROVADO',
+            link: '/administrativo/compras'
+          });
+        }
+      })();
+
+      const atualizado = db.prepare(`SELECT * FROM compras_requisicoes WHERE id = ?`).get(id);
+      return res.json({ success: true, requisicao: atualizado });
+    } catch (error) {
+      console.error('Erro ao aprovar solicitação no jurídico:', error.message);
+      return res.status(500).json({ error: 'Erro ao registrar aprovação jurídica no banco.' });
+    }
+  });
+
+  // --- ROTA: REJEIÇÃO PELO JURÍDICO (JUSTIFICATIVA OBRIGATÓRIA E ENCERRA SOLICITAÇÃO) ---
+  app.post('/api/compras/requisicoes/:id/juridico-rejeitar', requireSession, requirePermission(['13.1', '13']), (req, res) => {
+    const { id } = req.params;
+    const motivo = String(req.body?.motivo || req.body?.observacoes || '').trim();
+
+    if (!motivo) {
+      return res.status(400).json({ error: 'A justificativa jurídica / motivo da rejeição é obrigatória.' });
+    }
+
+    try {
+      const requisicao = db.prepare(`SELECT * FROM compras_requisicoes WHERE id = ?`).get(id);
+      if (!requisicao) return res.status(404).json({ error: 'Solicitação não encontrada.' });
+      if (requisicao.status !== 'AGUARDANDO_JURIDICO') {
+        return res.status(400).json({ error: 'Esta solicitação não está pendente de aprovação jurídica.' });
+      }
+
+      const now = new Date().toISOString();
+      const legalName = req.authUser.username || req.authUser.id;
+
+      db.transaction(() => {
+        db.prepare(`
+          UPDATE compras_requisicoes
+          SET status = 'NEGADO_JURIDICO',
+              juridico_status = 'REJEITADO',
+              juridico_aprovador_id = ?,
+              juridico_aprovador_nome = ?,
+              juridico_motivo = ?,
+              juridico_decidido_em = ?,
+              arquivado = 1,
+              motivo_arquivamento = ?,
+              updated_at = ?
+          WHERE id = ?
+        `).run(
+          req.authUser.id,
+          legalName,
+          motivo,
+          now,
+          `Rejeitado pelo Jurídico (${legalName}): ${motivo}`,
+          now,
+          id
+        );
+
+        const msgTexto = `❌ Parecer JURÍDICO REJEITADO por ${legalName}. Motivo: "${motivo}"`;
+
+        db.prepare(`
+          INSERT INTO compras_mensagens (id, requisicao_id, autor_id, autor_nome, autor_role, mensagem, created_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?)
+        `).run(randomUUID(), id, req.authUser.id, legalName, 'JURIDICO', msgTexto, now);
+
+        // Notifica o solicitante
+        createNotification(db, {
+          userId: requisicao.solicitante_id,
+          titulo: `❌ Solicitação Rejeitada pelo Jurídico (${requisicao.id})`,
+          mensagem: `Sua solicitação (${requisicao.produto_servico}) foi rejeitada pelo Jurídico. Motivo: "${motivo}"`,
+          tipo: 'COMPRAS_NEGADO',
+          link: '/administrativo/compras'
+        });
+      })();
+
+      const atualizado = db.prepare(`SELECT * FROM compras_requisicoes WHERE id = ?`).get(id);
+      return res.json({ success: true, requisicao: atualizado });
+    } catch (error) {
+      console.error('Erro ao rejeitar solicitação no jurídico:', error.message);
+      return res.status(500).json({ error: 'Erro ao registrar rejeição jurídica no banco.' });
+    }
+  });
         ORDER BY 
           CASE 
             WHEN r.status = 'REABERTO' THEN 0
@@ -617,8 +1028,9 @@ export function registerPurchaseRoutes(app, {
       const isOwner = requisicao.solicitante_id === req.authUser.id;
       const isApprover = userRole === 'APROVADOR' || req.authUser.role === 'MASTER';
       const hasFinanceAccess = req.authUser.role === 'MASTER' || checkUserPermission(req.authUser, '7') || checkUserPermission(req.authUser, '7.3') || checkUserPermission(req.authUser, '7.4') || checkUserPermission(req.authUser, '7.5');
+      const isLegal = req.authUser.role === 'MASTER' || checkUserPermission(req.authUser, '13') || checkUserPermission(req.authUser, '13.1');
 
-      if (!isOwner && !isApprover && !hasFinanceAccess) {
+      if (!isOwner && !isApprover && !hasFinanceAccess && !isLegal) {
         return res.status(403).json({ error: 'Sem permissão para visualizar esta solicitação.' });
       }
 
@@ -1052,14 +1464,16 @@ export function registerPurchaseRoutes(app, {
       const isOwner = requisicao.solicitante_id === req.authUser.id;
       const isApprover = userRole === 'APROVADOR' || req.authUser.role === 'MASTER';
 
-      if (!isOwner && !isApprover) {
+      const isLegal = req.authUser.role === 'MASTER' || checkUserPermission(req.authUser, '13') || checkUserPermission(req.authUser, '13.1');
+
+      if (!isOwner && !isApprover && !isLegal) {
         return res.status(403).json({ error: 'Sem permissão para comentar nesta solicitação.' });
       }
 
       const msgId = randomUUID();
       const now = new Date().toISOString();
       const autorNome = req.authUser.username || req.authUser.id;
-      const autorRole = isApprover ? 'APROVADOR' : 'REQUISITANTE';
+      const autorRole = isLegal ? 'JURIDICO' : (isApprover ? 'APROVADOR' : 'REQUISITANTE');
 
       // Atualiza o status da requisição quando mensagem for enviada
       let novoStatus = requisicao.status;
@@ -1564,8 +1978,9 @@ export function registerPurchaseRoutes(app, {
       const isOwner = reqInfo.solicitante_id === req.authUser.id;
       const isApprover = userRole === 'APROVADOR' || req.authUser.role === 'MASTER';
       const hasFinanceAccess = req.authUser.role === 'MASTER' || checkUserPermission(req.authUser, '7') || checkUserPermission(req.authUser, '7.3') || checkUserPermission(req.authUser, '7.4') || checkUserPermission(req.authUser, '7.5') || checkUserPermission(req.authUser, '11') || checkUserPermission(req.authUser, '11.1');
+      const isLegal = req.authUser.role === 'MASTER' || checkUserPermission(req.authUser, '13') || checkUserPermission(req.authUser, '13.1');
 
-      if (!isOwner && !isApprover && !hasFinanceAccess) {
+      if (!isOwner && !isApprover && !hasFinanceAccess && !isLegal) {
         for (const file of files) {
           if (fs.existsSync(file.path)) fs.unlinkSync(file.path);
         }
@@ -1648,7 +2063,9 @@ export function registerPurchaseRoutes(app, {
         checkUserPermission(req.authUser, '7.4') || 
         checkUserPermission(req.authUser, '7.5') || 
         checkUserPermission(req.authUser, '11') || 
-        checkUserPermission(req.authUser, '11.1');
+        checkUserPermission(req.authUser, '11.1') ||
+        checkUserPermission(req.authUser, '13') ||
+        checkUserPermission(req.authUser, '13.1');
 
       if (!isOwner && !isApprover && !hasFinanceAccess) {
         return res.status(403).json({ error: 'Sem permissão para visualizar anexos desta solicitação.' });
@@ -1686,7 +2103,9 @@ export function registerPurchaseRoutes(app, {
         checkUserPermission(req.authUser, '7.4') || 
         checkUserPermission(req.authUser, '7.5') || 
         checkUserPermission(req.authUser, '11') || 
-        checkUserPermission(req.authUser, '11.1');
+        checkUserPermission(req.authUser, '11.1') ||
+        checkUserPermission(req.authUser, '13') ||
+        checkUserPermission(req.authUser, '13.1');
 
       if (!isOwner && !isApprover && !hasFinanceAccess) {
         return res.status(403).json({ error: 'Sem permissão para baixar este anexo.' });
