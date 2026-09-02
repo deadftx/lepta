@@ -949,6 +949,21 @@ function matchRegisteredManager(rawInput, managerList) {
   const cleanLetters = clean.replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
   const cleanTokens = cleanLetters.split(' ').filter(t => t.length >= 2);
 
+  // Mapeamento explícito de apelidos/nomes alternativos conhecidos no BitFin, FIDC e SmartFactor
+  const KNOWN_ALIASES = [
+    { targetMatch: 'luiz dantas', aliases: ['luiz otavio', 'luiz otavio dantas', 'otavio dantas', 'luiz dantas', 'dantas'] },
+    { targetMatch: 'andre barroco', aliases: ['andre barroco', 'andre luis barroco', 'barroco'] },
+    { targetMatch: 'mauro blanes', aliases: ['mauro blanes', 'blanes'] },
+    { targetMatch: 'rafael pereira', aliases: ['rafael pereira', 'rafael'] }
+  ];
+
+  for (const aliasItem of KNOWN_ALIASES) {
+    if (aliasItem.aliases.some(a => clean.includes(a) || a.includes(clean))) {
+      const target = managerList.find(m => normalizeStr(m.nome).toLowerCase().includes(aliasItem.targetMatch));
+      if (target) return target;
+    }
+  }
+
   let bestMatch = null;
   let highestScore = 0;
 
@@ -1028,68 +1043,125 @@ function matchRegisteredManager(rawInput, managerList) {
   return null;
 }
 
+function extractManagerName(item) {
+  if (!item) return '';
+  if (typeof item === 'string') return item.trim();
+
+  // Busca em propriedades diretas ou aninhadas comuns na API UNLTD/BitFin
+  const possiblePaths = [
+    item.gerente?.nome,
+    item.gerente,
+    item.gestor?.nome,
+    item.gestor,
+    item.comercial?.nome,
+    item.comercial,
+    item.agenteComercial?.nome,
+    item.agenteComercial,
+    item.agente?.nome,
+    item.agente,
+    item.colaborador?.nome,
+    item.colaborador,
+    item.responsavel?.nome,
+    item.responsavel,
+    item.consultor?.nome,
+    item.consultor,
+    item.operador?.nome,
+    item.operador,
+
+    // Dentro de contaOperacional
+    item.contaOperacional?.gerente?.nome,
+    item.contaOperacional?.gerente,
+    item.contaOperacional?.gestor?.nome,
+    item.contaOperacional?.gestor,
+    item.contaOperacional?.comercial?.nome,
+    item.contaOperacional?.comercial,
+    item.contaOperacional?.agenteComercial?.nome,
+    item.contaOperacional?.agenteComercial,
+    item.contaOperacional?.agente?.nome,
+    item.contaOperacional?.agente,
+    item.contaOperacional?.colaborador?.nome,
+    item.contaOperacional?.colaborador,
+    item.contaOperacional?.responsavel?.nome,
+    item.contaOperacional?.responsavel,
+
+    // Dentro de cliente / entidade
+    item.cliente?.entidade?.gerente?.nome,
+    item.cliente?.entidade?.gerente,
+    item.cliente?.entidade?.gestor?.nome,
+    item.cliente?.entidade?.gestor,
+    item.cliente?.entidade?.comercial?.nome,
+    item.cliente?.entidade?.comercial,
+    item.cliente?.entidade?.agenteComercial?.nome,
+    item.cliente?.entidade?.agenteComercial,
+    item.cliente?.entidade?.agente?.nome,
+    item.cliente?.entidade?.agente,
+    item.cliente?.entidade?.colaborador?.nome,
+    item.cliente?.entidade?.colaborador,
+    item.cliente?.gerente?.nome,
+    item.cliente?.gerente,
+    item.cliente?.gestor?.nome,
+    item.cliente?.gestor,
+    item.cliente?.comercial?.nome,
+    item.cliente?.comercial,
+    item.entidade?.gerente?.nome,
+    item.entidade?.gerente,
+    item.entidade?.gestor?.nome,
+    item.entidade?.gestor,
+    item.entidade?.comercial?.nome,
+    item.entidade?.comercial,
+
+    // Dentro de operacao
+    item.operacao?.gerente?.nome,
+    item.operacao?.gerente,
+    item.operacao?.gestor?.nome,
+    item.operacao?.gestor,
+    item.operacao?.comercial?.nome,
+    item.operacao?.comercial,
+    item.operacao?.agenteComercial?.nome,
+    item.operacao?.agenteComercial
+  ];
+
+  for (const p of possiblePaths) {
+    if (p && typeof p === 'string' && p.trim()) return p.trim();
+  }
+
+  const arrayCandidates = [
+    item.agentesComerciais,
+    item.contaOperacional?.agentesComerciais,
+    item.cliente?.entidade?.agentesComerciais,
+    item.entidade?.agentesComerciais,
+    item.agentes,
+    item.colaboradores,
+    item.responsaveis
+  ];
+
+  for (const arr of arrayCandidates) {
+    if (Array.isArray(arr) && arr.length > 0) {
+      for (const el of arr) {
+        const name = el?.nome || el?.nomeCompleto || el?.colaborador?.nome || el?.agente?.nome || el?.usuario?.nome || (typeof el === 'string' ? el : '');
+        if (name && typeof name === 'string' && name.trim()) return name.trim();
+      }
+    }
+  }
+
+  return '';
+}
+
 function extractManagerFromClientPayload(payload, document) {
   if (!payload || typeof payload !== 'object') return { gerente: '', superintendente: '' };
   
   const entidade = payload.entidade || {};
-  let foundManager = '';
+  let foundManager = extractManagerName(payload);
   let foundSuperintendente = '';
 
-  // 1. Array de Agentes Comerciais (como mostrado na aba AGENTES COMERCIAIS do BitFin)
-  const agentesComerciaisLists = [
-    payload.agentesComerciais,
-    entidade.agentesComerciais,
-    payload.agentes,
-    entidade.agentes,
-    payload.colaboradores,
-    entidade.colaboradores,
-    payload.responsaveis,
-    entidade.responsaveis
-  ];
-
-  for (const list of agentesComerciaisLists) {
-    if (Array.isArray(list) && list.length > 0) {
-      for (const item of list) {
-        const name = item?.nome || item?.nomeCompleto || item?.colaborador?.nome || item?.agente?.nome || item?.usuario?.nome || (typeof item === 'string' ? item : '');
-        if (name && typeof name === 'string' && name.trim()) {
-          foundManager = name.trim();
-          break;
-        }
-      }
-      if (foundManager) break;
-    }
-  }
-
-  // 2. Contas Operacionais (agentes e gerentes dentro das contas operacionais)
   if (!foundManager && Array.isArray(payload.contasOperacionais)) {
     for (const acc of payload.contasOperacionais) {
-      if (Array.isArray(acc?.agentesComerciais) && acc.agentesComerciais.length > 0) {
-        const item = acc.agentesComerciais[0];
-        const name = item?.nome || item?.colaborador?.nome || item?.agente?.nome || item?.usuario?.nome;
-        if (name) {
-          foundManager = name.trim();
-          break;
-        }
-      }
-      const g = acc?.gerente?.nome || acc?.gerente || acc?.colaborador?.nome || acc?.colaborador;
-      if (g && typeof g === 'string') {
-        foundManager = g.trim();
-        break;
-      }
       const s = acc?.superintendente?.nome || acc?.superintendente;
       if (s && typeof s === 'string') {
         foundSuperintendente = s.trim();
+        break;
       }
     }
-  }
-
-  // 3. Campos diretos no payload ou entidade
-  if (!foundManager) {
-    foundManager = (typeof entidade.gerente === 'string' ? entidade.gerente : '') ||
-                   (typeof payload.gerente === 'string' ? payload.gerente : '') ||
-                   (typeof entidade.agenteComercial === 'string' ? entidade.agenteComercial : '') ||
-                   (typeof payload.agenteComercial === 'string' ? payload.agenteComercial : '') ||
-                   (payload.agenteComercial?.nome || entidade.agenteComercial?.nome || '');
   }
 
   // 4. Se ainda não achou, consulta no cache de títulos da API UNLTD/BitFin para este documento
@@ -1097,11 +1169,11 @@ function extractManagerFromClientPayload(payload, document) {
     const docClean = normalizeEntityDocument(document);
     if (Array.isArray(unltdFullHistoryCache?.data)) {
       for (const t of unltdFullHistoryCache.data) {
-        const tDoc = normalizeEntityDocument(t.contaOperacional?.cliente?.entidade?.documento);
+        const tDoc = normalizeEntityDocument(t.contaOperacional?.cliente?.entidade?.documento || t.cliente?.documento || t.cedente_cnpj);
         if (tDoc === docClean) {
-          const gName = t.contaOperacional?.gerente?.nome || t.contaOperacional?.gerente || t.contaOperacional?.colaborador?.nome || t.contaOperacional?.colaborador || t.agenteComercial?.nome || t.agenteComercial;
-          if (gName && typeof gName === 'string') {
-            foundManager = gName.trim();
+          const gName = extractManagerName(t);
+          if (gName) {
+            foundManager = gName;
             break;
           }
         }
@@ -1635,8 +1707,19 @@ app.get('/api/gerentes', requireSession, (req, res) => {
 
     // 1. Vincular cedentes da base da carteira / BitFin (cedentes / fidc_cedentes / cedentes_cnpjs)
     try {
-      const cedTable = tableExists('cedentes') ? 'cedentes' : (tableExists('fidc_cedentes') ? 'fidc_cedentes' : null);
-      if (cedTable && tableExists('gerentes')) {
+      const hasFidc = tableExists('fidc_cedentes');
+      const hasCed = tableExists('cedentes');
+      if ((hasFidc || hasCed) && tableExists('gerentes')) {
+        const unionParts = [];
+        if (hasFidc) unionParts.push('SELECT cnpj_raiz, nome, estado, setor_id, gerente_id FROM fidc_cedentes WHERE gerente_id IS NOT NULL');
+        if (hasCed) unionParts.push('SELECT cnpj_raiz, nome, estado, setor_id, gerente_id FROM cedentes WHERE gerente_id IS NOT NULL');
+
+        const cnpjParts = [];
+        if (tableExists('fidc_cedentes_cnpjs')) cnpjParts.push('SELECT cnpj_raiz, MIN(cnpj) as cnpj FROM fidc_cedentes_cnpjs GROUP BY cnpj_raiz');
+        if (tableExists('cedentes_cnpjs')) cnpjParts.push('SELECT cnpj_raiz, MIN(cnpj) as cnpj FROM cedentes_cnpjs GROUP BY cnpj_raiz');
+
+        const cnpjsSubquery = cnpjParts.length > 0 ? cnpjParts.join(' UNION ') : 'SELECT NULL as cnpj_raiz, NULL as cnpj WHERE 1=0';
+
         const rows = db.prepare(`
           SELECT 
             c.cnpj_raiz,
@@ -1644,13 +1727,9 @@ app.get('/api/gerentes', requireSession, (req, res) => {
             COALESCE(cn.cnpj, c.cnpj_raiz) as documento,
             g.id as gerente_id,
             g.nome as gerente_nome
-          FROM ${cedTable} c
+          FROM (${unionParts.join(' UNION ')}) c
           JOIN gerentes g ON g.id = c.gerente_id
-          LEFT JOIN (
-            SELECT cnpj_raiz, MIN(cnpj) as cnpj 
-            FROM cedentes_cnpjs 
-            GROUP BY cnpj_raiz
-          ) cn ON cn.cnpj_raiz = c.cnpj_raiz
+          LEFT JOIN (${cnpjsSubquery}) cn ON cn.cnpj_raiz = c.cnpj_raiz
         `).all();
 
         for (const row of rows) {
@@ -1673,7 +1752,7 @@ app.get('/api/gerentes', requireSession, (req, res) => {
       for (const row of localRows) {
         const localComposed = composeClientRegistration(null, row);
         const doc = normalizeEntityDocument(row.documento);
-        const gName = localComposed.data?.entidade?.gerente;
+        const gName = extractManagerName(localComposed.data?.entidade) || localComposed.data?.entidade?.gerente;
         if (gName && doc) {
           const matched = matchRegisteredManager(gName, gerentes);
           if (matched && cedentesByManager.has(matched.id)) {
@@ -1686,9 +1765,12 @@ app.get('/api/gerentes', requireSession, (req, res) => {
     // 3. Se houver dados em cache em memória da API BitFin, enriquece cedentes adicionais
     if (Array.isArray(unltdFullHistoryCache?.data)) {
       for (const t of unltdFullHistoryCache.data) {
-        const cliente = t.contaOperacional?.cliente;
-        const entidade = cliente?.entidade;
-        const doc = normalizeEntityDocument(entidade?.documento);
+        const doc = normalizeEntityDocument(
+          t.contaOperacional?.cliente?.entidade?.documento ||
+          t.cliente?.documento ||
+          t.cedente_cnpj ||
+          t.documentoCliente
+        );
         if (!doc) continue;
 
         let alreadyAssigned = false;
@@ -1700,7 +1782,7 @@ app.get('/api/gerentes', requireSession, (req, res) => {
         }
         if (alreadyAssigned) continue;
 
-        const gName = entidade?.gerente || t.contaOperacional?.gerente?.nome || t.contaOperacional?.gerente || t.contaOperacional?.colaborador?.nome || t.contaOperacional?.colaborador;
+        const gName = extractManagerName(t);
         if (gName) {
           const matched = matchRegisteredManager(gName, gerentes);
           if (matched && cedentesByManager.has(matched.id)) {
@@ -1708,6 +1790,9 @@ app.get('/api/gerentes', requireSession, (req, res) => {
           }
         }
       }
+    } else if (UNLTD_TOKEN && !unltdFullHistoryCache?.pending) {
+      // Dispara carregamento em background para que próximas requisições já tenham os títulos completos
+      fetchTitulosDaAPI({ query: {} }).catch(() => {});
     }
 
     const enriched = gerentes.map(g => {
@@ -1821,8 +1906,19 @@ app.get('/api/gerentes/:id/cedentes', requireSession, async (req, res) => {
 
     // 1. Buscar cedentes vinculados diretamente na carteira / BitFin (cedentes / fidc_cedentes / cedentes_cnpjs)
     try {
-      const cedTable = tableExists('cedentes') ? 'cedentes' : (tableExists('fidc_cedentes') ? 'fidc_cedentes' : null);
-      if (cedTable && tableExists('gerentes')) {
+      const hasFidc = tableExists('fidc_cedentes');
+      const hasCed = tableExists('cedentes');
+      if ((hasFidc || hasCed) && tableExists('gerentes')) {
+        const unionParts = [];
+        if (hasFidc) unionParts.push('SELECT cnpj_raiz, nome, estado, setor_id, gerente_id FROM fidc_cedentes WHERE gerente_id IS NOT NULL');
+        if (hasCed) unionParts.push('SELECT cnpj_raiz, nome, estado, setor_id, gerente_id FROM cedentes WHERE gerente_id IS NOT NULL');
+
+        const cnpjParts = [];
+        if (tableExists('fidc_cedentes_cnpjs')) cnpjParts.push('SELECT cnpj_raiz, MIN(cnpj) as cnpj FROM fidc_cedentes_cnpjs GROUP BY cnpj_raiz');
+        if (tableExists('cedentes_cnpjs')) cnpjParts.push('SELECT cnpj_raiz, MIN(cnpj) as cnpj FROM cedentes_cnpjs GROUP BY cnpj_raiz');
+
+        const cnpjsSubquery = cnpjParts.length > 0 ? cnpjParts.join(' UNION ') : 'SELECT NULL as cnpj_raiz, NULL as cnpj WHERE 1=0';
+
         const rows = db.prepare(`
           SELECT 
             c.cnpj_raiz,
@@ -1830,13 +1926,9 @@ app.get('/api/gerentes/:id/cedentes', requireSession, async (req, res) => {
             COALESCE(cn.cnpj, c.cnpj_raiz) as documento,
             g.id as gerente_id,
             g.nome as gerente_nome
-          FROM ${cedTable} c
+          FROM (${unionParts.join(' UNION ')}) c
           JOIN gerentes g ON g.id = c.gerente_id
-          LEFT JOIN (
-            SELECT cnpj_raiz, MIN(cnpj) as cnpj 
-            FROM cedentes_cnpjs 
-            GROUP BY cnpj_raiz
-          ) cn ON cn.cnpj_raiz = c.cnpj_raiz
+          LEFT JOIN (${cnpjsSubquery}) cn ON cn.cnpj_raiz = c.cnpj_raiz
         `).all();
 
         for (const row of rows) {
@@ -1870,7 +1962,7 @@ app.get('/api/gerentes/:id/cedentes', requireSession, async (req, res) => {
       const localRows = getAllLocalClientRows();
       for (const row of localRows) {
         const localComposed = composeClientRegistration(null, row);
-        const gName = localComposed.data?.entidade?.gerente;
+        const gName = extractManagerName(localComposed.data?.entidade) || localComposed.data?.entidade?.gerente;
         if (gName) {
           const matched = matchRegisteredManager(gName, gerentes);
           const isMatch = matched && (
@@ -1897,15 +1989,25 @@ app.get('/api/gerentes/:id/cedentes', requireSession, async (req, res) => {
     } catch {}
 
     // 3. Clientes e contatos na API BitFin / UNLTD
+    if (!unltdFullHistoryCache?.data && UNLTD_TOKEN) {
+      try {
+        await fetchTitulosDaAPI({ query: {} });
+      } catch (apiErr) {
+        console.warn('Aviso ao carregar títulos da API UNLTD em /cedentes:', apiErr.message);
+      }
+    }
+
     if (Array.isArray(unltdFullHistoryCache?.data)) {
       for (const t of unltdFullHistoryCache.data) {
-        const cliente = t.contaOperacional?.cliente;
-        const entidade = cliente?.entidade;
-        if (!entidade?.nome) continue;
-        const doc = normalizeEntityDocument(entidade.documento);
+        const doc = normalizeEntityDocument(
+          t.contaOperacional?.cliente?.entidade?.documento ||
+          t.cliente?.documento ||
+          t.cedente_cnpj ||
+          t.documentoCliente
+        );
         if (!doc) continue;
 
-        const gName = entidade.gerente || t.contaOperacional?.gerente?.nome || t.contaOperacional?.gerente || t.contaOperacional?.colaborador?.nome || t.contaOperacional?.colaborador;
+        const gName = extractManagerName(t);
         if (gName) {
           const matched = matchRegisteredManager(gName, gerentes);
           const isMatch = matched && (
@@ -1914,17 +2016,28 @@ app.get('/api/gerentes/:id/cedentes', requireSession, async (req, res) => {
           );
 
           if (isMatch) {
+            const nomeCliente = (
+              t.contaOperacional?.cliente?.entidade?.nome ||
+              t.cliente?.nome ||
+              t.cedente_nome ||
+              t.cliente ||
+              'Cliente BitFin'
+            ).trim();
+
+            const emailCliente = t.contaOperacional?.cliente?.entidade?.email || t.cliente?.email || '-';
+            const telCliente = t.contaOperacional?.cliente?.entidade?.telefone || t.cliente?.telefone || '-';
+
             if (cedentesMap.has(doc)) {
               const existing = cedentesMap.get(doc);
-              if (entidade.email && existing.email === '-') existing.email = entidade.email;
-              if (entidade.telefone && existing.telefone === '-') existing.telefone = entidade.telefone;
+              if (emailCliente !== '-' && existing.email === '-') existing.email = emailCliente;
+              if (telCliente !== '-' && existing.telefone === '-') existing.telefone = telCliente;
             } else {
               cedentesMap.set(doc, {
-                documento: entidade.documento || doc,
-                nome: entidade.nome,
-                email: entidade.email || '-',
-                telefone: entidade.telefone || '-',
-                tipo: entidade.tipo || 'PJ',
+                documento: doc,
+                nome: nomeCliente,
+                email: emailCliente,
+                telefone: telCliente,
+                tipo: 'PJ',
                 gerente: matched.nome,
                 superintendente: gerente.superintendente_nome || (gerente.cargo === 'SUPERINTENDENTE' ? gerente.nome : 'Rafael Pereira'),
                 source: 'BitFin API'

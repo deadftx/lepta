@@ -5,7 +5,7 @@ import {
   XCircle, Clock, MessageSquare, Send, X, Archive, RotateCcw,
   DollarSign, AlertCircle, RefreshCw, User,
   Eye, HelpCircle, CreditCard, Check, ShieldAlert,
-  Paperclip, Download, Trash2, PauseCircle, PlayCircle
+  Paperclip, Download, Trash2, PauseCircle, PlayCircle, Scale
 } from 'lucide-react';
 import { API_BASE_URL, getAuthHeaders } from '../../../../config/api';
 import { useAuth } from '../../../core/AuthContext';
@@ -1149,8 +1149,40 @@ export const PurchaseApproval: React.FC = () => {
         return <span className="pa-status-badge approved" style={{ background: 'rgba(52, 211, 153, 0.15)', color: '#34d399', border: '1px solid rgba(52, 211, 153, 0.3)' }}><CheckCircle2 size={12} /> Concluída</span>;
       case 'REVISAO':
         return <span className="pa-status-badge waiting-approver" style={{ background: 'rgba(239, 68, 68, 0.15)', color: '#ef4444', border: '1px solid rgba(239, 68, 68, 0.3)' }}><RotateCcw size={12} /> Reaprovação Necessária</span>;
+      case 'AGUARDANDO_JURIDICO':
+        return (
+          <span
+            className="pa-status-badge waiting-approver"
+            style={{
+              background: 'rgba(234, 179, 8, 0.15)',
+              color: '#facc15',
+              border: '1px solid rgba(234, 179, 8, 0.35)',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '4px'
+            }}
+          >
+            <Scale size={12} /> Aguardando Jurídico
+          </span>
+        );
+      case 'NEGADO_JURIDICO':
+        return (
+          <span
+            className="pa-status-badge denied"
+            style={{
+              background: 'rgba(239, 68, 68, 0.15)',
+              color: '#ef4444',
+              border: '1px solid rgba(239, 68, 68, 0.35)',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '4px'
+            }}
+          >
+            <XCircle size={12} /> Negado pelo Jurídico
+          </span>
+        );
       default:
-        return <span className="pa-status-badge pending">{status}</span>;
+        return <span className="pa-status-badge pending">{String(status || '').replace(/_/g, ' ')}</span>;
     }
   };
 
