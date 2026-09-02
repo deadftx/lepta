@@ -162,7 +162,7 @@ const InternalLayout = () => {
                   )}
                   {hasAccess('7.4') && (
                     <Link to="/financeiro/reembolsos-despesas" className={navItemClass('/financeiro/reembolsos-despesas')}>
-                      <DollarSign size={18} /> Reembolsos e Despesas
+                      <DollarSign size={18} /> Central de Pagamentos
                     </Link>
                   )}
                   {hasAccess('7.5') && (

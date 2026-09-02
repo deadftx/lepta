@@ -121,11 +121,19 @@ export const SystemSearchModal: React.FC<SystemSearchModalProps> = ({ isOpen, on
         const catNorm = normalize(item.category);
         const breadcrumbNorm = normalize(item.breadcrumb.join(' '));
         const keywordsNorm = item.keywords.map(normalize);
+        const tagsNorm = (item.tags || []).map(normalize);
 
         let score = 0;
 
         // Check each term
         queryTerms.forEach(term => {
+          // Exact Tag match (alta relevância)
+          if (tagsNorm.some(t => t === term)) {
+            score += 110;
+          } else if (tagsNorm.some(t => t.includes(term))) {
+            score += 60;
+          }
+
           // Exact keyword match
           if (keywordsNorm.some(k => k === term)) {
             score += 100;
@@ -304,6 +312,16 @@ export const SystemSearchModal: React.FC<SystemSearchModalProps> = ({ isOpen, on
                         <div className="result-item-explanation">
                           <span className="explanation-indicator">🧭 Onde acessar:</span>
                           <span className="explanation-text">{item.explanation}</span>
+                        </div>
+                      )}
+
+                      {item.tags && item.tags.length > 0 && (
+                        <div className="result-item-tags">
+                          {item.tags.map((tag, tIdx) => (
+                            <span key={tIdx} className="result-tag-chip">
+                              #{tag}
+                            </span>
+                          ))}
                         </div>
                       )}
                     </div>

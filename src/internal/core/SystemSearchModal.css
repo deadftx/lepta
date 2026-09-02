@@ -345,6 +345,31 @@
   color: #e2e8f0;
 }
 
+.result-item-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.result-tag-chip {
+  font-size: 0.72rem;
+  font-weight: 500;
+  padding: 1px 7px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.05);
+  color: rgba(255, 255, 255, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  transition: all 0.15s ease;
+}
+
+.search-result-item.selected .result-tag-chip,
+.search-result-item:hover .result-tag-chip {
+  background: rgba(255, 90, 45, 0.15);
+  color: #ffaa77;
+  border-color: rgba(255, 120, 50, 0.28);
+}
+
 .result-item-action {
   display: flex;
   align-items: center;

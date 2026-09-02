@@ -9,7 +9,8 @@ export interface SearchItem {
   description: string;
   explanation?: string; // "Onde encontrar / Como acessar"
   targetElementHint?: string; // Direct hint for inside the page
-  keywords: string[];
+  tags?: string[]; // Tags visíveis para guiar o usuário
+  keywords: string[]; // Palavras-chave completas para o motor de busca inteligente
   icon: string; // Lucide icon name identifier
   badge?: string;
 }
@@ -26,7 +27,8 @@ export const systemSearchItems: SearchItem[] = [
     path: '/dashboard',
     description: 'Página inicial com calendário institucional, próximos eventos, aniversários e feriados corporativos.',
     explanation: 'Acesse o menu Intranet > Home para visualizar comunicados e calendário corporativo.',
-    keywords: ['home', 'inicio', 'painel', 'dashboard', 'intranet', 'aniversarios', 'feriados', 'eventos', 'calendario interno', 'comunicados'],
+    tags: ['Início', 'Calendário', 'Comunicados', 'Aniversários', 'Feriados'],
+    keywords: ['home', 'inicio', 'painel', 'dashboard', 'intranet', 'aniversarios', 'feriados', 'eventos', 'calendario interno', 'comunicados', 'geral'],
     icon: 'Home',
     badge: 'Geral'
   },
@@ -39,7 +41,8 @@ export const systemSearchItems: SearchItem[] = [
     description: 'Atalho para o registro e controle de ponto eletrônico dos colaboradores.',
     explanation: 'Localizado no cartão de "Acessos Rápidos" na tela inicial (Home).',
     targetElementHint: 'Card "Acessos Rápidos" > Ponto Eletrônico',
-    keywords: ['ponto', 'ponto eletronico', 'banco de horas', 'registro de ponto', 'horas trabalhadas', 'espelho de ponto', 'rh'],
+    tags: ['Ponto', 'Banco de Horas', 'Espelho de Ponto', 'RH'],
+    keywords: ['ponto', 'ponto eletronico', 'banco de horas', 'registro de ponto', 'horas trabalhadas', 'espelho de ponto', 'rh', 'bater ponto', 'cartao ponto'],
     icon: 'Clock',
     badge: 'Atalho'
   },
@@ -52,7 +55,8 @@ export const systemSearchItems: SearchItem[] = [
     description: 'Atalho para abertura de tickets, suporte e chamados técnicos de TI.',
     explanation: 'Localizado no cartão de "Acessos Rápidos" na tela inicial (Home).',
     targetElementHint: 'Card "Acessos Rápidos" > Chamados TI',
-    keywords: ['chamados', 'ti', 'suporte', 'helpdesk', 'informatica', 'tecnologia', 'abrir chamado', 'problema', 'ticket'],
+    tags: ['Suporte TI', 'Helpdesk', 'Abrir Chamado', 'Tecnologia'],
+    keywords: ['chamados', 'ti', 'suporte', 'helpdesk', 'informatica', 'tecnologia', 'abrir chamado', 'problema', 'ticket', 'computador', 'acesso'],
     icon: 'HelpCircle',
     badge: 'Atalho'
   },
@@ -69,7 +73,8 @@ export const systemSearchItems: SearchItem[] = [
     permissionId: '6',
     description: 'Planejamento e visualização de postagens, campanhas e ações do marketing.',
     explanation: 'Acesse Grupos > Calendário para ver a grade de campanhas e publicações.',
-    keywords: ['marketing', 'calendario', 'postagens', 'campanhas', 'midias', 'redes sociais', 'divulgacao', 'conteudo'],
+    tags: ['Campanhas', 'Redes Sociais', 'Postagens', 'Mídias', 'Conteúdo'],
+    keywords: ['marketing', 'calendario', 'postagens', 'campanhas', 'midias', 'redes sociais', 'divulgacao', 'conteudo', 'design', 'cronograma'],
     icon: 'Calendar',
     badge: 'Menu'
   },
@@ -86,7 +91,8 @@ export const systemSearchItems: SearchItem[] = [
     permissionId: '7',
     description: 'Visão geral das rotinas financeiras, conciliações e indicadores de caixa.',
     explanation: 'Acesse Grupos > Financeiro para ver o dashboard com atalhos de extratos, Grafeno e despesas.',
-    keywords: ['financeiro', 'financas', 'caixa', 'bancos', 'tesouraria', 'movimentacao'],
+    tags: ['Tesouraria', 'Contas', 'Fluxo de Caixa', 'Bancos'],
+    keywords: ['financeiro', 'financas', 'caixa', 'bancos', 'tesouraria', 'movimentacao', 'extrato'],
     icon: 'Wallet',
     badge: 'Menu'
   },
@@ -99,7 +105,8 @@ export const systemSearchItems: SearchItem[] = [
     permissionId: '7.1',
     description: 'Importação e conciliação de extratos bancários nos formatos OFX, XLSX e CSV.',
     explanation: 'Acesse Grupos > Financeiro > Processar Extrato para fazer upload e conciliação de lançamentos.',
-    keywords: ['extrato', 'processar extrato', 'ofx', 'excel', 'csv', 'bancario', 'conciliacao', 'lancamentos', 'debitos', 'creditos', 'saldo'],
+    tags: ['OFX', 'Excel / CSV', 'Conciliação Bancária', 'Lançamentos'],
+    keywords: ['extrato', 'extratos', 'processar extrato', 'ofx', 'excel', 'csv', 'bancario', 'conciliacao', 'lancamentos', 'debitos', 'creditos', 'saldo', 'importar extrato'],
     icon: 'FileSpreadsheet',
     badge: 'Submenu'
   },
@@ -112,20 +119,22 @@ export const systemSearchItems: SearchItem[] = [
     permissionId: '7.2',
     description: 'Integração de contas e conciliação de movimentações da plataforma Grafeno.',
     explanation: 'Acesse Grupos > Financeiro > LEPTA x GRAFENO para conferir saldos e conciliar transações.',
-    keywords: ['grafeno', 'lepta x grafeno', 'conciliacao grafeno', 'conta escrow', 'movimento', 'ted', 'pix', 'transacoes grafeno'],
+    tags: ['Grafeno', 'Conta Escrow', 'Extrato Grafeno', 'Saldos'],
+    keywords: ['grafeno', 'lepta x grafeno', 'conciliacao grafeno', 'conta escrow', 'movimento', 'ted', 'pix', 'transacoes grafeno', 'saldo grafeno'],
     icon: 'Landmark',
     badge: 'Submenu'
   },
   {
-    id: 'fin-reembolsos',
-    title: 'Reembolsos e Despesas',
+    id: 'fin-central-pagamentos',
+    title: 'Central de Pagamentos',
     category: 'Financeiro',
-    breadcrumb: ['Grupos', 'Financeiro', 'Reembolsos e Despesas'],
+    breadcrumb: ['Grupos', 'Financeiro', 'Central de Pagamentos'],
     path: '/financeiro/reembolsos-despesas',
     permissionId: '7.4',
-    description: 'Lançamento e aprovação de pedidos de reembolso de despesas corporativas.',
-    explanation: 'Acesse Grupos > Financeiro > Reembolsos e Despesas para anexar comprovantes e solicitar ressarcimentos.',
-    keywords: ['reembolso', 'reembolsos', 'despesas', 'comprovantes', 'prestacao de contas', 'gastos', 'viagem', 'km', 'combustivel', 'alimentacao'],
+    description: 'Gestão e processamento da fila de pagamentos, liquidação de despesas e aprovações financeiras.',
+    explanation: 'Acesse Grupos > Financeiro > Central de Pagamentos para gerenciar e executar pagamentos aprovados.',
+    tags: ['Fila de Pagamentos', 'Liquidação', 'PIX & TED', 'Boletos', 'Contas a Pagar'],
+    keywords: ['central de pagamentos', 'central pagamentos', 'pagamentos', 'pagamento', 'contas a pagar', 'contas pagar', 'liquidacao', 'liquidacoes', 'ted', 'pix', 'boletos', 'despesas aprovadas', 'fila de pagamento', 'processar pagamento', 'baixa de pagamentos', 'financeiro pagamentos'],
     icon: 'DollarSign',
     badge: 'Submenu'
   },
@@ -138,7 +147,8 @@ export const systemSearchItems: SearchItem[] = [
     permissionId: '7.5',
     description: 'Controle de fluxo de vencimentos, contas a pagar e saídas financeiras programadas.',
     explanation: 'Acesse Grupos > Financeiro > Calendário de Pagamentos para consultar os compromissos por data.',
-    keywords: ['calendario de pagamentos', 'pagamentos', 'contas a pagar', 'vencimento', 'fluxo de caixa', 'saidas', 'boletos', 'compromissos'],
+    tags: ['Vencimentos', 'Contas a Pagar', 'Fluxo de Caixa', 'Compromissos'],
+    keywords: ['calendario de pagamentos', 'pagamentos', 'contas a pagar', 'vencimento', 'fluxo de caixa', 'saidas', 'boletos', 'compromissos', 'datas de pagamento'],
     icon: 'Calendar',
     badge: 'Submenu'
   },
@@ -154,8 +164,9 @@ export const systemSearchItems: SearchItem[] = [
     path: '/intelligence/analise-clientes',
     permissionId: '8.1',
     description: 'Visão completa de carteira de clientes, detalhamento de operações por Cedente e por Sacado.',
-    explanation: 'Acesse Grupos > Lepta Intelligence > Análise de Clientes. Permite filtrar e analisar dados de Cedentes, Sacados e UAs.',
-    keywords: ['analise de clientes', 'clientes', 'cedente', 'cedentes', 'sacado', 'sacados', 'carteira', 'faturamento', 'titulos', 'liquidado', 'vencido', 'aberto'],
+    explanation: 'Acesse Grupos > Lepta Intelligence > Análise de Clientes para analisar Cedentes, Sacados, UAs e faturamento.',
+    tags: ['Cedentes', 'Sacados', 'Carteira', 'Faturamento', 'UAs'],
+    keywords: ['analise de clientes', 'clientes', 'cedente', 'cedentes', 'sacado', 'sacados', 'carteira', 'faturamento', 'titulos', 'liquidado', 'vencido', 'aberto', 'operacoes'],
     icon: 'Users',
     badge: 'Submenu'
   },
@@ -169,7 +180,8 @@ export const systemSearchItems: SearchItem[] = [
     description: 'Consulta direta de sacados vinculados aos cedentes, concentração de dívida e histórico de títulos emitidos.',
     explanation: '👉 Para abrir os Sacados: Acesse "Lepta Intelligence > Análise de Clientes" e utilize o botão/filtro de Sacados ou clique em um Cedente para abrir o modal de Sacados e Títulos.',
     targetElementHint: 'Modal/Visão de Sacados em Análise de Clientes',
-    keywords: ['sacado', 'sacados', 'consulta de sacados', 'sacados por cedente', 'devedor', 'devedores', 'duplicatas sacado', 'limite sacado', 'concentracao sacado', 'lastro sacado'],
+    tags: ['Sacados', 'Devedores', 'Concentração', 'Duplicatas', 'Lastro'],
+    keywords: ['sacado', 'sacados', 'consulta de sacados', 'sacados por cedente', 'devedor', 'devedores', 'duplicatas sacado', 'limite sacado', 'concentracao sacado', 'lastro sacado', 'quem deve'],
     icon: 'Search',
     badge: 'Recurso / Modal'
   },
@@ -183,7 +195,8 @@ export const systemSearchItems: SearchItem[] = [
     description: 'Agrupamento de empresas coligadas e controle de limite unificado por conglomerado econômico.',
     explanation: 'Acesse "Lepta Intelligence > Análise de Clientes" e ative a visualização por Grupos Econômicos.',
     targetElementHint: 'Agrupamento Econômico em Análise de Clientes',
-    keywords: ['grupo economico', 'grupos economicos', 'conglomerado', 'empresas do grupo', 'limite de grupo', 'coligadas', 'matriz e filial'],
+    tags: ['Grupos Econômicos', 'Conglomerados', 'Coligadas', 'Limite Unificado'],
+    keywords: ['grupo economico', 'grupos economicos', 'conglomerado', 'empresas do grupo', 'limite de grupo', 'coligadas', 'matriz e filial', 'holding'],
     icon: 'Network',
     badge: 'Recurso'
   },
@@ -196,7 +209,8 @@ export const systemSearchItems: SearchItem[] = [
     permissionId: '8.2',
     description: 'Formulário completo de onboarding e cadastro de empresas (CNPJ), sócios (CPF) e faturamento.',
     explanation: 'Acesse Grupos > Lepta Intelligence > Cadastro de Clientes para registrar novos proponentes.',
-    keywords: ['cadastro de clientes', 'cadastrar cliente', 'novo cliente', 'cnpj', 'razao social', 'socios', 'cpf', 'onboarding', 'enquadramento'],
+    tags: ['Onboarding', 'CNPJ', 'Sócios CPF', 'Novo Proponente'],
+    keywords: ['cadastro de clientes', 'cadastrar cliente', 'novo cliente', 'cnpj', 'razao social', 'socios', 'cpf', 'onboarding', 'enquadramento', 'empresa nova'],
     icon: 'ContactRound',
     badge: 'Submenu'
   },
@@ -209,7 +223,8 @@ export const systemSearchItems: SearchItem[] = [
     permissionId: '8.3',
     description: 'Motor de crédito, cálculo de score, SCR, Serasa, DRE, Balanço Patrimonial e alçadas de limite.',
     explanation: 'Acesse Grupos > Lepta Intelligence > Análise de Riscos para avaliar o risco de crédito de clientes.',
-    keywords: ['analise de riscos', 'risco', 'score', 'scr', 'bacen', 'serasa', 'spc', 'balanco', 'dre', 'rating', 'limite de credito', 'parecer de risco'],
+    tags: ['Score de Crédito', 'SCR Bacen', 'Serasa', 'Balanço & DRE', 'Rating'],
+    keywords: ['analise de riscos', 'risco', 'score', 'scr', 'bacen', 'serasa', 'spc', 'balanco', 'dre', 'rating', 'limite de credito', 'parecer de risco', 'motor de credito'],
     icon: 'ShieldCheck',
     badge: 'Submenu'
   },
@@ -222,7 +237,8 @@ export const systemSearchItems: SearchItem[] = [
     permissionId: '8.4',
     description: 'Acompanhamento de Non-Performing Loans, créditos podres, execução jurídica e recuperação de perdas.',
     explanation: 'Acesse Grupos > Lepta Intelligence > NPL para gerenciar operações em atraso grave e cobrança contenciosa.',
-    keywords: ['npl', 'non performing loans', 'credito podre', 'inadimplencia', 'execucao', 'juridico', 'perdas', 'recuperacao de ativos', 'ajuizamento'],
+    tags: ['Inadimplência', 'Execução Jurídica', 'Crédito Podre', 'Recuperação'],
+    keywords: ['npl', 'non performing loans', 'credito podre', 'inadimplencia', 'execucao', 'juridico', 'perdas', 'recuperacao de ativos', 'ajuizamento', 'processos judiciais'],
     icon: 'TrendingUp',
     badge: 'Submenu'
   },
@@ -235,7 +251,8 @@ export const systemSearchItems: SearchItem[] = [
     permissionId: '8.5',
     description: 'Esteira de deliberação, votação de diretores, atas de comitê e aprovações de limites de crédito.',
     explanation: 'Acesse Grupos > Lepta Intelligence > Esteira de Comitê para pautar e votar operações.',
-    keywords: ['esteira de comite', 'comite', 'comite de credito', 'votacao', 'aprovacao de limite', 'deliberacao', 'atas', 'parecer tecnico', 'diretoria'],
+    tags: ['Votação de Limite', 'Diretoria', 'Atas de Comitê', 'Deliberação'],
+    keywords: ['esteira de comite', 'comite', 'comite de credito', 'votacao', 'aprovacao de limite', 'deliberacao', 'atas', 'parecer tecnico', 'diretoria', 'membros do comite'],
     icon: 'ClipboardCheck',
     badge: 'Submenu'
   },
@@ -248,7 +265,8 @@ export const systemSearchItems: SearchItem[] = [
     permissionId: '8.6',
     description: 'Consulta ao banco de dados do SmartFactor: borderôs, duplicatas, títulos, cheques e notas fiscais.',
     explanation: 'Acesse Grupos > Lepta Intelligence > Consulta SmartFactor para pesquisar títulos e operações no SmartFactor.',
-    keywords: ['smartfactor', 'consulta smartfactor', 'bordero', 'borderos', 'duplicata', 'duplicatas', 'cheque', 'cheques', 'nfe', 'chave nfe', 'titulos smartfactor'],
+    tags: ['Borderôs', 'Duplicatas', 'Cheques', 'Chave NF-e', 'SmartFactor'],
+    keywords: ['smartfactor', 'consulta smartfactor', 'bordero', 'borderos', 'duplicata', 'duplicatas', 'cheque', 'cheques', 'nfe', 'chave nfe', 'titulos smartfactor', 'operacao smart'],
     icon: 'Search',
     badge: 'Submenu'
   },
@@ -261,7 +279,8 @@ export const systemSearchItems: SearchItem[] = [
     permissionId: '8.7',
     description: 'Gestão de gerentes de contas comerciais, vínculo de carteira de clientes e metas.',
     explanation: 'Acesse Grupos > Lepta Intelligence > Cadastro de Gerentes para gerenciar os operadores comerciais.',
-    keywords: ['cadastro de gerentes', 'gerentes', 'gerente comercial', 'carteira de gerentes', 'comercial', 'operadores', 'metas'],
+    tags: ['Gerentes de Contas', 'Comercial', 'Carteira', 'Metas'],
+    keywords: ['cadastro de gerentes', 'gerentes', 'gerente comercial', 'carteira de gerentes', 'comercial', 'operadores', 'metas', 'superintendentes'],
     icon: 'UserCheck',
     badge: 'Submenu'
   },
@@ -270,17 +289,41 @@ export const systemSearchItems: SearchItem[] = [
   // GRUPO ADMINISTRATIVO
   // ==========================================
   {
-    id: 'adm-compras',
-    title: 'Solicitações Financeiras & Compras',
+    id: 'adm-solicitacoes-financeiras',
+    title: 'Solicitações Financeiras (Reembolsos, Insumos & Compras)',
     category: 'Administrativo',
     breadcrumb: ['Grupos', 'Administrativo', 'Solicitações Financeiras'],
     path: '/administrativo/compras',
     permissionId: '11.1',
-    description: 'Abertura, acompanhamento e aprovação de solicitações de compras de suprimentos, TI e serviços.',
-    explanation: 'Acesse Grupos > Administrativo > Solicitações Financeiras para pedir compras e anexar cotações.',
-    keywords: ['compras', 'solicitacoes financeiras', 'pedido de compras', 'cotacao', 'fornecedor', 'pagamento de compras', 'aprovacao de compras'],
+    description: 'Abertura e acompanhamento de solicitações financeiras: reembolso de despesas, insumos, viagens, visitas, eventos e compras gerais.',
+    explanation: '👉 Onde pedir Reembolso e Compras: Acesse "Grupos > Administrativo > Solicitações Financeiras" para abrir solicitações de reembolso de despesas, viagens, insumos corporativos e aprovação de compras.',
+    tags: ['Reembolso', 'Insumos', 'Viagens & KM', 'Compras', 'Prestação de Contas', 'Eventos'],
+    keywords: [
+      'reembolso', 'reembolsos', 'pedir reembolso', 'solicitar reembolso', 'reembolso de despesas', 'solicitacao de reembolso',
+      'solicitacao financeira', 'solicitacoes financeiras', 'compras', 'pedido de compras', 'cotacao', 'fornecedor',
+      'pagamento de compras', 'aprovacao de compras', 'despesa', 'despesas', 'insumos', 'visita', 'viagem', 'km',
+      'combustivel', 'alimentacao', 'festas', 'aniversarios', 'eventos', 'adiantamento', 'ressarcimento', 'comprovante'
+    ],
     icon: 'ShoppingCart',
     badge: 'Submenu'
+  },
+  {
+    id: 'adm-reembolso-atalho',
+    title: 'Solicitar Reembolso de Despesas (Atalho)',
+    category: 'Administrativo',
+    breadcrumb: ['Grupos', 'Administrativo', 'Solicitações Financeiras', 'Reembolso'],
+    path: '/administrativo/compras',
+    permissionId: '11.1',
+    description: 'Abertura de pedido de ressarcimento de refeições, combustível, quilometragem, hotéis, viagens e despesas de trabalho.',
+    explanation: '👉 O reembolso é solicitado em: "Administrativo > Solicitações Financeiras". Clique para ir direto ao formulário e anexar comprovantes.',
+    targetElementHint: 'Solicitações Financeiras > Nova Solicitação > Categoria: Reembolso',
+    tags: ['Reembolso', 'Despesas', 'Comprovantes', 'Prestação de Contas', 'Alimentação & KM'],
+    keywords: [
+      'reembolso', 'reembolsos', 'pedir reembolso', 'solicitar reembolso', 'ressarcimento', 'comprovante', 'nota fiscal despesa',
+      'km rodado', 'combustivel', 'almoco', 'jantar', 'hotel', 'passagem', 'uber', 'taxi', 'gastos', 'prestacao de contas'
+    ],
+    icon: 'DollarSign',
+    badge: 'Recurso / Atalho'
   },
   {
     id: 'adm-workflow',
@@ -291,7 +334,8 @@ export const systemSearchItems: SearchItem[] = [
     permissionId: '11.2',
     description: 'Definição de alçadas, aprovadores por valor e regras de fluxo de aprovação de compras.',
     explanation: 'Acesse Grupos > Administrativo > Configuração de Esteira de Compras para parametrizar regras.',
-    keywords: ['configuracao de compras', 'esteira de compras', 'alcadas', 'aprovadores', 'regras de compras', 'limites de compras', 'workflow'],
+    tags: ['Alçadas', 'Aprovadores', 'Limites de Valor', 'Workflow de Compras'],
+    keywords: ['configuracao de compras', 'esteira de compras', 'alcadas', 'aprovadores', 'regras de compras', 'limites de compras', 'workflow', 'hierarquia de aprovacao'],
     icon: 'SlidersHorizontal',
     badge: 'Submenu'
   },
@@ -303,8 +347,9 @@ export const systemSearchItems: SearchItem[] = [
     path: '/administrativo/salas-reuniao',
     permissionId: '11.3',
     description: 'Reserva e visualização de disponibilidade das salas de conferência e reunião do escritório.',
-    explanation: 'Acesse Grupos > Administrativo > Agendar Sala de Reunião para agendar horários.',
-    keywords: ['sala de reuniao', 'salas', 'agendar sala', 'reserva de sala', 'conferencia', 'reuniao', 'calendario de salas'],
+    explanation: 'Acesse Grupos > Administrativo > Agendar Sala de Reunião para reservar horários e salas.',
+    tags: ['Reservar Sala', 'Reuniões', 'Horários', 'Disponibilidade', 'Conferência'],
+    keywords: ['sala de reuniao', 'salas', 'agendar sala', 'reserva de sala', 'conferencia', 'reuniao', 'calendario de salas', 'marcar reuniao', 'sala de diretoria'],
     icon: 'CalendarCheck',
     badge: 'Submenu'
   },
@@ -321,7 +366,8 @@ export const systemSearchItems: SearchItem[] = [
     permissionId: '10.1',
     description: 'Checagem de lastro, contato com sacados, gravação de confirmação e validação de entrega de mercadorias/serviços.',
     explanation: 'Acesse Grupos > Confirmação > Sistema de Confirmação para checar operações e ligar para sacados.',
-    keywords: ['confirmacao', 'sistema de confirmacao', 'checar titulos', 'sacados confirmacao', 'gravacao', 'lastro', 'entrega', 'canhoto', 'nota fiscal confirmada'],
+    tags: ['Checagem de Lastro', 'Gravação Sacados', 'Canhotos', 'Notas Fiscais'],
+    keywords: ['confirmacao', 'sistema de confirmacao', 'checar titulos', 'sacados confirmacao', 'gravacao', 'lastro', 'entrega', 'canhoto', 'nota fiscal confirmada', 'checagem'],
     icon: 'ClipboardCheck',
     badge: 'Submenu'
   },
@@ -334,7 +380,8 @@ export const systemSearchItems: SearchItem[] = [
     permissionId: '10.2',
     description: 'Métricas, relatórios de produtividade dos confirmadores e assertividade de checagem.',
     explanation: 'Acesse Grupos > Confirmação > Análise de Confirmação para ver os relatórios de checagem.',
-    keywords: ['analise de confirmacao', 'produtividade confirmacao', 'relatorio confirmacao', 'auditoria de confirmacao', 'assertividade'],
+    tags: ['Produtividade', 'Assertividade', 'Métricas de Checagem', 'Auditoria'],
+    keywords: ['analise de confirmacao', 'produtividade confirmacao', 'relatorio confirmacao', 'auditoria de confirmacao', 'assertividade', 'indicadores confirmadores'],
     icon: 'Search',
     badge: 'Submenu'
   },
@@ -351,7 +398,8 @@ export const systemSearchItems: SearchItem[] = [
     permissionId: '12.1',
     description: 'Gestão de carteira em atraso, aging list (1-30, 31-60, 61-90, 90+), histórico de cobrança e renegociação.',
     explanation: 'Acesse Grupos > Cobrança > Análise de Vencidos para cobrar títulos atrasados de sacados e cedentes.',
-    keywords: ['cobranca', 'analise de vencidos', 'titulos vencidos', 'atraso', 'aging list', 'negociacao', 'devedores', 'sacados em atraso', 'regua de cobranca'],
+    tags: ['Aging List', 'Títulos em Atraso', 'Régua de Cobrança', 'Renegociação'],
+    keywords: ['cobranca', 'analise de vencidos', 'titulos vencidos', 'atraso', 'aging list', 'negociacao', 'devedores', 'sacados em atraso', 'regua de cobranca', 'acordos'],
     icon: 'FileSpreadsheet',
     badge: 'Submenu'
   },
@@ -368,7 +416,8 @@ export const systemSearchItems: SearchItem[] = [
     permissionId: '9',
     description: 'Visualização da estrutura de dados, tabelas internas e monitoramento de sincronizações.',
     explanation: 'Acesse Grupos > Banco de Dados para consultar esquemas e dados brutos.',
-    keywords: ['banco de dados', 'database', 'tabelas', 'sql', 'sincronizacao', 'registros', 'estrutura'],
+    tags: ['Tabelas', 'Esquema SQL', 'Sincronização UNLTD', 'Logs'],
+    keywords: ['banco de dados', 'database', 'tabelas', 'sql', 'sincronizacao', 'registros', 'estrutura', 'cedentes unltd'],
     icon: 'Database',
     badge: 'Menu'
   },
@@ -381,6 +430,7 @@ export const systemSearchItems: SearchItem[] = [
     permissionId: '5',
     description: 'Painéis consolidados com indicadores chave de desempenho (KPIs) da operação Lepta.',
     explanation: 'Acesse Grupos > Dashboards para visualizar gráficos e métricas globais.',
+    tags: ['KPIs Globais', 'Gráficos', 'Métricas', 'Visão Geral'],
     keywords: ['dashboards', 'paineis', 'kpi', 'metricas', 'graficos', 'visao geral', 'indicadores executivos'],
     icon: 'LayoutDashboard',
     badge: 'Menu'
@@ -394,6 +444,7 @@ export const systemSearchItems: SearchItem[] = [
     permissionId: '4',
     description: 'Relatórios avançados de BI, análises preditivas e painéis PowerBI embutidos.',
     explanation: 'Acesse Grupos > Business Intelligence para carregar os painéis analíticos.',
+    tags: ['PowerBI', 'Analytics', 'Relatórios Executivos', 'Dashboards BI'],
     keywords: ['bi', 'business intelligence', 'powerbi', 'relatorios bi', 'analytics', 'analise profunda'],
     icon: 'Sliders',
     badge: 'Menu'
@@ -411,7 +462,8 @@ export const systemSearchItems: SearchItem[] = [
     masterOnly: true,
     description: 'Configuração da matriz de acessos e permissões individuais por usuário.',
     explanation: 'Acesse Administração > Permissões e Acessos > Gestão de Permissões (Apenas Administradores).',
-    keywords: ['permissoes', 'acessos', 'gestao de permissoes', 'matriz de acessos', 'perfis', 'liberacoes', 'master'],
+    tags: ['Matriz de Acessos', 'Perfis', 'Liberações', 'Segurança'],
+    keywords: ['permissoes', 'acessos', 'gestao de permissoes', 'matriz de acessos', 'perfis', 'liberacoes', 'master', 'bloqueio de usuario'],
     icon: 'Shield',
     badge: 'Master'
   },
@@ -424,7 +476,8 @@ export const systemSearchItems: SearchItem[] = [
     masterOnly: true,
     description: 'Cadastro de novos colaboradores com definição de login, e-mail e cargo inicial.',
     explanation: 'Acesse Administração > Permissões e Acessos > Criar Usuário para adicionar colaboradores.',
-    keywords: ['criar usuario', 'novo usuario', 'cadastrar usuario', 'adicionar colaborador', 'novo login', 'senha inicial'],
+    tags: ['Novo Colaborador', 'Login', 'Senha Inicial', 'Cargo'],
+    keywords: ['criar usuario', 'novo usuario', 'cadastrar usuario', 'adicionar colaborador', 'novo login', 'senha inicial', 'cadastro de membro'],
     icon: 'UserPlus',
     badge: 'Master'
   },
@@ -437,7 +490,8 @@ export const systemSearchItems: SearchItem[] = [
     masterOnly: true,
     description: 'Criação e edição de perfis de grupo para atribuição facilitada de permissões em lote.',
     explanation: 'Acesse Administração > Permissões e Acessos > Configurar Grupos para parametrizar funções.',
-    keywords: ['grupos', 'configurar grupos', 'cargos', 'perfis de acesso', 'grupos de usuarios', 'departamentos'],
+    tags: ['Perfis de Cargo', 'Grupos de Acesso', 'Departamentos'],
+    keywords: ['grupos', 'configurar grupos', 'cargos', 'perfis de acesso', 'grupos de usuarios', 'departamentos', 'papeis'],
     icon: 'Users',
     badge: 'Master'
   },
@@ -450,7 +504,8 @@ export const systemSearchItems: SearchItem[] = [
     masterOnly: true,
     description: 'Parametrização do servidor SMTP para envio automático de e-mails do sistema.',
     explanation: 'Acesse Administração > Permissões e Acessos > Configuração de E-mail para configurar servidor e templates.',
-    keywords: ['email', 'email config', 'smtp', 'servidor de email', 'envio de email', 'notificacoes automaticas', 'outlook', 'office 365'],
+    tags: ['SMTP', 'Servidor de E-mail', 'Templates', 'Notificações'],
+    keywords: ['email', 'email config', 'smtp', 'servidor de email', 'envio de email', 'notificacoes automaticas', 'outlook', 'office 365', 'disparos'],
     icon: 'Mail',
     badge: 'Master'
   },
@@ -463,7 +518,8 @@ export const systemSearchItems: SearchItem[] = [
     masterOnly: true,
     description: 'Monitoramento ao vivo de usuários conectados, páginas acessadas e tráfego interno.',
     explanation: 'Acesse /monitor para visualizar a telemetria ao vivo de usuários ativos no sistema.',
-    keywords: ['monitor', 'usuarios online', 'telemetria', 'presenca', 'heartbeat', 'tempo real', 'quem esta online'],
+    tags: ['Tempo Real', 'Usuários Online', 'Telemetria', 'Auditoria'],
+    keywords: ['monitor', 'usuarios online', 'telemetria', 'presenca', 'heartbeat', 'tempo real', 'quem esta online', 'auditoria'],
     icon: 'ShieldAlert',
     badge: 'Master'
   }

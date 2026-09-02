@@ -25,10 +25,10 @@ const FinanceDashboard = () => {
               <DollarSign size={24} />
             </div>
             <div className="stat-info">
-              <h3>Reembolsos e Despesas</h3>
+              <h3>Central de Pagamentos</h3>
               <p style={{ marginTop: '0.5rem', color: 'var(--text-muted)' }}>Fila de pagamentos aprovados, liquidação e devolução para reaprovação.</p>
               <Link to="/financeiro/reembolsos-despesas" className="btn-outline" style={{ marginTop: '1rem', display: 'inline-flex', alignItems: 'center', gap: '0.5rem' }}>
-                Acessar Reembolsos <ArrowRight size={16} />
+                Acessar Central de Pagamentos <ArrowRight size={16} />
               </Link>
             </div>
           </div>

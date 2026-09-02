@@ -823,7 +823,7 @@ export const FinanceRefundsExpenses: React.FC = () => {
             <div className="pa-kicker" style={{ color: '#38bdf8' }}>
               <CreditCard size={14} /> Módulo Financeiro
             </div>
-            <h1>Reembolsos e Despesas</h1>
+            <h1>Central de Pagamentos</h1>
             <p className="pa-subtitle">Fila de pagamentos aprovados, liquidação de despesas e conciliação em tempo real</p>
           </div>
         </div>
