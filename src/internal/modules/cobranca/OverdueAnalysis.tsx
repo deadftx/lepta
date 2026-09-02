@@ -92,9 +92,12 @@ const isVencidoEstrito = (dateStr?: string | null): boolean => {
 };
 
 // Regra 1: Título em aberto (não liquidado, pago, quitado, recomprado ou baixado)
-const isEmAbertoEstrito = (t: TituloVencido): boolean => {
+const isEmAbertoEstrito = (t: TituloVencido | any): boolean => {
   if (!t) return false;
   const sit = String(t.situacao || '').trim().toLowerCase();
+  const op = String(t.operacao || '').trim().toLowerCase();
+  const mod = String(t.modalidade || '').trim().toLowerCase();
+
   if (
     sit.includes('liquidado') ||
     sit.includes('liq.') ||
@@ -107,10 +110,20 @@ const isEmAbertoEstrito = (t: TituloVencido): boolean => {
     sit.includes('cancelad') ||
     sit.includes('rejeitad') ||
     sit.includes('estornad') ||
-    sit.includes('devolvido')
+    sit.includes('devolvido') ||
+    op.includes('recompra') ||
+    mod.includes('recompra')
   ) {
     return false;
   }
+
+  // Verifica se o valor pago já atingiu ou superou o valor nominal
+  const valNom = Number(t.valorNominal || 0);
+  const valPago = Number(t.valorPago || 0);
+  if (valNom > 0 && !Number.isNaN(valPago) && valPago >= valNom) {
+    return false;
+  }
+
   return true;
 };
 

@@ -3443,7 +3443,12 @@ app.get('/api/cobranca/vencidos', requireSession, requirePermission('12.1', '12'
         item.SITUACAO,
         item.statusTitulo,
         item.estado,
-        item.operacao?.situacao
+        item.operacao?.situacao,
+        item.operacao?.tipo,
+        item.operacao?.modalidade,
+        item.operacao?.descricao,
+        item.tipoDeOperacao,
+        item.tipoOperacao
       ];
 
       for (const sf of sitFields) {
