@@ -117,59 +117,34 @@ const isEmAbertoEstrito = (t: TituloVencido | any): boolean => {
     return false;
   }
 
-  // Verifica se o valor pago já atingiu ou superou o valor nominal
-  const valNom = Number(t.valorNominal || 0);
-  const valPago = Number(t.valorPago || 0);
-  if (valNom > 0 && !Number.isNaN(valPago) && valPago >= valNom) {
-    return false;
-  }
-
   return true;
 };
 
-// Regra 2: Exclusão de Cobrança Simples ou Domicílio Simples (busca por simples, CS, DS)
+// Regra 2: Exclusão de Cobrança Simples ou Domicílio Simples (busca por simples, CS, DS em QUALQUER campo do título)
 const isCobrancaSimplesOuDomicilioSimples = (t: TituloVencido | any): boolean => {
   if (!t) return false;
 
-  const extractTexts = (val: any, depth = 0): string[] => {
-    if (!val || depth > 4) return [];
+  const extractAllTexts = (val: any, parentKey = '', depth = 0): string[] => {
+    if (!val || depth > 5) return [];
     if (typeof val === 'string') return [val];
     if (typeof val === 'number') return [String(val)];
-    if (Array.isArray(val)) return val.flatMap(v => extractTexts(v, depth + 1));
+    if (Array.isArray(val)) return val.flatMap(v => extractAllTexts(v, parentKey, depth + 1));
     if (typeof val === 'object') {
       const res: string[] = [];
       for (const [k, v] of Object.entries(val)) {
         const kLow = k.toLowerCase();
-        if (['cliente', 'sacado', 'cedente', 'entidade', 'socio', 'socios'].includes(kLow)) continue;
-        res.push(...extractTexts(v, depth + 1));
+        // Ignora apenas o texto da razão social de cliente e sacado para evitar falso positivo
+        if (['nome', 'razaosocial', 'razao_social'].includes(kLow) && ['cliente', 'sacado', 'cedente', 'entidade'].includes(parentKey.toLowerCase())) {
+          continue;
+        }
+        res.push(...extractAllTexts(v, k, depth + 1));
       }
       return res;
     }
     return [];
   };
 
-  const fields = [
-    t.contaOperacional,
-    t.operacao,
-    t.cobranca,
-    t.tipoCobranca,
-    t.tipoDeCobranca,
-    t.modalidade,
-    t.produto,
-    t.carteira,
-    t.tipoDocumento,
-    t.tipo,
-    t.tipoOperacao,
-    t.natureza,
-    t.especie,
-    t.observacao,
-    t.descricao,
-    t.bancoCobrador,
-    t.numero,
-    t.ua
-  ];
-
-  const allTexts = fields.flatMap(f => extractTexts(f));
+  const allTexts = extractAllTexts(t);
 
   for (const raw of allTexts) {
     const s = raw.trim().toLowerCase();

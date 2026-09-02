@@ -3323,85 +3323,41 @@ app.get('/api/cobranca/vencidos', requireSession, requirePermission('12.1', '12'
     };
 
     // Helper: Identificar e excluir Cobrança Simples ou Domicílio Simples (busca por simples, CS, DS)
+    // Helper: Identificar e excluir Cobrança Simples ou Domicílio Simples (busca por simples, CS, DS em QUALQUER campo do título)
     const isCobrancaSimplesOuDomicilioSimples = (item) => {
       if (!item) return false;
 
-      // Extrai recursivamente todos os textos de objetos e propriedades (exceto entidades de cliente/sacado)
-      const extractTexts = (val, depth = 0) => {
-        if (!val || depth > 4) return [];
+      // Extrai recursivamente TODOS os textos de qualquer propriedade do objeto,
+      // ignorando apenas o texto da razão social de cliente e sacado para evitar falso positivo
+      const extractAllTexts = (val, parentKey = '', depth = 0) => {
+        if (!val || depth > 5) return [];
         if (typeof val === 'string') return [val];
         if (typeof val === 'number') return [String(val)];
         if (Array.isArray(val)) {
-          return val.flatMap(v => extractTexts(v, depth + 1));
+          return val.flatMap(v => extractAllTexts(v, parentKey, depth + 1));
         }
         if (typeof val === 'object') {
           const res = [];
           for (const [k, v] of Object.entries(val)) {
             const kLow = k.toLowerCase();
-            if (['cliente', 'sacado', 'cedente', 'entidade', 'socio', 'socios'].includes(kLow)) {
+            if (['nome', 'razaosocial', 'razao_social'].includes(kLow) && ['cliente', 'sacado', 'cedente', 'entidade'].includes(parentKey.toLowerCase())) {
               continue;
             }
-            res.push(...extractTexts(v, depth + 1));
+            res.push(...extractAllTexts(v, k, depth + 1));
           }
           return res;
         }
         return [];
       };
 
-      const checkFields = [
-        item.contaOperacional,
-        item.operacao?.contaOperacional,
-        item.cobranca,
-        item.tipoCobranca,
-        item.tipoDeCobranca,
-        item.modalidade,
-        item.operacao?.modalidade,
-        item.MODALIDADE,
-        item.tipoDeOperacao,
-        item.operacao?.tipoDeOperacao,
-        item.tipoOperacao,
-        item.TIPO_OPERACAO,
-        item.tipo,
-        item.operacao?.tipo,
-        item.TIPO,
-        item.produto,
-        item.operacao?.produto,
-        item.PRODUTO,
-        item.carteira,
-        item.operacao?.carteira,
-        item.CARTEIRA,
-        item.tipoDocumento,
-        item.tipoDeDocumento,
-        item.TIPO_DOCUMENTO,
-        item.documentoTipo,
-        item.especie,
-        item.ESPECIE,
-        item.natureza,
-        item.operacao?.natureza,
-        item.observacao,
-        item.OBSERVACAO,
-        item.obs,
-        item.descricao,
-        item.DESCRICAO,
-        item.operacao?.descricao,
-        item.bancoCobrador,
-        item.BANCO_COBRADOR,
-        item.SIGLA,
-        item.sigla,
-        item.operacao?.sigla,
-        item.operacao?.numero,
-        item.numero,
-        item.NUMERO
-      ];
-
-      const allTexts = checkFields.flatMap(f => extractTexts(f));
+      const allTexts = extractAllTexts(item);
 
       for (const raw of allTexts) {
         if (!raw || typeof raw !== 'string') continue;
         const s = raw.trim().toLowerCase();
         if (!s) continue;
 
-        // 1. Termo "simples" (cobre "Cobrança Simples", "002175 - Cobrança Simples (DM)", "Domicílio Simples", etc.)
+        // 1. Termo "simples" (cobre "Cobrança Simples", "001528 - Cobrança Simples (DM)", "Domicílio Simples", etc.)
         if (s.includes('simples')) return true;
 
         // 2. Termo "custodia" ou "custódia"
@@ -3477,13 +3433,6 @@ app.get('/api/cobranca/vencidos', requireSession, requirePermission('12.1', '12'
       // 4. Saldo devedor zerado ou negativo
       const saldoDevedor = Number(item.saldoDevedor ?? item.SALDO_DEVEDOR ?? item.saldo);
       if (!Number.isNaN(saldoDevedor) && saldoDevedor <= 0 && (item.saldoDevedor !== undefined || item.SALDO_DEVEDOR !== undefined || item.saldo !== undefined)) {
-        return false;
-      }
-
-      // 5. Valor pago >= valor nominal
-      const valNom = Number(item.valorNominal ?? item.VALOR_NOMINAL);
-      const valPago = Number(item.valorPago ?? item.VALOR_PAGO);
-      if (valNom > 0 && !Number.isNaN(valPago) && valPago >= valNom) {
         return false;
       }
 
