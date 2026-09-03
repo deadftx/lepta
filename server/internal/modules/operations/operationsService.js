@@ -168,25 +168,36 @@ const SITUACOES_MESA = [
 /**
  * Extrai dados padronizados de um título vindo de qualquer endpoint do BitFin
  */
-export function extractTituloFields(t) {
+export function extractTituloFields(t, sacadosById = new Map()) {
   if (!t) return { nome: 'Sacado Não Identificado', documento: '', valor: 0, cep: '', endereco: '', numero: '-' };
+
+  // Se o título contiver sacado como referência numérica ou ID:
+  let sacadoRef = t.sacado;
+  if (typeof sacadoRef === 'number' || (typeof sacadoRef === 'string' && /^\d+$/.test(sacadoRef.trim()))) {
+    const sFound = sacadosById.get(String(sacadoRef).trim());
+    if (sFound) sacadoRef = sFound;
+  }
+  if (!sacadoRef && (t.sacadoId || t.idSacado)) {
+    const sFound = sacadosById.get(String(t.sacadoId || t.idSacado).trim());
+    if (sFound) sacadoRef = sFound;
+  }
 
   // 1. Sacado Nome
   let nome = '';
-  if (typeof t.sacado === 'string' && t.sacado.trim()) {
-    nome = t.sacado.trim();
+  if (typeof sacadoRef === 'string' && sacadoRef.trim() && !/^\d+$/.test(sacadoRef.trim())) {
+    nome = sacadoRef.trim();
   } else if (typeof t.devedor === 'string' && t.devedor.trim()) {
     nome = t.devedor.trim();
   } else if (typeof t.pagador === 'string' && t.pagador.trim()) {
     nome = t.pagador.trim();
   } else {
     nome = (
-      t.sacado?.entidade?.nome ||
-      t.sacado?.nome ||
-      t.sacado?.razaoSocial ||
-      t.sacado?.razao_social ||
-      t.sacado?.nomeFantasia ||
-      t.sacado?.nome_fantasia ||
+      sacadoRef?.entidade?.nome ||
+      sacadoRef?.nome ||
+      sacadoRef?.razaoSocial ||
+      sacadoRef?.razao_social ||
+      sacadoRef?.nomeFantasia ||
+      sacadoRef?.nome_fantasia ||
       t.sacado_nome ||
       t.sacadoNome ||
       t.nomeSacado ||
@@ -213,12 +224,12 @@ export function extractTituloFields(t) {
 
   // 2. Sacado Documento (CPF/CNPJ)
   const documento = String(
-    t.sacado?.entidade?.documento ||
-    t.sacado?.documento ||
-    t.sacado?.cnpj ||
-    t.sacado?.cpf ||
-    t.sacado?.cpfCnpj ||
-    t.sacado?.cpf_cnpj ||
+    sacadoRef?.entidade?.documento ||
+    sacadoRef?.documento ||
+    sacadoRef?.cnpj ||
+    sacadoRef?.cpf ||
+    sacadoRef?.cpfCnpj ||
+    sacadoRef?.cpf_cnpj ||
     t.sacado_cnpj ||
     t.sacado_cpf ||
     t.sacado_documento ||
@@ -249,16 +260,20 @@ export function extractTituloFields(t) {
     ''
   ).replace(/\D/g, '');
 
-  // 3. Valor Nominal do Título
+  // 3. Valor de Face / Nominal do Título
   const valor = Number(
+    t.valorFace ||
+    t.valor_face ||
     t.valorNominal ||
     t.valor_nominal_original ||
     t.valor_nominal ||
     t.valorNominalOriginal ||
     t.valorOriginal ||
     t.valor_original ||
-    t.valorFace ||
-    t.valor_face ||
+    t.valorPresente ||
+    t.valor_presente ||
+    t.valorAquisicao ||
+    t.valor_aquisicao ||
     t.valorTitulo ||
     t.valor_titulo ||
     t.valorDocumento ||
@@ -267,8 +282,13 @@ export function extractTituloFields(t) {
     t.valor_bruto ||
     t.valorTotal ||
     t.valor ||
+    t.vlrFace ||
+    t.vlrNominal ||
+    t.vlFace ||
+    t.vlNominal ||
     t.total ||
     t.nominal ||
+    t.face ||
     t.valorLiquido ||
     t.valor_liquido ||
     0
@@ -276,10 +296,10 @@ export function extractTituloFields(t) {
 
   // 4. CEP
   const rawCep = String(
-    t.sacado?.endereco?.cep ||
-    t.sacado?.endereco?.codigoPostal ||
-    t.sacado?.cep ||
-    t.sacado?.codigoPostal ||
+    sacadoRef?.endereco?.cep ||
+    sacadoRef?.endereco?.codigoPostal ||
+    sacadoRef?.cep ||
+    sacadoRef?.codigoPostal ||
     t.devedor?.endereco?.cep ||
     t.devedor?.cep ||
     t.pagador?.endereco?.cep ||
@@ -296,7 +316,7 @@ export function extractTituloFields(t) {
 
   // 5. Endereço
   let endereco = '';
-  const endObj = t.sacado?.endereco || t.devedor?.endereco || t.pagador?.endereco || t.endereco;
+  const endObj = sacadoRef?.endereco || t.devedor?.endereco || t.pagador?.endereco || t.endereco;
   if (typeof endObj === 'object' && endObj !== null) {
     endereco = `${endObj.logradouro || ''}, ${endObj.numero || 'S/N'} ${endObj.complemento || ''} - ${endObj.bairro || ''}, ${endObj.localidade || endObj.cidade || ''}/${endObj.estado || endObj.uf || ''}`;
   } else if (typeof endObj === 'string') {
@@ -403,37 +423,42 @@ export async function listOperationsByDate({ token, date, statusFilter }) {
   if (!token) throw new Error('Token UNLTD_API_TOKEN não configurado.');
 
   const searchDate = date || new Date().toISOString().substring(0, 10);
+  const d = new Date(searchDate);
+  const prevDate = new Date(d.getTime() - 2 * 24 * 60 * 60 * 1000).toISOString().substring(0, 10);
+  const nextDate = new Date(d.getTime() + 2 * 24 * 60 * 60 * 1000).toISOString().substring(0, 10);
+
   const headers = {
     'Content-Type': 'application/json',
     'Authorization': `UNLTD-BackEnd ${token}`
   };
 
-  // Formato local sem Z e formato ISO para compatibilidade máxima
-  const payloadLocal = {
-    tipoDeData: 'Cadastro',
-    dataInicial: `${searchDate}T00:00:00`,
-    dataFinal: `${searchDate}T23:59:59`,
-    situacoes: SITUACOES_MESA
-  };
-
-  const payloadIso = {
-    tipoDeData: 'Cadastro',
-    dataInicial: `${searchDate}T00:00:00.000Z`,
-    dataFinal: `${searchDate}T23:59:59.999Z`,
-    situacoes: SITUACOES_MESA
-  };
-
+  // 1. Busca operações registradas no dia ou no dia seguinte (para cobrir fusos horários UTC onde dia 03 em Brasília já é dia 04 no servidor)
   const payloadOps = {
     tipoDeData: 'Cadastro',
     dataInicial: `${searchDate}T00:00:00`,
-    dataFinal: `${searchDate}T23:59:59`
+    dataFinal: `${nextDate}T23:59:59`
+  };
+
+  // 2. Busca títulos em janela ampliada com todas as situações ativas da mesa para capturar os valores de face de todas as operações
+  const payloadTit = {
+    tipoDeData: 'Cadastro',
+    dataInicial: `${prevDate}T00:00:00`,
+    dataFinal: `${nextDate}T23:59:59`,
+    situacoes: SITUACOES_MESA
+  };
+
+  const payloadTitIso = {
+    tipoDeData: 'Cadastro',
+    dataInicial: `${prevDate}T00:00:00.000Z`,
+    dataFinal: `${nextDate}T23:59:59.999Z`,
+    situacoes: SITUACOES_MESA
   };
 
   // Executa busca em /recebiveis/operacoes e /recebiveis/titulos
   const [resOps, resTitLocal, resTitIso] = await Promise.allSettled([
     fetch(`${API_BASE_URL}/recebiveis/operacoes`, { method: 'POST', headers, body: JSON.stringify(payloadOps) }),
-    fetch(`${API_BASE_URL}/recebiveis/titulos`, { method: 'POST', headers, body: JSON.stringify(payloadLocal) }),
-    fetch(`${API_BASE_URL}/recebiveis/titulos`, { method: 'POST', headers, body: JSON.stringify(payloadIso) })
+    fetch(`${API_BASE_URL}/recebiveis/titulos`, { method: 'POST', headers, body: JSON.stringify(payloadTit) }),
+    fetch(`${API_BASE_URL}/recebiveis/titulos`, { method: 'POST', headers, body: JSON.stringify(payloadTitIso) })
   ]);
 
   let rawOps = [];
@@ -444,10 +469,18 @@ export async function listOperationsByDate({ token, date, statusFilter }) {
     } catch (_) {}
   }
 
-  // Se payloadOps não retornar operações, tenta payloadIso
+  // Se payloadOps não retornar operações, tenta ISO
   if (rawOps.length === 0) {
     try {
-      const resOpsIso = await fetch(`${API_BASE_URL}/recebiveis/operacoes`, { method: 'POST', headers, body: JSON.stringify(payloadIso) });
+      const resOpsIso = await fetch(`${API_BASE_URL}/recebiveis/operacoes`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          tipoDeData: 'Cadastro',
+          dataInicial: `${searchDate}T00:00:00.000Z`,
+          dataFinal: `${nextDate}T23:59:59.999Z`
+        })
+      });
       if (resOpsIso.ok) {
         const dataIso = await resOpsIso.json();
         if (Array.isArray(dataIso)) rawOps = dataIso;
@@ -469,10 +502,7 @@ export async function listOperationsByDate({ token, date, statusFilter }) {
     } catch (_) {}
   }
 
-  if (rawOps.length > 0) {
-    console.log('[MESA OPERAÇÕES] Exemplo de operação recebida:', Object.keys(rawOps[0]));
-  }
-  console.log(`[MESA OPERAÇÕES] Total operações: ${rawOps.length}, Total títulos do dia: ${rawTitulos.length}`);
+  console.log(`[MESA OPERAÇÕES] Total operações: ${rawOps.length}, Total títulos da janela: ${rawTitulos.length}`);
 
   // Agrupa títulos por identificador da operação
   const titulosByOp = new Map();
@@ -495,7 +525,9 @@ export async function listOperationsByDate({ token, date, statusFilter }) {
     const mappedTitulos = titulosByOp.get(opId) || [];
     const opTitulos = directTitulos.length > 0 ? directTitulos : mappedTitulos;
 
-    const valorFinal = extractOperationValue(op, opTitulos);
+    // O valor total é a soma de todo o valor face de todos os títulos da operação
+    const somaValorFace = opTitulos.reduce((acc, t) => acc + extractTituloFields(t).valor, 0);
+    const valorFinal = somaValorFace > 0 ? somaValorFace : extractOperationValue(op, opTitulos);
 
     const titulosCount = opTitulos.length || Number(
       op.quantidadeTitulos ||
@@ -629,7 +661,9 @@ export async function getOperationDetails({ token, operacaoId, date }) {
   if (!operacaoId) throw new Error('ID da operação não informado.');
 
   const searchDate = date || new Date().toISOString().substring(0, 10);
-  const startDate = new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString().substring(0, 10);
+  const d = new Date(searchDate);
+  const startDate = new Date(d.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString().substring(0, 10);
+  const endDate = new Date(d.getTime() + 3 * 24 * 60 * 60 * 1000).toISOString().substring(0, 10);
 
   const headers = {
     'Content-Type': 'application/json',
@@ -648,6 +682,27 @@ export async function getOperationDetails({ token, operacaoId, date }) {
     console.warn(`[MESA OPERAÇÕES] Aviso ao consultar operação ${operacaoId}:`, err.message);
   }
 
+  // Mapeia sacados da operação caso existam no nó opInfo.sacados
+  const sacadosById = new Map();
+  if (Array.isArray(opInfo?.sacados)) {
+    for (const s of opInfo.sacados) {
+      if (s.id) sacadosById.set(String(s.id).trim(), s);
+      if (s.codigo) sacadosById.set(String(s.codigo).trim(), s);
+      if (s.numero) sacadosById.set(String(s.numero).trim(), s);
+      if (s.documento) sacadosById.set(String(s.documento).trim(), s);
+      if (s.entidade?.documento) sacadosById.set(String(s.entidade.documento).trim(), s);
+    }
+  }
+
+  // Identifica conjunto de IDs de títulos associados à operação
+  const opTituloIds = new Set();
+  if (Array.isArray(opInfo?.titulos)) {
+    for (const x of opInfo.titulos) {
+      if (typeof x === 'number') opTituloIds.add(x);
+      else if (typeof x === 'object' && x?.id) opTituloIds.add(Number(x.id));
+    }
+  }
+
   // 2. Localiza os títulos da operação através de múltiplas estratégias
   let titulos = [];
 
@@ -664,9 +719,8 @@ export async function getOperationDetails({ token, operacaoId, date }) {
   }
 
   const primeiroTemDetalhes = titulos.length > 0 && (
-    extractTituloFields(titulos[0]).valor > 0 ||
-    extractTituloFields(titulos[0]).documento !== '' ||
-    extractTituloFields(titulos[0]).nome !== 'Sacado Não Identificado'
+    extractTituloFields(titulos[0], sacadosById).valor > 0 ||
+    extractTituloFields(titulos[0], sacadosById).documento !== ''
   );
 
   // Se titulos estiver vazio ou se tiver apenas IDs/stubs sem sacado ou valor:
@@ -683,10 +737,10 @@ export async function getOperationDetails({ token, operacaoId, date }) {
       }
     } catch (_) {}
 
-    // Estratégia C: POST /recebiveis/titulos buscando por período com SITUACOES_MESA
+    // Estratégia C: POST /recebiveis/titulos buscando em janela ampliada com SITUACOES_MESA
     const primeiroSubTemDetalhes = titulos.length > 0 && (
-      extractTituloFields(titulos[0]).valor > 0 ||
-      extractTituloFields(titulos[0]).documento !== ''
+      extractTituloFields(titulos[0], sacadosById).valor > 0 ||
+      extractTituloFields(titulos[0], sacadosById).documento !== ''
     );
 
     if (!primeiroSubTemDetalhes) {
@@ -698,7 +752,7 @@ export async function getOperationDetails({ token, operacaoId, date }) {
             body: JSON.stringify({
               tipoDeData: 'Cadastro',
               dataInicial: `${startDate}T00:00:00`,
-              dataFinal: `${searchDate}T23:59:59`,
+              dataFinal: `${endDate}T23:59:59`,
               situacoes: SITUACOES_MESA
             })
           }),
@@ -708,7 +762,7 @@ export async function getOperationDetails({ token, operacaoId, date }) {
             body: JSON.stringify({
               tipoDeData: 'Cadastro',
               dataInicial: `${startDate}T00:00:00.000Z`,
-              dataFinal: `${searchDate}T23:59:59.999Z`,
+              dataFinal: `${endDate}T23:59:59.999Z`,
               situacoes: SITUACOES_MESA
             })
           })
@@ -731,7 +785,8 @@ export async function getOperationDetails({ token, operacaoId, date }) {
         if (allTit.length > 0) {
           const matchingTit = allTit.filter(t => {
             const idStr = getOperacaoIdFromTitulo(t);
-            return idStr === String(operacaoId).trim();
+            const isMatch = idStr === String(operacaoId).trim() || opTituloIds.has(Number(t.id));
+            return isMatch;
           });
           if (matchingTit.length > 0) {
             titulos = matchingTit;
@@ -744,7 +799,7 @@ export async function getOperationDetails({ token, operacaoId, date }) {
     }
 
     // Estratégia D: POST /recebiveis/titulos com filtro direto { operacaoId }
-    if (!titulos.length || extractTituloFields(titulos[0]).valor === 0) {
+    if (!titulos.length || extractTituloFields(titulos[0], sacadosById).valor === 0) {
       try {
         const resDirect = await fetch(`${API_BASE_URL}/recebiveis/titulos`, {
           method: 'POST',
@@ -809,7 +864,7 @@ export async function getOperationDetails({ token, operacaoId, date }) {
   // Agrupa sacados distintos utilizando a função robusta extractTituloFields
   const sacadosMap = new Map();
   for (const t of titulos) {
-    const f = extractTituloFields(t);
+    const f = extractTituloFields(t, sacadosById);
     const key = f.documento || f.nome || `TITULO_${t.id || Math.random()}`;
 
     if (!sacadosMap.has(key)) {
@@ -832,21 +887,28 @@ export async function getOperationDetails({ token, operacaoId, date }) {
     }
   }
 
-  const valorTotalOperacao = extractOperationValue(opInfo, titulos);
+  // O valor total da operação é literalmente a soma de todo o valor face de todos os títulos da operação
+  const somaFaceTitulos = titulos.reduce((acc, t) => acc + extractTituloFields(t, sacadosById).valor, 0);
+  const valorTotalOperacao = somaFaceTitulos > 0 ? somaFaceTitulos : extractOperationValue(opInfo, titulos);
 
   // Consulta e validação de endereço para cada sacado
   const todosSacados = [];
   const sacadosInconsistentes = [];
 
   for (const [key, s] of sacadosMap.entries()) {
-    let rawCep = '';
-    let enderecoFormatado = 'Não informado';
+    let rawCep = s.rawCep || '';
+    let enderecoFormatado = s.endereco || 'Não informado';
     let telefones = [];
     let emails = [];
 
-    // Tenta obter CEP vindo direto do nó do título
-    const inlineCep = s.titulos[0]?.sacado?.endereco?.cep || s.titulos[0]?.sacado?.cep;
-    if (inlineCep) rawCep = inlineCep;
+    // Tenta obter CEP vindo direto do nó do título caso ainda não preenchido
+    if (!rawCep) {
+      const f = extractTituloFields(s.titulos[0], sacadosById);
+      if (f.cep) rawCep = f.cep;
+      if (enderecoFormatado === 'Não informado' && f.endereco !== 'Não informado') {
+        enderecoFormatado = f.endereco;
+      }
+    }
 
     // Se tiver documento, consulta a entidade no BitFin
     if (s.documento) {
@@ -940,7 +1002,7 @@ export async function getOperationDetails({ token, operacaoId, date }) {
     sacadosInconsistentes,
     todosSacados,
     titulosResumo: titulos.map(t => {
-      const f = extractTituloFields(t);
+      const f = extractTituloFields(t, sacadosById);
       return {
         id: t.id || f.numero,
         numero: f.numero,

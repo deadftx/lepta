@@ -58,6 +58,62 @@ export function registerOperationsRoutes(app, {
     }
   });
 
+  // 2.1 Diagnóstico de Dados Brutos da API BitFin para a Operação
+  app.get('/api/mesa-operacoes/operacoes/:id/raw', requireSession, checkAccess, async (req, res) => {
+    try {
+      const token = getToken();
+      if (!token) return res.status(400).json({ error: 'Token UNLTD_API_TOKEN não configurado.' });
+
+      const operacaoId = req.params.id;
+      const API_BASE = 'https://lepta-backend.bit-unltd.com.br';
+      const headers = {
+        'Content-Type': 'application/json',
+        'Authorization': `UNLTD-BackEnd ${token}`
+      };
+
+      let opDirect = null;
+      try {
+        const r = await fetch(`${API_BASE}/recebiveis/operacoes/${operacaoId}`, { headers });
+        if (r.ok) opDirect = await r.json();
+      } catch (e) {
+        opDirect = { error: e.message };
+      }
+
+      let subTitulos = null;
+      try {
+        const r = await fetch(`${API_BASE}/recebiveis/operacoes/${operacaoId}/titulos`, { headers });
+        if (r.ok) subTitulos = await r.json();
+      } catch (e) {
+        subTitulos = { error: e.message };
+      }
+
+      return res.json({
+        success: true,
+        operacaoId,
+        opDirect: {
+          keys: opDirect && typeof opDirect === 'object' ? Object.keys(opDirect) : [],
+          titulosIsArray: Array.isArray(opDirect?.titulos),
+          titulosLen: opDirect?.titulos?.length,
+          titulosSample: opDirect?.titulos?.[0] || null,
+          sacadosIsArray: Array.isArray(opDirect?.sacados),
+          sacadosLen: opDirect?.sacados?.length,
+          sacadosSample: opDirect?.sacados?.[0] || null,
+          valorNominal: opDirect?.valorNominal,
+          valorFace: opDirect?.valorFace,
+          valor: opDirect?.valor,
+          total: opDirect?.total
+        },
+        subTitulos: {
+          isArray: Array.isArray(subTitulos),
+          len: Array.isArray(subTitulos) ? subTitulos.length : null,
+          sample: Array.isArray(subTitulos) ? subTitulos[0] : subTitulos
+        }
+      });
+    } catch (err) {
+      return res.status(500).json({ error: err.message });
+    }
+  });
+
   // 3. Exportação em XLSX dos Sacados Inconsistentes (com erro de CEP)
   app.get('/api/mesa-operacoes/operacoes/:id/exportar-xlsx', requireSession, checkAccess, async (req, res) => {
     try {
