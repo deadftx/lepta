@@ -81,6 +81,37 @@ if [ ! -f "$DEV_DIR/database.sqlite" ]; then
   node --input-type=module -e "import Database from 'better-sqlite3'; const source = new Database(process.argv[1], { readonly: true, fileMustExist: true }); await source.backup(process.argv[2]); source.close();" "$HOMOLOG_DIR/database.sqlite" "$DEV_DIR/database.sqlite"
 fi
 
+# Sincroniza tabelas estruturais de carteira se estiverem ausentes ou vazias no DEV
+node --input-type=module -e "
+import Database from 'better-sqlite3';
+import fs from 'fs';
+if (fs.existsSync('$HOMOLOG_DIR/database.sqlite') && fs.existsSync('$DEV_DIR/database.sqlite')) {
+  try {
+    const devDb = new Database('$DEV_DIR/database.sqlite');
+    const hasFidc = devDb.prepare(\"SELECT 1 FROM sqlite_master WHERE type='table' AND name='fidc_cedentes'\").get();
+    const count = hasFidc ? (devDb.prepare('SELECT count(*) as c FROM fidc_cedentes').get()?.c || 0) : 0;
+    if (count === 0) {
+      devDb.exec(\"ATTACH DATABASE '$HOMOLOG_DIR/database.sqlite' AS homolog;\");
+      devDb.exec(\"CREATE TABLE IF NOT EXISTS gerentes (id INTEGER PRIMARY KEY, nome TEXT);\");
+      devDb.exec(\"INSERT OR REPLACE INTO gerentes SELECT * FROM homolog.gerentes;\");
+      devDb.exec(\"CREATE TABLE IF NOT EXISTS fidc_cedentes (cnpj_raiz TEXT PRIMARY KEY, nome TEXT, estado TEXT, setor_id INTEGER, gerente_id INTEGER, criado_em TEXT);\");
+      devDb.exec(\"INSERT OR REPLACE INTO fidc_cedentes SELECT * FROM homolog.fidc_cedentes;\");
+      devDb.exec(\"CREATE TABLE IF NOT EXISTS fidc_cedentes_cnpjs (cnpj TEXT PRIMARY KEY, cnpj_raiz TEXT, nome TEXT);\");
+      devDb.exec(\"INSERT OR REPLACE INTO fidc_cedentes_cnpjs SELECT * FROM homolog.fidc_cedentes_cnpjs;\");
+      devDb.exec(\"CREATE TABLE IF NOT EXISTS cedentes (cnpj_raiz TEXT PRIMARY KEY, nome TEXT, estado TEXT, setor_id INTEGER, gerente_id INTEGER, criado_em TEXT);\");
+      devDb.exec(\"INSERT OR REPLACE INTO cedentes SELECT * FROM homolog.cedentes;\");
+      devDb.exec(\"CREATE TABLE IF NOT EXISTS cedentes_cnpjs (cnpj TEXT PRIMARY KEY, cnpj_raiz TEXT, nome TEXT);\");
+      devDb.exec(\"INSERT OR REPLACE INTO cedentes_cnpjs SELECT * FROM homolog.cedentes_cnpjs;\");
+      devDb.exec(\"DETACH DATABASE homolog;\");
+      console.log('Tabelas de carteira copiadas para DEV com sucesso.');
+    }
+    devDb.close();
+  } catch (err) {
+    console.warn('Aviso sincronizacao carteira deploy DEV:', err.message);
+  }
+}
+"
+
 # A copia do banco precisa da mesma chave para ler os campos criptografados.
 if [ ! -f "$DEV_DIR/.auth-secret" ] && [ -f "$HOMOLOG_DIR/.auth-secret" ]; then
   cp -p "$HOMOLOG_DIR/.auth-secret" "$DEV_DIR/.auth-secret"

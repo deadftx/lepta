@@ -71,7 +71,8 @@ const ManagerRegistration = () => {
   const token = () => localStorage.getItem('lepta_auth_token');
   const authHeaders = () => ({
     'Content-Type': 'application/json',
-    Authorization: `Bearer ${token()}`
+    Authorization: `Bearer ${token()}`,
+    'X-Lepta-Authorization': `Bearer ${token()}`
   });
 
   const fetchManagers = async () => {

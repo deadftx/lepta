@@ -9,6 +9,9 @@ export const getAuthHeaders = (headers: Record<string, string> = {}) => {
   const token = typeof window !== 'undefined' ? localStorage.getItem('lepta_auth_token') : null;
   return {
     ...headers,
-    ...(token ? { Authorization: `Bearer ${token}` } : {})
+    ...(token ? {
+      Authorization: `Bearer ${token}`,
+      'X-Lepta-Authorization': `Bearer ${token}`
+    } : {})
   };
 };

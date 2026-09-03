@@ -1,0 +1,1901 @@
+{
+  "gerentes": [
+    {
+      "id": 1,
+      "nome": "André Barroco"
+    },
+    {
+      "id": 2,
+      "nome": "Tatiany Alvim"
+    },
+    {
+      "id": 3,
+      "nome": "FIDCs"
+    },
+    {
+      "id": 4,
+      "nome": "Diretoria"
+    },
+    {
+      "id": 5,
+      "nome": "Sebastião Rafael"
+    },
+    {
+      "id": 6,
+      "nome": "Mauro Blanes"
+    },
+    {
+      "id": 7,
+      "nome": "Luiz Otávio"
+    },
+    {
+      "id": 8,
+      "nome": "NPL"
+    }
+  ],
+  "fidc_cedentes": [
+    {
+      "cnpj_raiz": "00071815",
+      "nome": "UNIGGEL SEMENTES, INDUSTRIA E COMERCIO LTDA",
+      "estado": null,
+      "setor_id": null,
+      "gerente_id": 1,
+      "criado_em": "2026-05-18 14:31:00"
+    },
+    {
+      "cnpj_raiz": "07160646",
+      "nome": "ANDRIETTI CONFECCOES LTDA",
+      "estado": null,
+      "setor_id": null,
+      "gerente_id": 1,
+      "criado_em": "2026-05-18 14:31:00"
+    },
+    {
+      "cnpj_raiz": "08529643",
+      "nome": "NATURAL - OLEOS VEGETAIS E ALIMENTOS LTDA",
+      "estado": null,
+      "setor_id": null,
+      "gerente_id": 1,
+      "criado_em": "2026-05-18 14:31:00"
+    },
+    {
+      "cnpj_raiz": "08778562",
+      "nome": "RACINE DO BRASIL PRODUTOS ALIMENTICIOS LTDA",
+      "estado": null,
+      "setor_id": null,
+      "gerente_id": 2,
+      "criado_em": "2026-05-18 14:31:00"
+    },
+    {
+      "cnpj_raiz": "12614080",
+      "nome": "AGCERES AGROMERCANTIL COMERCIO DE CEREAIS LTDA",
+      "estado": null,
+      "setor_id": null,
+      "gerente_id": 1,
+      "criado_em": "2026-05-18 14:31:00"
+    },
+    {
+      "cnpj_raiz": "13006218",
+      "nome": "SERGIPE INDUSTRIAL TEXTIL LTDA EM RECUPERACAO JUDICIAL",
+      "estado": null,
+      "setor_id": null,
+      "gerente_id": 1,
+      "criado_em": "2026-05-18 14:31:00"
+    },
+    {
+      "cnpj_raiz": "13170031",
+      "nome": "CAP COMERCIO IMP. EXP. DE MATERIAL PLASTICO LTDA EM RECUPERACAO JUDICIAL",
+      "estado": null,
+      "setor_id": null,
+      "gerente_id": 1,
+      "criado_em": "2026-05-18 14:31:00"
+    },
+    {
+      "cnpj_raiz": "15600660",
+      "nome": "COOPERATIVA AGROPECUARIA DOS PRODUTORES RURAIS DO POLO DE TANGARA DA SERRA-MT COOPERPOLO",
+      "estado": null,
+      "setor_id": null,
+      "gerente_id": 1,
+      "criado_em": "2026-05-18 14:31:00"
+    },
+    {
+      "cnpj_raiz": "20432216",
+      "nome": "FIOS BEM BRASIL LTDA",
+      "estado": null,
+      "setor_id": null,
+      "gerente_id": 2,
+      "criado_em": "2026-05-18 14:31:00"
+    },
+    {
+      "cnpj_raiz": "21479092",
+      "nome": "AMX COLCHOES MG LTDA EM RECUPERACAO JUDICIAL",
+      "estado": null,
+      "setor_id": null,
+      "gerente_id": 1,
+      "criado_em": "2026-05-18 14:31:00"
+    },
+    {
+      "cnpj_raiz": "22499671",
+      "nome": "CAMPEIRA COMERCIO DE PRODUTOS AGROPECUARIOS LTDA",
+      "estado": null,
+      "setor_id": null,
+      "gerente_id": 1,
+      "criado_em": "2026-05-18 14:31:00"
+    },
+    {
+      "cnpj_raiz": "27180131",
+      "nome": "PLATINUM INDUSTRIA DE CONFECCOES LTDA",
+      "estado": null,
+      "setor_id": null,
+      "gerente_id": 1,
+      "criado_em": "2026-05-18 14:31:00"
+    },
+    {
+      "cnpj_raiz": "29404154",
+      "nome": "ORION NUTRICAO ANIMAL LTDA",
+      "estado": null,
+      "setor_id": null,
+      "gerente_id": 1,
+      "criado_em": "2026-05-18 14:31:00"
+    },
+    {
+      "cnpj_raiz": "31563625",
+      "nome": "NOVA ERA INDUSTRIA COMERCIO TRANSPORTE EXPORTACAO  E IMPORTACAO DE PRODUTOS ALIMENTICIOS LTDA  EM RECUPERACAO",
+      "estado": null,
+      "setor_id": null,
+      "gerente_id": 1,
+      "criado_em": "2026-05-18 14:31:00"
+    },
+    {
+      "cnpj_raiz": "36704785",
+      "nome": "EXTRUTECH INDUSTRIA DE PERFIL DE ALUMINIO S/A.",
+      "estado": null,
+      "setor_id": null,
+      "gerente_id": 1,
+      "criado_em": "2026-05-18 14:31:00"
+    },
+    {
+      "cnpj_raiz": "49967961",
+      "nome": "AMERICANFLEX INDUSTRIAS REUNIDAS LTDA",
+      "estado": null,
+      "setor_id": null,
+      "gerente_id": 1,
+      "criado_em": "2026-05-18 14:31:00"
+    },
+    {
+      "cnpj_raiz": "51747038",
+      "nome": "OPTITEX INDUSTRIA E COMERCIO DE ESTOJOS E BRINDES LTDA",
+      "estado": null,
+      "setor_id": null,
+      "gerente_id": 2,
+      "criado_em": "2026-05-18 14:31:00"
+    },
+    {
+      "cnpj_raiz": "59281857",
+      "nome": "CARDEAL INDUSTRIA E COMERCIO DE ALIMENTOS LTDA",
+      "estado": null,
+      "setor_id": null,
+      "gerente_id": 1,
+      "criado_em": "2026-05-18 14:31:00"
+    },
+    {
+      "cnpj_raiz": "71988927",
+      "nome": "RICO INDUSTRIAL LTDA",
+      "estado": null,
+      "setor_id": null,
+      "gerente_id": 2,
+      "criado_em": "2026-05-18 14:31:00"
+    },
+    {
+      "cnpj_raiz": "02686151",
+      "nome": "BLUECOM SOLUCOES DE CONECTIVIDADE E INFORMATICA LTDA - EM RECUPERACAO JUDICIAL",
+      "estado": null,
+      "setor_id": null,
+      "gerente_id": 2,
+      "criado_em": "2026-05-18 14:31:00"
+    },
+    {
+      "cnpj_raiz": "04816115",
+      "nome": "JAF DISTRIBUIDORA DE BEBIDAS LTDA",
+      "estado": null,
+      "setor_id": null,
+      "gerente_id": 1,
+      "criado_em": "2026-05-18 14:31:00"
+    },
+    {
+      "cnpj_raiz": "33935882",
+      "nome": "RENOVA INDUSTRIA E COMERCIO DE CONDUTORES ELETRICOS E SERVICOS LTDA EM RECUPERACAO JUDICIAL",
+      "estado": null,
+      "setor_id": null,
+      "gerente_id": 1,
+      "criado_em": "2026-05-18 14:31:00"
+    },
+    {
+      "cnpj_raiz": "01263181",
+      "nome": "LUIS SANCHES RECICLAGEM DE SUCATAS LTDA EM RECUPERACAO JUDICIAL",
+      "estado": null,
+      "setor_id": null,
+      "gerente_id": 1,
+      "criado_em": "2026-05-18 14:31:00"
+    },
+    {
+      "cnpj_raiz": "01941678",
+      "nome": "ITALSPEED AUTOMOTIVE LTDA - EM RECUPERACAO JUDICIAL EM RECUPERACAO JUDICIAL",
+      "estado": null,
+      "setor_id": null,
+      "gerente_id": 1,
+      "criado_em": "2026-05-18 14:31:00"
+    },
+    {
+      "cnpj_raiz": "02148510",
+      "nome": "TEMPERMED INDUSTRIA E COMERCIO DE VIDROS LTDA",
+      "estado": null,
+      "setor_id": null,
+      "gerente_id": 1,
+      "criado_em": "2026-05-18 14:31:00"
+    },
+    {
+      "cnpj_raiz": "03367101",
+      "nome": "SUPERTEX CONCRETO LTDA EM RECUPERACAO JUDICIAL",
+      "estado": null,
+      "setor_id": null,
+      "gerente_id": 1,
+      "criado_em": "2026-05-18 14:31:00"
+    },
+    {
+      "cnpj_raiz": "03556506",
+      "nome": "OMEGA INDUSTRIA E COMERCIO DE ALUMINIOS LTDA",
+      "estado": null,
+      "setor_id": null,
+      "gerente_id": 1,
+      "criado_em": "2026-05-18 14:31:00"
+    },
+    {
+      "cnpj_raiz": "04104365",
+      "nome": "PROPEL PROFESSIONAL COMERCIO E INDUSTRIA DE PAPEIS LTDA",
+      "estado": null,
+      "setor_id": null,
+      "gerente_id": 2,
+      "criado_em": "2026-05-18 14:31:00"
+    },
+    {
+      "cnpj_raiz": "04193383",
+      "nome": "DISTRIBUIDORA DE BATERIAS EXCELL LTDA EM RECUPERACAO JUDICIAL",
+      "estado": null,
+      "setor_id": null,
+      "gerente_id": 1,
+      "criado_em": "2026-05-18 14:31:00"
+    },
+    {
+      "cnpj_raiz": "04200198",
+      "nome": "MARLON BONILHA LTDA",
+      "estado": null,
+      "setor_id": null,
+      "gerente_id": 6,
+      "criado_em": "2026-05-18 14:31:00"
+    },
+    {
+      "cnpj_raiz": "04304360",
+      "nome": "BON-MART FRIGORIFICO LTDA",
+      "estado": null,
+      "setor_id": null,
+      "gerente_id": 1,
+      "criado_em": "2026-05-18 14:31:00"
+    },
+    {
+      "cnpj_raiz": "07621912",
+      "nome": "LION PACKING LTDA",
+      "estado": null,
+      "setor_id": null,
+      "gerente_id": 7,
+      "criado_em": "2026-05-18 14:31:00"
+    },
+    {
+      "cnpj_raiz": "07868543",
+      "nome": "ALMAX COMERCIAL E DISTRIBUIDORA DE METAIS LTDA",
+      "estado": null,
+      "setor_id": null,
+      "gerente_id": 1,
+      "criado_em": "2026-05-18 14:31:00"
+    },
+    {
+      "cnpj_raiz": "08089064",
+      "nome": "INDUSTRIA E COMERCIO DE CEREAIS BOM DE GOSTO LTDA",
+      "estado": null,
+      "setor_id": null,
+      "gerente_id": 1,
+      "criado_em": "2026-05-18 14:31:00"
+    },
+    {
+      "cnpj_raiz": "08537073",
+      "nome": "JN INDUSTRIA E COMERCIO DE FERRO E ACO LTDA",
+      "estado": null,
+      "setor_id": null,
+      "gerente_id": 1,
+      "criado_em": "2026-05-18 14:31:00"
+    },
+    {
+      "cnpj_raiz": "08952410",
+      "nome": "HOLLYTEC COMERCIO E INDUSTRIA DE MATERIAIS ELETRICOS LTDA",
+      "estado": null,
+      "setor_id": null,
+      "gerente_id": 1,
+      "criado_em": "2026-05-18 14:31:00"
+    },
+    {
+      "cnpj_raiz": "09536120",
+      "nome": "SEMPRE AGTECH LTDA",
+      "estado": null,
+      "setor_id": null,
+      "gerente_id": 1,
+      "criado_em": "2026-05-18 14:31:00"
+    },
+    {
+      "cnpj_raiz": "10320568",
+      "nome": "V. H. D. INDUSTRIA E COMERCIO DE PRODUTOS ALMENTICIOS LTDA EM RECUPERACAO JUDICIAL",
+      "estado": null,
+      "setor_id": null,
+      "gerente_id": 1,
+      "criado_em": "2026-05-18 14:31:00"
+    },
+    {
+      "cnpj_raiz": "11462339",
+      "nome": "JMARTINS DO BRASIL LTDA",
+      "estado": null,
+      "setor_id": null,
+      "gerente_id": 1,
+      "criado_em": "2026-05-18 14:31:00"
+    },
+    {
+      "cnpj_raiz": "11958002",
+      "nome": "FALCAO INDUSTRIA DE ALIMENTOS LTDA",
+      "estado": null,
+      "setor_id": null,
+      "gerente_id": 6,
+      "criado_em": "2026-05-18 14:31:00"
+    },
+    {
+      "cnpj_raiz": "13746252",
+      "nome": "UBERTEC SERVICE USINAGEM LTDA",
+      "estado": null,
+      "setor_id": null,
+      "gerente_id": 1,
+      "criado_em": "2026-05-18 14:31:00"
+    },
+    {
+      "cnpj_raiz": "15032861",
+      "nome": "FRIGORACA AMAZONAS LTDA",
+      "estado": null,
+      "setor_id": null,
+      "gerente_id": 6,
+      "criado_em": "2026-05-18 14:31:00"
+    },
+    {
+      "cnpj_raiz": "15092733",
+      "nome": "GOMES MINAS DISTRIBUIDORA DE ALIMENTOS LTDA",
+      "estado": null,
+      "setor_id": null,
+      "gerente_id": 7,
+      "criado_em": "2026-05-18 14:31:00"
+    },
+    {
+      "cnpj_raiz": "16575918",
+      "nome": "RRX COMERCIO DE CARNES LTDA",
+      "estado": null,
+      "setor_id": null,
+      "gerente_id": 2,
+      "criado_em": "2026-05-18 14:31:00"
+    },
+    {
+      "cnpj_raiz": "18068347",
+      "nome": "PETRA AGRONEGOCIO LTDA",
+      "estado": null,
+      "setor_id": null,
+      "gerente_id": 1,
+      "criado_em": "2026-05-18 14:31:00"
+    },
+    {
+      "cnpj_raiz": "20122197",
+      "nome": "RKO ALIMENTOS LTDA",
+      "estado": null,
+      "setor_id": null,
+      "gerente_id": 2,
+      "criado_em": "2026-05-18 14:31:00"
+    },
+    {
+      "cnpj_raiz": "22153439",
+      "nome": "OCEAN SANTOS BRASIL COMERCIO DE PRODUTOS DESCARTAVEIS LTDA",
+      "estado": null,
+      "setor_id": null,
+      "gerente_id": 2,
+      "criado_em": "2026-05-18 14:31:00"
+    },
+    {
+      "cnpj_raiz": "25116444",
+      "nome": "JOFER INVESTIMENTOS LOGISTICOS LTDA",
+      "estado": null,
+      "setor_id": null,
+      "gerente_id": 2,
+      "criado_em": "2026-05-18 14:31:00"
+    },
+    {
+      "cnpj_raiz": "25231623",
+      "nome": "ALUMI CONDUTORES ELETRICOS LTDA",
+      "estado": null,
+      "setor_id": null,
+      "gerente_id": 6,
+      "criado_em": "2026-05-18 14:31:00"
+    },
+    {
+      "cnpj_raiz": "28894135",
+      "nome": "BRASMETAL DISTRIBUICAO E LOGISTICA LTDA",
+      "estado": null,
+      "setor_id": null,
+      "gerente_id": 1,
+      "criado_em": "2026-05-18 14:31:00"
+    },
+    {
+      "cnpj_raiz": "32934172",
+      "nome": "SCAGRO INDUSTRIAL LTDA",
+      "estado": null,
+      "setor_id": null,
+      "gerente_id": 1,
+      "criado_em": "2026-05-18 14:31:00"
+    },
+    {
+      "cnpj_raiz": "33935793",
+      "nome": "PROLOG COMERCIO E DISTRIBUICAO DE PRODUTOS DE LIMPEZA E HIGIENE LTDA",
+      "estado": null,
+      "setor_id": null,
+      "gerente_id": 2,
+      "criado_em": "2026-05-18 14:31:00"
+    },
+    {
+      "cnpj_raiz": "35927480",
+      "nome": "FIBRA OESTE COMERCIO DE PRODUTOS AGRICOLAS LTDA",
+      "estado": null,
+      "setor_id": null,
+      "gerente_id": 2,
+      "criado_em": "2026-05-18 14:31:00"
+    },
+    {
+      "cnpj_raiz": "43156910",
+      "nome": "COMPANHIA APAX DE EMBALAGENS S/A",
+      "estado": null,
+      "setor_id": null,
+      "gerente_id": 7,
+      "criado_em": "2026-05-18 14:31:00"
+    },
+    {
+      "cnpj_raiz": "43267029",
+      "nome": "PRODUCE S/A",
+      "estado": null,
+      "setor_id": null,
+      "gerente_id": 1,
+      "criado_em": "2026-05-18 14:31:00"
+    },
+    {
+      "cnpj_raiz": "43642783",
+      "nome": "ALUMINUM BRASIL S.A.",
+      "estado": null,
+      "setor_id": null,
+      "gerente_id": 6,
+      "criado_em": "2026-05-18 14:31:00"
+    },
+    {
+      "cnpj_raiz": "44039854",
+      "nome": "FRIORIO DISTRIBUIDOR DE PECAS PARA REFRIGERACAO E MAQUINA DE LAVAR LTDA",
+      "estado": null,
+      "setor_id": null,
+      "gerente_id": 6,
+      "criado_em": "2026-05-18 14:31:00"
+    },
+    {
+      "cnpj_raiz": "50930973",
+      "nome": "PASSARIN INDUSTRIA E COMERCIO DE BEBIDAS LTDA",
+      "estado": null,
+      "setor_id": null,
+      "gerente_id": 1,
+      "criado_em": "2026-05-18 14:31:00"
+    },
+    {
+      "cnpj_raiz": "51636246",
+      "nome": "SO LONA & SILO BOLSA COMERCIO DE PRODUTOS AGRICOLAS LTDA",
+      "estado": null,
+      "setor_id": null,
+      "gerente_id": 1,
+      "criado_em": "2026-05-18 14:31:00"
+    },
+    {
+      "cnpj_raiz": "54370631",
+      "nome": "BRAZILIAN GLOBAL ALUMINIUM & ACO LTDA.",
+      "estado": null,
+      "setor_id": null,
+      "gerente_id": 1,
+      "criado_em": "2026-05-18 14:31:00"
+    },
+    {
+      "cnpj_raiz": "60761251",
+      "nome": "BGA DISTRIBUICAO E LOGISTICA LTDA",
+      "estado": null,
+      "setor_id": null,
+      "gerente_id": 1,
+      "criado_em": "2026-05-18 14:31:00"
+    },
+    {
+      "cnpj_raiz": "65414580",
+      "nome": "DU PORTO DISTRIBUIDORA DE ALIMENTOS LTDA",
+      "estado": null,
+      "setor_id": null,
+      "gerente_id": 7,
+      "criado_em": "2026-05-18 14:31:00"
+    },
+    {
+      "cnpj_raiz": "65978488",
+      "nome": "GRANCARNES INDUSTRIA E COMERCIO DE CARNES S/A",
+      "estado": null,
+      "setor_id": null,
+      "gerente_id": 7,
+      "criado_em": "2026-05-18 14:31:00"
+    },
+    {
+      "cnpj_raiz": "79131918",
+      "nome": "NOMA DO BRASIL SOCIEDADE ANONIMA EM RECUPERACAO JUDICIAL",
+      "estado": null,
+      "setor_id": null,
+      "gerente_id": 1,
+      "criado_em": "2026-05-18 14:31:00"
+    },
+    {
+      "cnpj_raiz": "92279363",
+      "nome": "TRANSPORTES TRANS BERTIN LTDA",
+      "estado": null,
+      "setor_id": null,
+      "gerente_id": 7,
+      "criado_em": "2026-05-18 14:31:00"
+    },
+    {
+      "cnpj_raiz": "92660893",
+      "nome": "SULINA DE METAIS SA EM RECUPERACAO JUDICIAL",
+      "estado": null,
+      "setor_id": null,
+      "gerente_id": 1,
+      "criado_em": "2026-05-18 14:31:00"
+    },
+    {
+      "cnpj_raiz": "01538372",
+      "nome": "CARVOVALE INDUSTRIA E COMERCIO DE PRODUTOS AGROINDUSTRIAIS E FLORESTAIS LTDA - EM RECUPERACAO JUDICIAL",
+      "estado": null,
+      "setor_id": null,
+      "gerente_id": 1,
+      "criado_em": "2026-05-18 14:31:00"
+    },
+    {
+      "cnpj_raiz": "02679320",
+      "nome": "NEO POLIMEROS LTDA",
+      "estado": null,
+      "setor_id": null,
+      "gerente_id": 1,
+      "criado_em": "2026-05-18 14:31:00"
+    },
+    {
+      "cnpj_raiz": "05817169",
+      "nome": "CHEF FOODS INDUSTRIA E COMERCIO DE PRODUTOS ALIMENTICIOS LTDA EM RECUPERACAO JUDICIAL",
+      "estado": null,
+      "setor_id": null,
+      "gerente_id": 1,
+      "criado_em": "2026-05-18 14:31:00"
+    },
+    {
+      "cnpj_raiz": "07633252",
+      "nome": "OLEOCLEAN INDUSTRIA, COMERCIO E RECICLAGEM LTDA",
+      "estado": null,
+      "setor_id": null,
+      "gerente_id": 2,
+      "criado_em": "2026-05-18 14:31:00"
+    },
+    {
+      "cnpj_raiz": "08152526",
+      "nome": "M&E ENGENHARIA, SERVICOS E CONSTRUCOES S A",
+      "estado": null,
+      "setor_id": null,
+      "gerente_id": 2,
+      "criado_em": "2026-05-18 14:31:00"
+    },
+    {
+      "cnpj_raiz": "08247122",
+      "nome": "MAXXCOMP GESTAO DE SERVICOS LTDA",
+      "estado": null,
+      "setor_id": null,
+      "gerente_id": 1,
+      "criado_em": "2026-05-18 14:31:00"
+    },
+    {
+      "cnpj_raiz": "10895954",
+      "nome": "JBM USINAGEM LTDA",
+      "estado": null,
+      "setor_id": null,
+      "gerente_id": 1,
+      "criado_em": "2026-05-18 14:31:00"
+    },
+    {
+      "cnpj_raiz": "11581339",
+      "nome": "BMP SOCIEDADE DE CREDITO AO MICROEMPREENDEDOR E A EMPRESA DE PEQUENO PORTE LTDA",
+      "estado": null,
+      "setor_id": null,
+      "gerente_id": 1,
+      "criado_em": "2026-05-18 14:31:00"
+    },
+    {
+      "cnpj_raiz": "12273815",
+      "nome": "SSM SOLUCOES METALICAS PARA ENERGIAS RENOVAVEIS LTDA EM RECUPERACAO JUDICIAL",
+      "estado": null,
+      "setor_id": null,
+      "gerente_id": 1,
+      "criado_em": "2026-05-18 14:31:00"
+    },
+    {
+      "cnpj_raiz": "14591542",
+      "nome": "NEO RODAS S.A.",
+      "estado": null,
+      "setor_id": null,
+      "gerente_id": 1,
+      "criado_em": "2026-05-18 14:31:00"
+    },
+    {
+      "cnpj_raiz": "18358051",
+      "nome": "MITO-MINERACAO TOCANTINS LTDA EM RECUPERACAO JUDICIAL",
+      "estado": null,
+      "setor_id": null,
+      "gerente_id": 1,
+      "criado_em": "2026-05-18 14:31:00"
+    },
+    {
+      "cnpj_raiz": "28184267",
+      "nome": "MS BOI COMERCIO E ABATE DE BOVINOS LTDA",
+      "estado": null,
+      "setor_id": null,
+      "gerente_id": 2,
+      "criado_em": "2026-05-18 14:31:00"
+    },
+    {
+      "cnpj_raiz": "30195474",
+      "nome": "FELIX RECICLAGEM E COMERCIO DE OLEOS LTDA EM RECUPERACAO JUDICIAL",
+      "estado": null,
+      "setor_id": null,
+      "gerente_id": 2,
+      "criado_em": "2026-05-18 14:31:00"
+    },
+    {
+      "cnpj_raiz": "46906624",
+      "nome": "FERCOM INDUSTRIA E COMERCIO LTDA",
+      "estado": null,
+      "setor_id": null,
+      "gerente_id": 1,
+      "criado_em": "2026-05-18 14:31:00"
+    },
+    {
+      "cnpj_raiz": "56146370",
+      "nome": "TERRA TRANSPORTES SERVICOS E TERRAPLANAGEM LTDA",
+      "estado": null,
+      "setor_id": null,
+      "gerente_id": 2,
+      "criado_em": "2026-05-18 14:31:00"
+    },
+    {
+      "cnpj_raiz": "57501207",
+      "nome": "AUSUS AUTOMOTIVE SYSTEMS DO BRASIL LTDA",
+      "estado": null,
+      "setor_id": null,
+      "gerente_id": 4,
+      "criado_em": "2026-05-18 14:31:00"
+    },
+    {
+      "cnpj_raiz": "58352676",
+      "nome": "MINING TECHNOLOGY LTDA",
+      "estado": null,
+      "setor_id": null,
+      "gerente_id": 1,
+      "criado_em": "2026-05-18 14:31:00"
+    },
+    {
+      "cnpj_raiz": "59904247",
+      "nome": "LEPTA MULTISETORIAL FUNDO DE INVESTIMENTO EM DIREITOS CREDITORIOS",
+      "estado": null,
+      "setor_id": null,
+      "gerente_id": 3,
+      "criado_em": "2026-05-18 14:31:05"
+    },
+    {
+      "cnpj_raiz": "10808699",
+      "nome": "ONDUNORTE CIA DE PAPEIS E PAPELAO ONDULADO DO NORTE - EM RECUPERACAO JUDICIAL",
+      "estado": null,
+      "setor_id": null,
+      "gerente_id": 6,
+      "criado_em": "2026-05-18 14:31:05"
+    },
+    {
+      "cnpj_raiz": "35443247",
+      "nome": "SLS COMERCIO DE MOTOS ELETRICAS LTDA",
+      "estado": null,
+      "setor_id": null,
+      "gerente_id": 1,
+      "criado_em": "2026-05-18 14:31:05"
+    },
+    {
+      "cnpj_raiz": "56984970",
+      "nome": "TECHNE SERVICOS LTDA",
+      "estado": null,
+      "setor_id": null,
+      "gerente_id": 1,
+      "criado_em": "2026-05-18 14:31:05"
+    },
+    {
+      "cnpj_raiz": "94328580",
+      "nome": "INBRACELL IND BRASIL DE ACUMULADORES ELETRICOS LTDA EM RECUPERACAO JUDICIAL",
+      "estado": null,
+      "setor_id": null,
+      "gerente_id": 1,
+      "criado_em": "2026-05-18 14:31:05"
+    },
+    {
+      "cnpj_raiz": "00000000",
+      "nome": "BANCO DO BRASIL SA",
+      "estado": null,
+      "setor_id": null,
+      "gerente_id": 8,
+      "criado_em": "2026-05-18 14:31:05"
+    },
+    {
+      "cnpj_raiz": "02282709",
+      "nome": "COOPERATIVA DE CREDITO DE LIVRE ADMISSAO DO CENTRO NORTE BRASILEIRO",
+      "estado": null,
+      "setor_id": null,
+      "gerente_id": 8,
+      "criado_em": "2026-05-18 14:31:05"
+    },
+    {
+      "cnpj_raiz": "19342138",
+      "nome": "SUPERMERCADO CRISTAL LTDA EM RECUPERACAO JUDICIAL",
+      "estado": null,
+      "setor_id": null,
+      "gerente_id": 2,
+      "criado_em": "2026-05-18 14:31:05"
+    },
+    {
+      "cnpj_raiz": "45544609",
+      "nome": "SCHAEFER LOGISTICA & TRANSPORTES LTDA",
+      "estado": null,
+      "setor_id": null,
+      "gerente_id": 2,
+      "criado_em": "2026-05-18 14:31:05"
+    },
+    {
+      "cnpj_raiz": "59591974",
+      "nome": "ROTAVI INDUSTRIAL LTDA",
+      "estado": null,
+      "setor_id": null,
+      "gerente_id": 1,
+      "criado_em": "2026-05-18 14:31:05"
+    },
+    {
+      "cnpj_raiz": "60701190",
+      "nome": "ITAU UNIBANCO S.A.",
+      "estado": null,
+      "setor_id": null,
+      "gerente_id": 8,
+      "criado_em": "2026-05-18 14:31:05"
+    },
+    {
+      "cnpj_raiz": "60746948",
+      "nome": "BANCO BRADESCO S.A.",
+      "estado": null,
+      "setor_id": null,
+      "gerente_id": 8,
+      "criado_em": "2026-05-18 14:31:05"
+    },
+    {
+      "cnpj_raiz": "68192475",
+      "nome": "I. M. DOS REIS - ALUFORCE INDUSTRIA E COMERCIO DE CONDUTORES ELETRICOS",
+      "estado": null,
+      "setor_id": null,
+      "gerente_id": 1,
+      "criado_em": "2026-05-18 14:32:25"
+    },
+    {
+      "cnpj_raiz": "07931996",
+      "nome": "COOPERSERRA-COOPERATIVA DOS PRODUTORES RURAIS DA SERRA",
+      "estado": null,
+      "setor_id": null,
+      "gerente_id": 7,
+      "criado_em": "2026-05-19 13:54:44"
+    },
+    {
+      "cnpj_raiz": "55970693",
+      "nome": "FOPIL COMERCIO E INDUSTRIA LTDA",
+      "estado": null,
+      "setor_id": null,
+      "gerente_id": 2,
+      "criado_em": "2026-05-20 13:54:09"
+    },
+    {
+      "cnpj_raiz": "90400888",
+      "nome": "BANCO SANTANDER (BRASIL) S.A.",
+      "estado": null,
+      "setor_id": null,
+      "gerente_id": 8,
+      "criado_em": "2026-05-22 16:07:32"
+    },
+    {
+      "cnpj_raiz": "04377477",
+      "nome": "FRIBARREIRAS AGRO INDUSTRIAL DE ALIMENTOS LTDA EM RECUPERACAO JUDICIAL",
+      "estado": null,
+      "setor_id": null,
+      "gerente_id": 6,
+      "criado_em": "2026-05-25 12:48:55"
+    },
+    {
+      "cnpj_raiz": "06072452",
+      "nome": "P&P INDUSTRIA DE PLASTICOS E TRANSPORTES LTDA EM RECUPERACAO JUDICIAL",
+      "estado": null,
+      "setor_id": null,
+      "gerente_id": 1,
+      "criado_em": "2026-05-27 20:15:17"
+    },
+    {
+      "cnpj_raiz": "66101833",
+      "nome": "GSW SOFTWARE LTDA",
+      "estado": null,
+      "setor_id": null,
+      "gerente_id": 6,
+      "criado_em": "2026-05-28 13:53:28"
+    },
+    {
+      "cnpj_raiz": "13855105",
+      "nome": "PORTUGAL - QUIMICA LTDA",
+      "estado": null,
+      "setor_id": null,
+      "gerente_id": 1,
+      "criado_em": "2026-05-28 16:29:01"
+    },
+    {
+      "cnpj_raiz": "10834577",
+      "nome": "SUINOBRAS ALIMENTOS LTDA",
+      "estado": null,
+      "setor_id": null,
+      "gerente_id": 2,
+      "criado_em": "2026-05-28 16:30:55"
+    },
+    {
+      "cnpj_raiz": "49215907",
+      "nome": "CESU CENTRO DE ESPECIALIDADES UBERTEC LTDA",
+      "estado": null,
+      "setor_id": null,
+      "gerente_id": 1,
+      "criado_em": "2026-05-28 16:33:34"
+    },
+    {
+      "cnpj_raiz": "11123806",
+      "nome": "MARGIL TRANSPORTES LTDA",
+      "estado": null,
+      "setor_id": null,
+      "gerente_id": 2,
+      "criado_em": "2026-05-28 16:33:34"
+    },
+    {
+      "cnpj_raiz": "62825864",
+      "nome": "LEAO & JETEX INDUSTRIA TEXTIL LTDA",
+      "estado": null,
+      "setor_id": null,
+      "gerente_id": 1,
+      "criado_em": "2026-05-28 16:33:34"
+    },
+    {
+      "cnpj_raiz": "53937474",
+      "nome": "ENERGY COMERCIO LTDA",
+      "estado": null,
+      "setor_id": null,
+      "gerente_id": 1,
+      "criado_em": "2026-05-28 16:33:34"
+    },
+    {
+      "cnpj_raiz": "53071335",
+      "nome": "SO ADUBO FERTILIZANTES AGRICOLA LTDA",
+      "estado": null,
+      "setor_id": null,
+      "gerente_id": 1,
+      "criado_em": "2026-05-28 16:35:42"
+    },
+    {
+      "cnpj_raiz": "10736214",
+      "nome": "COOPERATIVA DE CREDITO, POUPANCA E INVESTIMENTO DO PLANALTO CENTRAL - SICREDI PLANALTO CENTRAL",
+      "estado": null,
+      "setor_id": null,
+      "gerente_id": 8,
+      "criado_em": "2026-05-28 16:38:09"
+    },
+    {
+      "cnpj_raiz": "15251351",
+      "nome": "LEPTA GESTORA DE CREDITO LTDA",
+      "estado": null,
+      "setor_id": null,
+      "gerente_id": 4,
+      "criado_em": "2026-05-28 16:41:45"
+    },
+    {
+      "cnpj_raiz": "19574835",
+      "nome": "CCS AGROTEXTIL LTDA",
+      "estado": null,
+      "setor_id": null,
+      "gerente_id": 2,
+      "criado_em": "2026-05-28 16:43:39"
+    },
+    {
+      "cnpj_raiz": "33649134",
+      "nome": "JCLM INDUSTRIA E COMERCIO LTDA",
+      "estado": null,
+      "setor_id": null,
+      "gerente_id": 1,
+      "criado_em": "2026-05-28 16:45:26"
+    },
+    {
+      "cnpj_raiz": "09367055",
+      "nome": "RACOES REIS DISTRIBUIDORA DE ARTIGOS PET LTDA.",
+      "estado": null,
+      "setor_id": null,
+      "gerente_id": 2,
+      "criado_em": "2026-05-28 16:45:26"
+    },
+    {
+      "cnpj_raiz": "11011716",
+      "nome": "J-PACK COMERCIO DE EMBALAGENS LTDA",
+      "estado": null,
+      "setor_id": null,
+      "gerente_id": 6,
+      "criado_em": "2026-06-02 13:28:29"
+    },
+    {
+      "cnpj_raiz": "24415230",
+      "nome": "NAVARRO DISTRIBUIDORA DE MEDICAMENTOS S/A",
+      "estado": null,
+      "setor_id": null,
+      "gerente_id": 6,
+      "criado_em": "2026-06-02 13:28:29"
+    },
+    {
+      "cnpj_raiz": "54408808",
+      "nome": "MASTER FRIOS COMERCIO DE ALIMENTOS LTDA",
+      "estado": null,
+      "setor_id": null,
+      "gerente_id": 7,
+      "criado_em": "2026-06-09 20:54:49"
+    },
+    {
+      "cnpj_raiz": "41600257",
+      "nome": "DJD METALS LTDA",
+      "estado": null,
+      "setor_id": null,
+      "gerente_id": 7,
+      "criado_em": "2026-06-16 13:11:50"
+    },
+    {
+      "cnpj_raiz": "54615431",
+      "nome": "GPETS DISTRIBUIDORA LTDA",
+      "estado": null,
+      "setor_id": null,
+      "gerente_id": 6,
+      "criado_em": "2026-06-17 13:12:17"
+    },
+    {
+      "cnpj_raiz": "33504355",
+      "nome": "CYOLA INDUSTRIA E COMERCIO DE MATERIAIS ELETRICOS LTDA",
+      "estado": null,
+      "setor_id": null,
+      "gerente_id": 6,
+      "criado_em": "2026-06-19 13:47:22"
+    },
+    {
+      "cnpj_raiz": "35165246",
+      "nome": "LABOR ELETRIC INDUSTRIA E COMERCIO UNIPESSOAL LTDA",
+      "estado": null,
+      "setor_id": null,
+      "gerente_id": 1,
+      "criado_em": "2026-07-08 19:13:52"
+    },
+    {
+      "cnpj_raiz": "30446895",
+      "nome": "ADOXY COMERCIO E SERVICOS LTDA",
+      "estado": null,
+      "setor_id": null,
+      "gerente_id": null,
+      "criado_em": "2026-07-08 19:13:52"
+    },
+    {
+      "cnpj_raiz": "56373319",
+      "nome": "FRICOCK FRIGORIFICACAO AVICULTURA, INDUSTRIA E COMERCIO EM RECUPERACAO JUDICIAL LTDA",
+      "estado": null,
+      "setor_id": null,
+      "gerente_id": 4,
+      "criado_em": "2026-07-08 19:13:52"
+    },
+    {
+      "cnpj_raiz": "10974612",
+      "nome": "CRISTAL & CORES CHAPAS ACRILICAS LTDA",
+      "estado": null,
+      "setor_id": null,
+      "gerente_id": null,
+      "criado_em": "2026-07-08 19:13:52"
+    },
+    {
+      "cnpj_raiz": "52318701",
+      "nome": "PARABIO INDUSTRIA E COMERCIO DE OLEOS E BIOCOMBUSTIVEIS LTDA",
+      "estado": null,
+      "setor_id": null,
+      "gerente_id": 2,
+      "criado_em": "2026-07-08 19:32:22"
+    },
+    {
+      "cnpj_raiz": "00288948",
+      "nome": "INTERBRANDS FOODS LTDA",
+      "estado": null,
+      "setor_id": null,
+      "gerente_id": null,
+      "criado_em": "2026-07-08 19:40:24"
+    },
+    {
+      "cnpj_raiz": "55586406",
+      "nome": "LEPTA SPECIAL FUNDO DE INVESTIMENTO EM DIREITOS CREDITORIOS",
+      "estado": null,
+      "setor_id": null,
+      "gerente_id": 3,
+      "criado_em": "2026-07-08 20:03:34"
+    },
+    {
+      "cnpj_raiz": "65974602",
+      "nome": "LEILAC PRODUTOS LACTEOS LTDA EM RECUPERACAO JUDICIAL",
+      "estado": null,
+      "setor_id": null,
+      "gerente_id": 1,
+      "criado_em": "2026-07-08 20:03:34"
+    },
+    {
+      "cnpj_raiz": "52609589",
+      "nome": "FRIGOVIP ALIMENTOS LTDA",
+      "estado": null,
+      "setor_id": null,
+      "gerente_id": 7,
+      "criado_em": "2026-07-09 14:06:55"
+    },
+    {
+      "cnpj_raiz": "29972964",
+      "nome": "JFS DO BRASIL INDUSTRIA E COMERCIO LTDA",
+      "estado": null,
+      "setor_id": null,
+      "gerente_id": null,
+      "criado_em": "2026-07-09 14:18:57"
+    },
+    {
+      "cnpj_raiz": "11211702",
+      "nome": "CONCREBETON CONCRETO USINADO EM RECUPERACAO JUDICIAL LTDA",
+      "estado": null,
+      "setor_id": null,
+      "gerente_id": null,
+      "criado_em": "2026-07-09 14:27:16"
+    },
+    {
+      "cnpj_raiz": "65514192",
+      "nome": "CAMPOFERT COMERCIO INDUSTRIA EXPORTACAO E IMPORTACAO LTDA EM RECUPERACAO JUDICIAL",
+      "estado": null,
+      "setor_id": null,
+      "gerente_id": 6,
+      "criado_em": "2026-07-15 16:43:32"
+    },
+    {
+      "cnpj_raiz": "07271300",
+      "nome": "GSW SISTEMAS DE INFORMACAO LTDA",
+      "estado": null,
+      "setor_id": null,
+      "gerente_id": 6,
+      "criado_em": "2026-07-15 16:43:32"
+    },
+    {
+      "cnpj_raiz": "62239488",
+      "nome": "CONTECH PRODUTOS BIODEGRADAVEIS LTDA",
+      "estado": null,
+      "setor_id": null,
+      "gerente_id": 2,
+      "criado_em": "2026-07-15 16:43:32"
+    },
+    {
+      "cnpj_raiz": "05268852",
+      "nome": "UNITED MILLS  ALIMENTOS LTDA",
+      "estado": null,
+      "setor_id": null,
+      "gerente_id": 2,
+      "criado_em": "2026-07-24 14:48:57"
+    },
+    {
+      "cnpj_raiz": "12060401",
+      "nome": "STR COMERCIO E INDUSTRIA LTDA",
+      "estado": null,
+      "setor_id": null,
+      "gerente_id": 1,
+      "criado_em": "2026-08-07 13:54:48"
+    },
+    {
+      "cnpj_raiz": "42168750",
+      "nome": "DISTRIBUIDORA PAMMA LTDA",
+      "estado": null,
+      "setor_id": null,
+      "gerente_id": 6,
+      "criado_em": "2026-08-12 20:44:27"
+    }
+  ],
+  "fidc_cedentes_cnpjs": [
+    {
+      "cnpj": "00071815000161",
+      "cnpj_raiz": "00071815",
+      "nome": "UNIGGEL SEMENTES, INDUSTRIA E COMERCIO LTDA"
+    },
+    {
+      "cnpj": "07160646000185",
+      "cnpj_raiz": "07160646",
+      "nome": "ANDRIETTI CONFECCOES LTDA"
+    },
+    {
+      "cnpj": "08529643000139",
+      "cnpj_raiz": "08529643",
+      "nome": "NATURAL - OLEOS VEGETAIS E ALIMENTOS LTDA"
+    },
+    {
+      "cnpj": "08778562000172",
+      "cnpj_raiz": "08778562",
+      "nome": "RACINE DO BRASIL PRODUTOS ALIMENTICIOS LTDA"
+    },
+    {
+      "cnpj": "12614080000154",
+      "cnpj_raiz": "12614080",
+      "nome": "AGCERES AGROMERCANTIL COMERCIO DE CEREAIS LTDA"
+    },
+    {
+      "cnpj": "13006218000103",
+      "cnpj_raiz": "13006218",
+      "nome": "SERGIPE INDUSTRIAL TEXTIL LTDA EM RECUPERACAO JUDICIAL"
+    },
+    {
+      "cnpj": "13170031000132",
+      "cnpj_raiz": "13170031",
+      "nome": "CAP COMERCIO IMP. EXP. DE MATERIAL PLASTICO LTDA EM RECUPERACAO JUDICIAL"
+    },
+    {
+      "cnpj": "15600660000180",
+      "cnpj_raiz": "15600660",
+      "nome": "COOPERATIVA AGROPECUARIA DOS PRODUTORES RURAIS DO POLO DE TANGARA DA SERRA-MT COOPERPOLO"
+    },
+    {
+      "cnpj": "20432216000133",
+      "cnpj_raiz": "20432216",
+      "nome": "FIOS BEM BRASIL LTDA"
+    },
+    {
+      "cnpj": "21479092000104",
+      "cnpj_raiz": "21479092",
+      "nome": "AMX COLCHOES MG LTDA EM RECUPERACAO JUDICIAL"
+    },
+    {
+      "cnpj": "22499671000181",
+      "cnpj_raiz": "22499671",
+      "nome": "CAMPEIRA COMERCIO DE PRODUTOS AGROPECUARIOS LTDA"
+    },
+    {
+      "cnpj": "27180131000154",
+      "cnpj_raiz": "27180131",
+      "nome": "PLATINUM INDUSTRIA DE CONFECCOES LTDA"
+    },
+    {
+      "cnpj": "29404154000120",
+      "cnpj_raiz": "29404154",
+      "nome": "ORION NUTRICAO ANIMAL LTDA"
+    },
+    {
+      "cnpj": "31563625000195",
+      "cnpj_raiz": "31563625",
+      "nome": "NOVA ERA INDUSTRIA COMERCIO TRANSPORTE EXPORTACAO  E IMPORTACAO DE PRODUTOS ALIMENTICIOS LTDA  EM RECUPERACAO"
+    },
+    {
+      "cnpj": "36704785000120",
+      "cnpj_raiz": "36704785",
+      "nome": "EXTRUTECH INDUSTRIA DE PERFIL DE ALUMINIO S/A."
+    },
+    {
+      "cnpj": "49967961000169",
+      "cnpj_raiz": "49967961",
+      "nome": "AMERICANFLEX INDUSTRIAS REUNIDAS LTDA"
+    },
+    {
+      "cnpj": "51747038000163",
+      "cnpj_raiz": "51747038",
+      "nome": "OPTITEX INDUSTRIA E COMERCIO DE ESTOJOS E BRINDES LTDA"
+    },
+    {
+      "cnpj": "59281857000170",
+      "cnpj_raiz": "59281857",
+      "nome": "CARDEAL INDUSTRIA E COMERCIO DE ALIMENTOS LTDA"
+    },
+    {
+      "cnpj": "71988927000120",
+      "cnpj_raiz": "71988927",
+      "nome": "RICO INDUSTRIAL LTDA"
+    },
+    {
+      "cnpj": "02686151000170",
+      "cnpj_raiz": "02686151",
+      "nome": "BLUECOM SOLUCOES DE CONECTIVIDADE E INFORMATICA LTDA - EM RECUPERACAO JUDICIAL"
+    },
+    {
+      "cnpj": "04816115000100",
+      "cnpj_raiz": "04816115",
+      "nome": "JAF DISTRIBUIDORA DE BEBIDAS LTDA"
+    },
+    {
+      "cnpj": "33935882000136",
+      "cnpj_raiz": "33935882",
+      "nome": "RENOVA INDUSTRIA E COMERCIO DE CONDUTORES ELETRICOS E SERVICOS LTDA EM RECUPERACAO JUDICIAL"
+    },
+    {
+      "cnpj": "01263181000101",
+      "cnpj_raiz": "01263181",
+      "nome": "LUIS SANCHES RECICLAGEM DE SUCATAS LTDA EM RECUPERACAO JUDICIAL"
+    },
+    {
+      "cnpj": "01941678000131",
+      "cnpj_raiz": "01941678",
+      "nome": "ITALSPEED AUTOMOTIVE LTDA - EM RECUPERACAO JUDICIAL EM RECUPERACAO JUDICIAL"
+    },
+    {
+      "cnpj": "02148510000136",
+      "cnpj_raiz": "02148510",
+      "nome": "TEMPERMED INDUSTRIA E COMERCIO DE VIDROS LTDA"
+    },
+    {
+      "cnpj": "03367101000193",
+      "cnpj_raiz": "03367101",
+      "nome": "SUPERTEX CONCRETO LTDA EM RECUPERACAO JUDICIAL"
+    },
+    {
+      "cnpj": "03556506000170",
+      "cnpj_raiz": "03556506",
+      "nome": "OMEGA INDUSTRIA E COMERCIO DE ALUMINIOS LTDA"
+    },
+    {
+      "cnpj": "04104365000117",
+      "cnpj_raiz": "04104365",
+      "nome": "PROPEL PROFESSIONAL COMERCIO E INDUSTRIA DE PAPEIS LTDA"
+    },
+    {
+      "cnpj": "04193383000112",
+      "cnpj_raiz": "04193383",
+      "nome": "DISTRIBUIDORA DE BATERIAS EXCELL LTDA EM RECUPERACAO JUDICIAL"
+    },
+    {
+      "cnpj": "04200198000108",
+      "cnpj_raiz": "04200198",
+      "nome": "MARLON BONILHA LTDA"
+    },
+    {
+      "cnpj": "04304360000138",
+      "cnpj_raiz": "04304360",
+      "nome": "BON-MART FRIGORIFICO LTDA"
+    },
+    {
+      "cnpj": "07621912000120",
+      "cnpj_raiz": "07621912",
+      "nome": "LION PACKING LTDA"
+    },
+    {
+      "cnpj": "07868543000174",
+      "cnpj_raiz": "07868543",
+      "nome": "ALMAX COMERCIAL E DISTRIBUIDORA DE METAIS LTDA"
+    },
+    {
+      "cnpj": "08089064000112",
+      "cnpj_raiz": "08089064",
+      "nome": "INDUSTRIA E COMERCIO DE CEREAIS BOM DE GOSTO LTDA"
+    },
+    {
+      "cnpj": "08537073000129",
+      "cnpj_raiz": "08537073",
+      "nome": "JN INDUSTRIA E COMERCIO DE FERRO E ACO LTDA"
+    },
+    {
+      "cnpj": "08952410000144",
+      "cnpj_raiz": "08952410",
+      "nome": "HOLLYTEC COMERCIO E INDUSTRIA DE MATERIAIS ELETRICOS LTDA"
+    },
+    {
+      "cnpj": "08952410000225",
+      "cnpj_raiz": "08952410",
+      "nome": "HOLLYTEC COMERCIO E INDUSTRIA DE MATERIAIS ELETRICOS LTDA"
+    },
+    {
+      "cnpj": "09536120000182",
+      "cnpj_raiz": "09536120",
+      "nome": "SEMPRE AGTECH LTDA"
+    },
+    {
+      "cnpj": "10320568000143",
+      "cnpj_raiz": "10320568",
+      "nome": "V. H. D. INDUSTRIA E COMERCIO DE PRODUTOS ALMENTICIOS LTDA EM RECUPERACAO JUDICIAL"
+    },
+    {
+      "cnpj": "11462339000126",
+      "cnpj_raiz": "11462339",
+      "nome": "JMARTINS DO BRASIL LTDA"
+    },
+    {
+      "cnpj": "11958002000104",
+      "cnpj_raiz": "11958002",
+      "nome": "FALCAO INDUSTRIA DE ALIMENTOS LTDA"
+    },
+    {
+      "cnpj": "11958002000538",
+      "cnpj_raiz": "11958002",
+      "nome": "FALCAO INDUSTRIA DE ALIMENTOS LTDA"
+    },
+    {
+      "cnpj": "11958002000619",
+      "cnpj_raiz": "11958002",
+      "nome": "FALCAO INDUSTRIA DE ALIMENTOS LTDA"
+    },
+    {
+      "cnpj": "11958002000880",
+      "cnpj_raiz": "11958002",
+      "nome": "FALCAO INDUSTRIA DE ALIMENTOS LTDA"
+    },
+    {
+      "cnpj": "11958002001003",
+      "cnpj_raiz": "11958002",
+      "nome": "FALCAO INDUSTRIA DE ALIMENTOS LTDA"
+    },
+    {
+      "cnpj": "13746252000106",
+      "cnpj_raiz": "13746252",
+      "nome": "UBERTEC SERVICE USINAGEM LTDA"
+    },
+    {
+      "cnpj": "15032861000200",
+      "cnpj_raiz": "15032861",
+      "nome": "FRIGORACA AMAZONAS LTDA"
+    },
+    {
+      "cnpj": "15092733000170",
+      "cnpj_raiz": "15092733",
+      "nome": "GOMES MINAS DISTRIBUIDORA DE ALIMENTOS LTDA"
+    },
+    {
+      "cnpj": "16575918000107",
+      "cnpj_raiz": "16575918",
+      "nome": "RRX COMERCIO DE CARNES LTDA"
+    },
+    {
+      "cnpj": "18068347000131",
+      "cnpj_raiz": "18068347",
+      "nome": "PETRA AGRONEGOCIO LTDA"
+    },
+    {
+      "cnpj": "20122197000149",
+      "cnpj_raiz": "20122197",
+      "nome": "RKO ALIMENTOS LTDA"
+    },
+    {
+      "cnpj": "22153439000197",
+      "cnpj_raiz": "22153439",
+      "nome": "OCEAN SANTOS BRASIL COMERCIO DE PRODUTOS DESCARTAVEIS LTDA"
+    },
+    {
+      "cnpj": "25116444000118",
+      "cnpj_raiz": "25116444",
+      "nome": "JOFER INVESTIMENTOS LOGISTICOS LTDA"
+    },
+    {
+      "cnpj": "25231623000104",
+      "cnpj_raiz": "25231623",
+      "nome": "ALUMI CONDUTORES ELETRICOS LTDA"
+    },
+    {
+      "cnpj": "28894135000167",
+      "cnpj_raiz": "28894135",
+      "nome": "BRASMETAL DISTRIBUICAO E LOGISTICA LTDA"
+    },
+    {
+      "cnpj": "32934172000129",
+      "cnpj_raiz": "32934172",
+      "nome": "SCAGRO INDUSTRIAL LTDA"
+    },
+    {
+      "cnpj": "33935793000190",
+      "cnpj_raiz": "33935793",
+      "nome": "PROLOG COMERCIO E DISTRIBUICAO DE PRODUTOS DE LIMPEZA E HIGIENE LTDA"
+    },
+    {
+      "cnpj": "35927480000115",
+      "cnpj_raiz": "35927480",
+      "nome": "FIBRA OESTE COMERCIO DE PRODUTOS AGRICOLAS LTDA"
+    },
+    {
+      "cnpj": "43156910000170",
+      "cnpj_raiz": "43156910",
+      "nome": "COMPANHIA APAX DE EMBALAGENS S/A"
+    },
+    {
+      "cnpj": "43267029000147",
+      "cnpj_raiz": "43267029",
+      "nome": "PRODUCE S/A"
+    },
+    {
+      "cnpj": "43642783000110",
+      "cnpj_raiz": "43642783",
+      "nome": "ALUMINUM BRASIL S.A."
+    },
+    {
+      "cnpj": "44039854000157",
+      "cnpj_raiz": "44039854",
+      "nome": "FRIORIO DISTRIBUIDOR DE PECAS PARA REFRIGERACAO E MAQUINA DE LAVAR LTDA"
+    },
+    {
+      "cnpj": "44039854000580",
+      "cnpj_raiz": "44039854",
+      "nome": "FRIORIO DISTRIBUIDOR DE PECAS PARA REFRIGERACAO E MAQUINA DE LAVAR LTDA"
+    },
+    {
+      "cnpj": "50930973000106",
+      "cnpj_raiz": "50930973",
+      "nome": "PASSARIN INDUSTRIA E COMERCIO DE BEBIDAS LTDA"
+    },
+    {
+      "cnpj": "51636246000195",
+      "cnpj_raiz": "51636246",
+      "nome": "SO LONA & SILO BOLSA COMERCIO DE PRODUTOS AGRICOLAS LTDA"
+    },
+    {
+      "cnpj": "54370631000121",
+      "cnpj_raiz": "54370631",
+      "nome": "BRAZILIAN GLOBAL ALUMINIUM & ACO LTDA."
+    },
+    {
+      "cnpj": "54370631000474",
+      "cnpj_raiz": "54370631",
+      "nome": "BRAZILIAN GLOBAL ALUMINIUM & ACO LTDA."
+    },
+    {
+      "cnpj": "60761251000110",
+      "cnpj_raiz": "60761251",
+      "nome": "BGA DISTRIBUICAO E LOGISTICA LTDA"
+    },
+    {
+      "cnpj": "65414580000109",
+      "cnpj_raiz": "65414580",
+      "nome": "DU PORTO DISTRIBUIDORA DE ALIMENTOS LTDA"
+    },
+    {
+      "cnpj": "65978488000171",
+      "cnpj_raiz": "65978488",
+      "nome": "GRANCARNES INDUSTRIA E COMERCIO DE CARNES S/A"
+    },
+    {
+      "cnpj": "79131918000120",
+      "cnpj_raiz": "79131918",
+      "nome": "NOMA DO BRASIL SOCIEDADE ANONIMA EM RECUPERACAO JUDICIAL"
+    },
+    {
+      "cnpj": "92279363000126",
+      "cnpj_raiz": "92279363",
+      "nome": "TRANSPORTES TRANS BERTIN LTDA"
+    },
+    {
+      "cnpj": "92660893000110",
+      "cnpj_raiz": "92660893",
+      "nome": "SULINA DE METAIS SA EM RECUPERACAO JUDICIAL"
+    },
+    {
+      "cnpj": "01538372000139",
+      "cnpj_raiz": "01538372",
+      "nome": "CARVOVALE INDUSTRIA E COMERCIO DE PRODUTOS AGROINDUSTRIAIS E FLORESTAIS LTDA - EM RECUPERACAO JUDICIAL"
+    },
+    {
+      "cnpj": "02679320000145",
+      "cnpj_raiz": "02679320",
+      "nome": "NEO POLIMEROS LTDA"
+    },
+    {
+      "cnpj": "05817169000152",
+      "cnpj_raiz": "05817169",
+      "nome": "CHEF FOODS INDUSTRIA E COMERCIO DE PRODUTOS ALIMENTICIOS LTDA EM RECUPERACAO JUDICIAL"
+    },
+    {
+      "cnpj": "07633252000105",
+      "cnpj_raiz": "07633252",
+      "nome": "OLEOCLEAN INDUSTRIA, COMERCIO E RECICLAGEM LTDA"
+    },
+    {
+      "cnpj": "08152526000107",
+      "cnpj_raiz": "08152526",
+      "nome": "M&E ENGENHARIA, SERVICOS E CONSTRUCOES S A"
+    },
+    {
+      "cnpj": "08247122000199",
+      "cnpj_raiz": "08247122",
+      "nome": "MAXXCOMP GESTAO DE SERVICOS LTDA"
+    },
+    {
+      "cnpj": "10895954000163",
+      "cnpj_raiz": "10895954",
+      "nome": "JBM USINAGEM LTDA"
+    },
+    {
+      "cnpj": "11581339000145",
+      "cnpj_raiz": "11581339",
+      "nome": "BMP SOCIEDADE DE CREDITO AO MICROEMPREENDEDOR E A EMPRESA DE PEQUENO PORTE LTDA"
+    },
+    {
+      "cnpj": "12273815000123",
+      "cnpj_raiz": "12273815",
+      "nome": "SSM SOLUCOES METALICAS PARA ENERGIAS RENOVAVEIS LTDA EM RECUPERACAO JUDICIAL"
+    },
+    {
+      "cnpj": "14591542000190",
+      "cnpj_raiz": "14591542",
+      "nome": "NEO RODAS S.A."
+    },
+    {
+      "cnpj": "14591542000271",
+      "cnpj_raiz": "14591542",
+      "nome": "NEO RODAS S.A."
+    },
+    {
+      "cnpj": "18358051000155",
+      "cnpj_raiz": "18358051",
+      "nome": "MITO-MINERACAO TOCANTINS LTDA EM RECUPERACAO JUDICIAL"
+    },
+    {
+      "cnpj": "28184267000103",
+      "cnpj_raiz": "28184267",
+      "nome": "MS BOI COMERCIO E ABATE DE BOVINOS LTDA"
+    },
+    {
+      "cnpj": "30195474000105",
+      "cnpj_raiz": "30195474",
+      "nome": "FELIX RECICLAGEM E COMERCIO DE OLEOS LTDA EM RECUPERACAO JUDICIAL"
+    },
+    {
+      "cnpj": "46906624000173",
+      "cnpj_raiz": "46906624",
+      "nome": "FERCOM INDUSTRIA E COMERCIO LTDA"
+    },
+    {
+      "cnpj": "56146370000196",
+      "cnpj_raiz": "56146370",
+      "nome": "TERRA TRANSPORTES SERVICOS E TERRAPLANAGEM LTDA"
+    },
+    {
+      "cnpj": "57501207000167",
+      "cnpj_raiz": "57501207",
+      "nome": "AUSUS AUTOMOTIVE SYSTEMS DO BRASIL LTDA"
+    },
+    {
+      "cnpj": "58352676000124",
+      "cnpj_raiz": "58352676",
+      "nome": "MINING TECHNOLOGY LTDA"
+    },
+    {
+      "cnpj": "59904247000185",
+      "cnpj_raiz": "59904247",
+      "nome": "LEPTA MULTISETORIAL FUNDO DE INVESTIMENTO EM DIREITOS CREDITORIOS"
+    },
+    {
+      "cnpj": "10808699000174",
+      "cnpj_raiz": "10808699",
+      "nome": "ONDUNORTE CIA DE PAPEIS E PAPELAO ONDULADO DO NORTE - EM RECUPERACAO JUDICIAL"
+    },
+    {
+      "cnpj": "35443247000167",
+      "cnpj_raiz": "35443247",
+      "nome": "SLS COMERCIO DE MOTOS ELETRICAS LTDA"
+    },
+    {
+      "cnpj": "56984970000123",
+      "cnpj_raiz": "56984970",
+      "nome": "TECHNE SERVICOS LTDA"
+    },
+    {
+      "cnpj": "94328580000194",
+      "cnpj_raiz": "94328580",
+      "nome": "INBRACELL IND BRASIL DE ACUMULADORES ELETRICOS LTDA EM RECUPERACAO JUDICIAL"
+    },
+    {
+      "cnpj": "00000000000191",
+      "cnpj_raiz": "00000000",
+      "nome": "BANCO DO BRASIL SA"
+    },
+    {
+      "cnpj": "02282709000152",
+      "cnpj_raiz": "02282709",
+      "nome": "COOPERATIVA DE CREDITO DE LIVRE ADMISSAO DO CENTRO NORTE BRASILEIRO"
+    },
+    {
+      "cnpj": "19342138000105",
+      "cnpj_raiz": "19342138",
+      "nome": "SUPERMERCADO CRISTAL LTDA EM RECUPERACAO JUDICIAL"
+    },
+    {
+      "cnpj": "45544609000160",
+      "cnpj_raiz": "45544609",
+      "nome": "SCHAEFER LOGISTICA & TRANSPORTES LTDA"
+    },
+    {
+      "cnpj": "59591974000130",
+      "cnpj_raiz": "59591974",
+      "nome": "ROTAVI INDUSTRIAL LTDA"
+    },
+    {
+      "cnpj": "60701190000104",
+      "cnpj_raiz": "60701190",
+      "nome": "ITAU UNIBANCO S.A."
+    },
+    {
+      "cnpj": "60746948000112",
+      "cnpj_raiz": "60746948",
+      "nome": "BANCO BRADESCO S.A."
+    },
+    {
+      "cnpj": "68192475000160",
+      "cnpj_raiz": "68192475",
+      "nome": "I. M. DOS REIS - ALUFORCE INDUSTRIA E COMERCIO DE CONDUTORES ELETRICOS"
+    },
+    {
+      "cnpj": "07931996000106",
+      "cnpj_raiz": "07931996",
+      "nome": "COOPERSERRA-COOPERATIVA DOS PRODUTORES RURAIS DA SERRA"
+    },
+    {
+      "cnpj": "51636246000276",
+      "cnpj_raiz": "51636246",
+      "nome": "SO LONA & SILO BOLSA COMERCIO DE PRODUTOS AGRICOLAS LTDA"
+    },
+    {
+      "cnpj": "55970693000137",
+      "cnpj_raiz": "55970693",
+      "nome": "FOPIL COMERCIO E INDUSTRIA LTDA"
+    },
+    {
+      "cnpj": "59591974000300",
+      "cnpj_raiz": "59591974",
+      "nome": "ROTAVI INDUSTRIAL LTDA"
+    },
+    {
+      "cnpj": "90400888000142",
+      "cnpj_raiz": "90400888",
+      "nome": "BANCO SANTANDER (BRASIL) S.A."
+    },
+    {
+      "cnpj": "04377477000141",
+      "cnpj_raiz": "04377477",
+      "nome": "FRIBARREIRAS AGRO INDUSTRIAL DE ALIMENTOS LTDA EM RECUPERACAO JUDICIAL"
+    },
+    {
+      "cnpj": "06072452000165",
+      "cnpj_raiz": "06072452",
+      "nome": "P&P INDUSTRIA DE PLASTICOS E TRANSPORTES LTDA EM RECUPERACAO JUDICIAL"
+    },
+    {
+      "cnpj": "66101833000238",
+      "cnpj_raiz": "66101833",
+      "nome": "GSW SOFTWARE LTDA"
+    },
+    {
+      "cnpj": "13855105000174",
+      "cnpj_raiz": "13855105",
+      "nome": "PORTUGAL - QUIMICA LTDA"
+    },
+    {
+      "cnpj": "10834577000152",
+      "cnpj_raiz": "10834577",
+      "nome": "SUINOBRAS ALIMENTOS LTDA"
+    },
+    {
+      "cnpj": "49215907000167",
+      "cnpj_raiz": "49215907",
+      "nome": "CESU CENTRO DE ESPECIALIDADES UBERTEC LTDA"
+    },
+    {
+      "cnpj": "11123806000193",
+      "cnpj_raiz": "11123806",
+      "nome": "MARGIL TRANSPORTES LTDA"
+    },
+    {
+      "cnpj": "62825864000108",
+      "cnpj_raiz": "62825864",
+      "nome": "LEAO & JETEX INDUSTRIA TEXTIL LTDA"
+    },
+    {
+      "cnpj": "53937474000120",
+      "cnpj_raiz": "53937474",
+      "nome": "ENERGY COMERCIO LTDA"
+    },
+    {
+      "cnpj": "53071335000167",
+      "cnpj_raiz": "53071335",
+      "nome": "SO ADUBO FERTILIZANTES AGRICOLA LTDA"
+    },
+    {
+      "cnpj": "10736214000184",
+      "cnpj_raiz": "10736214",
+      "nome": "COOPERATIVA DE CREDITO, POUPANCA E INVESTIMENTO DO PLANALTO CENTRAL - SICREDI PLANALTO CENTRAL"
+    },
+    {
+      "cnpj": "15251351000142",
+      "cnpj_raiz": "15251351",
+      "nome": "LEPTA GESTORA DE CREDITO LTDA"
+    },
+    {
+      "cnpj": "19574835000183",
+      "cnpj_raiz": "19574835",
+      "nome": "CCS AGROTEXTIL LTDA"
+    },
+    {
+      "cnpj": "33649134000197",
+      "cnpj_raiz": "33649134",
+      "nome": "JCLM INDUSTRIA E COMERCIO LTDA"
+    },
+    {
+      "cnpj": "09367055000109",
+      "cnpj_raiz": "09367055",
+      "nome": "RACOES REIS DISTRIBUIDORA DE ARTIGOS PET LTDA."
+    },
+    {
+      "cnpj": "11011716000100",
+      "cnpj_raiz": "11011716",
+      "nome": "J-PACK COMERCIO DE EMBALAGENS LTDA"
+    },
+    {
+      "cnpj": "24415230000180",
+      "cnpj_raiz": "24415230",
+      "nome": "NAVARRO DISTRIBUIDORA DE MEDICAMENTOS S/A"
+    },
+    {
+      "cnpj": "11958002001186",
+      "cnpj_raiz": "11958002",
+      "nome": "FALCAO INDUSTRIA DE ALIMENTOS LTDA"
+    },
+    {
+      "cnpj": "54408808000131",
+      "cnpj_raiz": "54408808",
+      "nome": "MASTER FRIOS COMERCIO DE ALIMENTOS LTDA"
+    },
+    {
+      "cnpj": "41600257000161",
+      "cnpj_raiz": "41600257",
+      "nome": "DJD METALS LTDA"
+    },
+    {
+      "cnpj": "41600257000323",
+      "cnpj_raiz": "41600257",
+      "nome": "DJD METALS LTDA"
+    },
+    {
+      "cnpj": "54615431000191",
+      "cnpj_raiz": "54615431",
+      "nome": "GPETS DISTRIBUIDORA LTDA"
+    },
+    {
+      "cnpj": "33504355000177",
+      "cnpj_raiz": "33504355",
+      "nome": "CYOLA INDUSTRIA E COMERCIO DE MATERIAIS ELETRICOS LTDA"
+    },
+    {
+      "cnpj": "11958002000961",
+      "cnpj_raiz": "11958002",
+      "nome": "FALCAO INDUSTRIA DE ALIMENTOS LTDA"
+    },
+    {
+      "cnpj": "11958002000708",
+      "cnpj_raiz": "11958002",
+      "nome": "FALCAO INDUSTRIA DE ALIMENTOS LTDA"
+    },
+    {
+      "cnpj": "35165246000106",
+      "cnpj_raiz": "35165246",
+      "nome": "LABOR ELETRIC INDUSTRIA E COMERCIO UNIPESSOAL LTDA"
+    },
+    {
+      "cnpj": "30446895000153",
+      "cnpj_raiz": "30446895",
+      "nome": "ADOXY COMERCIO E SERVICOS LTDA"
+    },
+    {
+      "cnpj": "56373319000117",
+      "cnpj_raiz": "56373319",
+      "nome": "FRICOCK FRIGORIFICACAO AVICULTURA, INDUSTRIA E COMERCIO EM RECUPERACAO JUDICIAL LTDA"
+    },
+    {
+      "cnpj": "10974612000139",
+      "cnpj_raiz": "10974612",
+      "nome": "CRISTAL & CORES CHAPAS ACRILICAS LTDA"
+    },
+    {
+      "cnpj": "52318701000177",
+      "cnpj_raiz": "52318701",
+      "nome": "PARABIO INDUSTRIA E COMERCIO DE OLEOS E BIOCOMBUSTIVEIS LTDA"
+    },
+    {
+      "cnpj": "00288948000194",
+      "cnpj_raiz": "00288948",
+      "nome": "INTERBRANDS FOODS LTDA"
+    },
+    {
+      "cnpj": "55586406000190",
+      "cnpj_raiz": "55586406",
+      "nome": "LEPTA SPECIAL FUNDO DE INVESTIMENTO EM DIREITOS CREDITORIOS"
+    },
+    {
+      "cnpj": "65974602000195",
+      "cnpj_raiz": "65974602",
+      "nome": "LEILAC PRODUTOS LACTEOS LTDA EM RECUPERACAO JUDICIAL"
+    },
+    {
+      "cnpj": "49967961000240",
+      "cnpj_raiz": "49967961",
+      "nome": "AMERICANFLEX INDUSTRIAS REUNIDAS LTDA"
+    },
+    {
+      "cnpj": "52609589000123",
+      "cnpj_raiz": "52609589",
+      "nome": "FRIGOVIP ALIMENTOS LTDA"
+    },
+    {
+      "cnpj": "29972964000507",
+      "cnpj_raiz": "29972964",
+      "nome": "JFS DO BRASIL INDUSTRIA E COMERCIO LTDA"
+    },
+    {
+      "cnpj": "11211702000130",
+      "cnpj_raiz": "11211702",
+      "nome": "CONCREBETON CONCRETO USINADO EM RECUPERACAO JUDICIAL LTDA"
+    },
+    {
+      "cnpj": "54370631000393",
+      "cnpj_raiz": "54370631",
+      "nome": "BRAZILIAN GLOBAL ALUMINUM E ACO LTDA"
+    },
+    {
+      "cnpj": "65514192000108",
+      "cnpj_raiz": "65514192",
+      "nome": "CAMPOFERT COMERCIO INDUSTRIA EXPORTACAO E IMPORTACAO LTDA EM RECUPERACAO JUDICIAL"
+    },
+    {
+      "cnpj": "07271300000154",
+      "cnpj_raiz": "07271300",
+      "nome": "GSW SISTEMAS DE INFORMACAO LTDA"
+    },
+    {
+      "cnpj": "62239488000161",
+      "cnpj_raiz": "62239488",
+      "nome": "CONTECH PRODUTOS BIODEGRADAVEIS LTDA"
+    },
+    {
+      "cnpj": "05268852000188",
+      "cnpj_raiz": "05268852",
+      "nome": "UNITED MILLS  ALIMENTOS LTDA"
+    },
+    {
+      "cnpj": "12060401000116",
+      "cnpj_raiz": "12060401",
+      "nome": "STR COMERCIO E INDUSTRIA LTDA"
+    },
+    {
+      "cnpj": "42168750000117",
+      "cnpj_raiz": "42168750",
+      "nome": "DISTRIBUIDORA PAMMA LTDA"
+    }
+  ]
+}

@@ -279,8 +279,111 @@ function ensureTableColumns(table, keys) {
   }
 }
 
+function ensureCarteiraSeeded() {
+  try {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS gerentes (
+        id INTEGER PRIMARY KEY,
+        nome TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS fidc_cedentes (
+        cnpj_raiz TEXT PRIMARY KEY,
+        nome TEXT NOT NULL,
+        estado TEXT,
+        setor_id INTEGER,
+        gerente_id INTEGER,
+        criado_em TEXT
+      );
+      CREATE TABLE IF NOT EXISTS fidc_cedentes_cnpjs (
+        cnpj TEXT PRIMARY KEY,
+        cnpj_raiz TEXT,
+        nome TEXT
+      );
+      CREATE TABLE IF NOT EXISTS cedentes (
+        cnpj_raiz TEXT PRIMARY KEY,
+        nome TEXT NOT NULL,
+        estado TEXT,
+        setor_id INTEGER,
+        gerente_id INTEGER,
+        criado_em TEXT
+      );
+      CREATE TABLE IF NOT EXISTS cedentes_cnpjs (
+        cnpj TEXT PRIMARY KEY,
+        cnpj_raiz TEXT,
+        nome TEXT
+      );
+    `);
+
+    const count = db.prepare('SELECT COUNT(*) as c FROM fidc_cedentes').get()?.c || 0;
+    if (count > 0) return;
+
+    // 1. Se estiver no ambiente DEV na VPS (/var/www/lepta-dev), tenta copiar de /var/www/lepta/database.sqlite
+    const homologDbPath = '/var/www/lepta/database.sqlite';
+    if (fs.existsSync(homologDbPath)) {
+      try {
+        db.exec(`ATTACH DATABASE '${homologDbPath}' AS homolog_source;`);
+        db.exec(`
+          INSERT OR REPLACE INTO gerentes SELECT * FROM homolog_source.gerentes;
+          INSERT OR REPLACE INTO fidc_cedentes SELECT * FROM homolog_source.fidc_cedentes;
+          INSERT OR REPLACE INTO fidc_cedentes_cnpjs SELECT * FROM homolog_source.fidc_cedentes_cnpjs;
+          INSERT OR REPLACE INTO cedentes SELECT * FROM homolog_source.cedentes;
+          INSERT OR REPLACE INTO cedentes_cnpjs SELECT * FROM homolog_source.cedentes_cnpjs;
+        `);
+        db.exec(`DETACH DATABASE homolog_source;`);
+        const newCount = db.prepare('SELECT COUNT(*) as c FROM fidc_cedentes').get()?.c || 0;
+        if (newCount > 0) {
+          console.log(`✅ [Carteira] Sincronizados ${newCount} cedentes a partir do banco homolog (${homologDbPath})`);
+          return;
+        }
+      } catch (attachErr) {
+        console.warn('Aviso ao sincronizar do banco homolog:', attachErr.message);
+        try { db.exec('DETACH DATABASE homolog_source;'); } catch {}
+      }
+    }
+
+    // 2. Fallback: Lê do arquivo seeds/carteiraSeed.json incluído no projeto
+    const seedPath = path.join(__dirname, 'seeds', 'carteiraSeed.json');
+    if (fs.existsSync(seedPath)) {
+      const seed = JSON.parse(fs.readFileSync(seedPath, 'utf8'));
+      if (Array.isArray(seed.gerentes)) {
+        const stmt = db.prepare('INSERT OR REPLACE INTO gerentes (id, nome) VALUES (?, ?)');
+        const insertMany = db.transaction((rows) => {
+          for (const r of rows) stmt.run(r.id, r.nome);
+        });
+        insertMany(seed.gerentes);
+      }
+      if (Array.isArray(seed.fidc_cedentes)) {
+        const stmt = db.prepare('INSERT OR REPLACE INTO fidc_cedentes (cnpj_raiz, nome, estado, setor_id, gerente_id, criado_em) VALUES (?, ?, ?, ?, ?, ?)');
+        const stmtCed = db.prepare('INSERT OR REPLACE INTO cedentes (cnpj_raiz, nome, estado, setor_id, gerente_id, criado_em) VALUES (?, ?, ?, ?, ?, ?)');
+        const insertMany = db.transaction((rows) => {
+          for (const r of rows) {
+            stmt.run(r.cnpj_raiz, r.nome, r.estado || null, r.setor_id || null, r.gerente_id || null, r.criado_em || null);
+            stmtCed.run(r.cnpj_raiz, r.nome, r.estado || null, r.setor_id || null, r.gerente_id || null, r.criado_em || null);
+          }
+        });
+        insertMany(seed.fidc_cedentes);
+      }
+      if (Array.isArray(seed.fidc_cedentes_cnpjs)) {
+        const stmt = db.prepare('INSERT OR REPLACE INTO fidc_cedentes_cnpjs (cnpj, cnpj_raiz, nome) VALUES (?, ?, ?)');
+        const stmtCed = db.prepare('INSERT OR REPLACE INTO cedentes_cnpjs (cnpj, cnpj_raiz, nome) VALUES (?, ?, ?)');
+        const insertMany = db.transaction((rows) => {
+          for (const r of rows) {
+            stmt.run(r.cnpj, r.cnpj_raiz, r.nome);
+            stmtCed.run(r.cnpj, r.cnpj_raiz, r.nome);
+          }
+        });
+        insertMany(seed.fidc_cedentes_cnpjs);
+      }
+      console.log(`✅ [Carteira] Sincronizados ${seed.fidc_cedentes?.length || 0} cedentes a partir do seed JSON`);
+    }
+  } catch (err) {
+    console.error('Erro em ensureCarteiraSeeded:', err.message);
+  }
+}
+
 function ensureGerentesContasTable() {
   try {
+    ensureCarteiraSeeded();
     db.exec(`
       CREATE TABLE IF NOT EXISTS gerentes_contas (
         id TEXT PRIMARY KEY,
@@ -565,7 +668,7 @@ function createAuthSession(user, purpose = 'auth') {
 }
 
 function readSession(req) {
-  const authorization = String(req.headers.authorization || '');
+  const authorization = String(req.headers['x-lepta-authorization'] || req.headers.authorization || '');
   if (!/^Bearer\s+[a-f0-9]{64}$/i.test(authorization)) return null;
   const token = authorization.replace(/^Bearer\s+/i, '');
   const session = authSessions.get(token);
