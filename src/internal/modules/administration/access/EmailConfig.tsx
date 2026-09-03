@@ -3,20 +3,24 @@ import {
   Mail, Server, Lock, Send, CheckCircle2, AlertCircle, Eye, EyeOff,
   RefreshCw, ShieldCheck, Globe, Check, Users, UserPlus, Plus,
   FileText, CheckCheck, XCircle, Clock, DollarSign,
-  AlertTriangle
+  AlertTriangle, Key, ShieldAlert
 } from 'lucide-react';
 import { API_BASE_URL, getAuthHeaders } from '../../../../config/api';
 import './EmailConfig.css';
 
 interface EmailConfigData {
-  host: string;
-  port: number;
-  secure: boolean;
-  user: string;
-  from_name: string;
-  from_email: string;
-  to_finance_email: string;
-  app_base_url: string;
+  auth_type?: 'GRAPH' | 'SMTP';
+  azure_tenant_id?: string;
+  azure_client_id?: string;
+  hasAzureSecret?: boolean;
+  host?: string;
+  port?: number;
+  secure?: boolean;
+  user?: string;
+  from_name?: string;
+  from_email?: string;
+  to_finance_email?: string;
+  app_base_url?: string;
   hasPassword?: boolean;
 }
 
@@ -39,10 +43,34 @@ interface SystemUser {
   id: string;
   username: string;
   email: string;
-  role: string;
+  role?: string;
 }
 
-// Definições visuais e estruturais para as 9 etapas solicitadas
+// Utilitário de normalização ultra-defensivo para evitar qualquer crash
+function safeNormalizeDestinatario(dest: any): DestinatarioItem | null {
+  if (!dest) return null;
+  if (typeof dest === 'string') {
+    const clean = dest.trim().toLowerCase();
+    if (!clean || !clean.includes('@')) return null;
+    return {
+      type: 'CUSTOM',
+      email: clean,
+      name: clean.split('@')[0]
+    };
+  }
+  if (typeof dest === 'object') {
+    const email = typeof dest.email === 'string' ? dest.email.trim().toLowerCase() : '';
+    if (!email || !email.includes('@')) return null;
+    return {
+      type: dest.type === 'USER' ? 'USER' : 'CUSTOM',
+      email,
+      name: typeof dest.name === 'string' && dest.name ? dest.name : email.split('@')[0],
+      userId: typeof dest.userId === 'string' ? dest.userId : undefined
+    };
+  }
+  return null;
+}
+
 const EVENTOS_METADATA: Record<string, {
   categoria: 'CRIAÇÃO' | 'DIRETORIA' | 'JURÍDICO' | 'FINANCEIRO';
   titulo: string;
@@ -125,30 +153,68 @@ const EVENTOS_METADATA: Record<string, {
   }
 };
 
+// Error Boundary para proteger abas de qualquer erro imprevisto
+class TabErrorBoundary extends React.Component<{ children: React.ReactNode }, { hasError: boolean; errorText: string }> {
+  constructor(props: { children: React.ReactNode }) {
+    super(props);
+    this.state = { hasError: false, errorText: '' };
+  }
+
+  static getDerivedStateFromError(error: any) {
+    return { hasError: true, errorText: error?.message || 'Erro inesperado na renderização.' };
+  }
+
+  componentDidCatch(error: any, errorInfo: any) {
+    console.error('Erro capturado no TabErrorBoundary:', error, errorInfo);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="ec-alert error" style={{ margin: '2rem', padding: '1.5rem' }}>
+          <AlertCircle size={24} />
+          <div>
+            <strong>Ocorreu um problema ao exibir os destinatários:</strong>
+            <p style={{ margin: '6px 0 0 0', fontSize: '0.85rem' }}>{this.state.errorText}</p>
+            <button
+              type="button"
+              className="ec-btn-save"
+              style={{ marginTop: '12px' }}
+              onClick={() => this.setState({ hasError: false, errorText: '' })}
+            >
+              Tentar Novamente
+            </button>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 export const EmailConfig: React.FC = () => {
-  // Aba ativa: 'remetente' | 'destinatarios'
   const [activeTab, setActiveTab] = useState<'remetente' | 'destinatarios'>('remetente');
 
-  // Estados do Remetente (SMTP)
-  const [host, setHost] = useState('smtp.office365.com');
-  const [port, setPort] = useState(587);
-  const [secure, setSecure] = useState(false);
-  const [user, setUser] = useState('webmaster@lepta.com.br');
+  // Configurações do Microsoft Entra ID (Azure AD) - Exclusivo para sistema@lepta.com.br
+  const [azureTenantId, setAzureTenantId] = useState('f376d8b7-1a55-4cfb-a8e1-3e2799e0918e');
+  const [azureClientId, setAzureClientId] = useState('27281728-09ae-4d31-9fa6-3c93f748e78b');
+  const [azureClientSecret, setAzureClientSecret] = useState('');
+  const [showAzureSecret, setShowAzureSecret] = useState(false);
+  const [hasAzureSecretSaved, setHasAzureSecretSaved] = useState(true);
+
+  // Remetente fixo padrão da Lepta
   const [fromName, setFromName] = useState('LeptaSys');
-  const [fromEmail, setFromEmail] = useState('webmaster@lepta.com.br');
-  const [password, setPassword] = useState('');
-  const [showPassword, setShowPassword] = useState(false);
+  const [fromEmail, setFromEmail] = useState('sistema@lepta.com.br');
   const [toFinanceEmail, setToFinanceEmail] = useState('pagamentos@lepta.com.br');
   const [appBaseUrl, setAppBaseUrl] = useState('https://lepta.com.br');
-  const [hasPasswordSaved, setHasPasswordSaved] = useState(false);
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
   const [testSuccess, setTestSuccess] = useState<string | null>(null);
+  const [testWarning, setTestWarning] = useState<string | null>(null);
   const [testError, setTestError] = useState<string | null>(null);
   const [saveSuccess, setSaveSuccess] = useState<string | null>(null);
-  const [activePreset, setActivePreset] = useState<'m365' | 'hostinger' | 'gmail' | 'custom'>('m365');
 
   // Estados dos Destinatários do Fluxo
   const [fluxoEventos, setFluxoEventos] = useState<FluxoEventoConfig[]>([]);
@@ -157,7 +223,7 @@ export const EmailConfig: React.FC = () => {
   const [fluxoSuccess, setFluxoSuccess] = useState<string | null>(null);
   const [fluxoError, setFluxoError] = useState<string | null>(null);
 
-  // Estados de inputs locais de adição por evento
+  // Inputs locais de seleção
   const [selectedUserPerEvento, setSelectedUserPerEvento] = useState<Record<string, string>>({});
   const [manualEmailPerEvento, setManualEmailPerEvento] = useState<Record<string, string>>({});
 
@@ -175,25 +241,13 @@ export const EmailConfig: React.FC = () => {
       });
       if (res.ok) {
         const data: EmailConfigData = await res.json();
-        setHost(data.host || 'smtp.office365.com');
-        setPort(data.port || 587);
-        setSecure(Boolean(data.secure));
-        setUser(data.user || 'webmaster@lepta.com.br');
+        setAzureTenantId(data.azure_tenant_id || 'f376d8b7-1a55-4cfb-a8e1-3e2799e0918e');
+        setAzureClientId(data.azure_client_id || '27281728-09ae-4d31-9fa6-3c93f748e78b');
+        setHasAzureSecretSaved(Boolean(data.hasAzureSecret));
         setFromName(data.from_name || 'LeptaSys');
-        setFromEmail(data.from_email || data.user || 'webmaster@lepta.com.br');
+        setFromEmail(data.from_email || 'sistema@lepta.com.br');
         setToFinanceEmail(data.to_finance_email || 'pagamentos@lepta.com.br');
         setAppBaseUrl(data.app_base_url || 'https://lepta.com.br');
-        setHasPasswordSaved(Boolean(data.hasPassword));
-
-        if (data.host?.includes('office365') || data.host?.includes('outlook')) {
-          setActivePreset('m365');
-        } else if (data.host?.includes('hostinger')) {
-          setActivePreset('hostinger');
-        } else if (data.host?.includes('gmail') || data.host?.includes('google')) {
-          setActivePreset('gmail');
-        } else {
-          setActivePreset('custom');
-        }
       }
     } catch (error) {
       console.error('Erro ao carregar configurações de e-mail:', error);
@@ -210,7 +264,19 @@ export const EmailConfig: React.FC = () => {
       if (res.ok) {
         const data = await res.json();
         if (data.success && Array.isArray(data.eventos)) {
-          setFluxoEventos(data.eventos);
+          // Normaliza os destinatários de cada evento recebido
+          const sanitized = data.eventos.map((ev: any) => {
+            const rawList = Array.isArray(ev?.destinatarios) ? ev.destinatarios : [];
+            const cleanList = rawList
+              .map(safeNormalizeDestinatario)
+              .filter((d: any): d is DestinatarioItem => d !== null);
+            return {
+              evento: String(ev?.evento || ''),
+              destinatarios: cleanList,
+              notificar_solicitante: Boolean(ev?.notificar_solicitante)
+            };
+          });
+          setFluxoEventos(sanitized);
         }
       }
     } catch (error) {
@@ -226,31 +292,15 @@ export const EmailConfig: React.FC = () => {
       if (res.ok) {
         const data = await res.json();
         if (data.success && Array.isArray(data.users)) {
-          setSystemUsers(data.users);
+          // Garante apenas usuários que tenham email válido em string
+          const validUsers = data.users.filter(
+            (u: any) => u && typeof u.email === 'string' && u.email.trim().includes('@')
+          );
+          setSystemUsers(validUsers);
         }
       }
     } catch (error) {
       console.error('Erro ao listar usuários do sistema:', error);
-    }
-  };
-
-  const applyPreset = (preset: 'm365' | 'hostinger' | 'gmail' | 'custom') => {
-    setActivePreset(preset);
-    setTestSuccess(null);
-    setTestError(null);
-
-    if (preset === 'm365') {
-      setHost('smtp.office365.com');
-      setPort(587);
-      setSecure(false);
-    } else if (preset === 'hostinger') {
-      setHost('smtp.hostinger.com');
-      setPort(465);
-      setSecure(true);
-    } else if (preset === 'gmail') {
-      setHost('smtp.gmail.com');
-      setPort(587);
-      setSecure(false);
     }
   };
 
@@ -259,6 +309,7 @@ export const EmailConfig: React.FC = () => {
     setSaving(true);
     setSaveSuccess(null);
     setTestError(null);
+    setTestWarning(null);
     setTestSuccess(null);
 
     try {
@@ -269,11 +320,10 @@ export const EmailConfig: React.FC = () => {
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          host,
-          port,
-          secure,
-          user,
-          password: password || undefined,
+          auth_type: 'GRAPH',
+          azure_tenant_id: azureTenantId,
+          azure_client_id: azureClientId,
+          azure_client_secret: azureClientSecret || undefined,
           from_name: fromName,
           from_email: fromEmail,
           to_finance_email: toFinanceEmail,
@@ -283,10 +333,10 @@ export const EmailConfig: React.FC = () => {
 
       const data = await res.json();
       if (res.ok) {
-        setSaveSuccess('Configurações de remetente salvas com sucesso!');
-        if (password) {
-          setHasPasswordSaved(true);
-          setPassword('');
+        setSaveSuccess('Configurações do Microsoft Entra ID salvas com sucesso!');
+        if (azureClientSecret) {
+          setHasAzureSecretSaved(true);
+          setAzureClientSecret('');
         }
         setTimeout(() => setSaveSuccess(null), 5000);
       } else {
@@ -302,6 +352,7 @@ export const EmailConfig: React.FC = () => {
   const handleTestConnection = async () => {
     setTesting(true);
     setTestSuccess(null);
+    setTestWarning(null);
     setTestError(null);
 
     try {
@@ -312,11 +363,10 @@ export const EmailConfig: React.FC = () => {
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          host,
-          port,
-          secure,
-          user,
-          password: password || undefined,
+          auth_type: 'GRAPH',
+          azure_tenant_id: azureTenantId,
+          azure_client_id: azureClientId,
+          azure_client_secret: azureClientSecret || undefined,
           from_name: fromName,
           from_email: fromEmail,
           test_recipient: toFinanceEmail
@@ -325,9 +375,11 @@ export const EmailConfig: React.FC = () => {
 
       const data = await res.json();
       if (res.ok && data.success) {
-        setTestSuccess(`✅ ${data.message || 'Conexão estabelecida e e-mail de teste enviado com sucesso!'}`);
+        setTestSuccess(`✅ ${data.message || 'Autenticado no Azure e e-mail de teste disparado com sucesso!'}`);
+      } else if (data.adminConsentPending) {
+        setTestWarning(`⚠️ ${data.error}`);
       } else {
-        setTestError(`❌ Falha na conexão SMTP: ${data.error || 'Verifique as credenciais e permissões.'}`);
+        setTestError(`❌ Falha no teste Microsoft Graph: ${data.error || 'Verifique as credenciais.'}`);
       }
     } catch (error: any) {
       setTestError(`❌ Erro ao testar: ${error.message}`);
@@ -336,7 +388,6 @@ export const EmailConfig: React.FC = () => {
     }
   };
 
-  // --- Manipulação dos Destinatários por Evento ---
   const handleToggleNotificarSolicitante = (eventoKey: string) => {
     setFluxoEventos(prev =>
       prev.map(ev =>
@@ -357,15 +408,18 @@ export const EmailConfig: React.FC = () => {
     setFluxoEventos(prev =>
       prev.map(ev => {
         if (ev.evento !== eventoKey) return ev;
-        const exists = ev.destinatarios.some(d => d.email.toLowerCase() === userObj.email.toLowerCase());
+        const currentList = Array.isArray(ev.destinatarios) ? ev.destinatarios : [];
+        const exists = currentList.some(
+          d => (d?.email || '').toLowerCase() === userObj.email.toLowerCase()
+        );
         if (exists) return ev;
         return {
           ...ev,
           destinatarios: [
-            ...ev.destinatarios,
+            ...currentList,
             {
               type: 'USER',
-              email: userObj.email,
+              email: userObj.email.toLowerCase(),
               name: userObj.username,
               userId: userObj.id
             }
@@ -381,7 +435,6 @@ export const EmailConfig: React.FC = () => {
     const emailRaw = (manualEmailPerEvento[eventoKey] || '').trim().toLowerCase();
     if (!emailRaw) return;
 
-    // Validação básica de formato de e-mail
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailRaw)) {
       alert('Por favor, informe um endereço de e-mail válido.');
       return;
@@ -390,12 +443,15 @@ export const EmailConfig: React.FC = () => {
     setFluxoEventos(prev =>
       prev.map(ev => {
         if (ev.evento !== eventoKey) return ev;
-        const exists = ev.destinatarios.some(d => d.email.toLowerCase() === emailRaw);
+        const currentList = Array.isArray(ev.destinatarios) ? ev.destinatarios : [];
+        const exists = currentList.some(
+          d => (d?.email || '').toLowerCase() === emailRaw
+        );
         if (exists) return ev;
         return {
           ...ev,
           destinatarios: [
-            ...ev.destinatarios,
+            ...currentList,
             {
               type: 'CUSTOM',
               email: emailRaw,
@@ -413,9 +469,12 @@ export const EmailConfig: React.FC = () => {
     setFluxoEventos(prev =>
       prev.map(ev => {
         if (ev.evento !== eventoKey) return ev;
+        const currentList = Array.isArray(ev.destinatarios) ? ev.destinatarios : [];
         return {
           ...ev,
-          destinatarios: ev.destinatarios.filter(d => d.email.toLowerCase() !== emailToRemove.toLowerCase())
+          destinatarios: currentList.filter(
+            d => (d?.email || '').toLowerCase() !== emailToRemove.toLowerCase()
+          )
         };
       })
     );
@@ -459,7 +518,6 @@ export const EmailConfig: React.FC = () => {
     );
   }
 
-  // Agrupa os eventos por fase
   const etapasAgrupadas = [
     {
       fase: '1. Início do Fluxo',
@@ -487,7 +545,7 @@ export const EmailConfig: React.FC = () => {
           <Mail size={28} color="#38bdf8" /> Central de Notificações por E-mail
         </h1>
         <p className="ec-subtitle">
-          Gerencie o servidor remetente (SMTP) e os destinatários para todas as etapas do ciclo de solicitações financeiras.
+          Gerencie o remetente oficial (<strong>sistema@lepta.com.br</strong> via Microsoft Entra ID / Azure) e os destinatários das 9 etapas do fluxo financeiro.
         </p>
       </div>
 
@@ -499,7 +557,7 @@ export const EmailConfig: React.FC = () => {
           onClick={() => setActiveTab('remetente')}
         >
           <Server size={18} />
-          <span>Configuração do Remetente (SMTP)</span>
+          <span>Configuração do Remetente (Microsoft Entra ID)</span>
         </button>
 
         <button
@@ -513,7 +571,7 @@ export const EmailConfig: React.FC = () => {
         </button>
       </div>
 
-      {/* --- ABA 1: REMETENTE & SERVIDOR SMTP --- */}
+      {/* --- ABA 1: REMETENTE OFICIAL VIA AZURE / ENTRA ID --- */}
       {activeTab === 'remetente' && (
         <div className="ec-tab-content fade-in">
           {saveSuccess && (
@@ -530,6 +588,13 @@ export const EmailConfig: React.FC = () => {
             </div>
           )}
 
+          {testWarning && (
+            <div className="ec-alert warning">
+              <ShieldAlert size={22} color="#fbbf24" style={{ flexShrink: 0 }} />
+              <div>{testWarning}</div>
+            </div>
+          )}
+
           {testError && (
             <div className="ec-alert error">
               <AlertCircle size={20} />
@@ -538,137 +603,51 @@ export const EmailConfig: React.FC = () => {
           )}
 
           <div className="ec-card">
-            <div className="ec-card-header-bar">
-              <div>
-                <h2 className="ec-card-title">Parâmetros do Servidor SMTP</h2>
-                <p className="ec-card-subtitle">
-                  Configure a conta de e-mail utilizada pelo LeptaSys para disparar as mensagens automáticas.
-                </p>
-              </div>
-            </div>
-
-            <div className="ec-presets-container">
-              <span className="ec-presets-label">Provedor de E-mail / Preset Rápido</span>
-              <div className="ec-presets-grid">
-                <button
-                  type="button"
-                  className={`ec-preset-btn ${activePreset === 'm365' ? 'active' : ''}`}
-                  onClick={() => applyPreset('m365')}
-                >
-                  🏢 Microsoft 365 / Exchange
-                </button>
-                <button
-                  type="button"
-                  className={`ec-preset-btn ${activePreset === 'hostinger' ? 'active' : ''}`}
-                  onClick={() => applyPreset('hostinger')}
-                >
-                  🌐 Hostinger Webmail
-                </button>
-                <button
-                  type="button"
-                  className={`ec-preset-btn ${activePreset === 'gmail' ? 'active' : ''}`}
-                  onClick={() => applyPreset('gmail')}
-                >
-                  📮 Google Workspace
-                </button>
-                <button
-                  type="button"
-                  className={`ec-preset-btn ${activePreset === 'custom' ? 'active' : ''}`}
-                  onClick={() => applyPreset('custom')}
-                >
-                  ⚙️ Personalizado
-                </button>
-              </div>
-            </div>
-
             <form onSubmit={handleSaveRemetente}>
+              <div className="ec-card-header-bar" style={{ marginBottom: '1.25rem' }}>
+                <div>
+                  <h2 className="ec-card-title" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <Key size={20} color="#38bdf8" /> Envio Oficial via Microsoft Entra ID (Azure Graph API)
+                  </h2>
+                  <p className="ec-card-subtitle">
+                    Todos os e-mails são enviados de forma segura e oficial através do aplicativo <strong>LeptaSys - Mail Sender</strong> registrado no Azure da Lepta.
+                  </p>
+                </div>
+              </div>
+
+              {/* Informação sobre Consentimento no Azure */}
+              <div className="ec-consent-info-box">
+                <ShieldAlert size={18} color="#38bdf8" style={{ flexShrink: 0, marginTop: '2px' }} />
+                <div>
+                  <strong>Remetente Oficial Configurado:</strong> <code>sistema@lepta.com.br</code>.
+                  <div style={{ marginTop: '4px', fontSize: '0.82rem', color: '#cbd5e1' }}>
+                    Para que o aplicativo possa disparar e-mails corporativos, solicite a um Administrador Geral no Azure Portal (<em>Registros de Aplicativo &gt; LeptaSys - Mail Sender &gt; Permissões de APIs</em>) para clicar no botão <strong>"Conceder consentimento do administrador para Lepta"</strong> na permissão <code>Mail.Send</code>.
+                  </div>
+                </div>
+              </div>
+
               <div className="ec-form-grid">
                 <div className="ec-form-group">
                   <label>
-                    <Server size={16} color="#38bdf8" /> Servidor SMTP (Host)
-                  </label>
-                  <input
-                    type="text"
-                    className="ec-input"
-                    value={host}
-                    onChange={e => setHost(e.target.value)}
-                    placeholder="smtp.office365.com"
-                    required
-                  />
-                </div>
-
-                <div className="ec-form-group">
-                  <label>
-                    <Server size={16} color="#38bdf8" /> Porta e Segurança
-                  </label>
-                  <div style={{ display: 'flex', gap: '10px' }}>
-                    <input
-                      type="number"
-                      className="ec-input"
-                      value={port}
-                      onChange={e => setPort(Number(e.target.value))}
-                      style={{ width: '100px' }}
-                      required
-                    />
-                    <select
-                      className="ec-input"
-                      value={secure ? 'SSL' : 'STARTTLS'}
-                      onChange={e => setSecure(e.target.value === 'SSL')}
-                      style={{ flex: 1 }}
-                    >
-                      <option value="STARTTLS">STARTTLS (Porta 587 - Padrão M365)</option>
-                      <option value="SSL">SSL / TLS Direto (Porta 465)</option>
-                    </select>
-                  </div>
-                </div>
-
-                <div className="ec-form-group">
-                  <label>
-                    <Mail size={16} color="#38bdf8" /> Usuário / E-mail Remetente
+                    <Mail size={16} color="#38bdf8" /> E-mail Remetente Oficial (Caixa Postal)
                   </label>
                   <input
                     type="email"
                     className="ec-input"
-                    value={user}
-                    onChange={e => {
-                      setUser(e.target.value);
-                      if (!fromEmail || fromEmail === user) setFromEmail(e.target.value);
-                    }}
-                    placeholder="webmaster@lepta.com.br"
+                    value={fromEmail}
+                    onChange={e => setFromEmail(e.target.value)}
+                    placeholder="sistema@lepta.com.br"
                     required
                   />
+                  <span style={{ fontSize: '0.78rem', color: '#94a3b8' }}>
+                    Caixa postal corporativa licenciada no Microsoft 365.
+                  </span>
                 </div>
 
                 <div className="ec-form-group">
                   <label>
-                    <Lock size={16} color="#38bdf8" /> Senha do Remetente (Criptografada)
+                    <Globe size={16} color="#38bdf8" /> Nome de Exibição do Remetente
                   </label>
-                  <div className="ec-password-wrapper">
-                    <input
-                      type={showPassword ? 'text' : 'password'}
-                      className="ec-input"
-                      value={password}
-                      onChange={e => setPassword(e.target.value)}
-                      placeholder={hasPasswordSaved ? '••••••••••••• (Senha configurada)' : 'Digite a senha da conta'}
-                    />
-                    <button
-                      type="button"
-                      className="ec-password-toggle"
-                      onClick={() => setShowPassword(!showPassword)}
-                      title={showPassword ? 'Ocultar senha' : 'Ver senha'}
-                    >
-                      {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
-                    </button>
-                  </div>
-                  {hasPasswordSaved && !password && (
-                    <span className="ec-security-badge">
-                      <ShieldCheck size={13} /> Protegida com criptografia AES-256 no banco
-                    </span>
-                  )}
-                </div>
-
-                <div className="ec-form-group">
-                  <label>Nome de Exibição do Remetente</label>
                   <input
                     type="text"
                     className="ec-input"
@@ -677,10 +656,71 @@ export const EmailConfig: React.FC = () => {
                     placeholder="LeptaSys"
                     required
                   />
+                  <span style={{ fontSize: '0.78rem', color: '#94a3b8' }}>
+                    Nome que aparece na caixa de entrada dos destinatários.
+                  </span>
                 </div>
 
                 <div className="ec-form-group">
-                  <label>E-mail de Destino do Financeiro (Pagamentos)</label>
+                  <label>
+                    <Server size={16} color="#38bdf8" /> ID do Diretório (Locatário / Tenant ID)
+                  </label>
+                  <input
+                    type="text"
+                    className="ec-input"
+                    value={azureTenantId}
+                    onChange={e => setAzureTenantId(e.target.value)}
+                    placeholder="f376d8b7-1a55-4cfb-a8e1-3e2799e0918e"
+                    required
+                  />
+                </div>
+
+                <div className="ec-form-group">
+                  <label>
+                    <Key size={16} color="#38bdf8" /> ID do Aplicativo (Cliente / Client ID)
+                  </label>
+                  <input
+                    type="text"
+                    className="ec-input"
+                    value={azureClientId}
+                    onChange={e => setAzureClientId(e.target.value)}
+                    placeholder="27281728-09ae-4d31-9fa6-3c93f748e78b"
+                    required
+                  />
+                </div>
+
+                <div className="ec-form-group full-width">
+                  <label>
+                    <Lock size={16} color="#38bdf8" /> Valor do Segredo do Cliente (Client Secret)
+                  </label>
+                  <div className="ec-password-wrapper">
+                    <input
+                      type={showAzureSecret ? 'text' : 'password'}
+                      className="ec-input"
+                      value={azureClientSecret}
+                      onChange={e => setAzureClientSecret(e.target.value)}
+                      placeholder={hasAzureSecretSaved ? '•••••••••••••••••••••••••••••••••••• (Segredo configurado e protegido)' : 'Cole o segredo do cliente da Azure'}
+                    />
+                    <button
+                      type="button"
+                      className="ec-password-toggle"
+                      onClick={() => setShowAzureSecret(!showAzureSecret)}
+                      title={showAzureSecret ? 'Ocultar segredo' : 'Ver segredo'}
+                    >
+                      {showAzureSecret ? <EyeOff size={18} /> : <Eye size={18} />}
+                    </button>
+                  </div>
+                  {hasAzureSecretSaved && !azureClientSecret && (
+                    <span className="ec-security-badge">
+                      <ShieldCheck size={13} /> Segredo do Entra ID protegido com criptografia AES-256 no banco
+                    </span>
+                  )}
+                </div>
+
+                <div className="ec-form-group">
+                  <label>
+                    <Mail size={16} color="#38bdf8" /> E-mail Padrão para Testes e Pagamentos
+                  </label>
                   <input
                     type="email"
                     className="ec-input"
@@ -691,9 +731,9 @@ export const EmailConfig: React.FC = () => {
                   />
                 </div>
 
-                <div className="ec-form-group full-width">
+                <div className="ec-form-group">
                   <label>
-                    <Globe size={16} color="#38bdf8" /> URL Base do Sistema (para os links nos e-mails)
+                    <Globe size={16} color="#38bdf8" /> URL Base do Sistema
                   </label>
                   <input
                     type="url"
@@ -703,21 +743,19 @@ export const EmailConfig: React.FC = () => {
                     placeholder="https://lepta.com.br"
                     required
                   />
-                  <span style={{ fontSize: '0.8rem', color: '#94a3b8', marginTop: '4px' }}>
-                    Os botões de acesso direto enviados nos e-mails direcionarão os usuários para esta URL.
-                  </span>
                 </div>
               </div>
 
+              {/* Ações / Botões */}
               <div className="ec-actions">
                 <button
                   type="button"
                   className="ec-btn-test"
                   onClick={handleTestConnection}
-                  disabled={testing || saving || (!password && !hasPasswordSaved)}
+                  disabled={testing || saving || (!azureClientSecret && !hasAzureSecretSaved)}
                 >
                   {testing ? <RefreshCw size={18} className="pwc-spinner" /> : <Send size={18} />}
-                  {testing ? 'Testando Conexão...' : 'Testar Conexão / Enviar E-mail de Teste'}
+                  {testing ? 'Testando Conexão...' : 'Testar Conexão / Disparar E-mail de Teste'}
                 </button>
 
                 <button
@@ -726,7 +764,7 @@ export const EmailConfig: React.FC = () => {
                   disabled={saving || testing}
                 >
                   {saving ? <RefreshCw size={18} className="pwc-spinner" /> : <Check size={18} />}
-                  {saving ? 'Salvando...' : 'Salvar Remetente'}
+                  {saving ? 'Salvando...' : 'Salvar Configurações do Remetente'}
                 </button>
               </div>
             </form>
@@ -736,238 +774,248 @@ export const EmailConfig: React.FC = () => {
 
       {/* --- ABA 2: DESTINATÁRIOS DO FLUXO FINANCEIRO --- */}
       {activeTab === 'destinatarios' && (
-        <div className="ec-tab-content fade-in">
-          {fluxoSuccess && (
-            <div className="ec-alert success">
-              <CheckCircle2 size={20} />
-              <div>{fluxoSuccess}</div>
+        <TabErrorBoundary>
+          <div className="ec-tab-content fade-in">
+            {fluxoSuccess && (
+              <div className="ec-alert success">
+                <CheckCircle2 size={20} />
+                <div>{fluxoSuccess}</div>
+              </div>
+            )}
+
+            {fluxoError && (
+              <div className="ec-alert error">
+                <AlertCircle size={20} />
+                <div>{fluxoError}</div>
+              </div>
+            )}
+
+            <div className="ec-top-save-bar">
+              <div>
+                <h2 className="ec-section-title">Destinatários do Ciclo de Solicitações</h2>
+                <p className="ec-section-subtitle">
+                  Adicione usuários cadastrados no LeptaSys ou insira qualquer e-mail manual para ser notificado em cada etapa.
+                </p>
+              </div>
+              <button
+                type="button"
+                className="ec-btn-save primary"
+                onClick={handleSaveFluxo}
+                disabled={savingFluxo}
+              >
+                {savingFluxo ? <RefreshCw size={18} className="pwc-spinner" /> : <Check size={18} />}
+                {savingFluxo ? 'Salvando...' : 'Salvar Todas as Configurações'}
+              </button>
             </div>
-          )}
 
-          {fluxoError && (
-            <div className="ec-alert error">
-              <AlertCircle size={20} />
-              <div>{fluxoError}</div>
-            </div>
-          )}
+            <div className="ec-fluxo-groups">
+              {etapasAgrupadas.map(faseObj => (
+                <div key={faseObj.fase} className="ec-fase-section">
+                  <div className="ec-fase-header">
+                    <h3 className="ec-fase-title">{faseObj.fase}</h3>
+                  </div>
 
-          <div className="ec-top-save-bar">
-            <div>
-              <h2 className="ec-section-title">Destinatários do Ciclo de Solicitações</h2>
-              <p className="ec-section-subtitle">
-                Adicione usuários cadastrados no LeptaSys ou insira qualquer e-mail manual para ser notificado em cada etapa.
-              </p>
-            </div>
-            <button
-              type="button"
-              className="ec-btn-save primary"
-              onClick={handleSaveFluxo}
-              disabled={savingFluxo}
-            >
-              {savingFluxo ? <RefreshCw size={18} className="pwc-spinner" /> : <Check size={18} />}
-              {savingFluxo ? 'Salvando...' : 'Salvar Todas as Configurações'}
-            </button>
-          </div>
+                  <div className="ec-eventos-grid">
+                    {faseObj.eventos.map(eventoKey => {
+                      const meta = EVENTOS_METADATA[eventoKey] || {
+                        titulo: eventoKey,
+                        descricao: '',
+                        badge: 'Evento',
+                        badgeClass: 'badge-sky',
+                        icon: Mail
+                      };
+                      const IconComponent = meta.icon;
+                      const foundConfig = fluxoEventos.find(ev => ev && ev.evento === eventoKey);
+                      const eventoConfig = {
+                        evento: eventoKey,
+                        destinatarios: Array.isArray(foundConfig?.destinatarios)
+                          ? foundConfig.destinatarios.map(safeNormalizeDestinatario).filter((d): d is DestinatarioItem => d !== null)
+                          : [],
+                        notificar_solicitante: foundConfig?.notificar_solicitante !== false
+                      };
 
-          <div className="ec-fluxo-groups">
-            {etapasAgrupadas.map(faseObj => (
-              <div key={faseObj.fase} className="ec-fase-section">
-                <div className="ec-fase-header">
-                  <h3 className="ec-fase-title">{faseObj.fase}</h3>
-                </div>
+                      const selectedUserId = selectedUserPerEvento[eventoKey] || '';
+                      const manualEmail = manualEmailPerEvento[eventoKey] || '';
 
-                <div className="ec-eventos-grid">
-                  {faseObj.eventos.map(eventoKey => {
-                    const meta = EVENTOS_METADATA[eventoKey] || {
-                      titulo: eventoKey,
-                      descricao: '',
-                      badge: 'Evento',
-                      badgeClass: 'badge-sky',
-                      icon: Mail
-                    };
-                    const IconComponent = meta.icon;
-                    const eventoConfig = fluxoEventos.find(ev => ev.evento === eventoKey) || {
-                      evento: eventoKey,
-                      destinatarios: [],
-                      notificar_solicitante: true
-                    };
-
-                    const selectedUserId = selectedUserPerEvento[eventoKey] || '';
-                    const manualEmail = manualEmailPerEvento[eventoKey] || '';
-
-                    return (
-                      <div key={eventoKey} className="ec-evento-card">
-                        <div className="ec-evento-header">
-                          <div className="ec-evento-title-area">
-                            <span className="ec-evento-icon-wrap">
-                              <IconComponent size={20} />
-                            </span>
-                            <div>
-                              <h4 className="ec-evento-title">{meta.titulo}</h4>
-                              <p className="ec-evento-desc">{meta.descricao}</p>
+                      return (
+                        <div key={eventoKey} className="ec-evento-card">
+                          <div className="ec-evento-header">
+                            <div className="ec-evento-title-area">
+                              <span className="ec-evento-icon-wrap">
+                                <IconComponent size={20} />
+                              </span>
+                              <div>
+                                <h4 className="ec-evento-title">{meta.titulo}</h4>
+                                <p className="ec-evento-desc">{meta.descricao}</p>
+                              </div>
                             </div>
-                          </div>
-                          <span className={`ec-badge-status ${meta.badgeClass}`}>{meta.badge}</span>
-                        </div>
-
-                        {/* Toggle Notificar Solicitante */}
-                        <div className="ec-solicitante-toggle">
-                          <label className="ec-toggle-label">
-                            <input
-                              type="checkbox"
-                              checked={eventoConfig.notificar_solicitante}
-                              onChange={() => handleToggleNotificarSolicitante(eventoKey)}
-                            />
-                            <span>Notificar também o solicitante da requisição</span>
-                          </label>
-                        </div>
-
-                        {/* Chips / Lista de Destinatários Configurados */}
-                        <div className="ec-destinatarios-box">
-                          <div className="ec-destinatarios-header">
-                            <span className="ec-dest-count">
-                              Destinatários cadastrados ({eventoConfig.destinatarios.length}):
-                            </span>
+                            <span className={`ec-badge-status ${meta.badgeClass}`}>{meta.badge}</span>
                           </div>
 
-                          {eventoConfig.destinatarios.length === 0 ? (
-                            <div className="ec-empty-destinatarios">
-                              Nenhum e-mail ou usuário específico adicionado.
-                              {eventoConfig.notificar_solicitante && (
-                                <span style={{ display: 'block', color: '#38bdf8', marginTop: '2px' }}>
-                                  (O solicitante receberá a notificação)
-                                </span>
-                              )}
-                            </div>
-                          ) : (
-                            <div className="ec-chips-container">
-                              {eventoConfig.destinatarios.map(dest => (
-                                <div key={dest.email} className={`ec-chip ${dest.type === 'USER' ? 'chip-user' : 'chip-custom'}`}>
-                                  <span className="ec-chip-icon">
-                                    {dest.type === 'USER' ? <Users size={12} /> : <Mail size={12} />}
-                                  </span>
-                                  <span className="ec-chip-text" title={dest.email}>
-                                    <strong>{dest.name || dest.email.split('@')[0]}</strong>
-                                    {dest.type === 'USER' && <small> ({dest.email})</small>}
-                                    {dest.type === 'CUSTOM' && <small> {dest.email}</small>}
-                                  </span>
-                                  <button
-                                    type="button"
-                                    className="ec-chip-remove"
-                                    onClick={() => handleRemoveDestinatario(eventoKey, dest.email)}
-                                    title="Remover destinatário"
-                                  >
-                                    &times;
-                                  </button>
-                                </div>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-
-                        {/* Painel para Adicionar Novos Destinatários */}
-                        <div className="ec-add-destinatario-panel">
-                          {/* Opção 1: Selecionar Usuário do Sistema */}
-                          <div className="ec-add-group">
-                            <label className="ec-add-label">
-                              <UserPlus size={14} color="#38bdf8" /> Adicionar Usuário do Sistema:
+                          {/* Toggle Notificar Solicitante */}
+                          <div className="ec-solicitante-toggle">
+                            <label className="ec-toggle-label">
+                              <input
+                                type="checkbox"
+                                checked={eventoConfig.notificar_solicitante}
+                                onChange={() => handleToggleNotificarSolicitante(eventoKey)}
+                              />
+                              <span>Notificar também o solicitante da requisição</span>
                             </label>
-                            <div className="ec-add-row">
-                              <select
-                                className="ec-select"
-                                value={selectedUserId}
-                                onChange={e =>
-                                  setSelectedUserPerEvento(prev => ({
-                                    ...prev,
-                                    [eventoKey]: e.target.value
-                                  }))
-                                }
-                              >
-                                <option value="">Selecione um usuário...</option>
-                                {systemUsers.map(userItem => {
-                                  const alreadyAdded = eventoConfig.destinatarios.some(
-                                    d => d.email.toLowerCase() === userItem.email.toLowerCase()
-                                  );
+                          </div>
+
+                          {/* Chips / Lista de Destinatários Configurados */}
+                          <div className="ec-destinatarios-box">
+                            <div className="ec-destinatarios-header">
+                              <span className="ec-dest-count">
+                                Destinatários cadastrados ({eventoConfig.destinatarios.length}):
+                              </span>
+                            </div>
+
+                            {eventoConfig.destinatarios.length === 0 ? (
+                              <div className="ec-empty-destinatarios">
+                                Nenhum e-mail ou usuário específico adicionado.
+                                {eventoConfig.notificar_solicitante && (
+                                  <span style={{ display: 'block', color: '#38bdf8', marginTop: '2px' }}>
+                                    (O solicitante receberá a notificação)
+                                  </span>
+                                )}
+                              </div>
+                            ) : (
+                              <div className="ec-chips-container">
+                                {eventoConfig.destinatarios.map((dest, idx) => {
+                                  const keyVal = `${dest.email}-${idx}`;
                                   return (
-                                    <option
-                                      key={userItem.id}
-                                      value={userItem.id}
-                                      disabled={alreadyAdded}
-                                    >
-                                      {userItem.username} ({userItem.email}) {alreadyAdded ? '— Já adicionado' : ''}
-                                    </option>
+                                    <div key={keyVal} className={`ec-chip ${dest.type === 'USER' ? 'chip-user' : 'chip-custom'}`}>
+                                      <span className="ec-chip-icon">
+                                        {dest.type === 'USER' ? <Users size={12} /> : <Mail size={12} />}
+                                      </span>
+                                      <span className="ec-chip-text" title={dest.email}>
+                                        <strong>{dest.name || dest.email.split('@')[0]}</strong>
+                                        {dest.type === 'USER' && <small> ({dest.email})</small>}
+                                        {dest.type === 'CUSTOM' && <small> {dest.email}</small>}
+                                      </span>
+                                      <button
+                                        type="button"
+                                        className="ec-chip-remove"
+                                        onClick={() => handleRemoveDestinatario(eventoKey, dest.email)}
+                                        title="Remover destinatário"
+                                      >
+                                        &times;
+                                      </button>
+                                    </div>
                                   );
                                 })}
-                              </select>
-                              <button
-                                type="button"
-                                className="ec-btn-add"
-                                onClick={() => handleAddSystemUser(eventoKey)}
-                                disabled={!selectedUserId}
-                                title="Adicionar usuário selecionado"
-                              >
-                                <Plus size={16} /> Adicionar
-                              </button>
-                            </div>
+                              </div>
+                            )}
                           </div>
 
-                          {/* Opção 2: Inserir E-mail Manual */}
-                          <div className="ec-add-group" style={{ marginTop: '10px' }}>
-                            <label className="ec-add-label">
-                              <Mail size={14} color="#38bdf8" /> Ou Inserir E-mail Manualmente:
-                            </label>
-                            <div className="ec-add-row">
-                              <input
-                                type="email"
-                                className="ec-input-small"
-                                placeholder="exemplo@lepta.com.br"
-                                value={manualEmail}
-                                onChange={e =>
-                                  setManualEmailPerEvento(prev => ({
-                                    ...prev,
-                                    [eventoKey]: e.target.value
-                                  }))
-                                }
-                                onKeyDown={e => {
-                                  if (e.key === 'Enter') {
-                                    e.preventDefault();
-                                    handleAddManualEmail(eventoKey);
+                          {/* Painel para Adicionar Novos Destinatários */}
+                          <div className="ec-add-destinatario-panel">
+                            {/* Opção 1: Selecionar Usuário do Sistema */}
+                            <div className="ec-add-group">
+                              <label className="ec-add-label">
+                                <UserPlus size={14} color="#38bdf8" /> Adicionar Usuário do Sistema:
+                              </label>
+                              <div className="ec-add-row">
+                                <select
+                                  className="ec-select"
+                                  value={selectedUserId}
+                                  onChange={e =>
+                                    setSelectedUserPerEvento(prev => ({
+                                      ...prev,
+                                      [eventoKey]: e.target.value
+                                    }))
                                   }
-                                }}
-                              />
-                              <button
-                                type="button"
-                                className="ec-btn-add outline"
-                                onClick={() => handleAddManualEmail(eventoKey)}
-                                disabled={!manualEmail.trim()}
-                                title="Adicionar e-mail avulso"
-                              >
-                                <Plus size={16} /> Inserir
-                              </button>
+                                >
+                                  <option value="">Selecione um usuário...</option>
+                                  {systemUsers.map(userItem => {
+                                    if (!userItem || !userItem.email) return null;
+                                    const userEmailLower = String(userItem.email).trim().toLowerCase();
+                                    const alreadyAdded = eventoConfig.destinatarios.some(
+                                      d => d.email.toLowerCase() === userEmailLower
+                                    );
+                                    return (
+                                      <option
+                                        key={userItem.id}
+                                        value={userItem.id}
+                                        disabled={alreadyAdded}
+                                      >
+                                        {userItem.username} ({userItem.email}) {alreadyAdded ? '— Já adicionado' : ''}
+                                      </option>
+                                    );
+                                  })}
+                                </select>
+                                <button
+                                  type="button"
+                                  className="ec-btn-add"
+                                  onClick={() => handleAddSystemUser(eventoKey)}
+                                  disabled={!selectedUserId}
+                                  title="Adicionar usuário selecionado"
+                                >
+                                  <Plus size={16} /> Adicionar
+                                </button>
+                              </div>
+                            </div>
+
+                            {/* Opção 2: Inserir E-mail Manual */}
+                            <div className="ec-add-group" style={{ marginTop: '10px' }}>
+                              <label className="ec-add-label">
+                                <Mail size={14} color="#38bdf8" /> Ou Inserir E-mail Manualmente:
+                              </label>
+                              <div className="ec-add-row">
+                                <input
+                                  type="email"
+                                  className="ec-input-small"
+                                  placeholder="exemplo@lepta.com.br"
+                                  value={manualEmail}
+                                  onChange={e =>
+                                    setManualEmailPerEvento(prev => ({
+                                      ...prev,
+                                      [eventoKey]: e.target.value
+                                    }))
+                                  }
+                                  onKeyDown={e => {
+                                    if (e.key === 'Enter') {
+                                      e.preventDefault();
+                                      handleAddManualEmail(eventoKey);
+                                    }
+                                  }}
+                                />
+                                <button
+                                  type="button"
+                                  className="ec-btn-add outline"
+                                  onClick={() => handleAddManualEmail(eventoKey)}
+                                  disabled={!manualEmail.trim()}
+                                  title="Adicionar e-mail avulso"
+                                >
+                                  <Plus size={16} /> Inserir
+                                </button>
+                              </div>
                             </div>
                           </div>
                         </div>
-                      </div>
-                    );
-                  })}
+                      );
+                    })}
+                  </div>
                 </div>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
 
-          {/* Botão Salvar Fixo no Rodapé */}
-          <div className="ec-footer-save-bar">
-            <button
-              type="button"
-              className="ec-btn-save primary lg"
-              onClick={handleSaveFluxo}
-              disabled={savingFluxo}
-            >
-              {savingFluxo ? <RefreshCw size={20} className="pwc-spinner" /> : <Check size={20} />}
-              {savingFluxo ? 'Salvando Destinatários...' : 'Salvar Destinatários do Fluxo'}
-            </button>
+            {/* Botão Salvar Fixo no Rodapé */}
+            <div className="ec-footer-save-bar">
+              <button
+                type="button"
+                className="ec-btn-save primary lg"
+                onClick={handleSaveFluxo}
+                disabled={savingFluxo}
+              >
+                {savingFluxo ? <RefreshCw size={20} className="pwc-spinner" /> : <Check size={20} />}
+                {savingFluxo ? 'Salvando Destinatários...' : 'Salvar Destinatários do Fluxo'}
+              </button>
+            </div>
           </div>
-        </div>
+        </TabErrorBoundary>
       )}
     </div>
   );

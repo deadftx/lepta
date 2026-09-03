@@ -52,6 +52,10 @@ export function ensureEmailConfigTable(db) {
   db.exec(`
     CREATE TABLE IF NOT EXISTS configuracao_email (
       id TEXT PRIMARY KEY,
+      auth_type TEXT NOT NULL DEFAULT 'GRAPH', -- 'GRAPH' ou 'SMTP'
+      azure_tenant_id TEXT DEFAULT 'f376d8b7-1a55-4cfb-a8e1-3e2799e0918e',
+      azure_client_id TEXT DEFAULT '27281728-09ae-4d31-9fa6-3c93f748e78b',
+      azure_client_secret_encrypted TEXT,
       host TEXT NOT NULL DEFAULT 'smtp.office365.com',
       port INTEGER NOT NULL DEFAULT 587,
       secure INTEGER NOT NULL DEFAULT 0,
@@ -72,6 +76,17 @@ export function ensureEmailConfigTable(db) {
       updated_by TEXT
     );
   `);
+
+  // Migração automática de colunas para suportar Entra ID / Microsoft Graph
+  try {
+    const cols = db.prepare('PRAGMA table_info(configuracao_email)').all().map(c => c.name.toLowerCase());
+    if (!cols.includes('auth_type')) db.exec("ALTER TABLE configuracao_email ADD COLUMN auth_type TEXT DEFAULT 'GRAPH'");
+    if (!cols.includes('azure_tenant_id')) db.exec("ALTER TABLE configuracao_email ADD COLUMN azure_tenant_id TEXT DEFAULT 'f376d8b7-1a55-4cfb-a8e1-3e2799e0918e'");
+    if (!cols.includes('azure_client_id')) db.exec("ALTER TABLE configuracao_email ADD COLUMN azure_client_id TEXT DEFAULT '27281728-09ae-4d31-9fa6-3c93f748e78b'");
+    if (!cols.includes('azure_client_secret_encrypted')) db.exec("ALTER TABLE configuracao_email ADD COLUMN azure_client_secret_encrypted TEXT");
+  } catch (err) {
+    console.warn('Aviso ao migrar colunas de Entra ID em configuracao_email:', err.message);
+  }
 
   // Eventos padrão do fluxo financeiro
   const DEFAULT_EVENTOS = [
@@ -105,31 +120,155 @@ export function ensureEmailConfigTable(db) {
     }
   }
 
-  // Se não existir registro padrão de SMTP, inicializa com os dados do Office 365 e a senha padrão
   const existing = db.prepare(`SELECT * FROM configuracao_email WHERE id = 'default'`).get();
+  const initialAzureSecret = process.env.AZURE_CLIENT_SECRET || '';
+  const encryptedAzureSecret = initialAzureSecret ? encryptPassword(initialAzureSecret) : null;
+
   if (!existing) {
     const initialPass = process.env.SMTP_PASS || process.env.LEPTA_SMTP_PASS || 'Lepta@2026';
     const encryptedPass = encryptPassword(initialPass);
     db.prepare(`
       INSERT INTO configuracao_email (
-        id, host, port, secure, user, pass_encrypted, from_name, from_email,
+        id, auth_type, azure_tenant_id, azure_client_id, azure_client_secret_encrypted,
+        host, port, secure, user, pass_encrypted, from_name, from_email,
         to_finance_email, app_base_url, updated_by, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       'default',
+      'GRAPH',
+      'f376d8b7-1a55-4cfb-a8e1-3e2799e0918e',
+      '27281728-09ae-4d31-9fa6-3c93f748e78b',
+      encryptedAzureSecret,
       process.env.SMTP_HOST || 'smtp.office365.com',
       Number(process.env.SMTP_PORT) || 587,
       process.env.SMTP_SECURE === 'true' ? 1 : 0,
-      process.env.SMTP_USER || 'webmaster@lepta.com.br',
+      'sistema@lepta.com.br',
       encryptedPass,
       'LeptaSys',
-      process.env.SMTP_FROM_EMAIL || 'webmaster@lepta.com.br',
+      'sistema@lepta.com.br',
       process.env.FINANCE_NOTIFICATION_EMAIL || 'pagamentos@lepta.com.br',
       process.env.APP_BASE_URL || 'https://lepta.com.br',
       'sistema',
       new Date().toISOString()
     );
+  } else {
+    // Garante que o remetente padrão seja sistema@lepta.com.br e configure o Entra ID
+    db.prepare(`
+      UPDATE configuracao_email
+      SET auth_type = 'GRAPH',
+          from_email = 'sistema@lepta.com.br',
+          user = 'sistema@lepta.com.br',
+          azure_tenant_id = COALESCE(azure_tenant_id, 'f376d8b7-1a55-4cfb-a8e1-3e2799e0918e'),
+          azure_client_id = COALESCE(azure_client_id, '27281728-09ae-4d31-9fa6-3c93f748e78b'),
+          azure_client_secret_encrypted = COALESCE(azure_client_secret_encrypted, ?)
+      WHERE id = 'default'
+    `).run(encryptedAzureSecret);
   }
+}
+
+/**
+ * Obtém token de aplicativo via Microsoft Entra ID (OAuth2 Client Credentials)
+ */
+export async function getMicrosoftGraphToken(tenantId, clientId, clientSecret) {
+  const tokenEndpoint = `https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/token`;
+  const params = new URLSearchParams();
+  params.append('client_id', clientId);
+  params.append('client_secret', clientSecret);
+  params.append('scope', 'https://graph.microsoft.com/.default');
+  params.append('grant_type', 'client_credentials');
+
+  const res = await fetch(tokenEndpoint, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: params.toString()
+  });
+
+  const data = await res.json();
+  if (!res.ok || !data.access_token) {
+    throw new Error(data.error_description || data.error || 'Falha ao autenticar com Microsoft Entra ID.');
+  }
+  return data.access_token;
+}
+
+/**
+ * Dispara e-mail utilizando a API oficial Microsoft Graph (Exchange Online)
+ */
+export async function sendEmailViaMicrosoftGraph({
+  tenantId,
+  clientId,
+  clientSecret,
+  fromEmail,
+  toEmails,
+  subject,
+  htmlContent,
+  attachments = []
+}) {
+  const accessToken = await getMicrosoftGraphToken(tenantId, clientId, clientSecret);
+
+  const graphAttachments = [];
+  if (attachments && attachments.length > 0) {
+    for (const a of attachments) {
+      if (a.path && fs.existsSync(a.path)) {
+        try {
+          const fileBytes = fs.readFileSync(a.path);
+          graphAttachments.push({
+            '@odata.type': '#microsoft.graph.fileAttachment',
+            name: a.filename || path.basename(a.path),
+            contentType: a.contentType || 'application/octet-stream',
+            contentBytes: fileBytes.toString('base64')
+          });
+        } catch (readErr) {
+          console.warn('Aviso ao ler anexo para Graph API:', readErr.message);
+        }
+      }
+    }
+  }
+
+  const messagePayload = {
+    message: {
+      subject,
+      body: {
+        contentType: 'HTML',
+        content: htmlContent
+      },
+      toRecipients: toEmails.map(e => ({
+        emailAddress: { address: e }
+      })),
+      ...(graphAttachments.length > 0 ? { attachments: graphAttachments } : {})
+    },
+    saveToSentItems: true
+  };
+
+  const sendMailUrl = `https://graph.microsoft.com/v1.0/users/${encodeURIComponent(fromEmail)}/sendMail`;
+  const res = await fetch(sendMailUrl, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify(messagePayload)
+  });
+
+  if (!res.ok) {
+    let errorDetail = '';
+    try {
+      const errJson = await res.json();
+      errorDetail = errJson?.error?.message || JSON.stringify(errJson);
+    } catch {
+      errorDetail = await res.text();
+    }
+
+    if (res.status === 403 || errorDetail.includes('Authorization_RequestDenied') || errorDetail.includes('Access is denied')) {
+      throw new Error(`Permissão Mail.Send pendente de consentimento: O aplicativo no Entra ID necessita que um Administrador Geral clique no botão "Conceder consentimento do administrador para Lepta" no Azure.`);
+    }
+    if (res.status === 404 || errorDetail.includes('ResourceNotFound') || errorDetail.includes('MailboxNotEnabledForRESTAPI')) {
+      throw new Error(`A caixa postal remetente "${fromEmail}" não foi encontrada no Microsoft 365 ou não possui licença do Exchange ativa.`);
+    }
+
+    throw new Error(`Erro Microsoft Graph (${res.status}): ${errorDetail}`);
+  }
+
+  return { success: true, messageId: `graph-${Date.now()}` };
 }
 
 /**
@@ -146,18 +285,29 @@ export function getActiveEmailConfig(db) {
     console.warn('Aviso ao consultar configuracao_email no SQLite:', err.message);
   }
 
+  const authType = dbRow?.auth_type || 'GRAPH';
+  const azureTenantId = dbRow?.azure_tenant_id || 'f376d8b7-1a55-4cfb-a8e1-3e2799e0918e';
+  const azureClientId = dbRow?.azure_client_id || '27281728-09ae-4d31-9fa6-3c93f748e78b';
+  const decryptedAzureSecret = dbRow?.azure_client_secret_encrypted ? decryptPassword(dbRow.azure_client_secret_encrypted) : null;
+  const azureClientSecret = decryptedAzureSecret || process.env.AZURE_CLIENT_SECRET || '';
+
   const host = dbRow?.host || process.env.SMTP_HOST || 'smtp.office365.com';
   const port = Number(dbRow?.port) || Number(process.env.SMTP_PORT) || 587;
   const secure = dbRow ? Boolean(dbRow.secure) : (process.env.SMTP_SECURE === 'true');
-  const user = dbRow?.user || process.env.SMTP_USER || 'webmaster@lepta.com.br';
+  const user = dbRow?.user || process.env.SMTP_USER || 'sistema@lepta.com.br';
   const decryptedPass = dbRow?.pass_encrypted ? decryptPassword(dbRow.pass_encrypted) : null;
   const pass = decryptedPass || process.env.SMTP_PASS || process.env.LEPTA_SMTP_PASS || 'Lepta@2026';
   const fromName = dbRow?.from_name || 'LeptaSys';
-  const fromEmail = dbRow?.from_email || user;
+  const fromEmail = dbRow?.from_email || user || 'sistema@lepta.com.br';
   const toFinance = dbRow?.to_finance_email || process.env.FINANCE_NOTIFICATION_EMAIL || 'pagamentos@lepta.com.br';
   const appBaseUrl = dbRow?.app_base_url || process.env.APP_BASE_URL || 'https://lepta.com.br';
 
   return {
+    authType,
+    azureTenantId,
+    azureClientId,
+    azureClientSecret,
+    hasAzureSecret: Boolean(azureClientSecret),
     host,
     port,
     secure,
@@ -208,14 +358,58 @@ function formatDate(dateStr) {
 }
 
 /**
- * Testa a conexão SMTP e envio de e-mail de teste
+ * Testa a conexão (Microsoft Graph ou SMTP) e envio de e-mail de teste
  */
 export async function testSmtpConnection(config, testRecipient) {
   try {
+    const targetEmail = testRecipient || config.to || 'pagamentos@lepta.com.br';
+
+    if (config.authType === 'GRAPH') {
+      if (!config.azureClientSecret) {
+        return { success: false, error: 'O segredo do cliente (Client Secret) do Entra ID não foi informado.' };
+      }
+
+      // 1. Testa aquisição do token OAuth2
+      await getMicrosoftGraphToken(config.azureTenantId, config.azureClientId, config.azureClientSecret);
+
+      // 2. Tenta envio pelo Graph API
+      try {
+        await sendEmailViaMicrosoftGraph({
+          tenantId: config.azureTenantId,
+          clientId: config.azureClientId,
+          clientSecret: config.azureClientSecret,
+          fromEmail: config.fromEmail,
+          toEmails: [targetEmail],
+          subject: `[LeptaSys] Teste Microsoft Entra ID - ${new Date().toLocaleTimeString('pt-BR')}`,
+          htmlContent: `
+            <div style="font-family: sans-serif; background: #0f172a; color: #f8fafc; padding: 20px; border-radius: 8px;">
+              <h2 style="color: #38bdf8; margin-top: 0;">✅ Teste Microsoft Entra ID (Graph API) Bem-Sucedido!</h2>
+              <p>O LeptaSys autenticou via OAuth2 com o locatário <strong>${config.azureTenantId}</strong> e disparou este e-mail através da API oficial da Microsoft.</p>
+              <p><strong>Remetente configurado:</strong> ${config.fromEmail}</p>
+              <p><strong>Data/Hora do teste:</strong> ${new Date().toLocaleString('pt-BR')}</p>
+            </div>
+          `
+        });
+
+        return {
+          success: true,
+          message: `E-mail de teste enviado com sucesso via Microsoft Graph para ${targetEmail}!`
+        };
+      } catch (graphErr) {
+        if (graphErr.message.includes('Permissão Mail.Send pendente de consentimento')) {
+          return {
+            success: false,
+            adminConsentPending: true,
+            error: `Autenticação com o Entra ID realizada com sucesso! Porém, a permissão "Mail.Send" ainda necessita do consentimento de administrador no Azure para que o envio seja liberado.`
+          };
+        }
+        throw graphErr;
+      }
+    }
+
     const transporter = createTransporter(config);
     await transporter.verify();
 
-    const targetEmail = testRecipient || config.to || 'pagamentos@lepta.com.br';
     const info = await transporter.sendMail({
       from: config.from,
       to: targetEmail,
@@ -232,7 +426,7 @@ export async function testSmtpConnection(config, testRecipient) {
 
     return { success: true, message: `E-mail de teste enviado com sucesso para ${targetEmail}!`, messageId: info.messageId };
   } catch (error) {
-    console.error('❌ [EmailService] Erro no teste SMTP:', error.message);
+    console.error('❌ [EmailService] Erro no teste de e-mail:', error.message);
     return { success: false, error: error.message };
   }
 }
@@ -244,13 +438,12 @@ export async function sendPurchaseApprovalEmail({ db, requisicao, itens = [], an
   try {
     const config = getActiveEmailConfig(db);
 
-    if (!config.pass) {
+    if (config.authType === 'SMTP' && !config.pass) {
       console.warn('⚠️ [EmailService] Senha SMTP não configurada. E-mail simulado em log.');
       console.log(`📧 [Simulação E-mail para ${config.to}] Solicitação #${requisicao.numero || requisicao.id} aprovada por ${aprovadorNome}.`);
       return { success: true, simulated: true };
     }
 
-    const t = createTransporter(config);
     const numeroStr = requisicao.numero ? `#${requisicao.numero}` : requisicao.id;
     const valorTotal = (requisicao.valor || 0) * (requisicao.quantidade || 1);
     const viewUrl = `${config.appBaseUrl}/financeiro/reembolsos-despesas?id=${encodeURIComponent(requisicao.id)}`;
@@ -378,6 +571,22 @@ export async function sendPurchaseApprovalEmail({ db, requisicao, itens = [], an
 </html>
     `;
 
+    if (config.authType === 'GRAPH') {
+      const graphRes = await sendEmailViaMicrosoftGraph({
+        tenantId: config.azureTenantId,
+        clientId: config.azureClientId,
+        clientSecret: config.azureClientSecret,
+        fromEmail: config.fromEmail,
+        toEmails: [config.to],
+        subject: `[LeptaSys] Solicitação Aprovada ${numeroStr} - ${requisicao.fornecedor_nome || requisicao.produto_servico} (${formatBrl(valorTotal)})`,
+        htmlContent,
+        attachments: emailAttachments
+      });
+      console.log(`✅ [EmailService] E-mail de aprovação enviado com sucesso via Graph API para ${config.to}.`);
+      return graphRes;
+    }
+
+    const t = createTransporter(config);
     const mailOptions = {
       from: config.from,
       to: config.to,
@@ -440,12 +649,15 @@ export async function sendFinancialWorkflowEmail({
       return { success: true, skipped: 'Nenhum destinatário configurado para este evento' };
     }
 
-    if (!config.pass) {
+    if (config.authType === 'SMTP' && !config.pass) {
       console.warn(`⚠️ [EmailService] Senha SMTP não configurada. E-mail de fluxo (${evento}) simulado para:`, toEmails);
       return { success: true, simulated: true, recipients: toEmails };
     }
+    if (config.authType === 'GRAPH' && !config.azureClientSecret) {
+      console.warn(`⚠️ [EmailService] Segredo Entra ID não configurado. E-mail de fluxo (${evento}) simulado para:`, toEmails);
+      return { success: true, simulated: true, recipients: toEmails };
+    }
 
-    const t = createTransporter(config);
     const numeroStr = requisicao.numero ? `#${requisicao.numero}` : requisicao.id;
     const valorTotal = (requisicao.valor || 0) * (requisicao.quantidade || 1);
     const viewUrl = `${config.appBaseUrl}/financeiro/reembolsos-despesas?id=${encodeURIComponent(requisicao.id)}`;
@@ -660,10 +872,28 @@ export async function sendFinancialWorkflowEmail({
 </html>
     `;
 
+    const subjectStr = `[LeptaSys] ${style.badge} ${numeroStr} - ${requisicao.fornecedor_nome || requisicao.produto_servico} (${formatBrl(valorTotal)})`;
+
+    if (config.authType === 'GRAPH') {
+      const graphRes = await sendEmailViaMicrosoftGraph({
+        tenantId: config.azureTenantId,
+        clientId: config.azureClientId,
+        clientSecret: config.azureClientSecret,
+        fromEmail: config.fromEmail,
+        toEmails,
+        subject: subjectStr,
+        htmlContent,
+        attachments: emailAttachments
+      });
+      console.log(`✅ [EmailService] Notificação [${evento}] enviada com sucesso via Graph API para [${toEmails.join(', ')}].`);
+      return { ...graphRes, recipients: toEmails };
+    }
+
+    const t = createTransporter(config);
     const mailOptions = {
       from: config.from,
       to: toEmails.join(', '),
-      subject: `[LeptaSys] ${style.badge} ${numeroStr} - ${requisicao.fornecedor_nome || requisicao.produto_servico} (${formatBrl(valorTotal)})`,
+      subject: subjectStr,
       html: htmlContent,
       attachments: emailAttachments
     };

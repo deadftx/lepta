@@ -17,6 +17,10 @@ export function registerEmailConfigRoutes(app, {
     try {
       const config = getActiveEmailConfig(db);
       return res.json({
+        auth_type: config.authType,
+        azure_tenant_id: config.azureTenantId,
+        azure_client_id: config.azureClientId,
+        hasAzureSecret: config.hasAzureSecret,
         host: config.host,
         port: config.port,
         secure: config.secure,
@@ -37,13 +41,17 @@ export function registerEmailConfigRoutes(app, {
   app.post('/api/configuracao-email', requireSession, requireMaster, (req, res) => {
     try {
       const {
+        auth_type = 'GRAPH',
+        azure_tenant_id = 'f376d8b7-1a55-4cfb-a8e1-3e2799e0918e',
+        azure_client_id = '27281728-09ae-4d31-9fa6-3c93f748e78b',
+        azure_client_secret,
         host = 'smtp.office365.com',
         port = 587,
         secure = false,
-        user = 'webmaster@lepta.com.br',
+        user = 'sistema@lepta.com.br',
         password,
         from_name = 'LeptaSys',
-        from_email = 'webmaster@lepta.com.br',
+        from_email = 'sistema@lepta.com.br',
         to_finance_email = 'pagamentos@lepta.com.br',
         app_base_url = 'https://lepta.com.br'
       } = req.body || {};
@@ -56,15 +64,25 @@ export function registerEmailConfigRoutes(app, {
         passEncrypted = encryptPassword(password.trim());
       }
 
+      let azureSecretEncrypted = existing?.azure_client_secret_encrypted || null;
+      if (azure_client_secret && azure_client_secret.trim()) {
+        azureSecretEncrypted = encryptPassword(azure_client_secret.trim());
+      }
+
       const now = new Date().toISOString();
       const updatedBy = req.authSession?.userId || 'master';
 
       db.prepare(`
         INSERT INTO configuracao_email (
-          id, host, port, secure, user, pass_encrypted, from_name, from_email,
+          id, auth_type, azure_tenant_id, azure_client_id, azure_client_secret_encrypted,
+          host, port, secure, user, pass_encrypted, from_name, from_email,
           to_finance_email, app_base_url, updated_by, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(id) DO UPDATE SET
+          auth_type = excluded.auth_type,
+          azure_tenant_id = excluded.azure_tenant_id,
+          azure_client_id = excluded.azure_client_id,
+          azure_client_secret_encrypted = COALESCE(excluded.azure_client_secret_encrypted, configuracao_email.azure_client_secret_encrypted),
           host = excluded.host,
           port = excluded.port,
           secure = excluded.secure,
@@ -78,6 +96,10 @@ export function registerEmailConfigRoutes(app, {
           updated_at = excluded.updated_at
       `).run(
         'default',
+        auth_type,
+        azure_tenant_id.trim(),
+        azure_client_id.trim(),
+        azureSecretEncrypted,
         host.trim(),
         Number(port) || 587,
         secure ? 1 : 0,
@@ -105,6 +127,10 @@ export function registerEmailConfigRoutes(app, {
   app.post('/api/configuracao-email/test', requireSession, requireMaster, async (req, res) => {
     try {
       const {
+        auth_type,
+        azure_tenant_id,
+        azure_client_id,
+        azure_client_secret,
         host,
         port,
         secure,
@@ -119,17 +145,27 @@ export function registerEmailConfigRoutes(app, {
       const activeConfig = getActiveEmailConfig(db);
 
       const effectiveConfig = {
+        authType: auth_type || activeConfig.authType || 'GRAPH',
+        azureTenantId: azure_tenant_id || activeConfig.azureTenantId,
+        azureClientId: azure_client_id || activeConfig.azureClientId,
+        azureClientSecret: (azure_client_secret && azure_client_secret.trim()) ? azure_client_secret.trim() : activeConfig.azureClientSecret,
         host: host || activeConfig.host,
         port: Number(port) || activeConfig.port,
         secure: secure !== undefined ? Boolean(secure) : activeConfig.secure,
         user: user || activeConfig.user,
         pass: (password && password.trim()) ? password.trim() : activeConfig.pass,
+        fromName: from_name || activeConfig.fromName,
+        fromEmail: from_email || activeConfig.fromEmail,
         from: `"${from_name || activeConfig.fromName}" <${from_email || activeConfig.fromEmail}>`,
         to: test_recipient || activeConfig.to
       };
 
-      if (!effectiveConfig.pass) {
+      if (effectiveConfig.authType === 'SMTP' && !effectiveConfig.pass) {
         return res.status(400).json({ success: false, error: 'A senha do e-mail não foi informada nem configurada.' });
+      }
+
+      if (effectiveConfig.authType === 'GRAPH' && !effectiveConfig.azureClientSecret) {
+        return res.status(400).json({ success: false, error: 'O segredo do cliente (Client Secret) do Entra ID não foi informado.' });
       }
 
       const result = await testSmtpConnection(effectiveConfig, test_recipient);
