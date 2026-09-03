@@ -13,7 +13,9 @@ import {
   X,
   UserCheck,
   FileSpreadsheet,
-  AlertCircle
+  AlertCircle,
+  Copy,
+  Check
 } from 'lucide-react';
 import { API_BASE_URL, getAuthHeaders } from '../../../config/api';
 import './OperationsAnalysis.css';
@@ -104,6 +106,30 @@ export const OperationsAnalysis: React.FC = () => {
   const [detailTab, setDetailTab] = useState<'inconsistencias' | 'todos_sacados' | 'titulos'>('inconsistencias');
   const [downloadingXlsx, setDownloadingXlsx] = useState<boolean>(false);
   const [downloadingTitulosXlsx, setDownloadingTitulosXlsx] = useState<boolean>(false);
+
+  // Modal de Diagnóstico Bruto da API BitFin
+  const [diagnoseModalOpen, setDiagnoseModalOpen] = useState<boolean>(false);
+  const [diagnoseLoading, setDiagnoseLoading] = useState<boolean>(false);
+  const [diagnoseData, setDiagnoseData] = useState<any>(null);
+  const [diagnoseCopied, setDiagnoseCopied] = useState<boolean>(false);
+
+  const handleDiagnose = async (opId: string) => {
+    setDiagnoseLoading(true);
+    setDiagnoseModalOpen(true);
+    setDiagnoseData(null);
+    setDiagnoseCopied(false);
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/mesa-operacoes/operacoes/${opId}/investigar`, {
+        headers: getAuthHeaders()
+      });
+      const data = await res.json();
+      setDiagnoseData(data);
+    } catch (err: any) {
+      setDiagnoseData({ error: err.message });
+    } finally {
+      setDiagnoseLoading(false);
+    }
+  };
 
   // Busca listagem de operações
   const fetchOperations = useCallback(async () => {
@@ -491,13 +517,35 @@ export const OperationsAnalysis: React.FC = () => {
                 <span className="oa-modal-badge">OPERAÇÃO #{selectedOpId}</span>
                 <h2>Auditoria Cadastral de Sacados</h2>
               </div>
-              <button
-                className="oa-modal-close-btn"
-                onClick={() => setSelectedOpId(null)}
-                title="Fechar"
-              >
-                <X size={20} />
-              </button>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <button
+                  type="button"
+                  onClick={() => handleDiagnose(selectedOpId)}
+                  title="Investigar chamadas brutas na API BitFin para esta operação"
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    background: 'rgba(59, 130, 246, 0.15)',
+                    border: '1px solid rgba(59, 130, 246, 0.4)',
+                    color: '#60a5fa',
+                    borderRadius: '6px',
+                    padding: '6px 12px',
+                    fontSize: '12px',
+                    fontWeight: 600,
+                    cursor: 'pointer'
+                  }}
+                >
+                  <Search size={14} /> Investigar API
+                </button>
+                <button
+                  className="oa-modal-close-btn"
+                  onClick={() => setSelectedOpId(null)}
+                  title="Fechar"
+                >
+                  <X size={20} />
+                </button>
+              </div>
             </div>
 
             {/* Conteúdo do Modal */}
@@ -826,6 +874,93 @@ export const OperationsAnalysis: React.FC = () => {
                 type="button"
                 className="oa-btn secondary"
                 onClick={() => setSelectedOpId(null)}
+              >
+                Fechar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── MODAL DE INVESTIGAÇÃO DA API BITFIN ── */}
+      {diagnoseModalOpen && (
+        <div className="oa-modal-overlay" style={{ zIndex: 1100 }} onClick={() => setDiagnoseModalOpen(false)}>
+          <div className="oa-modal-content glass" style={{ maxWidth: '900px', maxHeight: '85vh' }} onClick={e => e.stopPropagation()}>
+            <div className="oa-modal-header">
+              <div className="oa-modal-title-group">
+                <span className="oa-modal-badge">DIAGNÓSTICO TÉCNICO</span>
+                <h2>Varredura de Endpoints na API BitFin</h2>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (diagnoseData) {
+                      navigator.clipboard.writeText(JSON.stringify(diagnoseData, null, 2));
+                      setDiagnoseCopied(true);
+                      setTimeout(() => setDiagnoseCopied(false), 2000);
+                    }
+                  }}
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    background: 'rgba(16, 185, 129, 0.15)',
+                    border: '1px solid rgba(16, 185, 129, 0.4)',
+                    color: '#34d399',
+                    borderRadius: '6px',
+                    padding: '6px 12px',
+                    fontSize: '12px',
+                    fontWeight: 600,
+                    cursor: 'pointer'
+                  }}
+                >
+                  {diagnoseCopied ? <Check size={14} /> : <Copy size={14} />}
+                  {diagnoseCopied ? 'Copiado!' : 'Copiar Diagnóstico'}
+                </button>
+                <button
+                  className="oa-modal-close-btn"
+                  onClick={() => setDiagnoseModalOpen(false)}
+                  title="Fechar"
+                >
+                  <X size={20} />
+                </button>
+              </div>
+            </div>
+
+            <div className="oa-modal-body" style={{ padding: '20px' }}>
+              {diagnoseLoading ? (
+                <div className="oa-loading-state" style={{ minHeight: '300px' }}>
+                  <RefreshCw size={36} className="oa-spin text-blue" />
+                  <p>Executando testes em múltiplos endpoints da API BitFin para a Operação #{selectedOpId}...</p>
+                </div>
+              ) : (
+                <div>
+                  <p style={{ color: '#94a3b8', fontSize: '13px', marginBottom: '16px' }}>
+                    Esta auditoria consulta em tempo real todos os nós e sub-recursos potenciais da API BitFin para a Operação #{selectedOpId}, verificando onde os títulos e sacados estão localizados.
+                  </p>
+                  <pre style={{
+                    background: '#090d16',
+                    border: '1px solid #1e293b',
+                    borderRadius: '8px',
+                    padding: '16px',
+                    color: '#38bdf8',
+                    fontSize: '12px',
+                    lineHeight: '1.5',
+                    overflowX: 'auto',
+                    maxHeight: '450px'
+                  }}>
+                    {JSON.stringify(diagnoseData, null, 2)}
+                  </pre>
+                </div>
+              )}
+            </div>
+
+            <div className="oa-modal-footer">
+              <button
+                type="button"
+                className="oa-btn secondary"
+                onClick={() => setDiagnoseModalOpen(false)}
               >
                 Fechar
               </button>

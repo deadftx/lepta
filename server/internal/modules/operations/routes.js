@@ -2,7 +2,8 @@ import {
   listOperationsByDate,
   getOperationDetails,
   generateSacadosInconsistentesExcel,
-  generateTitulosInconsistentesExcel
+  generateTitulosInconsistentesExcel,
+  diagnoseBitfinOperation
 } from './operationsService.js';
 
 export function registerOperationsRoutes(app, {
@@ -92,6 +93,11 @@ export function registerOperationsRoutes(app, {
         operacaoId,
         opDirect: {
           keys: opDirect && typeof opDirect === 'object' ? Object.keys(opDirect) : [],
+          totalBruto: opDirect?.totalBruto,
+          totalLiquido: opDirect?.totalLiquido,
+          quantidadeDeTitulos: opDirect?.quantidadeDeTitulos,
+          itensLen: Array.isArray(opDirect?.itens) ? opDirect.itens.length : null,
+          itensSample10: Array.isArray(opDirect?.itens) ? opDirect.itens.slice(0, 10) : null,
           titulosIsArray: Array.isArray(opDirect?.titulos),
           titulosLen: opDirect?.titulos?.length,
           titulosSample: opDirect?.titulos?.[0] || null,
@@ -111,6 +117,20 @@ export function registerOperationsRoutes(app, {
       });
     } catch (err) {
       return res.status(500).json({ error: err.message });
+    }
+  });
+
+  // 2.2 Varredura Investigativa Completa da Operação no BitFin
+  app.get('/api/mesa-operacoes/operacoes/:id/investigar', requireSession, checkAccess, async (req, res) => {
+    try {
+      const token = getToken();
+      if (!token) return res.status(400).json({ error: 'Token UNLTD_API_TOKEN não configurado no servidor.' });
+
+      const operacaoId = req.params.id;
+      const diag = await diagnoseBitfinOperation(operacaoId, token);
+      return res.json({ success: true, ...diag });
+    } catch (err) {
+      return res.status(500).json({ error: `Erro na investigação: ${err.message}` });
     }
   });
 

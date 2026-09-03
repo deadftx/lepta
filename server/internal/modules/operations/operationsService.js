@@ -154,8 +154,13 @@ async function fetchEntityDetails(document, token) {
 /**
  * Extrai dados padronizados de um título vindo de qualquer endpoint do BitFin
  */
-export function extractTituloFields(t, sacadosById = new Map()) {
-  if (!t) return { nome: 'Sacado Não Identificado', documento: '', valor: 0, cep: '', endereco: '', numero: '-' };
+export function extractTituloFields(rawT, sacadosById = new Map()) {
+  if (!rawT) return { id: '-', nome: 'Sacado Não Identificado', documento: '', valor: 0, cep: '', endereco: '', numero: '-', vencimento: '-' };
+
+  // Desencapsula se o título vier de opInfo.itens ({ titulo: { ... }, valorDeAquisicao: ... })
+  const t = (rawT && rawT.titulo && typeof rawT.titulo === 'object')
+    ? { ...rawT.titulo, ...rawT, ...rawT.titulo }
+    : rawT;
 
   // Se o título contiver sacado como referência numérica ou ID:
   let sacadoRef = t.sacado;
@@ -248,9 +253,12 @@ export function extractTituloFields(t, sacadosById = new Map()) {
 
   // 3. Valor de Face / Nominal do Título
   const valor = Number(
+    rawT.valorDeAquisicao ||
+    rawT.valor ||
+    rawT.valorNominal ||
+    t.valorNominal ||
     t.valorFace ||
     t.valor_face ||
-    t.valorNominal ||
     t.valor_nominal_original ||
     t.valor_nominal ||
     t.valorNominalOriginal ||
@@ -282,14 +290,17 @@ export function extractTituloFields(t, sacadosById = new Map()) {
 
   // 4. CEP
   const rawCep = String(
+    sacadoRef?.entidade?.endereco?.cep ||
     sacadoRef?.endereco?.cep ||
     sacadoRef?.endereco?.codigoPostal ||
     sacadoRef?.cep ||
     sacadoRef?.codigoPostal ||
+    t.sacado?.entidade?.endereco?.cep ||
+    t.sacado?.endereco?.cep ||
+    t.devedor?.entidade?.endereco?.cep ||
     t.devedor?.endereco?.cep ||
-    t.devedor?.cep ||
+    t.pagador?.entidade?.endereco?.cep ||
     t.pagador?.endereco?.cep ||
-    t.pagador?.cep ||
     t.endereco?.cep ||
     t.endereco?.codigoPostal ||
     t.cepSacado ||
@@ -302,7 +313,7 @@ export function extractTituloFields(t, sacadosById = new Map()) {
 
   // 5. Endereço
   let endereco = '';
-  const endObj = sacadoRef?.endereco || t.devedor?.endereco || t.pagador?.endereco || t.endereco;
+  const endObj = sacadoRef?.entidade?.endereco || sacadoRef?.endereco || t.sacado?.entidade?.endereco || t.sacado?.endereco || t.devedor?.entidade?.endereco || t.devedor?.endereco || t.pagador?.endereco || t.endereco;
   if (typeof endObj === 'object' && endObj !== null) {
     endereco = `${endObj.logradouro || ''}, ${endObj.numero || 'S/N'} ${endObj.complemento || ''} - ${endObj.bairro || ''}, ${endObj.localidade || endObj.cidade || ''}/${endObj.estado || endObj.uf || ''}`;
   } else if (typeof endObj === 'string') {
@@ -316,17 +327,29 @@ export function extractTituloFields(t, sacadosById = new Map()) {
     t.numeroTitulo ||
     t.documentoNumero ||
     t.numeroDocumento ||
+    rawT.numero ||
     t.seuNumero ||
     t.nossoNumero ||
     t.codigo ||
-    t.id ||
+    '-'
+  ).trim();
+
+  const vencimento = String(
+    t.dataDeVencimento ||
+    t.dataVencimento ||
+    t.vencimento ||
+    rawT.dataDeVencimento ||
+    rawT.vencimento ||
     '-'
   ).trim();
 
   return {
+    id: t.id || rawT.id || numero || '-',
     nome: nome || (documento ? `Sacado ${documento}` : 'Sacado Não Identificado'),
     documento,
     valor,
+    vencimento,
+    rawCep,
     cep: rawCep,
     endereco: endereco || 'Não informado',
     numero
@@ -340,6 +363,10 @@ export function extractOperationValue(op, titulos = []) {
   if (!op) return 0;
   
   const direct = Number(
+    op.totalBruto ||
+    op.totalLiquido ||
+    op.total_bruto ||
+    op.total_liquido ||
     op.valorNominal ||
     op.valorTotalNominal ||
     op.valorDaOperacao ||
@@ -1270,4 +1297,190 @@ export async function generateTitulosInconsistentesExcel({ operacao, sacadosInco
   ];
 
   return await workbook.xlsx.writeBuffer();
+}
+
+/**
+ * Realiza varredura investigativa profunda na API BitFin para localizar os títulos e dados da operação
+ */
+export async function diagnoseBitfinOperation(operacaoId, token) {
+  const API_BASE = 'https://lepta-backend.bit-unltd.com.br';
+  const headers = {
+    'Content-Type': 'application/json',
+    'Authorization': `UNLTD-BackEnd ${token}`
+  };
+
+  const results = {
+    operacaoId,
+    timestamp: new Date().toISOString(),
+    tests: {}
+  };
+
+  // 1. GET /recebiveis/operacoes/:id
+  try {
+    const res = await fetch(`${API_BASE}/recebiveis/operacoes/${operacaoId}`, { headers });
+    const text = await res.text();
+    let json = null;
+    try { json = JSON.parse(text); } catch (_) {}
+    results.tests.getOperacao = {
+      status: res.status,
+      ok: res.ok,
+      keys: json && typeof json === 'object' ? Object.keys(json) : [],
+      titulosLength: Array.isArray(json?.titulos) ? json.titulos.length : null,
+      titulosSample3: Array.isArray(json?.titulos) ? json.titulos.slice(0, 3) : null,
+      sacadosLength: Array.isArray(json?.sacados) ? json.sacados.length : null,
+      sacadosSample3: Array.isArray(json?.sacados) ? json.sacados.slice(0, 3) : null,
+      recebiveisLength: Array.isArray(json?.recebiveis) ? json.recebiveis.length : null,
+      recebiveisSample3: Array.isArray(json?.recebiveis) ? json.recebiveis.slice(0, 3) : null,
+      rawSummary: json ? {
+        id: json.id,
+        numero: json.numero,
+        situacao: json.situacao || json.status,
+        dataDeCadastro: json.dataDeCadastro,
+        valorTotal: json.valorTotal,
+        valorFace: json.valorFace,
+        valorNominal: json.valorNominal,
+        valor: json.valor,
+        total: json.total,
+        quantidadeTitulos: json.quantidadeTitulos
+      } : text.substring(0, 300)
+    };
+  } catch (err) {
+    results.tests.getOperacao = { error: err.message };
+  }
+
+  // 2. GET /recebiveis/operacoes/:id/titulos
+  try {
+    const res = await fetch(`${API_BASE}/recebiveis/operacoes/${operacaoId}/titulos`, { headers });
+    const text = await res.text();
+    let json = null;
+    try { json = JSON.parse(text); } catch (_) {}
+    results.tests.getOperacaoTitulos = {
+      status: res.status,
+      ok: res.ok,
+      isArray: Array.isArray(json),
+      length: Array.isArray(json) ? json.length : null,
+      sample3: Array.isArray(json) ? json.slice(0, 3) : (json || text.substring(0, 300))
+    };
+  } catch (err) {
+    results.tests.getOperacaoTitulos = { error: err.message };
+  }
+
+  // 3. GET /recebiveis/operacoes/:id/recebiveis
+  try {
+    const res = await fetch(`${API_BASE}/recebiveis/operacoes/${operacaoId}/recebiveis`, { headers });
+    const text = await res.text();
+    let json = null;
+    try { json = JSON.parse(text); } catch (_) {}
+    results.tests.getOperacaoRecebiveis = {
+      status: res.status,
+      ok: res.ok,
+      isArray: Array.isArray(json),
+      length: Array.isArray(json) ? json.length : null,
+      sample3: Array.isArray(json) ? json.slice(0, 3) : (json || text.substring(0, 300))
+    };
+  } catch (err) {
+    results.tests.getOperacaoRecebiveis = { error: err.message };
+  }
+
+  // 4. POST /recebiveis/titulos com { operacaoId }
+  try {
+    const res = await fetch(`${API_BASE}/recebiveis/titulos`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ operacaoId: Number(operacaoId) || operacaoId })
+    });
+    const text = await res.text();
+    let json = null;
+    try { json = JSON.parse(text); } catch (_) {}
+    results.tests.postTitulosByOperacaoId = {
+      status: res.status,
+      ok: res.ok,
+      isArray: Array.isArray(json),
+      length: Array.isArray(json) ? json.length : null,
+      sample3: Array.isArray(json) ? json.slice(0, 3) : (json || text.substring(0, 300))
+    };
+  } catch (err) {
+    results.tests.postTitulosByOperacaoId = { error: err.message };
+  }
+
+  // 5. POST /recebiveis/titulos com { operacao: operacaoId }
+  try {
+    const res = await fetch(`${API_BASE}/recebiveis/titulos`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ operacao: Number(operacaoId) || operacaoId })
+    });
+    const text = await res.text();
+    let json = null;
+    try { json = JSON.parse(text); } catch (_) {}
+    results.tests.postTitulosByOperacao = {
+      status: res.status,
+      ok: res.ok,
+      isArray: Array.isArray(json),
+      length: Array.isArray(json) ? json.length : null,
+      sample3: Array.isArray(json) ? json.slice(0, 3) : (json || text.substring(0, 300))
+    };
+  } catch (err) {
+    results.tests.postTitulosByOperacao = { error: err.message };
+  }
+
+  // 6. POST /recebiveis/titulos para datas 2026-09-04 e 2026-09-03
+  for (const dt of ['2026-09-04', '2026-09-03']) {
+    try {
+      const res = await fetch(`${API_BASE}/recebiveis/titulos`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          tipoDeData: 'Cadastro',
+          dataInicial: `${dt}T00:00:00`,
+          dataFinal: `${dt}T23:59:59`
+        })
+      });
+      const text = await res.text();
+      let json = null;
+      try { json = JSON.parse(text); } catch (_) {}
+      const matching = Array.isArray(json) ? json.filter(t => {
+        const str = JSON.stringify(t);
+        return str.includes(String(operacaoId));
+      }) : [];
+      results.tests[`postTitulosData_${dt}`] = {
+        status: res.status,
+        ok: res.ok,
+        totalTitulosData: Array.isArray(json) ? json.length : null,
+        matchingOperacao: matching.length,
+        matchingSample3: matching.slice(0, 3),
+        firstTituloKeys: Array.isArray(json) && json[0] ? Object.keys(json[0]) : [],
+        firstTituloSample: Array.isArray(json) && json[0] ? json[0] : null
+      };
+    } catch (err) {
+      results.tests[`postTitulosData_${dt}`] = { error: err.message };
+    }
+  }
+
+  // 7. POST /recebiveis/operacoes na data 2026-09-04 para ver a operacao no array
+  try {
+    const res = await fetch(`${API_BASE}/recebiveis/operacoes`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        tipoDeData: 'Cadastro',
+        dataInicial: '2026-09-04T00:00:00',
+        dataFinal: '2026-09-04T23:59:59'
+      })
+    });
+    const text = await res.text();
+    let json = null;
+    try { json = JSON.parse(text); } catch (_) {}
+    const opFound = Array.isArray(json) ? json.find(o => String(o.id) === String(operacaoId) || String(o.numero) === String(operacaoId)) : null;
+    results.tests.postOperacoesArray_20260904 = {
+      status: res.status,
+      ok: res.ok,
+      totalOpsData: Array.isArray(json) ? json.length : null,
+      operacao13902NoArray: opFound || null
+    };
+  } catch (err) {
+    results.tests.postOperacoesArray_20260904 = { error: err.message };
+  }
+
+  return results;
 }
