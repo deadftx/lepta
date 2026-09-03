@@ -64,9 +64,48 @@ export function ensureEmailConfigTable(db) {
       updated_by TEXT,
       updated_at TEXT NOT NULL
     );
+    CREATE TABLE IF NOT EXISTS configuracao_email_fluxo (
+      evento TEXT PRIMARY KEY,
+      destinatarios_json TEXT NOT NULL DEFAULT '[]',
+      notificar_solicitante INTEGER DEFAULT 1,
+      updated_at TEXT NOT NULL,
+      updated_by TEXT
+    );
   `);
 
-  // Se não existir registro padrão, inicializa com os dados do Office 365 e a senha padrão
+  // Eventos padrão do fluxo financeiro
+  const DEFAULT_EVENTOS = [
+    { evento: 'SOLICITACAO_CRIADA', notificar_solicitante: 1, destinatarios: [] },
+    { evento: 'DIRETORIA_APROVADA', notificar_solicitante: 1, destinatarios: [] },
+    { evento: 'DIRETORIA_NEGADA', notificar_solicitante: 1, destinatarios: 1 },
+    { evento: 'JURIDICO_APROVADO', notificar_solicitante: 1, destinatarios: [] },
+    { evento: 'JURIDICO_NEGADO', notificar_solicitante: 1, destinatarios: 1 },
+    { evento: 'FINANCEIRO_RECEBIDA', notificar_solicitante: 0, destinatarios: [{ type: 'CUSTOM', email: 'pagamentos@lepta.com.br', name: 'Financeiro' }] },
+    { evento: 'FINANCEIRO_AGENDADA', notificar_solicitante: 1, destinatarios: [] },
+    { evento: 'FINANCEIRO_PAGA', notificar_solicitante: 1, destinatarios: [] },
+    { evento: 'FINANCEIRO_REJEITADA', notificar_solicitante: 1, destinatarios: [] }
+  ];
+
+  const checkEventoStmt = db.prepare(`SELECT evento FROM configuracao_email_fluxo WHERE evento = ?`);
+  const insertEventoStmt = db.prepare(`
+    INSERT INTO configuracao_email_fluxo (evento, destinatarios_json, notificar_solicitante, updated_at, updated_by)
+    VALUES (?, ?, ?, ?, ?)
+  `);
+
+  for (const ev of DEFAULT_EVENTOS) {
+    const row = checkEventoStmt.get(ev.evento);
+    if (!row) {
+      insertEventoStmt.run(
+        ev.evento,
+        JSON.stringify(ev.destinatarios),
+        ev.notificar_solicitante ? 1 : 0,
+        new Date().toISOString(),
+        'sistema'
+      );
+    }
+  }
+
+  // Se não existir registro padrão de SMTP, inicializa com os dados do Office 365 e a senha padrão
   const existing = db.prepare(`SELECT * FROM configuracao_email WHERE id = 'default'`).get();
   if (!existing) {
     const initialPass = process.env.SMTP_PASS || process.env.LEPTA_SMTP_PASS || 'Lepta@2026';
@@ -353,5 +392,287 @@ export async function sendPurchaseApprovalEmail({ db, requisicao, itens = [], an
   } catch (error) {
     console.error('❌ [EmailService] Erro ao enviar e-mail de aprovação:', error.message);
     return { success: false, error: error.message };
+  }
+}
+
+/**
+ * Envia notificação por e-mail para qualquer evento do fluxo de solicitações financeiras
+ */
+export async function sendFinancialWorkflowEmail({
+  db,
+  evento,
+  requisicao,
+  detalhes = {},
+  autorNome = 'Sistema',
+  motivo = '',
+  anexos = [],
+  uploadDir
+}) {
+  try {
+    if (!db || !evento || !requisicao) return { success: false, error: 'Parâmetros insuficientes' };
+
+    ensureEmailConfigTable(db);
+    const config = getActiveEmailConfig(db);
+
+    // Carrega a configuração do evento
+    const row = db.prepare('SELECT * FROM configuracao_email_fluxo WHERE evento = ?').get(evento);
+    if (!row) return { success: true, skipped: 'Evento não configurado' };
+
+    let destinatarios = [];
+    try {
+      destinatarios = JSON.parse(row.destinatarios_json || '[]');
+    } catch (_) {}
+
+    const emailSet = new Set();
+    for (const d of destinatarios) {
+      if (d?.email && typeof d.email === 'string') {
+        emailSet.add(d.email.trim().toLowerCase());
+      }
+    }
+
+    // Notifica solicitante se configurado
+    if (row.notificar_solicitante === 1 && requisicao.solicitante_email) {
+      emailSet.add(requisicao.solicitante_email.trim().toLowerCase());
+    }
+
+    const toEmails = Array.from(emailSet).filter(e => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e));
+    if (toEmails.length === 0) {
+      return { success: true, skipped: 'Nenhum destinatário configurado para este evento' };
+    }
+
+    if (!config.pass) {
+      console.warn(`⚠️ [EmailService] Senha SMTP não configurada. E-mail de fluxo (${evento}) simulado para:`, toEmails);
+      return { success: true, simulated: true, recipients: toEmails };
+    }
+
+    const t = createTransporter(config);
+    const numeroStr = requisicao.numero ? `#${requisicao.numero}` : requisicao.id;
+    const valorTotal = (requisicao.valor || 0) * (requisicao.quantidade || 1);
+    const viewUrl = `${config.appBaseUrl}/financeiro/reembolsos-despesas?id=${encodeURIComponent(requisicao.id)}`;
+
+    // Definições visuais por evento
+    const EVENT_STYLES = {
+      SOLICITACAO_CRIADA: {
+        title: 'Nova Solicitação Financeira Criada',
+        badge: 'NOVA SOLICITAÇÃO',
+        badgeColor: '#38bdf8',
+        badgeBg: 'rgba(56, 189, 248, 0.2)',
+        headerBg: 'linear-gradient(135deg, #0369a1, #0ea5e9)',
+        subtitle: `Uma nova solicitação foi cadastrada por ${requisicao.solicitante_nome} e aguarda análise.`
+      },
+      DIRETORIA_APROVADA: {
+        title: 'Solicitação Aprovada pela Diretoria',
+        badge: 'APROVADA PELA DIRETORIA',
+        badgeColor: '#4ade80',
+        badgeBg: 'rgba(74, 222, 128, 0.2)',
+        headerBg: 'linear-gradient(135deg, #15803d, #22c55e)',
+        subtitle: `A solicitação foi aprovada pela Diretoria (${autorNome}).`
+      },
+      DIRETORIA_NEGADA: {
+        title: 'Solicitação Recusada pela Diretoria',
+        badge: 'RECUSADA PELA DIRETORIA',
+        badgeColor: '#f87171',
+        badgeBg: 'rgba(248, 113, 113, 0.2)',
+        headerBg: 'linear-gradient(135deg, #991b1b, #ef4444)',
+        subtitle: `A solicitação foi recusada pela Diretoria (${autorNome}).`
+      },
+      JURIDICO_APROVADO: {
+        title: 'Parecer Jurídico Aprovado',
+        badge: 'JURÍDICO APROVADO',
+        badgeColor: '#c084fc',
+        badgeBg: 'rgba(192, 132, 252, 0.2)',
+        headerBg: 'linear-gradient(135deg, #6b21a8, #a855f7)',
+        subtitle: `O departamento Jurídico (${autorNome}) emitiu parecer favorável à solicitação.`
+      },
+      JURIDICO_NEGADO: {
+        title: 'Parecer Jurídico Reprovado',
+        badge: 'JURÍDICO RECUSADO',
+        badgeColor: '#f87171',
+        badgeBg: 'rgba(248, 113, 113, 0.2)',
+        headerBg: 'linear-gradient(135deg, #991b1b, #ef4444)',
+        subtitle: `O departamento Jurídico (${autorNome}) reprovou a solicitação.`
+      },
+      FINANCEIRO_RECEBIDA: {
+        title: 'Solicitação Disponível no Financeiro',
+        badge: 'AGUARDANDO PAGAMENTO',
+        badgeColor: '#38bdf8',
+        badgeBg: 'rgba(56, 189, 248, 0.2)',
+        headerBg: 'linear-gradient(135deg, #1e3a8a, #3b82f6)',
+        subtitle: `A solicitação foi validada e está disponível na fila de pagamentos do Financeiro.`
+      },
+      FINANCEIRO_AGENDADA: {
+        title: 'Pagamento Agendado pelo Financeiro',
+        badge: 'PAGAMENTO AGENDADO',
+        badgeColor: '#fbbf24',
+        badgeBg: 'rgba(251, 191, 36, 0.2)',
+        headerBg: 'linear-gradient(135deg, #b45309, #f59e0b)',
+        subtitle: `O Financeiro agendou a liquidação prevista para ${formatDate(requisicao.data_pagamento || detalhes?.data_pagamento)}.`
+      },
+      FINANCEIRO_PAGA: {
+        title: 'Pagamento Concluído pelo Financeiro',
+        badge: 'PAGAMENTO EFETUADO',
+        badgeColor: '#4ade80',
+        badgeBg: 'rgba(74, 222, 128, 0.2)',
+        headerBg: 'linear-gradient(135deg, #166534, #15803d)',
+        subtitle: `O pagamento desta solicitação foi baixado e concluído com sucesso.`
+      },
+      FINANCEIRO_REJEITADA: {
+        title: 'Solicitação Devolvida para Revisão',
+        badge: 'DEVOLVIDA PARA REVISÃO',
+        badgeColor: '#fb923c',
+        badgeBg: 'rgba(251, 146, 60, 0.2)',
+        headerBg: 'linear-gradient(135deg, #c2410c, #ea580c)',
+        subtitle: `O Financeiro (${autorNome}) devolveu a solicitação para revisão do solicitante.`
+      }
+    };
+
+    const style = EVENT_STYLES[evento] || {
+      title: 'Atualização na Solicitação Financeira',
+      badge: 'ATUALIZAÇÃO',
+      badgeColor: '#38bdf8',
+      badgeBg: 'rgba(56, 189, 248, 0.2)',
+      headerBg: 'linear-gradient(135deg, #1e293b, #334155)',
+      subtitle: `Houve uma movimentação na solicitação financeira.`
+    };
+
+    // Anexos
+    const emailAttachments = [];
+    if (anexos && anexos.length > 0 && uploadDir) {
+      for (const a of anexos) {
+        if (a.caminho_arquivo) {
+          const filePath = path.join(uploadDir, a.caminho_arquivo);
+          if (fs.existsSync(filePath)) {
+            emailAttachments.push({
+              filename: a.nome_arquivo || path.basename(filePath),
+              path: filePath
+            });
+          }
+        }
+      }
+    }
+
+    const htmlContent = `
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #0f172a; color: #e2e8f0; margin: 0; padding: 20px; }
+    .container { max-width: 650px; margin: 0 auto; background: #1e293b; border-radius: 12px; overflow: hidden; border: 1px solid #334155; box-shadow: 0 10px 25px rgba(0,0,0,0.5); }
+    .header { background: ${style.headerBg}; padding: 24px; text-align: center; }
+    .header h1 { margin: 0; color: #ffffff; font-size: 22px; font-weight: 700; }
+    .header p { margin: 6px 0 0 0; color: #f1f5f9; font-size: 14px; opacity: 0.95; }
+    .content { padding: 24px; }
+    .badge { display: inline-block; padding: 6px 14px; border-radius: 20px; background: ${style.badgeBg}; color: ${style.badgeColor}; border: 1px solid ${style.badgeColor}; font-size: 13px; font-weight: 700; margin-bottom: 16px; }
+    .info-table { width: 100%; border-collapse: collapse; margin-top: 12px; margin-bottom: 24px; }
+    .info-table td { padding: 10px 12px; border-bottom: 1px solid #334155; font-size: 14px; }
+    .info-table td.label { color: #94a3b8; font-weight: 600; width: 38%; }
+    .info-table td.value { color: #f8fafc; font-weight: 500; }
+    .price-highlight { color: #34d399; font-size: 18px; font-weight: 800; }
+    .btn-container { text-align: center; margin: 30px 0 15px 0; }
+    .btn-action { display: inline-block; background: linear-gradient(135deg, #2563eb, #3b82f6); color: #ffffff !important; text-decoration: none; padding: 14px 28px; border-radius: 8px; font-weight: 700; font-size: 15px; box-shadow: 0 4px 12px rgba(37, 99, 235, 0.4); }
+    .footer { padding: 16px 24px; background: #0f172a; text-align: center; color: #64748b; font-size: 12px; border-top: 1px solid #1e293b; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>${style.title}</h1>
+      <p>${style.subtitle}</p>
+    </div>
+    
+    <div class="content">
+      <div style="text-align: center;">
+        <span class="badge">● ${style.badge}</span>
+      </div>
+
+      <table class="info-table">
+        <tr>
+          <td class="label">Código / Número:</td>
+          <td class="value"><strong>${numeroStr}</strong> (${requisicao.id})</td>
+        </tr>
+        <tr>
+          <td class="label">Fornecedor / Prestador:</td>
+          <td class="value"><strong>${requisicao.fornecedor_nome || 'Não informado'}</strong>${requisicao.fornecedor_contato ? ` (${requisicao.fornecedor_contato})` : ''}</td>
+        </tr>
+        <tr>
+          <td class="label">Descrição / Serviço:</td>
+          <td class="value">${requisicao.produto_servico}</td>
+        </tr>
+        <tr>
+          <td class="label">Valor Total:</td>
+          <td class="value"><span class="price-highlight">${formatBrl(valorTotal)}</span></td>
+        </tr>
+        <tr>
+          <td class="label">Empresa Pagadora:</td>
+          <td class="value" style="color: #a5b4fc; font-weight: 700;">${requisicao.empresa_pagadora || 'INDIFERENTE'}</td>
+        </tr>
+        <tr>
+          <td class="label">Forma de Pagamento:</td>
+          <td class="value" style="color: #60a5fa; font-weight: 600;">
+            ${requisicao.forma_pagamento || '-'}
+            ${(requisicao.quantidade_parcelas || 1) > 1 ? ` (${requisicao.quantidade_parcelas}x parcelas)` : ' (À vista)'}
+          </td>
+        </tr>
+        <tr>
+          <td class="label">Centro de Custo:</td>
+          <td class="value">${requisicao.departamento_centro_custo || 'Não informado'}</td>
+        </tr>
+        <tr>
+          <td class="label">Solicitante:</td>
+          <td class="value">${requisicao.solicitante_nome} (${requisicao.solicitante_email || 'Sem e-mail'})</td>
+        </tr>
+        ${autorNome ? `
+        <tr>
+          <td class="label">Responsável pela Ação:</td>
+          <td class="value"><strong>${autorNome}</strong> em ${formatDate(new Date().toISOString())}</td>
+        </tr>` : ''}
+        ${(motivo || requisicao.motivo_decisao || requisicao.juridico_motivo) ? `
+        <tr>
+          <td class="label">Motivo / Parecer:</td>
+          <td class="value" style="color: #fca5a5; font-style: italic;">${motivo || requisicao.motivo_decisao || requisicao.juridico_motivo}</td>
+        </tr>` : ''}
+        ${requisicao.data_pagamento ? `
+        <tr>
+          <td class="label">Data de Pagamento:</td>
+          <td class="value" style="color: #fde047; font-weight: 700;">${formatDate(requisicao.data_pagamento)}</td>
+        </tr>` : ''}
+        ${emailAttachments.length > 0 ? `
+        <tr>
+          <td class="label">Anexos:</td>
+          <td class="value">📎 ${emailAttachments.length} arquivo(s) em anexo</td>
+        </tr>` : ''}
+      </table>
+
+      <div class="btn-container">
+        <a href="${viewUrl}" class="btn-action" target="_blank">
+          Visualizar Solicitação no Sistema &rarr;
+        </a>
+      </div>
+    </div>
+
+    <div class="footer">
+      Mensagem gerada automaticamente pelo LeptaSys • Grupo Lepta<br>
+      Remetente: ${config.from}
+    </div>
+  </div>
+</body>
+</html>
+    `;
+
+    const mailOptions = {
+      from: config.from,
+      to: toEmails.join(', '),
+      subject: `[LeptaSys] ${style.badge} ${numeroStr} - ${requisicao.fornecedor_nome || requisicao.produto_servico} (${formatBrl(valorTotal)})`,
+      html: htmlContent,
+      attachments: emailAttachments
+    };
+
+    const info = await t.sendMail(mailOptions);
+    console.log(`✅ [EmailService] Notificação [${evento}] enviada com sucesso para [${toEmails.join(', ')}]. MessageId: ${info.messageId}`);
+    return { success: true, messageId: info.messageId, recipients: toEmails };
+  } catch (err) {
+    console.error(`❌ [EmailService] Erro ao enviar notificação de fluxo [${evento}]:`, err.message);
+    return { success: false, error: err.message };
   }
 }

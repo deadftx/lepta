@@ -3,7 +3,7 @@ import fs from 'fs';
 import path from 'path';
 import multer from 'multer';
 import { createNotification, notifyUsers } from '../notifications/routes.js';
-import { sendPurchaseApprovalEmail } from '../../services/emailService.js';
+import { sendPurchaseApprovalEmail, sendFinancialWorkflowEmail } from '../../services/emailService.js';
 
 // Configuração do Multer para upload de anexos de até 20MB em pasta/subpastas por chamado
 const baseUploadsDir = String(process.env.LEPTA_UPLOADS_PATH || process.env.COMPRAS_UPLOADS_PATH || '').trim();
@@ -737,6 +737,19 @@ export function registerPurchaseRoutes(app, {
       })();
 
       const nova = db.prepare(`SELECT * FROM compras_requisicoes WHERE id = ?`).get(id);
+
+      // Dispara e-mail para os destinatários configurados para o evento SOLICITACAO_CRIADA
+      try {
+        sendFinancialWorkflowEmail({
+          db,
+          evento: 'SOLICITACAO_CRIADA',
+          requisicao: nova,
+          autorNome: solicitanteNome
+        }).catch(err => console.warn('Aviso envio email SOLICITACAO_CRIADA:', err.message));
+      } catch (e) {
+        console.warn('Erro ao disparar email de criação:', e.message);
+      }
+
       return res.status(201).json({ ...nova, itens: createdItems });
     } catch (error) {
       console.error('Erro ao criar solicitação financeira no SQLite:', error.message);
@@ -898,6 +911,20 @@ export function registerPurchaseRoutes(app, {
       })();
 
       const atualizado = db.prepare(`SELECT * FROM compras_requisicoes WHERE id = ?`).get(id);
+
+      // Dispara e-mail para os destinatários configurados para o evento JURIDICO_APROVADO
+      try {
+        sendFinancialWorkflowEmail({
+          db,
+          evento: 'JURIDICO_APROVADO',
+          requisicao: atualizado,
+          autorNome: legalName,
+          motivo: observacao
+        }).catch(err => console.warn('Aviso envio email JURIDICO_APROVADO:', err.message));
+      } catch (e) {
+        console.warn('Erro ao disparar email JURIDICO_APROVADO:', e.message);
+      }
+
       return res.json({ success: true, requisicao: atualizado });
     } catch (error) {
       console.error('Erro ao aprovar solicitação no jurídico:', error.message);
@@ -965,6 +992,21 @@ export function registerPurchaseRoutes(app, {
       })();
 
       const atualizado = db.prepare(`SELECT * FROM compras_requisicoes WHERE id = ?`).get(id);
+
+      // Dispara e-mail para os destinatários configurados para o evento JURIDICO_NEGADO
+      try {
+        sendFinancialWorkflowEmail({
+          db,
+          evento: 'JURIDICO_NEGADO',
+          requisicao: atualizado,
+          autorNome: legalName,
+          motivo
+        }).catch(err => console.warn('Aviso envio email JURIDICO_NEGADO:', err.message));
+      } catch (e) {
+        console.warn('Erro ao disparar email JURIDICO_NEGADO:', e.message);
+      }
+
+      return res.json({ success: true, requisicao: atualizado });
     } catch (error) {
       console.error('Erro ao rejeitar solicitação no jurídico:', error.message);
       return res.status(500).json({ error: 'Erro ao registrar rejeição jurídica no banco.' });
@@ -1248,6 +1290,27 @@ export function registerPurchaseRoutes(app, {
         const itensRequisicao = db.prepare(`SELECT * FROM compras_requisicoes_itens WHERE requisicao_id = ?`).all(req.params.id);
         const anexosRequisicao = db.prepare(`SELECT * FROM compras_anexos WHERE requisicao_id = ?`).all(req.params.id);
 
+        // Disparo para o fluxo configurado: DIRETORIA_APROVADA e FINANCEIRO_RECEBIDA
+        sendFinancialWorkflowEmail({
+          db,
+          evento: 'DIRETORIA_APROVADA',
+          requisicao: atualizado,
+          autorNome: aprovadorNome,
+          motivo: observacao,
+          anexos: anexosRequisicao,
+          uploadDir
+        }).catch(err => console.warn('Aviso envio email DIRETORIA_APROVADA:', err.message));
+
+        sendFinancialWorkflowEmail({
+          db,
+          evento: 'FINANCEIRO_RECEBIDA',
+          requisicao: atualizado,
+          autorNome: aprovadorNome,
+          motivo: observacao,
+          anexos: anexosRequisicao,
+          uploadDir
+        }).catch(err => console.warn('Aviso envio email FINANCEIRO_RECEBIDA:', err.message));
+
         sendPurchaseApprovalEmail({
           requisicao: atualizado,
           itens: itensRequisicao,
@@ -1324,6 +1387,20 @@ export function registerPurchaseRoutes(app, {
       })();
 
       const atualizado = db.prepare(`SELECT * FROM compras_requisicoes WHERE id = ?`).get(req.params.id);
+
+      // Dispara e-mail para os destinatários configurados para o evento DIRETORIA_NEGADA
+      try {
+        sendFinancialWorkflowEmail({
+          db,
+          evento: 'DIRETORIA_NEGADA',
+          requisicao: atualizado,
+          autorNome: aprovadorNome,
+          motivo: observacao
+        }).catch(err => console.warn('Aviso envio email DIRETORIA_NEGADA:', err.message));
+      } catch (e) {
+        console.warn('Erro ao disparar email DIRETORIA_NEGADA:', e.message);
+      }
+
       return res.json({ success: true, requisicao: atualizado });
     } catch (error) {
       console.error('Erro ao negar solicitação:', error.message);
@@ -1601,6 +1678,20 @@ export function registerPurchaseRoutes(app, {
       })();
 
       const atualizado = db.prepare(`SELECT * FROM compras_requisicoes WHERE id = ?`).get(id);
+
+      // Dispara e-mail para os destinatários configurados para o evento FINANCEIRO_PAGA
+      try {
+        sendFinancialWorkflowEmail({
+          db,
+          evento: 'FINANCEIRO_PAGA',
+          requisicao: atualizado,
+          autorNome: financeName,
+          motivo: observacao
+        }).catch(err => console.warn('Aviso envio email FINANCEIRO_PAGA:', err.message));
+      } catch (e) {
+        console.warn('Erro ao disparar email FINANCEIRO_PAGA:', e.message);
+      }
+
       return res.json({ success: true, requisicao: atualizado });
     } catch (error) {
       console.error('Erro ao concluir solicitação:', error.message);
@@ -1666,6 +1757,20 @@ export function registerPurchaseRoutes(app, {
       })();
 
       const atualizado = db.prepare(`SELECT * FROM compras_requisicoes WHERE id = ?`).get(id);
+
+      // Dispara e-mail para os destinatários configurados para o evento FINANCEIRO_REJEITADA
+      try {
+        sendFinancialWorkflowEmail({
+          db,
+          evento: 'FINANCEIRO_REJEITADA',
+          requisicao: atualizado,
+          autorNome: financeName,
+          motivo
+        }).catch(err => console.warn('Aviso envio email FINANCEIRO_REJEITADA:', err.message));
+      } catch (e) {
+        console.warn('Erro ao disparar email FINANCEIRO_REJEITADA:', e.message);
+      }
+
       return res.json({ success: true, requisicao: atualizado });
     } catch (error) {
       console.error('Erro ao devolver para revisão:', error.message);
@@ -1711,6 +1816,22 @@ export function registerPurchaseRoutes(app, {
       `).run(randomUUID(), id, req.authUser.id, financeName, 'FINANCEIRO', msgTexto, now);
 
       const atualizado = db.prepare(`SELECT * FROM compras_requisicoes WHERE id = ?`).get(id);
+
+      // Dispara e-mail para os destinatários configurados para o evento FINANCEIRO_AGENDADA (se houver data agendada)
+      if (dateVal) {
+        try {
+          sendFinancialWorkflowEmail({
+            db,
+            evento: 'FINANCEIRO_AGENDADA',
+            requisicao: atualizado,
+            autorNome: financeName,
+            detalhes: { data_pagamento: dateVal }
+          }).catch(err => console.warn('Aviso envio email FINANCEIRO_AGENDADA:', err.message));
+        } catch (e) {
+          console.warn('Erro ao disparar email FINANCEIRO_AGENDADA:', e.message);
+        }
+      }
+
       return res.json({ success: true, requisicao: atualizado });
     } catch (error) {
       console.error('Erro ao salvar data de pagamento:', error.message);
@@ -1780,6 +1901,19 @@ export function registerPurchaseRoutes(app, {
 
       const atualizado = db.prepare(`SELECT * FROM compras_requisicoes WHERE id = ?`).get(id);
       const parcelasSalvas = db.prepare(`SELECT * FROM compras_requisicoes_parcelas WHERE requisicao_id = ? ORDER BY numero_parcela ASC`).all(id);
+
+      // Dispara e-mail para os destinatários configurados para o evento FINANCEIRO_AGENDADA
+      try {
+        sendFinancialWorkflowEmail({
+          db,
+          evento: 'FINANCEIRO_AGENDADA',
+          requisicao: atualizado,
+          autorNome: financeName,
+          detalhes: { parcelas: parcelasSalvas }
+        }).catch(err => console.warn('Aviso envio email FINANCEIRO_AGENDADA (parcelas):', err.message));
+      } catch (e) {
+        console.warn('Erro ao disparar email FINANCEIRO_AGENDADA:', e.message);
+      }
 
       return res.json({
         success: true,

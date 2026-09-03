@@ -143,4 +143,83 @@ export function registerEmailConfigRoutes(app, {
       return res.status(500).json({ success: false, error: error.message });
     }
   });
+
+  // --- ROTA: LISTAR DESTINATÁRIOS DO FLUXO FINANCEIRO ---
+  app.get('/api/configuracao-email/fluxo', requireSession, requireMaster, (req, res) => {
+    try {
+      ensureEmailConfigTable(db);
+      const rows = db.prepare('SELECT * FROM configuracao_email_fluxo ORDER BY rowid ASC').all();
+      const eventos = rows.map(r => ({
+        evento: r.evento,
+        destinatarios: JSON.parse(r.destinatarios_json || '[]'),
+        notificar_solicitante: Boolean(r.notificar_solicitante),
+        updated_at: r.updated_at,
+        updated_by: r.updated_by
+      }));
+      return res.json({ success: true, eventos });
+    } catch (err) {
+      console.error('Erro ao consultar fluxo de e-mail:', err.message);
+      return res.status(500).json({ error: 'Erro ao consultar configuração de destinatários do fluxo.' });
+    }
+  });
+
+  // --- ROTA: SALVAR DESTINATÁRIOS DO FLUXO FINANCEIRO ---
+  app.post('/api/configuracao-email/fluxo', requireSession, requireMaster, (req, res) => {
+    try {
+      ensureEmailConfigTable(db);
+      const { eventos } = req.body;
+      if (!Array.isArray(eventos)) {
+        return res.status(400).json({ error: 'Lista de eventos inválida.' });
+      }
+
+      const now = new Date().toISOString();
+      const updatedBy = req.authSession?.userId || 'master';
+
+      const upsertStmt = db.prepare(`
+        INSERT INTO configuracao_email_fluxo (evento, destinatarios_json, notificar_solicitante, updated_at, updated_by)
+        VALUES (?, ?, ?, ?, ?)
+        ON CONFLICT(evento) DO UPDATE SET
+          destinatarios_json = excluded.destinatarios_json,
+          notificar_solicitante = excluded.notificar_solicitante,
+          updated_at = excluded.updated_at,
+          updated_by = excluded.updated_by
+      `);
+
+      const tx = db.transaction(() => {
+        for (const ev of eventos) {
+          if (!ev.evento) continue;
+          upsertStmt.run(
+            ev.evento,
+            JSON.stringify(ev.destinatarios || []),
+            ev.notificar_solicitante ? 1 : 0,
+            now,
+            updatedBy
+          );
+        }
+      });
+
+      tx();
+
+      return res.json({ success: true, message: 'Configurações de destinatários salvas com sucesso!' });
+    } catch (err) {
+      console.error('Erro ao salvar fluxo de e-mail:', err.message);
+      return res.status(500).json({ error: 'Não foi possível salvar a configuração de destinatários.' });
+    }
+  });
+
+  // --- ROTA: LISTAR USUÁRIOS ATIVOS DO SISTEMA PARA SELEÇÃO ---
+  app.get('/api/configuracao-email/usuarios-sistema', requireSession, requireMaster, (req, res) => {
+    try {
+      const users = db.prepare(`
+        SELECT id, username, email, role
+        FROM usuarios_lepta
+        WHERE email IS NOT NULL AND email != ''
+        ORDER BY username ASC
+      `).all();
+      return res.json({ success: true, users });
+    } catch (err) {
+      console.error('Erro ao listar usuários do sistema:', err.message);
+      return res.status(500).json({ error: 'Erro ao listar usuários do sistema.' });
+    }
+  });
 }
