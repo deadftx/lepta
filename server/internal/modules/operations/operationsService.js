@@ -9,7 +9,7 @@ const cepValidationCache = new Map();
 /**
  * Valida o CEP cadastrado e, quando possível, consulta a base dos Correios/ViaCEP
  */
-export async function validateCep(cepInput) {
+export async function validateCep(cepInput, { bitfinValido = true, checkViaCep = false } = {}) {
   const raw = String(cepInput || '').trim();
   const digits = raw.replace(/\D/g, '');
 
@@ -55,7 +55,7 @@ export async function validateCep(cepInput) {
   }
 
   // CEPs genéricos/repetidos
-  if (/^(\d)\1{7}$/.test(digits)) {
+  if (/^(\d)\1{7}$/.test(digits) || digits === '00000000' || digits.startsWith('00000')) {
     const result = {
       valid: false,
       rawCep: raw,
@@ -67,43 +67,55 @@ export async function validateCep(cepInput) {
     return result;
   }
 
-  // Consulta ViaCEP para conferência real contra a base dos Correios
-  try {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 3500);
-    const res = await fetch(`https://viacep.com.br/ws/${digits}/json/`, { signal: controller.signal });
-    clearTimeout(timeout);
+  // Se o próprio BitFin acusou endereço inválido
+  if (bitfinValido === false) {
+    const result = {
+      valid: false,
+      rawCep: raw,
+      formattedCep: `${digits.slice(0, 5)}-${digits.slice(5)}`,
+      errorReason: 'Endereço não verificado na base dos Correios (BitFin)',
+      sugestao: null
+    };
+    return result;
+  }
 
-    if (res.ok) {
-      const data = await res.json();
-      if (data.erro) {
+  // Só consulta ViaCEP externamente se explicitamente solicitado
+  if (checkViaCep) {
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 1200);
+      const res = await fetch(`https://viacep.com.br/ws/${digits}/json/`, { signal: controller.signal });
+      clearTimeout(timeout);
+
+      if (res.ok) {
+        const data = await res.json();
+        if (data.erro) {
+          const result = {
+            valid: false,
+            rawCep: raw,
+            formattedCep: `${digits.slice(0, 5)}-${digits.slice(5)}`,
+            errorReason: 'CEP não localizado na base dos Correios',
+            sugestao: null
+          };
+          cepValidationCache.set(digits, result);
+          return result;
+        }
+
         const result = {
-          valid: false,
+          valid: true,
           rawCep: raw,
           formattedCep: `${digits.slice(0, 5)}-${digits.slice(5)}`,
-          errorReason: 'CEP não localizado na base dos Correios',
-          sugestao: null
+          errorReason: null,
+          sugestao: null,
+          logradouroCorreios: data.logradouro,
+          bairroCorreios: data.bairro,
+          cidadeCorreios: data.localidade,
+          ufCorreios: data.uf
         };
         cepValidationCache.set(digits, result);
         return result;
       }
-
-      const result = {
-        valid: true,
-        rawCep: raw,
-        formattedCep: `${digits.slice(0, 5)}-${digits.slice(5)}`,
-        errorReason: null,
-        sugestao: null,
-        logradouroCorreios: data.logradouro,
-        bairroCorreios: data.bairro,
-        cidadeCorreios: data.localidade,
-        ufCorreios: data.uf
-      };
-      cepValidationCache.set(digits, result);
-      return result;
-    }
-  } catch (_) {
-    // Se o ViaCEP falhar por timeout, valida estruturalmente como 8 dígitos
+    } catch (_) {}
   }
 
   const defaultResult = {
@@ -877,38 +889,31 @@ export async function getOperationDetails({ token, operacaoId, date }) {
     let telefones = [];
     let emails = [];
 
+    const primeiroTitulo = s.titulos[0];
+
     // Tenta obter CEP vindo direto do nó do título caso ainda não preenchido
     if (!rawCep) {
-      const f = extractTituloFields(s.titulos[0], sacadosById);
+      const f = extractTituloFields(primeiroTitulo, sacadosById);
       if (f.cep) rawCep = f.cep;
       if (enderecoFormatado === 'Não informado' && f.endereco !== 'Não informado') {
         enderecoFormatado = f.endereco;
       }
     }
 
-    // Se tiver documento, consulta a entidade no BitFin
-    if (s.documento) {
-      const ent = await fetchEntityDetails(s.documento, token);
-      if (ent) {
-        const end = ent.endereco || ent.enderecos?.[0];
-        if (end) {
-          if (!rawCep && (end.cep || end.codigoPostal)) rawCep = end.cep || end.codigoPostal;
-          enderecoFormatado = `${end.logradouro || ''}, ${end.numero || 'S/N'} ${end.complemento || ''} - ${end.bairro || ''}, ${end.localidade || end.cidade || ''}/${end.estado || end.uf || ''}`;
-        }
-
-        if (ent.telefone) telefones.push(ent.telefone);
-        if (ent.celular) telefones.push(ent.celular);
-        if (ent.email) emails.push(ent.email);
-        if (Array.isArray(ent.contatos)) {
-          ent.contatos.forEach(c => {
-            if (c.telefone) telefones.push(`${c.nome ? c.nome + ': ' : ''}${c.telefone}`);
-            if (c.email) emails.push(`${c.nome ? c.nome + ': ' : ''}${c.email}`);
-          });
-        }
-      }
+    // Extrai contatos já presentes no objeto do sacado
+    const sacadoEntidade = primeiroTitulo?.titulo?.sacado?.entidade || primeiroTitulo?.sacado?.entidade || primeiroTitulo?.sacado;
+    if (sacadoEntidade) {
+      if (sacadoEntidade.telefone) telefones.push(sacadoEntidade.telefone);
+      if (sacadoEntidade.celular) telefones.push(sacadoEntidade.celular);
+      if (sacadoEntidade.email) emails.push(sacadoEntidade.email);
     }
 
-    const validacao = await validateCep(rawCep);
+    const isValidoBitfin = primeiroTitulo?.titulo?.sacado?.entidade?.endereco?.valido !== false &&
+                           primeiroTitulo?.titulo?.sacado?.valido !== false &&
+                           primeiroTitulo?.titulo?.sacado?.entidade?.valido !== false;
+
+    // Validação instantânea em memória (0ms, sem chamadas HTTP lentas no loop)
+    const validacao = await validateCep(rawCep, { bitfinValido: isValidoBitfin, checkViaCep: false });
 
     const sacadoItem = {
       key,
