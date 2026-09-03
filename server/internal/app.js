@@ -16,6 +16,7 @@ import { registerMeetingRoomRoutes } from './modules/administrative/meetingRooms
 import { registerNotificationRoutes } from './modules/notifications/routes.js';
 import { registerEmailConfigRoutes } from './modules/administration/emailRoutes.js';
 import { registerConfirmationRoutes } from './modules/confirmation/routes.js';
+import { registerOperationsRoutes } from './modules/operations/routes.js';
 import { registerTickerRoutes } from './modules/ticker/routes.js';
 import { registerMonitorRoutes } from './modules/monitor/routes.js';
 import { registerNplRoutes } from './modules/intelligence/npl/routes.js';
@@ -4993,6 +4994,12 @@ registerConfirmationRoutes(app, {
   requireSession,
   requirePermission,
   requireMaster,
+  unltdToken: UNLTD_TOKEN
+});
+
+registerOperationsRoutes(app, {
+  requireSession,
+  checkAccess: requirePermission('14.1'),
   unltdToken: UNLTD_TOKEN
 });
 

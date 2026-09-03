@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { LogOut, User, ShieldAlert, Shield, UserPlus, Users, ChevronDown, ChevronRight, LayoutDashboard, Sliders, Home, Calendar, CalendarCheck, Menu, X, Wallet, FileSpreadsheet, BrainCircuit, Database, ClipboardCheck, ContactRound, ShieldCheck, Landmark, Briefcase, ShoppingCart, SlidersHorizontal, DollarSign, Mail, Search, TrendingUp, UserCheck, Scale, FileCheck } from 'lucide-react';
+import { LogOut, User, ShieldAlert, Shield, UserPlus, Users, ChevronDown, ChevronRight, LayoutDashboard, Sliders, Home, Calendar, CalendarCheck, Menu, X, Wallet, FileSpreadsheet, BrainCircuit, Database, ClipboardCheck, ContactRound, ShieldCheck, Landmark, Briefcase, ShoppingCart, SlidersHorizontal, DollarSign, Mail, Search, TrendingUp, UserCheck, Scale, FileCheck, Layers } from 'lucide-react';
 import { useNavigate, Outlet, Link, useLocation } from 'react-router-dom';
 import { useAuth } from './AuthContext';
 import NotificationBell from './NotificationBell';
@@ -36,6 +36,9 @@ const InternalLayout = () => {
 
   const isLegalActive = location.pathname.startsWith('/juridico');
   const [isLegalOpen, setIsLegalOpen] = useState(false);
+
+  const isOperationsActive = location.pathname.startsWith('/mesa-operacoes');
+  const [isOperationsOpen, setIsOperationsOpen] = useState(false);
   
   // Mobile sidebar state
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
@@ -336,6 +339,30 @@ const InternalLayout = () => {
                   {hasAccess('13.1') && (
                     <Link to="/juridico/aprovacao-pagamentos" className={navItemClass('/juridico/aprovacao-pagamentos')}>
                       <FileCheck size={18} /> Aprovação de Pagamentos
+                    </Link>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+          {hasAnyPermission(user, ['14.1', '14']) && (
+            <div className="nav-menu-group">
+              <div
+                className={`nav-item nav-item-parent ${isOperationsActive ? 'active' : ''}`}
+                onClick={() => setIsOperationsOpen(!isOperationsOpen)}
+                style={{ cursor: 'pointer', justifyContent: 'space-between' }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                  <Layers size={20} /> Mesa de Operação
+                </div>
+                {isOperationsOpen ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+              </div>
+
+              {isOperationsOpen && (
+                <div className="nav-submenu" style={{ paddingLeft: '1rem' }}>
+                  {hasAccess('14.1') && (
+                    <Link to="/mesa-operacoes/analise" className={navItemClass('/mesa-operacoes/analise')}>
+                      <Search size={18} /> Análise de Operação
                     </Link>
                   )}
                 </div>

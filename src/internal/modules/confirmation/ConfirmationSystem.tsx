@@ -127,7 +127,17 @@ export const ConfirmationSystem: React.FC = () => {
         body: JSON.stringify({ targetPath })
       });
 
-      const json = await res.json();
+      const text = await res.text();
+      let json: any = {};
+      try {
+        json = JSON.parse(text);
+      } catch {
+        if (res.status === 504 || res.status === 502) {
+          throw new Error('A importação excedeu o tempo de resposta do servidor web (504 Timeout). O arquivo é muito volumoso (~876MB) e pode ainda estar sendo processado em background.');
+        }
+        throw new Error(`Resposta inesperada do servidor (${res.status}): ${text.substring(0, 120)}`);
+      }
+
       if (res.ok && json.success) {
         setUploadSuccess(`✅ ${json.message}`);
         fetchFundos();

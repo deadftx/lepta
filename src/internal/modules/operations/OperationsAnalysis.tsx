@@ -1,0 +1,786 @@
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import {
+  Layers,
+  Search,
+  RefreshCw,
+  AlertTriangle,
+  CheckCircle2,
+  Calendar,
+  Download,
+  Building2,
+  Phone,
+  Mail,
+  X,
+  UserCheck,
+  FileSpreadsheet,
+  AlertCircle
+} from 'lucide-react';
+import { API_BASE_URL, getAuthHeaders } from '../../../config/api';
+import './OperationsAnalysis.css';
+
+interface CedenteInfo {
+  nome: string;
+  documento: string;
+  telefones?: string[];
+  emails?: string[];
+}
+
+interface OperacaoSummary {
+  id: string;
+  numero: string;
+  dataCadastro: string;
+  cedente: CedenteInfo;
+  unidadeAdministrativa: string;
+  gerente: string;
+  valorTotal: number;
+  titulosCount: number;
+  status: string;
+}
+
+interface SacadoInconsistente {
+  key: string;
+  documento: string;
+  nome: string;
+  qtdTitulos: number;
+  valorTotal: number;
+  cep: string;
+  rawCep: string;
+  isValido: boolean;
+  errorReason: string;
+  sugestaoCep?: string | null;
+  endereco: string;
+  telefones: string[];
+  emails: string[];
+}
+
+interface TituloItem {
+  id: string | number;
+  numero: string;
+  sacadoNome: string;
+  sacadoDoc: string;
+  valorNominal: number;
+  vencimento: string;
+  situacao: string;
+}
+
+interface OperacaoDetail {
+  operacaoId: string;
+  dataCadastro: string;
+  status: string;
+  unidadeAdministrativa: string;
+  gerente: string;
+  valorTotalOperacao: number;
+  totalTitulos: number;
+  cedente: CedenteInfo;
+  alertaBitfin: {
+    titulo: string;
+    severidade: string;
+    descricao: string;
+    valorAfetado: number;
+    percentualAfetado: number;
+    totalSacadosAfetados: number;
+    possuiInconsistencias: boolean;
+  };
+  sacadosInconsistentes: SacadoInconsistente[];
+  todosSacados: SacadoInconsistente[];
+  titulosResumo: TituloItem[];
+}
+
+export const OperationsAnalysis: React.FC = () => {
+  const todayStr = useMemo(() => new Date().toISOString().substring(0, 10), []);
+
+  const [dataFiltro, setDataFiltro] = useState<string>(todayStr);
+  const [statusFiltro, setStatusFiltro] = useState<string>('TODOS');
+  const [searchTerm, setSearchTerm] = useState<string>('');
+
+  const [loading, setLoading] = useState<boolean>(false);
+  const [error, setError] = useState<string | null>(null);
+  const [operacoes, setOperacoes] = useState<OperacaoSummary[]>([]);
+
+  // Modal de Detalhe da Operação
+  const [selectedOpId, setSelectedOpId] = useState<string | null>(null);
+  const [detailLoading, setDetailLoading] = useState<boolean>(false);
+  const [operationDetail, setOperationDetail] = useState<OperacaoDetail | null>(null);
+  const [detailTab, setDetailTab] = useState<'inconsistencias' | 'todos_sacados' | 'titulos'>('inconsistencias');
+  const [downloadingXlsx, setDownloadingXlsx] = useState<boolean>(false);
+
+  // Busca listagem de operações
+  const fetchOperations = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const queryParams = new URLSearchParams({
+        data: dataFiltro,
+        ...(statusFiltro !== 'TODOS' ? { status: statusFiltro } : {})
+      });
+
+      const res = await fetch(`${API_BASE_URL}/api/mesa-operacoes/operacoes?${queryParams.toString()}`, {
+        headers: getAuthHeaders()
+      });
+
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => ({}));
+        throw new Error(errJson.error || `Erro HTTP ${res.status}`);
+      }
+
+      const data = await res.json();
+      setOperacoes(data.operacoes || []);
+    } catch (err: any) {
+      console.error('Erro ao buscar operações:', err);
+      setError(err.message || 'Não foi possível carregar as operações do BitFin.');
+    } finally {
+      setLoading(false);
+    }
+  }, [dataFiltro, statusFiltro]);
+
+  useEffect(() => {
+    fetchOperations();
+  }, [fetchOperations]);
+
+  // Busca detalhes de uma operação específica
+  const handleOpenOperation = async (opId: string) => {
+    setSelectedOpId(opId);
+    setDetailLoading(true);
+    setOperationDetail(null);
+    setDetailTab('inconsistencias');
+
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/mesa-operacoes/operacoes/${opId}?data=${dataFiltro}`, {
+        headers: getAuthHeaders()
+      });
+
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => ({}));
+        throw new Error(errJson.error || `Erro HTTP ${res.status}`);
+      }
+
+      const data: OperacaoDetail = await res.json();
+      setOperationDetail(data);
+    } catch (err: any) {
+      console.error('Erro ao buscar detalhe da operação:', err);
+      alert(`Erro ao abrir operação #${opId}: ${err.message}`);
+      setSelectedOpId(null);
+    } finally {
+      setDetailLoading(false);
+    }
+  };
+
+  // Download da planilha Excel de sacados com erro
+  const handleDownloadXlsx = async (opId: string) => {
+    setDownloadingXlsx(true);
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/mesa-operacoes/operacoes/${opId}/exportar-xlsx?data=${dataFiltro}`, {
+        headers: getAuthHeaders()
+      });
+
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => ({}));
+        throw new Error(errJson.error || 'Erro ao gerar planilha.');
+      }
+
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `Sacados_Sem_Endereco_Verificado_Op_${opId}.xlsx`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+    } catch (err: any) {
+      console.error('Erro ao exportar XLSX:', err);
+      alert(`Erro no download da planilha: ${err.message}`);
+    } finally {
+      setDownloadingXlsx(false);
+    }
+  };
+
+  // Filtro de busca textual
+  const filteredOperacoes = useMemo(() => {
+    if (!searchTerm.trim()) return operacoes;
+    const term = searchTerm.toLowerCase().trim();
+    return operacoes.filter(op =>
+      op.id.toLowerCase().includes(term) ||
+      op.numero.toLowerCase().includes(term) ||
+      op.cedente.nome.toLowerCase().includes(term) ||
+      op.cedente.documento.includes(term) ||
+      op.gerente.toLowerCase().includes(term) ||
+      op.unidadeAdministrativa.toLowerCase().includes(term)
+    );
+  }, [operacoes, searchTerm]);
+
+  // Totais rápidos
+  const totalOperacoes = filteredOperacoes.length;
+  const volumeTotal = filteredOperacoes.reduce((acc, o) => acc + o.valorTotal, 0);
+
+  const getStatusBadgeClass = (status: string) => {
+    const s = (status || '').toLowerCase();
+    if (s.includes('analise') || s.includes('análise')) return 'badge-warning';
+    if (s.includes('pagamento')) return 'badge-info';
+    if (s.includes('formaliz') || s.includes('formalização')) return 'badge-purple';
+    if (s.includes('aberto') || s.includes('cadastrada')) return 'badge-cyan';
+    if (s.includes('liquid') || s.includes('paga') || s.includes('aprovad')) return 'badge-success';
+    if (s.includes('cancelad') || s.includes('rejeit')) return 'badge-danger';
+    return 'badge-default';
+  };
+
+  return (
+    <div className="oa-container">
+      {/* ── HEADER PRINCIPAL ── */}
+      <div className="oa-header">
+        <div className="oa-header-left">
+          <div className="oa-title-badge">
+            <Layers size={22} color="#38bdf8" />
+            <span>MESA DE OPERAÇÃO</span>
+          </div>
+          <h1 className="oa-title">Análise de Operações (BitFin)</h1>
+          <p className="oa-subtitle">
+            Acompanhamento em tempo real de operações ativas, esteira de crédito e diagnóstico de sacados sem endereço verificado.
+          </p>
+        </div>
+
+        <div className="oa-header-actions">
+          <button
+            type="button"
+            className="oa-btn secondary"
+            onClick={() => {
+              setDataFiltro(todayStr);
+            }}
+            title="Voltar para a data de hoje"
+          >
+            <Calendar size={16} /> Hoje
+          </button>
+          <button
+            type="button"
+            className="oa-btn primary"
+            onClick={fetchOperations}
+            disabled={loading}
+          >
+            <RefreshCw size={16} className={loading ? 'oa-spin' : ''} />
+            {loading ? 'Atualizando...' : 'Atualizar'}
+          </button>
+        </div>
+      </div>
+
+      {/* ── BARRA DE FILTROS ── */}
+      <div className="oa-filter-bar glass">
+        <div className="oa-filter-group">
+          <label htmlFor="data-filtro" className="oa-label">Data de Cadastro:</label>
+          <input
+            id="data-filtro"
+            type="date"
+            className="oa-input date"
+            value={dataFiltro}
+            onChange={e => setDataFiltro(e.target.value)}
+          />
+        </div>
+
+        <div className="oa-filter-group">
+          <label htmlFor="status-filtro" className="oa-label">Status da Operação:</label>
+          <select
+            id="status-filtro"
+            className="oa-select"
+            value={statusFiltro}
+            onChange={e => setStatusFiltro(e.target.value)}
+          >
+            <option value="TODOS">Todos os Status Ativos</option>
+            <option value="Em Análise">Em Análise</option>
+            <option value="Em Pagamento">Em Pagamento</option>
+            <option value="Em Formalização">Em Formalização</option>
+            <option value="Em Aberto">Em Aberto</option>
+            <option value="Cadastrada">Cadastrada</option>
+          </select>
+        </div>
+
+        <div className="oa-filter-group search">
+          <label htmlFor="search-termo" className="oa-label">Busca Rápida:</label>
+          <div className="oa-search-wrap">
+            <Search size={16} className="oa-search-icon" />
+            <input
+              id="search-termo"
+              type="text"
+              className="oa-input search"
+              placeholder="Buscar por Nº Op, Cedente, CNPJ..."
+              value={searchTerm}
+              onChange={e => setSearchTerm(e.target.value)}
+            />
+            {searchTerm && (
+              <button className="oa-clear-search" onClick={() => setSearchTerm('')}>
+                <X size={14} />
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* ── CARDS DE RESUMO (KPIs) ── */}
+      <div className="oa-kpis-grid">
+        <div className="oa-kpi-card">
+          <div className="oa-kpi-icon blue">
+            <Layers size={22} />
+          </div>
+          <div>
+            <span className="oa-kpi-label">Operações no Período</span>
+            <h3 className="oa-kpi-value">{totalOperacoes}</h3>
+          </div>
+        </div>
+
+        <div className="oa-kpi-card">
+          <div className="oa-kpi-icon green">
+            <Building2 size={22} />
+          </div>
+          <div>
+            <span className="oa-kpi-label">Volume Total (Nominal)</span>
+            <h3 className="oa-kpi-value">
+              R$ {volumeTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            </h3>
+          </div>
+        </div>
+
+        <div className="oa-kpi-card highlight">
+          <div className="oa-kpi-icon yellow">
+            <AlertTriangle size={22} />
+          </div>
+          <div>
+            <span className="oa-kpi-label">Diagnóstico de CEP</span>
+            <p className="oa-kpi-desc">
+              Clique em qualquer operação para auditar os sacados com erro cadastral.
+            </p>
+          </div>
+        </div>
+      </div>
+
+      {/* ── MENSAGENS DE ERRO ── */}
+      {error && (
+        <div className="oa-error-box">
+          <AlertCircle size={20} />
+          <span>{error}</span>
+          <button className="oa-btn-retry" onClick={fetchOperations}>Tentar Novamente</button>
+        </div>
+      )}
+
+      {/* ── TABELA DE OPERAÇÕES ── */}
+      <div className="oa-table-card glass">
+        <div className="oa-table-header">
+          <h2>Operações da Mesa ({totalOperacoes})</h2>
+          <span className="oa-table-subtitle">
+            Mostrando operações registradas em {dataFiltro.split('-').reverse().join('/')}
+          </span>
+        </div>
+
+        {loading ? (
+          <div className="oa-loading-state">
+            <RefreshCw size={32} className="oa-spin text-blue" />
+            <p>Carregando operações diretamente da API do BitFin...</p>
+          </div>
+        ) : filteredOperacoes.length === 0 ? (
+          <div className="oa-empty-state">
+            <CheckCircle2 size={40} color="#10b981" />
+            <h3>Nenhuma operação encontrada</h3>
+            <p>Não foram localizadas operações ativas para a data selecionada com os filtros aplicados.</p>
+          </div>
+        ) : (
+          <div className="oa-table-responsive">
+            <table className="oa-table">
+              <thead>
+                <tr>
+                  <th>Nº OPERAÇÃO</th>
+                  <th>DATA CADASTRO</th>
+                  <th>CEDENTE (CLIENTE)</th>
+                  <th>GERENTE</th>
+                  <th>UNIDADE (FUNDO)</th>
+                  <th style={{ textAlign: 'center' }}>TÍTULOS</th>
+                  <th style={{ textAlign: 'right' }}>VALOR TOTAL (R$)</th>
+                  <th style={{ textAlign: 'center' }}>STATUS</th>
+                  <th style={{ textAlign: 'center' }}>AÇÃO</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredOperacoes.map(op => (
+                  <tr key={op.id} className="oa-row">
+                    <td>
+                      <button
+                        className="oa-op-id-btn"
+                        onClick={() => handleOpenOperation(op.id)}
+                        title="Clique para analisar sacados e inconsistências"
+                      >
+                        #{op.id}
+                      </button>
+                    </td>
+                    <td>{op.dataCadastro ? op.dataCadastro.substring(0, 10).split('-').reverse().join('/') : '-'}</td>
+                    <td>
+                      <div className="oa-cedente-cell">
+                        <span className="oa-cedente-name">{op.cedente.nome}</span>
+                        {op.cedente.documento && (
+                          <span className="oa-cedente-doc">CNPJ: {op.cedente.documento}</span>
+                        )}
+                      </div>
+                    </td>
+                    <td>
+                      <span className="oa-gerente-tag">
+                        <UserCheck size={13} /> {op.gerente || '-'}
+                      </span>
+                    </td>
+                    <td>
+                      <span className="oa-ua-badge">{op.unidadeAdministrativa}</span>
+                    </td>
+                    <td style={{ textAlign: 'center', fontWeight: 600 }}>{op.titulosCount}</td>
+                    <td style={{ textAlign: 'right', fontWeight: 700, color: '#f8fafc' }}>
+                      R$ {op.valorTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                    </td>
+                    <td style={{ textAlign: 'center' }}>
+                      <span className={`oa-status-badge ${getStatusBadgeClass(op.status)}`}>
+                        {op.status}
+                      </span>
+                    </td>
+                    <td style={{ textAlign: 'center' }}>
+                      <button
+                        className="oa-action-btn primary"
+                        onClick={() => handleOpenOperation(op.id)}
+                        title="Auditar sacados e inconsistências de endereço"
+                      >
+                        <Search size={14} /> Analisar
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {/* ── MODAL DE DETALHE DA OPERAÇÃO (AUDITORIA DE CEP) ── */}
+      {selectedOpId && (
+        <div className="oa-modal-overlay" onClick={() => setSelectedOpId(null)}>
+          <div className="oa-modal-content glass" onClick={e => e.stopPropagation()}>
+            {/* Header do Modal */}
+            <div className="oa-modal-header">
+              <div className="oa-modal-title-group">
+                <span className="oa-modal-badge">OPERAÇÃO #{selectedOpId}</span>
+                <h2>Auditoria Cadastral de Sacados</h2>
+              </div>
+              <button
+                className="oa-modal-close-btn"
+                onClick={() => setSelectedOpId(null)}
+                title="Fechar"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            {/* Conteúdo do Modal */}
+            <div className="oa-modal-body">
+              {detailLoading ? (
+                <div className="oa-loading-state" style={{ minHeight: '300px' }}>
+                  <RefreshCw size={36} className="oa-spin text-blue" />
+                  <p>Consultando títulos e validando endereços dos sacados na API BitFin...</p>
+                </div>
+              ) : !operationDetail ? (
+                <div className="oa-empty-state">
+                  <AlertCircle size={40} color="#f43f5e" />
+                  <h3>Não foi possível carregar a operação</h3>
+                </div>
+              ) : (
+                <>
+                  {/* CARD DE ALERTA IDÊNTICO AO BITFIN (SEVERIDADE ALTA) */}
+                  {operationDetail.alertaBitfin.possuiInconsistencias ? (
+                    <div className="oa-bitfin-alert-card">
+                      <div className="oa-bitfin-alert-header">
+                        <div className="oa-bitfin-alert-title-wrap">
+                          <div className="oa-bitfin-alert-icon">
+                            <X size={18} strokeWidth={3} />
+                          </div>
+                          <div>
+                            <h3 className="oa-bitfin-alert-title">
+                              {operationDetail.alertaBitfin.titulo}
+                            </h3>
+                            <span className="oa-bitfin-alert-severity">
+                              {operationDetail.alertaBitfin.severidade}
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Valor e Percentual Retido */}
+                        <div className="oa-bitfin-alert-impact">
+                          <span className="oa-bitfin-alert-amount">
+                            R$ {operationDetail.alertaBitfin.valorAfetado.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </span>
+                          <span className="oa-bitfin-alert-percent">
+                            {operationDetail.alertaBitfin.percentualAfetado.toFixed(2).replace('.', ',')}%
+                          </span>
+                        </div>
+                      </div>
+
+                      <p className="oa-bitfin-alert-text">
+                        {operationDetail.alertaBitfin.descricao}
+                      </p>
+
+                      {/* Barra de Ação para Exportar */}
+                      <div className="oa-bitfin-alert-actions">
+                        <span className="oa-bitfin-alert-count-label">
+                          <AlertTriangle size={16} />
+                          <strong>{operationDetail.alertaBitfin.totalSacadosAfetados} sacado(s)</strong> com inconsistência de CEP nesta operação.
+                        </span>
+                        <button
+                          type="button"
+                          className="oa-btn-export-xlsx"
+                          onClick={() => handleDownloadXlsx(operationDetail.operacaoId)}
+                          disabled={downloadingXlsx}
+                          title="Exportar relação completa com sacados, CEPs incorretos e telefones em Excel"
+                        >
+                          <FileSpreadsheet size={16} />
+                          {downloadingXlsx ? 'Gerando Excel...' : 'Exportar Sacados com Erro (.xlsx)'}
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="oa-bitfin-success-card">
+                      <CheckCircle2 size={24} color="#10b981" />
+                      <div>
+                        <h4>Endereços de Todos os Sacados Verificados</h4>
+                        <p>Nenhum erro de CEP ou endereço pendente foi detectado nos sacados desta operação.</p>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Resumo do Cedente e Contato Direto */}
+                  <div className="oa-cedente-card">
+                    <div className="oa-cedente-card-left">
+                      <Building2 size={20} color="#38bdf8" />
+                      <div>
+                        <span className="oa-card-label">Cedente da Operação</span>
+                        <h4>{operationDetail.cedente.nome}</h4>
+                        <span className="oa-doc-pill">CNPJ: {operationDetail.cedente.documento}</span>
+                      </div>
+                    </div>
+
+                    <div className="oa-cedente-contacts">
+                      <span className="oa-card-label">Contato Direto da Operação:</span>
+                      <div className="oa-contact-pills">
+                        {operationDetail.cedente.telefones && operationDetail.cedente.telefones.length > 0 ? (
+                          operationDetail.cedente.telefones.map((tel, idx) => (
+                            <span key={idx} className="oa-contact-pill">
+                              <Phone size={12} /> {tel}
+                            </span>
+                          ))
+                        ) : (
+                          <span className="oa-contact-pill muted">Sem telefone cadastrado</span>
+                        )}
+
+                        {operationDetail.cedente.emails && operationDetail.cedente.emails.length > 0 ? (
+                          operationDetail.cedente.emails.map((mail, idx) => (
+                            <span key={idx} className="oa-contact-pill">
+                              <Mail size={12} /> {mail}
+                            </span>
+                          ))
+                        ) : (
+                          <span className="oa-contact-pill muted">Sem e-mail cadastrado</span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Abas Internas */}
+                  <div className="oa-modal-tabs">
+                    <button
+                      className={`oa-modal-tab ${detailTab === 'inconsistencias' ? 'active alert' : ''}`}
+                      onClick={() => setDetailTab('inconsistencias')}
+                    >
+                      Sacados com Erro de CEP ({operationDetail.sacadosInconsistentes.length})
+                    </button>
+                    <button
+                      className={`oa-modal-tab ${detailTab === 'todos_sacados' ? 'active' : ''}`}
+                      onClick={() => setDetailTab('todos_sacados')}
+                    >
+                      Todos os Sacados ({operationDetail.todosSacados.length})
+                    </button>
+                    <button
+                      className={`oa-modal-tab ${detailTab === 'titulos' ? 'active' : ''}`}
+                      onClick={() => setDetailTab('titulos')}
+                    >
+                      Títulos da Operação ({operationDetail.totalTitulos})
+                    </button>
+                  </div>
+
+                  {/* ABA 1: SACADOS COM ERRO DE CEP */}
+                  {detailTab === 'inconsistencias' && (
+                    <div className="oa-tab-content">
+                      {operationDetail.sacadosInconsistentes.length === 0 ? (
+                        <div className="oa-empty-sub">
+                          <CheckCircle2 size={32} color="#10b981" />
+                          <p>Nenhum sacado com erro de endereço para listar.</p>
+                        </div>
+                      ) : (
+                        <div className="oa-table-responsive">
+                          <table className="oa-table modal-table">
+                            <thead>
+                              <tr>
+                                <th>SACADO (DEVEDOR)</th>
+                                <th>CNPJ / CPF</th>
+                                <th style={{ textAlign: 'center' }}>CEP ATUAL</th>
+                                <th>DIAGNÓSTICO DO ERRO</th>
+                                <th>ENDEREÇO</th>
+                                <th style={{ textAlign: 'center' }}>TÍTULOS</th>
+                                <th style={{ textAlign: 'right' }}>VALOR RETIDO</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {operationDetail.sacadosInconsistentes.map(s => (
+                                <tr key={s.key} className="oa-row error-row">
+                                  <td>
+                                    <div className="oa-sacado-cell">
+                                      <span className="oa-sacado-nome">{s.nome}</span>
+                                      {s.telefones.length > 0 && (
+                                        <span className="oa-sacado-phone">
+                                          <Phone size={11} /> {s.telefones[0]}
+                                        </span>
+                                      )}
+                                    </div>
+                                  </td>
+                                  <td><code>{s.documento || '-'}</code></td>
+                                  <td style={{ textAlign: 'center' }}>
+                                    <span className="oa-cep-badge invalid">
+                                      {s.cep}
+                                    </span>
+                                    {s.sugestaoCep && (
+                                      <span className="oa-cep-sugestao" title="Sugestão de correção">
+                                        Sugestão: {s.sugestaoCep}
+                                      </span>
+                                    )}
+                                  </td>
+                                  <td>
+                                    <span className="oa-error-reason-badge">
+                                      <AlertTriangle size={12} /> {s.errorReason}
+                                    </span>
+                                  </td>
+                                  <td className="oa-endereco-cell" title={s.endereco}>
+                                    {s.endereco}
+                                  </td>
+                                  <td style={{ textAlign: 'center', fontWeight: 600 }}>{s.qtdTitulos}</td>
+                                  <td style={{ textAlign: 'right', fontWeight: 700, color: '#f43f5e' }}>
+                                    R$ {s.valorTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* ABA 2: TODOS OS SACADOS */}
+                  {detailTab === 'todos_sacados' && (
+                    <div className="oa-tab-content">
+                      <div className="oa-table-responsive">
+                        <table className="oa-table modal-table">
+                          <thead>
+                            <tr>
+                              <th>SACADO</th>
+                              <th>CNPJ / CPF</th>
+                              <th style={{ textAlign: 'center' }}>STATUS CEP</th>
+                              <th>CEP CADASTRADO</th>
+                              <th>ENDEREÇO</th>
+                              <th style={{ textAlign: 'center' }}>TÍTULOS</th>
+                              <th style={{ textAlign: 'right' }}>VALOR TOTAL</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {operationDetail.todosSacados.map(s => (
+                              <tr key={s.key} className="oa-row">
+                                <td style={{ fontWeight: 600 }}>{s.nome}</td>
+                                <td><code>{s.documento || '-'}</code></td>
+                                <td style={{ textAlign: 'center' }}>
+                                  {s.isValido ? (
+                                    <span className="oa-cep-status-tag valid">
+                                      <CheckCircle2 size={12} /> Válido
+                                    </span>
+                                  ) : (
+                                    <span className="oa-cep-status-tag invalid">
+                                      <AlertTriangle size={12} /> Inconsistente
+                                    </span>
+                                  )}
+                                </td>
+                                <td>{s.cep}</td>
+                                <td className="oa-endereco-cell" title={s.endereco}>{s.endereco}</td>
+                                <td style={{ textAlign: 'center' }}>{s.qtdTitulos}</td>
+                                <td style={{ textAlign: 'right', fontWeight: 600 }}>
+                                  R$ {s.valorTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* ABA 3: TÍTULOS DA OPERAÇÃO */}
+                  {detailTab === 'titulos' && (
+                    <div className="oa-tab-content">
+                      <div className="oa-table-responsive">
+                        <table className="oa-table modal-table">
+                          <thead>
+                            <tr>
+                              <th>ID / NÚMERO</th>
+                              <th>SACADO</th>
+                              <th>CNPJ/CPF SACADO</th>
+                              <th>VENCIMENTO</th>
+                              <th style={{ textAlign: 'right' }}>VALOR NOMINAL (R$)</th>
+                              <th style={{ textAlign: 'center' }}>SITUAÇÃO</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {operationDetail.titulosResumo.map(t => (
+                              <tr key={t.id} className="oa-row">
+                                <td style={{ fontWeight: 600 }}>{t.numero}</td>
+                                <td>{t.sacadoNome}</td>
+                                <td><code>{t.sacadoDoc}</code></td>
+                                <td>{t.vencimento ? t.vencimento.substring(0, 10).split('-').reverse().join('/') : '-'}</td>
+                                <td style={{ textAlign: 'right', fontWeight: 600 }}>
+                                  R$ {t.valorNominal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                </td>
+                                <td style={{ textAlign: 'center' }}>
+                                  <span className="oa-status-badge badge-default">{t.situacao}</span>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+
+            {/* Rodapé do Modal */}
+            <div className="oa-modal-footer">
+              {operationDetail && operationDetail.sacadosInconsistentes.length > 0 && (
+                <button
+                  type="button"
+                  className="oa-btn primary"
+                  onClick={() => handleDownloadXlsx(operationDetail.operacaoId)}
+                  disabled={downloadingXlsx}
+                >
+                  <Download size={16} />
+                  {downloadingXlsx ? 'Exportando...' : 'Exportar XLSX para Correção'}
+                </button>
+              )}
+              <button
+                type="button"
+                className="oa-btn secondary"
+                onClick={() => setSelectedOpId(null)}
+              >
+                Fechar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+export default OperationsAnalysis;

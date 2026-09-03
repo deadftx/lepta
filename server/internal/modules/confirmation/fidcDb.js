@@ -220,36 +220,61 @@ export function importBackupIntoMainDb(db, backupFilePath) {
 
     const results = {};
 
-    for (const table of tablesToImport) {
-      try {
-        // Determina a tabela correspondente na fonte de backup
-        let sourceTable = table;
-        if (table === 'fidc_cedentes') {
-          const hasFidc = db.prepare(`SELECT 1 FROM backup_source.sqlite_master WHERE type='table' AND name='fidc_cedentes'`).get();
-          sourceTable = hasFidc ? 'fidc_cedentes' : 'cedentes';
-        } else if (table === 'fidc_cedentes_cnpjs') {
-          const hasFidc = db.prepare(`SELECT 1 FROM backup_source.sqlite_master WHERE type='table' AND name='fidc_cedentes_cnpjs'`).get();
-          sourceTable = hasFidc ? 'fidc_cedentes_cnpjs' : 'cedentes_cnpjs';
+    // Pragmas temporários para acelerar inserção em massa de milhões de linhas
+    try {
+      db.pragma('synchronous = OFF');
+      db.pragma('temp_store = MEMORY');
+    } catch (_) {}
+
+    db.exec('BEGIN TRANSACTION;');
+
+    try {
+      for (const table of tablesToImport) {
+        try {
+          // Determina a tabela correspondente na fonte de backup
+          let sourceTable = table;
+          if (table === 'fidc_cedentes') {
+            const hasFidc = db.prepare(`SELECT 1 FROM backup_source.sqlite_master WHERE type='table' AND name='fidc_cedentes'`).get();
+            sourceTable = hasFidc ? 'fidc_cedentes' : 'cedentes';
+          } else if (table === 'fidc_cedentes_cnpjs') {
+            const hasFidc = db.prepare(`SELECT 1 FROM backup_source.sqlite_master WHERE type='table' AND name='fidc_cedentes_cnpjs'`).get();
+            sourceTable = hasFidc ? 'fidc_cedentes_cnpjs' : 'cedentes_cnpjs';
+          }
+
+          // Verifica se a tabela fonte existe na fonte de backup
+          const hasTable = db.prepare(`SELECT 1 FROM backup_source.sqlite_master WHERE type='table' AND name=?`).get(sourceTable);
+          if (!hasTable) continue;
+
+          // Obtém colunas comuns entre o banco destino e a tabela de backup
+          const targetCols = db.prepare(`PRAGMA table_info("${table}")`).all().map(c => c.name);
+          const sourceCols = db.prepare(`PRAGMA backup_source.table_info("${sourceTable}")`).all().map(c => c.name);
+          const commonCols = targetCols.filter(col => sourceCols.includes(col));
+
+          if (commonCols.length > 0) {
+            const colList = commonCols.map(c => `"${c}"`).join(', ');
+            // Para tabelas massivas como estoque_titulos, truncar e fazer INSERT direto é 10x mais rápido que INSERT OR REPLACE
+            if (table === 'estoque_titulos' || table === 'estoque_snapshots') {
+              db.exec(`DELETE FROM "${table}"`);
+              db.exec(`INSERT INTO "${table}" (${colList}) SELECT ${colList} FROM backup_source."${sourceTable}"`);
+            } else {
+              db.exec(`INSERT OR REPLACE INTO "${table}" (${colList}) SELECT ${colList} FROM backup_source."${sourceTable}"`);
+            }
+            const count = db.prepare(`SELECT COUNT(*) as c FROM "${table}"`).get()?.c || 0;
+            results[table] = count;
+          }
+        } catch (tableErr) {
+          console.warn(`Aviso ao importar tabela ${table}:`, tableErr.message);
         }
-
-        // Verifica se a tabela fonte existe na fonte de backup
-        const hasTable = db.prepare(`SELECT 1 FROM backup_source.sqlite_master WHERE type='table' AND name=?`).get(sourceTable);
-        if (!hasTable) continue;
-
-        // Obtém colunas comuns entre o banco destino e a tabela de backup
-        const targetCols = db.prepare(`PRAGMA table_info("${table}")`).all().map(c => c.name);
-        const sourceCols = db.prepare(`PRAGMA backup_source.table_info("${sourceTable}")`).all().map(c => c.name);
-        const commonCols = targetCols.filter(col => sourceCols.includes(col));
-
-        if (commonCols.length > 0) {
-          const colList = commonCols.map(c => `"${c}"`).join(', ');
-          db.exec(`INSERT OR REPLACE INTO "${table}" (${colList}) SELECT ${colList} FROM backup_source."${sourceTable}"`);
-          const count = db.prepare(`SELECT COUNT(*) as c FROM "${table}"`).get()?.c || 0;
-          results[table] = count;
-        }
-      } catch (tableErr) {
-        console.warn(`Aviso ao importar tabela ${table}:`, tableErr.message);
       }
+
+      db.exec('COMMIT;');
+    } catch (txErr) {
+      try { db.exec('ROLLBACK;'); } catch (_) {}
+      throw txErr;
+    } finally {
+      try {
+        db.pragma('synchronous = NORMAL');
+      } catch (_) {}
     }
 
     return {

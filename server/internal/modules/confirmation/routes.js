@@ -544,6 +544,8 @@ export function registerConfirmationRoutes(app, {
 
   // --- 11. RESTAURAR ARQUIVO DE BACKUP LOCAL DO DISCO DA VPS ---
   app.post('/api/confirmacao/restore-local-backup', requireSession, checkAccess, (req, res) => {
+    req.setTimeout(300000);
+    res.setTimeout(300000);
     try {
       const { targetPath } = req.body;
       if (!targetPath || !fs.existsSync(targetPath)) {
