@@ -152,6 +152,228 @@ async function fetchEntityDetails(document, token) {
 /**
  * Lista as operações ativas registradas na data (padrão dia atual)
  */
+const SITUACOES_MESA = [
+  'Em Análise',
+  'Em Analise',
+  'Em Aberto',
+  'Pendente',
+  'Cadastrada',
+  'Em Formalização',
+  'Em Formalizacao',
+  'Em Pagamento',
+  'Liquidado',
+  'Indefinido'
+];
+
+/**
+ * Extrai dados padronizados de um título vindo de qualquer endpoint do BitFin
+ */
+export function extractTituloFields(t) {
+  if (!t) return { nome: 'Sacado Não Identificado', documento: '', valor: 0, cep: '', endereco: '', numero: '-' };
+
+  // 1. Sacado Nome
+  let nome = '';
+  if (typeof t.sacado === 'string' && t.sacado.trim()) {
+    nome = t.sacado.trim();
+  } else if (typeof t.devedor === 'string' && t.devedor.trim()) {
+    nome = t.devedor.trim();
+  } else if (typeof t.pagador === 'string' && t.pagador.trim()) {
+    nome = t.pagador.trim();
+  } else {
+    nome = (
+      t.sacado?.entidade?.nome ||
+      t.sacado?.nome ||
+      t.sacado?.razaoSocial ||
+      t.sacado?.razao_social ||
+      t.sacado?.nomeFantasia ||
+      t.sacado?.nome_fantasia ||
+      t.sacado_nome ||
+      t.sacadoNome ||
+      t.nomeSacado ||
+      t.nome_sacado ||
+      t.devedor?.entidade?.nome ||
+      t.devedor?.nome ||
+      t.devedor?.razaoSocial ||
+      t.devedor_nome ||
+      t.pagador?.entidade?.nome ||
+      t.pagador?.nome ||
+      t.pagador?.razaoSocial ||
+      t.pagador_nome ||
+      t.entidade?.nome ||
+      t.entidade?.razaoSocial ||
+      t.cliente?.entidade?.nome ||
+      t.cliente?.nome ||
+      t.razaoSocial ||
+      t.razao_social ||
+      t.nome ||
+      t.nome_completo ||
+      ''
+    ).trim();
+  }
+
+  // 2. Sacado Documento (CPF/CNPJ)
+  const documento = String(
+    t.sacado?.entidade?.documento ||
+    t.sacado?.documento ||
+    t.sacado?.cnpj ||
+    t.sacado?.cpf ||
+    t.sacado?.cpfCnpj ||
+    t.sacado?.cpf_cnpj ||
+    t.sacado_cnpj ||
+    t.sacado_cpf ||
+    t.sacado_documento ||
+    t.sacadoDocumento ||
+    t.cnpjSacado ||
+    t.cnpj_sacado ||
+    t.documentoSacado ||
+    t.documento_sacado ||
+    t.devedor?.entidade?.documento ||
+    t.devedor?.documento ||
+    t.devedor?.cnpj ||
+    t.devedor?.cpfCnpj ||
+    t.devedor_cnpj ||
+    t.pagador?.entidade?.documento ||
+    t.pagador?.documento ||
+    t.pagador?.cnpj ||
+    t.pagador?.cpfCnpj ||
+    t.pagador_cnpj ||
+    t.entidade?.documento ||
+    t.entidade?.cnpj ||
+    t.cliente?.entidade?.documento ||
+    t.cliente?.documento ||
+    t.documento ||
+    t.cnpj ||
+    t.cpf ||
+    t.cpfCnpj ||
+    t.cpf_cnpj ||
+    ''
+  ).replace(/\D/g, '');
+
+  // 3. Valor Nominal do Título
+  const valor = Number(
+    t.valorNominal ||
+    t.valor_nominal_original ||
+    t.valor_nominal ||
+    t.valorNominalOriginal ||
+    t.valorOriginal ||
+    t.valor_original ||
+    t.valorFace ||
+    t.valor_face ||
+    t.valorTitulo ||
+    t.valor_titulo ||
+    t.valorDocumento ||
+    t.valor_documento ||
+    t.valorBruto ||
+    t.valor_bruto ||
+    t.valorTotal ||
+    t.valor ||
+    t.total ||
+    t.nominal ||
+    t.valorLiquido ||
+    t.valor_liquido ||
+    0
+  );
+
+  // 4. CEP
+  const rawCep = String(
+    t.sacado?.endereco?.cep ||
+    t.sacado?.endereco?.codigoPostal ||
+    t.sacado?.cep ||
+    t.sacado?.codigoPostal ||
+    t.devedor?.endereco?.cep ||
+    t.devedor?.cep ||
+    t.pagador?.endereco?.cep ||
+    t.pagador?.cep ||
+    t.endereco?.cep ||
+    t.endereco?.codigoPostal ||
+    t.cepSacado ||
+    t.cep_sacado ||
+    t.cep ||
+    t.codigoPostal ||
+    t.codigo_postal ||
+    ''
+  ).trim();
+
+  // 5. Endereço
+  let endereco = '';
+  const endObj = t.sacado?.endereco || t.devedor?.endereco || t.pagador?.endereco || t.endereco;
+  if (typeof endObj === 'object' && endObj !== null) {
+    endereco = `${endObj.logradouro || ''}, ${endObj.numero || 'S/N'} ${endObj.complemento || ''} - ${endObj.bairro || ''}, ${endObj.localidade || endObj.cidade || ''}/${endObj.estado || endObj.uf || ''}`;
+  } else if (typeof endObj === 'string') {
+    endereco = endObj;
+  }
+
+  // 6. Número / Documento do Título
+  const numero = String(
+    t.numero ||
+    t.numero_titulo ||
+    t.numeroTitulo ||
+    t.documentoNumero ||
+    t.numeroDocumento ||
+    t.seuNumero ||
+    t.nossoNumero ||
+    t.codigo ||
+    t.id ||
+    '-'
+  ).trim();
+
+  return {
+    nome: nome || (documento ? `Sacado ${documento}` : 'Sacado Não Identificado'),
+    documento,
+    valor,
+    cep: rawCep,
+    endereco: endereco || 'Não informado',
+    numero
+  };
+}
+
+/**
+ * Extrai o valor financeiro da operação testando todas as chaves do BitFin
+ */
+export function extractOperationValue(op, titulos = []) {
+  if (!op) return 0;
+  
+  const direct = Number(
+    op.valorNominal ||
+    op.valorTotalNominal ||
+    op.valorDaOperacao ||
+    op.valorOperacao ||
+    op.valor_operacao ||
+    op.valorTotal ||
+    op.valor_total ||
+    op.totalNominal ||
+    op.total_nominal ||
+    op.valorBruto ||
+    op.valor_bruto ||
+    op.valor ||
+    op.total ||
+    op.valorSolicitado ||
+    op.valor_solicitado ||
+    op.valorAprovado ||
+    op.valor_aprovado ||
+    op.valorLiquido ||
+    op.valor_liquido ||
+    op.totais?.valorNominal ||
+    op.totais?.valorTotal ||
+    op.totais?.valor ||
+    op.valores?.valorNominal ||
+    op.valores?.valorTotal ||
+    op.resumo?.valorNominal ||
+    op.resumo?.valorTotal ||
+    0
+  );
+  if (direct > 0) return direct;
+
+  if (Array.isArray(titulos) && titulos.length > 0) {
+    return titulos.reduce((acc, t) => {
+      const { valor } = extractTituloFields(t);
+      return acc + valor;
+    }, 0);
+  }
+
+  return 0;
+}
+
 function getOperacaoIdFromTitulo(t) {
   if (!t) return '';
   if (typeof t.operacao === 'object' && t.operacao !== null) {
@@ -190,18 +412,26 @@ export async function listOperationsByDate({ token, date, statusFilter }) {
   const payloadLocal = {
     tipoDeData: 'Cadastro',
     dataInicial: `${searchDate}T00:00:00`,
-    dataFinal: `${searchDate}T23:59:59`
+    dataFinal: `${searchDate}T23:59:59`,
+    situacoes: SITUACOES_MESA
   };
 
   const payloadIso = {
     tipoDeData: 'Cadastro',
     dataInicial: `${searchDate}T00:00:00.000Z`,
-    dataFinal: `${searchDate}T23:59:59.999Z`
+    dataFinal: `${searchDate}T23:59:59.999Z`,
+    situacoes: SITUACOES_MESA
+  };
+
+  const payloadOps = {
+    tipoDeData: 'Cadastro',
+    dataInicial: `${searchDate}T00:00:00`,
+    dataFinal: `${searchDate}T23:59:59`
   };
 
   // Executa busca em /recebiveis/operacoes e /recebiveis/titulos
   const [resOps, resTitLocal, resTitIso] = await Promise.allSettled([
-    fetch(`${API_BASE_URL}/recebiveis/operacoes`, { method: 'POST', headers, body: JSON.stringify(payloadLocal) }),
+    fetch(`${API_BASE_URL}/recebiveis/operacoes`, { method: 'POST', headers, body: JSON.stringify(payloadOps) }),
     fetch(`${API_BASE_URL}/recebiveis/titulos`, { method: 'POST', headers, body: JSON.stringify(payloadLocal) }),
     fetch(`${API_BASE_URL}/recebiveis/titulos`, { method: 'POST', headers, body: JSON.stringify(payloadIso) })
   ]);
@@ -214,7 +444,7 @@ export async function listOperationsByDate({ token, date, statusFilter }) {
     } catch (_) {}
   }
 
-  // Se payloadLocal não retornar operações, tenta payloadIso
+  // Se payloadOps não retornar operações, tenta payloadIso
   if (rawOps.length === 0) {
     try {
       const resOpsIso = await fetch(`${API_BASE_URL}/recebiveis/operacoes`, { method: 'POST', headers, body: JSON.stringify(payloadIso) });
@@ -265,20 +495,7 @@ export async function listOperationsByDate({ token, date, statusFilter }) {
     const mappedTitulos = titulosByOp.get(opId) || [];
     const opTitulos = directTitulos.length > 0 ? directTitulos : mappedTitulos;
 
-    const valorTitulos = opTitulos.reduce((acc, t) => acc + Number(t.valorNominal || t.valor || t.valor_nominal || 0), 0);
-    const valorFinal = Number(
-      op.valorNominal ||
-      op.valorTotalNominal ||
-      op.valorDaOperacao ||
-      op.valorTotal ||
-      op.totalNominal ||
-      op.valorBruto ||
-      op.valor ||
-      op.valorSolicitado ||
-      op.valorAprovado ||
-      valorTitulos ||
-      0
-    );
+    const valorFinal = extractOperationValue(op, opTitulos);
 
     const titulosCount = opTitulos.length || Number(
       op.quantidadeTitulos ||
@@ -446,8 +663,15 @@ export async function getOperationDetails({ token, operacaoId, date }) {
     console.log(`[MESA OPERAÇÕES #${operacaoId}] ${titulos.length} títulos encontrados no nó opInfo.itens.`);
   }
 
-  // Estratégia B: Endpoint sub-recurso /recebiveis/operacoes/{id}/titulos
-  if (titulos.length === 0) {
+  const primeiroTemDetalhes = titulos.length > 0 && (
+    extractTituloFields(titulos[0]).valor > 0 ||
+    extractTituloFields(titulos[0]).documento !== '' ||
+    extractTituloFields(titulos[0]).nome !== 'Sacado Não Identificado'
+  );
+
+  // Se titulos estiver vazio ou se tiver apenas IDs/stubs sem sacado ou valor:
+  if (!primeiroTemDetalhes) {
+    // Estratégia B: Endpoint sub-recurso /recebiveis/operacoes/{id}/titulos
     try {
       const resSub = await fetch(`${API_BASE_URL}/recebiveis/operacoes/${operacaoId}/titulos`, { headers });
       if (resSub.ok) {
@@ -458,76 +682,87 @@ export async function getOperationDetails({ token, operacaoId, date }) {
         }
       }
     } catch (_) {}
-  }
 
-  // Estratégia C: POST /recebiveis/titulos buscando por período (formato local e ISO)
-  if (titulos.length === 0) {
-    try {
-      const [resTitLocal, resTitIso] = await Promise.allSettled([
-        fetch(`${API_BASE_URL}/recebiveis/titulos`, {
-          method: 'POST',
-          headers,
-          body: JSON.stringify({
-            tipoDeData: 'Cadastro',
-            dataInicial: `${startDate}T00:00:00`,
-            dataFinal: `${searchDate}T23:59:59`
+    // Estratégia C: POST /recebiveis/titulos buscando por período com SITUACOES_MESA
+    const primeiroSubTemDetalhes = titulos.length > 0 && (
+      extractTituloFields(titulos[0]).valor > 0 ||
+      extractTituloFields(titulos[0]).documento !== ''
+    );
+
+    if (!primeiroSubTemDetalhes) {
+      try {
+        const [resTitLocal, resTitIso] = await Promise.allSettled([
+          fetch(`${API_BASE_URL}/recebiveis/titulos`, {
+            method: 'POST',
+            headers,
+            body: JSON.stringify({
+              tipoDeData: 'Cadastro',
+              dataInicial: `${startDate}T00:00:00`,
+              dataFinal: `${searchDate}T23:59:59`,
+              situacoes: SITUACOES_MESA
+            })
+          }),
+          fetch(`${API_BASE_URL}/recebiveis/titulos`, {
+            method: 'POST',
+            headers,
+            body: JSON.stringify({
+              tipoDeData: 'Cadastro',
+              dataInicial: `${startDate}T00:00:00.000Z`,
+              dataFinal: `${searchDate}T23:59:59.999Z`,
+              situacoes: SITUACOES_MESA
+            })
           })
-        }),
-        fetch(`${API_BASE_URL}/recebiveis/titulos`, {
-          method: 'POST',
-          headers,
-          body: JSON.stringify({
-            tipoDeData: 'Cadastro',
-            dataInicial: `${startDate}T00:00:00.000Z`,
-            dataFinal: `${searchDate}T23:59:59.999Z`
-          })
-        })
-      ]);
+        ]);
 
-      let allTit = [];
-      if (resTitLocal.status === 'fulfilled' && resTitLocal.value.ok) {
-        try {
-          const d = await resTitLocal.value.json();
-          if (Array.isArray(d)) allTit = d;
-        } catch (_) {}
-      }
-      if (allTit.length === 0 && resTitIso.status === 'fulfilled' && resTitIso.value.ok) {
-        try {
-          const d = await resTitIso.value.json();
-          if (Array.isArray(d)) allTit = d;
-        } catch (_) {}
-      }
-
-      if (allTit.length > 0) {
-        titulos = allTit.filter(t => {
-          const idStr = getOperacaoIdFromTitulo(t);
-          return idStr === String(operacaoId).trim();
-        });
-        console.log(`[MESA OPERAÇÕES #${operacaoId}] ${titulos.length} títulos filtrados de ${allTit.length} títulos do período.`);
-      }
-    } catch (err) {
-      console.warn(`[MESA OPERAÇÕES] Erro ao buscar títulos da operação ${operacaoId}:`, err.message);
-    }
-  }
-
-  // Estratégia D: POST /recebiveis/titulos com filtro direto { operacaoId }
-  if (titulos.length === 0) {
-    try {
-      const resDirect = await fetch(`${API_BASE_URL}/recebiveis/titulos`, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({
-          operacaoId: Number(operacaoId) || operacaoId
-        })
-      });
-      if (resDirect.ok) {
-        const directData = await resDirect.json();
-        if (Array.isArray(directData) && directData.length > 0) {
-          titulos = directData;
-          console.log(`[MESA OPERAÇÕES #${operacaoId}] ${titulos.length} títulos obtidos via POST /recebiveis/titulos direto.`);
+        let allTit = [];
+        if (resTitLocal.status === 'fulfilled' && resTitLocal.value.ok) {
+          try {
+            const d = await resTitLocal.value.json();
+            if (Array.isArray(d)) allTit = d;
+          } catch (_) {}
         }
+        if (allTit.length === 0 && resTitIso.status === 'fulfilled' && resTitIso.value.ok) {
+          try {
+            const d = await resTitIso.value.json();
+            if (Array.isArray(d)) allTit = d;
+          } catch (_) {}
+        }
+
+        if (allTit.length > 0) {
+          const matchingTit = allTit.filter(t => {
+            const idStr = getOperacaoIdFromTitulo(t);
+            return idStr === String(operacaoId).trim();
+          });
+          if (matchingTit.length > 0) {
+            titulos = matchingTit;
+            console.log(`[MESA OPERAÇÕES #${operacaoId}] ${titulos.length} títulos filtrados com sucesso de ${allTit.length} títulos.`);
+          }
+        }
+      } catch (err) {
+        console.warn(`[MESA OPERAÇÕES] Erro ao buscar títulos da operação ${operacaoId}:`, err.message);
       }
-    } catch (_) {}
+    }
+
+    // Estratégia D: POST /recebiveis/titulos com filtro direto { operacaoId }
+    if (!titulos.length || extractTituloFields(titulos[0]).valor === 0) {
+      try {
+        const resDirect = await fetch(`${API_BASE_URL}/recebiveis/titulos`, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({
+            operacaoId: Number(operacaoId) || operacaoId,
+            situacoes: SITUACOES_MESA
+          })
+        });
+        if (resDirect.ok) {
+          const directData = await resDirect.json();
+          if (Array.isArray(directData) && directData.length > 0) {
+            titulos = directData;
+            console.log(`[MESA OPERAÇÕES #${operacaoId}] ${titulos.length} títulos obtidos via POST /recebiveis/titulos direto.`);
+          }
+        }
+      } catch (_) {}
+    }
   }
 
   // Dados do Cedente da Operação
@@ -571,42 +806,33 @@ export async function getOperationDetails({ token, operacaoId, date }) {
     'Cedente BitFin'
   ).trim();
 
-  // Agrupa sacados distintos
+  // Agrupa sacados distintos utilizando a função robusta extractTituloFields
   const sacadosMap = new Map();
   for (const t of titulos) {
-    const sDoc = String(t.sacado?.entidade?.documento || t.sacado?.documento || t.sacado_cnpj || '').replace(/\D/g, '');
-    const sNome = (t.sacado?.entidade?.nome || t.sacado?.nome || t.sacado_nome || 'Sacado Não Identificado').trim();
-    const key = sDoc || sNome;
+    const f = extractTituloFields(t);
+    const key = f.documento || f.nome || `TITULO_${t.id || Math.random()}`;
 
     if (!sacadosMap.has(key)) {
       sacadosMap.set(key, {
-        documento: sDoc,
-        nome: sNome,
+        documento: f.documento,
+        nome: f.nome,
         titulos: [],
-        valorTotal: 0
+        valorTotal: 0,
+        rawCep: f.cep,
+        endereco: f.endereco
       });
     }
 
     const item = sacadosMap.get(key);
     item.titulos.push(t);
-    item.valorTotal += Number(t.valorNominal || t.valor || 0);
+    item.valorTotal += f.valor;
+    if (!item.rawCep && f.cep) item.rawCep = f.cep;
+    if ((!item.endereco || item.endereco === 'Não informado') && f.endereco && f.endereco !== 'Não informado') {
+      item.endereco = f.endereco;
+    }
   }
 
-  const valorTotalOperacao = (titulos.length > 0
-    ? titulos.reduce((acc, t) => acc + Number(t.valorNominal || t.valor || t.valor_nominal || 0), 0)
-    : 0) ||
-    Number(
-      opInfo?.valorNominal ||
-      opInfo?.valorTotalNominal ||
-      opInfo?.valorDaOperacao ||
-      opInfo?.valorTotal ||
-      opInfo?.totalNominal ||
-      opInfo?.valorBruto ||
-      opInfo?.valor ||
-      opInfo?.valorSolicitado ||
-      opInfo?.valorAprovado ||
-      0
-    );
+  const valorTotalOperacao = extractOperationValue(opInfo, titulos);
 
   // Consulta e validação de endereço para cada sacado
   const todosSacados = [];
@@ -713,15 +939,18 @@ export async function getOperationDetails({ token, operacaoId, date }) {
     },
     sacadosInconsistentes,
     todosSacados,
-    titulosResumo: titulos.map(t => ({
-      id: t.id,
-      numero: t.numero || t.numero_titulo || '-',
-      sacadoNome: t.sacado?.entidade?.nome || t.sacado?.nome || t.sacado_nome || '-',
-      sacadoDoc: t.sacado?.entidade?.documento || t.sacado?.documento || t.sacado_cnpj || '-',
-      valorNominal: Number(t.valorNominal || t.valor || t.valor_nominal || 0),
-      vencimento: t.dataDeVencimento || t.vencimento || t.data_vencimento || '-',
-      situacao: t.situacao || 'Em Aberto'
-    }))
+    titulosResumo: titulos.map(t => {
+      const f = extractTituloFields(t);
+      return {
+        id: t.id || f.numero,
+        numero: f.numero,
+        sacadoNome: f.nome,
+        sacadoDoc: f.documento || '-',
+        valorNominal: f.valor,
+        vencimento: t.dataDeVencimento || t.vencimento || t.data_vencimento || '-',
+        situacao: t.situacao || 'Em Análise'
+      };
+    })
   };
 }
 
@@ -946,21 +1175,22 @@ export async function generateTitulosInconsistentesExcel({ operacao, sacadosInco
     titulosDoSacado.forEach(t => {
       rowIndex++;
       const isEven = rowIndex % 2 === 0;
-      const vNominal = Number(t.valorNominal || t.valor || s.valorTotal || 0);
+      const f = extractTituloFields(t);
+      const vNominal = f.valor || Number(s.valorTotal || 0);
       totalValorTitulos += vNominal;
       totalQtdTitulos++;
 
       const row = worksheet.addRow([
         operacao.operacaoId,
         t.id || '-',
-        t.numero || t.numero_titulo || '-',
+        f.numero,
         s.nome,
         s.documento || '-',
         s.cep,
         s.errorReason,
         s.sugestaoCep || '-',
         vNominal,
-        t.dataDeVencimento || t.vencimento || '-',
+        t.dataDeVencimento || t.vencimento || t.data_vencimento || '-',
         s.endereco,
         s.telefones.length ? s.telefones.join('; ') : '-',
         s.emails.length ? s.emails.join('; ') : '-'
