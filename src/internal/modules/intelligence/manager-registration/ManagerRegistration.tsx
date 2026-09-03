@@ -192,11 +192,18 @@ const ManagerRegistration = () => {
     }
   };
 
-  const openCedentesModal = async (manager: ManagerAccount) => {
+  const openCedentesModal = async (manager: ManagerAccount, forceSync = false) => {
     setSelectedManagerForCedentes(manager);
     setCedenteSearchTerm('');
     try {
       setLoadingCedentes(true);
+      if (forceSync) {
+        await fetch(`${API_BASE_URL}/api/gerentes/sync`, {
+          method: 'POST',
+          headers: authHeaders()
+        }).catch(() => {});
+        await fetchManagers();
+      }
       const res = await fetch(`${API_BASE_URL}/api/gerentes/${manager.id}/cedentes`, {
         headers: authHeaders()
       });
@@ -544,9 +551,19 @@ const ManagerRegistration = () => {
                   {selectedManagerForCedentes.superintendente_nome && ` • Super: ${selectedManagerForCedentes.superintendente_nome}`}
                 </p>
               </div>
-              <button className="btn-modal-close" onClick={() => setSelectedManagerForCedentes(null)}>
-                <X size={18} />
-              </button>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <button
+                  className="btn-refresh-managers"
+                  onClick={() => openCedentesModal(selectedManagerForCedentes, true)}
+                  title="Sincronizar dados e atualizar carteira"
+                  style={{ width: '32px', height: '32px' }}
+                >
+                  <RefreshCw size={15} className={loadingCedentes ? 'spin-animation' : ''} />
+                </button>
+                <button className="btn-modal-close" onClick={() => setSelectedManagerForCedentes(null)}>
+                  <X size={18} />
+                </button>
+              </div>
             </div>
 
             {/* Barra de busca interna de cedentes */}
@@ -587,8 +604,16 @@ const ManagerRegistration = () => {
                     >
                       Cadastro de Clientes
                     </button>
-                    .
+                    {' '}ou sincronize a carteira com o banco/API:
                   </p>
+                  <button
+                    className="btn-add-manager"
+                    onClick={() => openCedentesModal(selectedManagerForCedentes, true)}
+                    style={{ marginTop: '0.75rem', display: 'inline-flex', alignItems: 'center', gap: '0.5rem', padding: '0.45rem 0.9rem', fontSize: '0.85rem' }}
+                  >
+                    <RefreshCw size={14} className={loadingCedentes ? 'spin-animation' : ''} />
+                    Sincronizar Carteira / API
+                  </button>
                 </div>
               ) : (
                 <table className="cedentes-table">

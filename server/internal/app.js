@@ -309,16 +309,27 @@ function ensureGerentesContasTable() {
     insertStmt.run('ger_mauro_blanes', 'Mauro Blanes', 'mauro.blanes@lepta.com.br', 'GERENTE', 'sup_rafael_pereira', 'Rafael Pereira', now, now);
     insertStmt.run('ger_luiz_dantas', 'Luiz Dantas', 'luiz.dantas@lepta.com.br', 'GERENTE', 'sup_rafael_pereira', 'Rafael Pereira', now, now);
 
+    // Remove duplicatas conhecidas de gerentes (ex: Luiz Otávio que já está cadastrado como Luiz Dantas)
+    try {
+      db.prepare("DELETE FROM gerentes_contas WHERE id = 'ger_luiz_otavio'").run();
+    } catch {}
+
     // Sincroniza qualquer outro gerente existente na tabela 'gerentes' da carteira
     try {
       if (tableExists('gerentes')) {
         const rows = db.prepare('SELECT * FROM gerentes').all();
+        const currentList = db.prepare('SELECT * FROM gerentes_contas').all();
         for (const g of rows) {
           if (!g.nome) continue;
+          // Evita inserir duplicatas se o gerente já estiver coberto por outro cadastro/alias
+          const alreadyMatched = matchRegisteredManager(g.nome, currentList);
+          if (alreadyMatched) continue;
+
           const slug = g.nome.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]/g, '_');
           const id = `ger_${slug}`;
           const email = `${slug.replace(/_/g, '.')}@lepta.com.br`;
           insertStmt.run(id, g.nome, email, 'GERENTE', 'sup_rafael_pereira', 'Rafael Pereira', now, now);
+          currentList.push({ id, nome: g.nome, email, cargo: 'GERENTE' });
         }
       }
     } catch (syncErr) {
@@ -1781,6 +1792,7 @@ function getCarteiraCedentesRows() {
   const cnpjParts = [];
   if (tableExists('fidc_cedentes_cnpjs')) cnpjParts.push('SELECT cnpj_raiz, MIN(cnpj) as cnpj FROM fidc_cedentes_cnpjs GROUP BY cnpj_raiz');
   if (tableExists('cedentes_cnpjs')) cnpjParts.push('SELECT cnpj_raiz, MIN(cnpj) as cnpj FROM cedentes_cnpjs GROUP BY cnpj_raiz');
+  if (tableExists('estoque_titulos')) cnpjParts.push('SELECT SUBSTR(cedente_cnpj, 1, 8) as cnpj_raiz, MIN(cedente_cnpj) as cnpj FROM estoque_titulos WHERE cedente_cnpj IS NOT NULL AND LENGTH(cedente_cnpj) = 14 GROUP BY SUBSTR(cedente_cnpj, 1, 8)');
 
   const cnpjsSubquery = cnpjParts.length > 0 ? cnpjParts.join(' UNION ') : 'SELECT NULL as cnpj_raiz, NULL as cnpj WHERE 1=0';
 
@@ -1864,11 +1876,13 @@ async function syncBitfinApiData(gerentes) {
   if (!UNLTD_TOKEN || isSyncingBitfin) return;
   isSyncingBitfin = true;
   try {
-    const currentYear = new Date().getUTCFullYear();
-    const years = [currentYear, currentYear - 1]; // 2026 e 2025
+    const today = new Date();
+    const startDate = new Date(today.getTime() - 90 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+    const endDate = today.toISOString().slice(0, 10);
+    const windows = buildDateWindows(startDate, endDate);
 
-    for (const year of years) {
-      // A. Operações do ano
+    for (const win of windows) {
+      // A. Operações do período
       try {
         const opsRes = await fetch('https://lepta-backend.bit-unltd.com.br/recebiveis/operacoes', {
           method: 'POST',
@@ -1878,8 +1892,8 @@ async function syncBitfinApiData(gerentes) {
           },
           body: JSON.stringify({
             tipoDeData: 'Cadastro',
-            dataInicial: `${year}-01-01T00:00:00.000Z`,
-            dataFinal: `${year}-12-31T23:59:59.999Z`
+            dataInicial: win.dataInicial,
+            dataFinal: win.dataFinal
           })
         });
         if (opsRes.ok) {
@@ -1923,13 +1937,13 @@ async function syncBitfinApiData(gerentes) {
           }
         }
       } catch (err) {
-        console.warn(`Aviso ao buscar operações de ${year}:`, err.message);
+        console.warn(`Aviso ao buscar operações (${win.dataInicial} a ${win.dataFinal}):`, err.message);
       }
 
-      // B. Títulos do ano
+      // B. Títulos do período
       try {
-        const titulos = await fetchTitulosRange(`${year}-01-01`, `${year}-12-31`);
-        for (const t of titulos) {
+        const titulos = await fetchTitulosDaAPI({ query: { dataInicial: win.dataInicial, dataFinal: win.dataFinal } }).catch(() => []);
+        for (const t of (titulos || [])) {
           const doc = normalizeEntityDocument(
             t.contaOperacional?.cliente?.entidade?.documento ||
             t.cliente?.documento ||
@@ -1965,7 +1979,7 @@ async function syncBitfinApiData(gerentes) {
           }
         }
       } catch (err) {
-        console.warn(`Aviso ao buscar títulos de ${year}:`, err.message);
+        console.warn(`Aviso ao buscar títulos (${win.dataInicial} a ${win.dataFinal}):`, err.message);
       }
     }
   } finally {
