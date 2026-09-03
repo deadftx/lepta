@@ -643,7 +643,7 @@ export function getReceitas({ fundoId = 'MULTISETORIAL', mes, ano }) {
 }
 
 /**
- * Consulta o status das 6 importações diárias (Cotas, Estoque, Receita para Multi e Special)
+ * Consulta o status das importações diárias (Cotas, Estoque e Receita Unificada para Multi e Special)
  */
 export function getImportacoesStatus({ data } = {}) {
   const db = getFidcDb();
@@ -693,25 +693,36 @@ export function getImportacoesStatus({ data } = {}) {
       registros: estoqueCount,
       atualizadoEm: snap?.importado_em || estStatusRow?.atualizado_em || null
     });
-
-    // 3. Receita
-    const recRow = db.prepare('SELECT COUNT(*) as c, SUM(valor_liquido) as liq, MAX(lancado_em) as ultimo FROM receita_lancamentos WHERE fundo_id = ? AND data = ?').get(f.id, targetDate);
-    const recCount = recRow?.c || 0;
-    const recStatusRow = db.prepare('SELECT status, atualizado_em, registros_importados FROM importacoes_status WHERE fundo_id = ? AND tipo = ? AND data_referencia = ?').get(f.id, 'RECEITA', targetDate);
-
-    const isRecOk = recCount > 0;
-    itens.push({
-      id: `receita_${f.nome.toLowerCase()}`,
-      fundoId: f.id,
-      fundoNome: f.nome,
-      tipo: 'RECEITA',
-      titulo: `Receita ${f.nome}`,
-      status: isRecOk ? 'IMPORTADO' : 'PENDENTE',
-      detalhe: isRecOk ? `${recCount} lançamento(s) — ${formatBrl(recRow?.liq || 0)}` : 'Nenhum lançamento hoje',
-      registros: recCount,
-      atualizadoEm: recRow?.ultimo || recStatusRow?.atualizado_em || null
-    });
   }
+
+  // 3. Receita Unificada (Multi & Special)
+  const recMulti = db.prepare('SELECT COUNT(*) as c, SUM(valor_liquido) as liq, MAX(lancado_em) as ultimo FROM receita_lancamentos WHERE fundo_id = ? AND data = ?').get('MULTISETORIAL', targetDate);
+  const recSpecial = db.prepare('SELECT COUNT(*) as c, SUM(valor_liquido) as liq, MAX(lancado_em) as ultimo FROM receita_lancamentos WHERE fundo_id = ? AND data = ?').get('SPECIAL', targetDate);
+
+  const countMulti = recMulti?.c || 0;
+  const countSpecial = recSpecial?.c || 0;
+  const totalRecCount = countMulti + countSpecial;
+  const isRecOk = totalRecCount > 0;
+
+  let recDetalhe = 'Nenhum lançamento hoje';
+  if (isRecOk) {
+    const parts = [];
+    if (countMulti > 0) parts.push(`${countMulti} lanç. Multi (${formatBrl(recMulti?.liq || 0)})`);
+    if (countSpecial > 0) parts.push(`${countSpecial} lanç. Special (${formatBrl(recSpecial?.liq || 0)})`);
+    recDetalhe = parts.join(' | ');
+  }
+
+  itens.push({
+    id: 'receita_unificada',
+    fundoId: 'AMBOS',
+    fundoNome: 'MULTI & SPECIAL',
+    tipo: 'RECEITA',
+    titulo: 'Receita Diária',
+    status: isRecOk ? 'IMPORTADO' : 'PENDENTE',
+    detalhe: recDetalhe,
+    registros: totalRecCount,
+    atualizadoEm: recMulti?.ultimo || recSpecial?.ultimo || null
+  });
 
   const pendencias = itens.filter(i => i.status === 'PENDENTE');
   const diaValido = pendencias.length === 0;
@@ -727,11 +738,12 @@ export function getImportacoesStatus({ data } = {}) {
 }
 
 /**
- * Importa lançamentos de receita a partir de planilha XLSX (Padrão 20260824_multi_clean.xlsx)
- * Colunas utilizadas:
- * - CedenteNome -> cedente_nome
- * - ValorNominalOriginal -> valor_bruto
- * - ValorAquisicao -> valor_liquido
+ * Importa lançamentos de receita a partir de arquivo CSV ou XLSX (ex: RemessaAcompanhamento.csv)
+ * Usa exclusivamente as colunas:
+ * - Cedente -> cedente_nome
+ * - Valor Nominal -> valor_bruto
+ * - Valor Pagamento / Valor Pagamaento -> valor_liquido
+ * Divide automaticamente entre MULTISETORIAL e SPECIAL quando a coluna Fundo estiver presente.
  */
 export function importReceitasFromExcel({ fundoId = 'MULTISETORIAL', data, fileBuffer, filename = 'receita.xlsx' }) {
   const db = getFidcDb();
@@ -744,33 +756,58 @@ export function importReceitasFromExcel({ fundoId = 'MULTISETORIAL', data, fileB
   const wb = XLSX.read(fileBuffer, { type: 'buffer' });
   const sheetName = wb.SheetNames[0];
   if (!sheetName) {
-    throw new Error('Nenhuma aba encontrada na planilha.');
+    throw new Error('Nenhuma aba encontrada no arquivo.');
   }
 
   const sheet = wb.Sheets[sheetName];
   const rows = XLSX.utils.sheet_to_json(sheet, { defval: null });
 
   if (!rows || rows.length === 0) {
-    throw new Error('A planilha está vazia.');
+    throw new Error('O arquivo está vazio.');
   }
 
   const parseNumber = (val) => {
     if (val === null || val === undefined || val === '') return 0;
     if (typeof val === 'number') return val;
-    let s = String(val).trim().replace(/[R$\s]/g, '');
-    if (s.includes(',') && s.includes('.')) {
-      s = s.replace(/\./g, '').replace(',', '.');
-    } else if (s.includes(',')) {
-      s = s.replace(',', '.');
-    }
+    const s = String(val).replace(/[^0-9,-]/g, '').replace(',', '.');
     const num = parseFloat(s);
     return isNaN(num) ? 0 : num;
   };
 
-  const targetDate = data || new Date().toISOString().substring(0, 10);
+  const SSF = XLSX.SSF || XLSX.default?.SSF;
+
+  const parseDateFromVal = (val, fallback) => {
+    if (!val) return fallback;
+    if (val instanceof Date) return val.toISOString().substring(0, 10);
+    if (typeof val === 'number') {
+      const d = SSF?.parse_date_code(val);
+      if (d) return `${d.y}-${String(d.m).padStart(2, '0')}-${String(d.d).padStart(2, '0')}`;
+    }
+    const s = String(val).trim();
+    if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.substring(0, 10);
+    const parts = s.split(/[\/\-]/);
+    if (parts.length === 3) {
+      if (parts[2].length === 4) {
+        return `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
+      }
+    }
+    return fallback;
+  };
+
+  // Se a data não foi informada ou for a data de hoje, tenta extrair da primeira linha do arquivo
+  let targetDate = data;
+  if (!targetDate && rows[0]?.Data) {
+    targetDate = parseDateFromVal(rows[0].Data, null);
+  }
+  if (!targetDate) {
+    targetDate = new Date().toISOString().substring(0, 10);
+  }
+
   let totalBruto = 0;
   let totalLiquido = 0;
   let count = 0;
+  const multiStats = { count: 0, bruto: 0, liquido: 0 };
+  const specialStats = { count: 0, bruto: 0, liquido: 0 };
 
   const insertStmt = db.prepare(`
     INSERT INTO receita_lancamentos (fundo_id, data, cedente_nome, valor_bruto, valor_liquido, lancado_em)
@@ -779,28 +816,69 @@ export function importReceitasFromExcel({ fundoId = 'MULTISETORIAL', data, fileB
 
   const tx = db.transaction(() => {
     for (const r of rows) {
-      const cedente = r['CedenteNome'] || r['Cedente'] || r['CEDENTE'] || r['cedente_nome'] || r['NomeCedente'] || r['Cedente Nome'];
+      // 1. Identifica o Cedente
+      const cedente = r['Cedente'] || r['CEDENTE'] || r['CedenteNome'] || r['cedente_nome'] || r['NomeCedente'] || r['Cedente Nome'];
       if (!cedente) continue;
 
-      const bruto = parseNumber(r['ValorNominalOriginal'] ?? r['Valor Bruto'] ?? r['VALOR BRUTO'] ?? r['valor_bruto'] ?? r['ValorNominal'] ?? 0);
-      const liquido = parseNumber(r['ValorAquisicao'] ?? r['Valor Liquido'] ?? r['VALOR LIQUIDO'] ?? r['valor_liquido'] ?? r['ValorAquisição'] ?? 0);
+      // 2. Identifica os Valores (apenas colunas: cedente, valor nominal e valor pagamento)
+      const bruto = parseNumber(
+        r['Valor Nominal'] ?? r['VALOR NOMINAL'] ?? r['valor_nominal'] ??
+        r['ValorNominalOriginal'] ?? r['Valor Bruto'] ?? r['VALOR BRUTO'] ?? r['valor_bruto'] ?? 0
+      );
+      const liquido = parseNumber(
+        r['Valor Pagamaento'] ?? r['Valor Pagamento'] ?? r['VALOR PAGAMENTO'] ?? r['valor_pagamento'] ??
+        r['ValorAquisicao'] ?? r['Valor Liquido'] ?? r['VALOR LIQUIDO'] ?? r['valor_liquido'] ?? 0
+      );
 
-      insertStmt.run(fundoId, targetDate, String(cedente).trim(), bruto, liquido);
+      // 3. Identifica o Fundo correspondente (Mult ou Special)
+      const fundoRaw = String(r['Fundo'] || r['fundo'] || r['FUNDO'] || '').toUpperCase();
+      let targetFundo = fundoId;
+      if (fundoRaw.includes('SPECIAL')) {
+        targetFundo = 'SPECIAL';
+      } else if (fundoRaw.includes('MULTI')) {
+        targetFundo = 'MULTISETORIAL';
+      }
+
+      insertStmt.run(targetFundo, targetDate, String(cedente).trim(), bruto, liquido);
       totalBruto += bruto;
       totalLiquido += liquido;
       count++;
+
+      if (targetFundo === 'SPECIAL') {
+        specialStats.count++;
+        specialStats.bruto += bruto;
+        specialStats.liquido += liquido;
+      } else {
+        multiStats.count++;
+        multiStats.bruto += bruto;
+        multiStats.liquido += liquido;
+      }
     }
 
-    // Registra na tabela importacoes_status
-    db.prepare(`
-      INSERT INTO importacoes_status (fundo_id, tipo, data_referencia, status, registros_importados, arquivo_origem, atualizado_em)
-      VALUES (?, 'RECEITA', ?, 'IMPORTADO', ?, ?, datetime('now'))
-      ON CONFLICT(fundo_id, tipo, data_referencia) DO UPDATE SET
-        status = 'IMPORTADO',
-        registros_importados = registros_importados + excluded.registros_importados,
-        arquivo_origem = excluded.arquivo_origem,
-        atualizado_em = datetime('now')
-    `).run(fundoId, targetDate, count, filename);
+    // Registra na tabela importacoes_status para os fundos afetados
+    if (multiStats.count > 0 || fundoId === 'MULTISETORIAL') {
+      db.prepare(`
+        INSERT INTO importacoes_status (fundo_id, tipo, data_referencia, status, registros_importados, arquivo_origem, atualizado_em)
+        VALUES ('MULTISETORIAL', 'RECEITA', ?, 'IMPORTADO', ?, ?, datetime('now'))
+        ON CONFLICT(fundo_id, tipo, data_referencia) DO UPDATE SET
+          status = 'IMPORTADO',
+          registros_importados = excluded.registros_importados,
+          arquivo_origem = excluded.arquivo_origem,
+          atualizado_em = datetime('now')
+      `).run(targetDate, multiStats.count, filename);
+    }
+
+    if (specialStats.count > 0 || fundoId === 'SPECIAL') {
+      db.prepare(`
+        INSERT INTO importacoes_status (fundo_id, tipo, data_referencia, status, registros_importados, arquivo_origem, atualizado_em)
+        VALUES ('SPECIAL', 'RECEITA', ?, 'IMPORTADO', ?, ?, datetime('now'))
+        ON CONFLICT(fundo_id, tipo, data_referencia) DO UPDATE SET
+          status = 'IMPORTADO',
+          registros_importados = excluded.registros_importados,
+          arquivo_origem = excluded.arquivo_origem,
+          atualizado_em = datetime('now')
+      `).run(targetDate, specialStats.count, filename);
+    }
   });
 
   tx();
@@ -810,13 +888,14 @@ export function importReceitasFromExcel({ fundoId = 'MULTISETORIAL', data, fileB
     count,
     totalBruto,
     totalLiquido,
-    fundoId,
+    multi: multiStats,
+    special: specialStats,
     data: targetDate
   };
 }
 
 /**
- * Importa títulos de estoque a partir de arquivo CSV ou XLSX
+ * Importa títulos de estoque a partir de arquivo CSV ou XLSX (Modelo oficial RelatorioEstoque)
  */
 export function importEstoqueFile({ fundoId = 'MULTISETORIAL', data, fileBuffer, filename = 'estoque.csv', isCsv = false }) {
   const db = getFidcDb();
@@ -827,29 +906,28 @@ export function importEstoqueFile({ fundoId = 'MULTISETORIAL', data, fileBuffer,
   }
 
   const wb = XLSX.read(fileBuffer, { type: 'buffer' });
-  const sheetName = wb.SheetNames[0];
+  const sheetName = wb.SheetNames.find(n => /estoque/i.test(n)) || wb.SheetNames[0];
   if (!sheetName) throw new Error('Nenhuma aba encontrada no arquivo de estoque.');
 
   const sheet = wb.Sheets[sheetName];
   const rows = XLSX.utils.sheet_to_json(sheet, { defval: null });
   if (!rows || rows.length === 0) throw new Error('Arquivo de estoque vazio.');
 
-  const targetDate = data || new Date().toISOString().substring(0, 10);
+  const SSF = XLSX.SSF || XLSX.default?.SSF;
 
   const parseNum = (val) => {
     if (val === null || val === undefined || val === '') return 0;
     if (typeof val === 'number') return val;
-    let s = String(val).trim().replace(/[R$\s]/g, '');
-    if (s.includes(',') && s.includes('.')) s = s.replace(/\./g, '').replace(',', '.');
-    else if (s.includes(',')) s = s.replace(',', '.');
+    const s = String(val).replace(/[^0-9,-]/g, '').replace(',', '.');
     const n = parseFloat(s);
     return isNaN(n) ? 0 : n;
   };
 
-  const parseDate = (val) => {
-    if (!val) return targetDate;
+  const parseDate = (val, fallback) => {
+    if (!val) return fallback;
+    if (val instanceof Date) return val.toISOString().substring(0, 10);
     if (typeof val === 'number') {
-      const d = XLSX.SSF.parse_date_code(val);
+      const d = SSF?.parse_date_code(val);
       if (d) return `${d.y}-${String(d.m).padStart(2, '0')}-${String(d.d).padStart(2, '0')}`;
     }
     const s = String(val).trim();
@@ -858,21 +936,43 @@ export function importEstoqueFile({ fundoId = 'MULTISETORIAL', data, fileBuffer,
       const parts = s.split('/');
       return `${parts[2]}-${parts[1]}-${parts[0]}`;
     }
-    return targetDate;
+    return fallback;
   };
+
+  // 1. Detecta o Fundo correto (se o nome do arquivo trouxer 'special' ou 'multi')
+  const fn = String(filename || '').toLowerCase();
+  let effectiveFundoId = fundoId || 'MULTISETORIAL';
+  if (fn.includes('special')) {
+    effectiveFundoId = 'SPECIAL';
+  } else if (fn.includes('multi')) {
+    effectiveFundoId = 'MULTISETORIAL';
+  }
+
+  // 2. Detecta a Data de Posição (prioridade: DataPosicao na linha > nome do arquivo YYYYMMDD > data informada)
+  let targetDate = data;
+  if (!targetDate && rows[0]?.DataPosicao) {
+    targetDate = parseDate(rows[0].DataPosicao, null);
+  }
+  if (!targetDate) {
+    const match = fn.match(/(20\d{2})(\d{2})(\d{2})/);
+    if (match) targetDate = `${match[1]}-${match[2]}-${match[3]}`;
+  }
+  if (!targetDate) {
+    targetDate = new Date().toISOString().substring(0, 10);
+  }
 
   let totalVp = 0;
   let count = 0;
 
   const tx = db.transaction(() => {
-    // Cria ou atualiza snapshot
-    db.prepare('DELETE FROM estoque_titulos WHERE snapshot_id IN (SELECT id FROM estoque_snapshots WHERE fundo_id = ? AND data = ?)').run(fundoId, targetDate);
-    db.prepare('DELETE FROM estoque_snapshots WHERE fundo_id = ? AND data = ?').run(fundoId, targetDate);
+    // Cria ou atualiza snapshot para o fundo e data
+    db.prepare('DELETE FROM estoque_titulos WHERE snapshot_id IN (SELECT id FROM estoque_snapshots WHERE fundo_id = ? AND data = ?)').run(effectiveFundoId, targetDate);
+    db.prepare('DELETE FROM estoque_snapshots WHERE fundo_id = ? AND data = ?').run(effectiveFundoId, targetDate);
 
     const snapResult = db.prepare(`
       INSERT INTO estoque_snapshots (fundo_id, data, total_titulos, importado_em)
       VALUES (?, ?, ?, datetime('now'))
-    `).run(fundoId, targetDate, rows.length);
+    `).run(effectiveFundoId, targetDate, rows.length);
 
     const snapshotId = snapResult.lastInsertRowid;
 
@@ -894,9 +994,9 @@ export function importEstoqueFile({ fundoId = 'MULTISETORIAL', data, fileBuffer,
       const sacCnpj = r['SacadoCnpjCpf'] || r['SacadoCnpj'] || r['sacado_cnpj'] || null;
       const tipoAtivo = r['TipoAtivo'] || r['tipo_ativo'] || 'Outros';
 
-      const dEmissao = parseDate(r['DataEmissao']);
-      const dAquisicao = parseDate(r['DataAquisicao']);
-      const dVencimento = parseDate(r['DataVencimento']);
+      const dEmissao = parseDate(r['DataEmissao'], targetDate);
+      const dAquisicao = parseDate(r['DataAquisicao'], targetDate);
+      const dVencimento = parseDate(r['DataVencimento'], targetDate);
       const numTitulo = r['NumeroTitulo'] || r['IdTituloVx'] || r['numero_titulo'] || null;
 
       const vAquisicao = parseNum(r['ValorAquisicao'] || r['valor_aquisicao']);
@@ -910,7 +1010,7 @@ export function importEstoqueFile({ fundoId = 'MULTISETORIAL', data, fileBuffer,
       const campoChave = r['CampoChave'] || r['campo_chave'] || null;
 
       insertTitle.run(
-        snapshotId, fundoId, targetDate,
+        snapshotId, effectiveFundoId, targetDate,
         cedCnpj, String(cedNome).trim(),
         sacCnpj, String(sacNome).trim(),
         String(tipoAtivo).trim(), dEmissao, dAquisicao, dVencimento,
@@ -936,7 +1036,7 @@ export function importEstoqueFile({ fundoId = 'MULTISETORIAL', data, fileBuffer,
         registros_importados = excluded.registros_importados,
         arquivo_origem = excluded.arquivo_origem,
         atualizado_em = datetime('now')
-    `).run(fundoId, targetDate, count, filename);
+    `).run(effectiveFundoId, targetDate, count, filename);
   });
 
   tx();
@@ -945,7 +1045,7 @@ export function importEstoqueFile({ fundoId = 'MULTISETORIAL', data, fileBuffer,
     success: true,
     count,
     totalVp,
-    fundoId,
+    fundoId: effectiveFundoId,
     data: targetDate
   };
 }

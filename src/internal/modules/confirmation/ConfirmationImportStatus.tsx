@@ -113,7 +113,7 @@ export const ConfirmationImportStatus: React.FC<ImportStatusProps> = ({ initialD
               <ShieldCheck size={24} color="#38bdf8" /> Painel de Validação de Importações Diárias
             </h2>
             <p style={{ fontSize: '0.8rem', color: '#94a3b8', margin: '4px 0 0 0' }}>
-              Acompanhamento das 6 importações essenciais (Cotas, Estoque e Receitas) para consolidar e validar a posição do dia.
+              Acompanhamento das 5 importações essenciais (Cotas, Estoque e Receita Diária) para consolidar e validar a posição do dia.
             </p>
           </div>
 
@@ -171,7 +171,7 @@ export const ConfirmationImportStatus: React.FC<ImportStatusProps> = ({ initialD
                 </span>
                 <div style={{ fontSize: '0.75rem', color: '#cbd5e1', marginTop: '2px' }}>
                   {statusData.diaValido
-                    ? 'Todas as 6 importações foram checadas. O relatório diário consolidará esta data como a Posição oficial.'
+                    ? 'Todas as 5 importações foram checadas. O relatório diário consolidará esta data como a Posição oficial.'
                     : `Pendências a importar: ${statusData.pendencias.join(', ')}`}
                 </div>
               </div>
@@ -194,10 +194,11 @@ export const ConfirmationImportStatus: React.FC<ImportStatusProps> = ({ initialD
         )}
       </div>
 
-      {/* ── GRID DOS 6 CARDS (LAYOUT ESTILO CARD DA PRINT) ── */}
+      {/* ── GRID DOS CARDS DE IMPORTAÇÃO ── */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '1rem' }}>
         {statusData?.itens?.map((item: any) => {
           const isImportado = item.status === 'IMPORTADO';
+          const isUnificado = item.fundoNome?.includes('SPECIAL') && item.fundoNome?.includes('MULTI');
 
           return (
             <div
@@ -246,9 +247,23 @@ export const ConfirmationImportStatus: React.FC<ImportStatusProps> = ({ initialD
                         fontWeight: 700,
                         padding: '1px 6px',
                         borderRadius: '10px',
-                        background: item.fundoNome === 'MULTI' ? 'rgba(56, 189, 248, 0.15)' : 'rgba(234, 179, 8, 0.15)',
-                        color: item.fundoNome === 'MULTI' ? '#38bdf8' : '#eab308',
-                        border: `1px solid ${item.fundoNome === 'MULTI' ? 'rgba(56, 189, 248, 0.3)' : 'rgba(234, 179, 8, 0.3)'}`
+                        background: isUnificado
+                          ? 'rgba(168, 85, 247, 0.15)'
+                          : item.fundoNome === 'MULTI'
+                          ? 'rgba(56, 189, 248, 0.15)'
+                          : 'rgba(234, 179, 8, 0.15)',
+                        color: isUnificado
+                          ? '#c084fc'
+                          : item.fundoNome === 'MULTI'
+                          ? '#38bdf8'
+                          : '#eab308',
+                        border: `1px solid ${
+                          isUnificado
+                            ? 'rgba(168, 85, 247, 0.3)'
+                            : item.fundoNome === 'MULTI'
+                            ? 'rgba(56, 189, 248, 0.3)'
+                            : 'rgba(234, 179, 8, 0.3)'
+                        }`
                       }}
                     >
                       {item.fundoNome}
@@ -313,11 +328,13 @@ export const ConfirmationImportStatus: React.FC<ImportStatusProps> = ({ initialD
       {/* ── MODAL DE IMPORTAÇÃO RÁPIDA (RECEITA OU ESTOQUE) ── */}
       {activeUploadModal && (
         <div className="cs-modal-overlay">
-          <div className="cs-modal-card" style={{ maxWidth: '480px' }}>
+          <div className="cs-modal-card" style={{ maxWidth: '520px' }}>
             <div className="cs-modal-header">
               <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 800, color: '#f8fafc', display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <Upload size={18} color="#38bdf8" />
-                Importar {activeUploadModal.tipo === 'RECEITA' ? 'Receitas (.xlsx)' : 'Estoque (.csv / .xlsx)'} — {activeUploadModal.fundoNome}
+                {activeUploadModal.tipo === 'RECEITA'
+                  ? 'Importar Receita Diária (.csv / .xlsx) — MULTI & SPECIAL'
+                  : `Importar Estoque (.csv / .xlsx) — ${activeUploadModal.fundoNome}`}
               </h3>
               <button
                 className="cs-icon-btn"
@@ -345,11 +362,11 @@ export const ConfirmationImportStatus: React.FC<ImportStatusProps> = ({ initialD
 
               <div>
                 <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 700, color: '#cbd5e1', marginBottom: '4px' }}>
-                  Selecione o arquivo ({activeUploadModal.tipo === 'RECEITA' ? '.xlsx padrão' : '.csv ou .xlsx'}):
+                  Selecione o arquivo (.csv ou .xlsx):
                 </label>
                 <input
                   type="file"
-                  accept={activeUploadModal.tipo === 'RECEITA' ? '.xlsx' : '.csv, .xlsx'}
+                  accept=".csv, .xlsx"
                   onChange={e => setSelectedFile(e.target.files?.[0] || null)}
                   style={{
                     width: '100%',
@@ -362,9 +379,15 @@ export const ConfirmationImportStatus: React.FC<ImportStatusProps> = ({ initialD
                   }}
                   required
                 />
-                {activeUploadModal.tipo === 'RECEITA' && (
-                  <p style={{ fontSize: '0.7rem', color: '#94a3b8', margin: '4px 0 0 0' }}>
-                    * O sistema lê automaticamente as colunas: <strong>CedenteNome</strong> (Cedente), <strong>ValorNominalOriginal</strong> (Bruto) e <strong>ValorAquisicao</strong> (Líquido).
+                {activeUploadModal.tipo === 'RECEITA' ? (
+                  <p style={{ fontSize: '0.72rem', color: '#94a3b8', margin: '6px 0 0 0', lineHeight: 1.4 }}>
+                    ✓ Aceita arquivos como <strong>RemessaAcompanhamento.csv</strong> ou planilhas XLSX.
+                    <br />
+                    ✓ Utiliza apenas as colunas: <strong>Cedente</strong>, <strong>Valor Nominal</strong> e <strong>Valor Pagamento</strong>, dividindo automaticamente os lançamentos entre <strong>MULTI</strong> e <strong>SPECIAL</strong>.
+                  </p>
+                ) : (
+                  <p style={{ fontSize: '0.72rem', color: '#94a3b8', margin: '6px 0 0 0', lineHeight: 1.4 }}>
+                    ✓ Modelo oficial da planilha <strong>RelatorioEstoque</strong> (multi_clean / special_clean).
                   </p>
                 )}
               </div>

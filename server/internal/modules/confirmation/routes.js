@@ -315,9 +315,16 @@ export function registerConfirmationRoutes(app, {
         filename: req.file.originalname
       });
 
+      let message = `Receitas importadas com sucesso! ${result.count} lançamentos processados.`;
+      if (result.multi?.count > 0 && result.special?.count > 0) {
+        message = `Receitas importadas com sucesso! ${result.multi.count} lançamentos para MULTI e ${result.special.count} para SPECIAL.`;
+      } else if (result.count > 0) {
+        message = `Planilha de receitas importada com sucesso! Foram incluídos ${result.count} lançamentos no banco de dados.`;
+      }
+
       return res.json({
         success: true,
-        message: `Planilha de receitas importada com sucesso! Foram incluídos ${result.count} lançamentos no banco de dados.`,
+        message,
         ...result
       });
     } catch (err) {

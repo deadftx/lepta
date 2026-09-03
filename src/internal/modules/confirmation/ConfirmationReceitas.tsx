@@ -199,7 +199,7 @@ export const ConfirmationReceitas: React.FC<ReceitasProps> = ({ fundoId }) => {
           <div className="cs-modal-card" style={{ maxWidth: '500px' }}>
             <div className="cs-modal-header">
               <h3 style={{ margin: 0, fontSize: '1.15rem', fontWeight: 800, color: '#f8fafc', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <FileSpreadsheet size={20} color="#38bdf8" /> Importar Receita via Planilha Excel
+                <FileSpreadsheet size={20} color="#38bdf8" /> Importar Receita (.csv / .xlsx)
               </h3>
               <button
                 className="cs-icon-btn"
@@ -227,11 +227,11 @@ export const ConfirmationReceitas: React.FC<ReceitasProps> = ({ fundoId }) => {
 
               <div>
                 <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 700, color: '#cbd5e1', marginBottom: '4px' }}>
-                  Arquivo Excel (.xlsx padrão):
+                  Arquivo (.csv ou .xlsx):
                 </label>
                 <input
                   type="file"
-                  accept=".xlsx"
+                  accept=".csv, .xlsx"
                   onChange={e => setExcelFile(e.target.files?.[0] || null)}
                   style={{
                     width: '100%',
@@ -245,12 +245,9 @@ export const ConfirmationReceitas: React.FC<ReceitasProps> = ({ fundoId }) => {
                   required
                 />
                 <div style={{ fontSize: '0.72rem', color: '#94a3b8', marginTop: '6px', lineHeight: 1.4 }}>
-                  ✓ O sistema lê automaticamente as colunas da planilha padrão:
-                  <ul style={{ margin: '4px 0 0 16px', padding: 0 }}>
-                    <li><strong>CedenteNome</strong> (Nome do Cedente)</li>
-                    <li><strong>ValorNominalOriginal</strong> (Valor Bruto)</li>
-                    <li><strong>ValorAquisicao</strong> (Valor Líquido)</li>
-                  </ul>
+                  ✓ Aceita arquivos como <strong>RemessaAcompanhamento.csv</strong> ou planilhas XLSX.
+                  <br />
+                  ✓ Utiliza apenas as colunas: <strong>Cedente</strong>, <strong>Valor Nominal</strong> e <strong>Valor Pagamento</strong>, dividindo automaticamente os lançamentos entre <strong>MULTI</strong> e <strong>SPECIAL</strong>.
                 </div>
               </div>
 
