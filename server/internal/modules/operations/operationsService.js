@@ -149,21 +149,7 @@ async function fetchEntityDetails(document, token) {
   return null;
 }
 
-/**
- * Lista as operações ativas registradas na data (padrão dia atual)
- */
-const SITUACOES_MESA = [
-  'Em Análise',
-  'Em Analise',
-  'Em Aberto',
-  'Pendente',
-  'Cadastrada',
-  'Em Formalização',
-  'Em Formalizacao',
-  'Em Pagamento',
-  'Liquidado',
-  'Indefinido'
-];
+
 
 /**
  * Extrai dados padronizados de um título vindo de qualquer endpoint do BitFin
@@ -423,41 +409,41 @@ export async function listOperationsByDate({ token, date, statusFilter }) {
   if (!token) throw new Error('Token UNLTD_API_TOKEN não configurado.');
 
   const searchDate = date || new Date().toISOString().substring(0, 10);
-  const d = new Date(searchDate);
-  const prevDate = new Date(d.getTime() - 2 * 24 * 60 * 60 * 1000).toISOString().substring(0, 10);
-  const nextDate = new Date(d.getTime() + 2 * 24 * 60 * 60 * 1000).toISOString().substring(0, 10);
-
   const headers = {
     'Content-Type': 'application/json',
     'Authorization': `UNLTD-BackEnd ${token}`
   };
 
-  // 1. Busca operações registradas no dia ou no dia seguinte (para cobrir fusos horários UTC onde dia 03 em Brasília já é dia 04 no servidor)
-  const payloadOps = {
+  // 1. Busca operações registradas estritamente na data solicitada
+  const payloadOpsLocal = {
     tipoDeData: 'Cadastro',
     dataInicial: `${searchDate}T00:00:00`,
-    dataFinal: `${nextDate}T23:59:59`
+    dataFinal: `${searchDate}T23:59:59`
   };
 
-  // 2. Busca títulos em janela ampliada com todas as situações ativas da mesa para capturar os valores de face de todas as operações
-  const payloadTit = {
+  const payloadOpsIso = {
     tipoDeData: 'Cadastro',
-    dataInicial: `${prevDate}T00:00:00`,
-    dataFinal: `${nextDate}T23:59:59`,
-    situacoes: SITUACOES_MESA
+    dataInicial: `${searchDate}T00:00:00.000Z`,
+    dataFinal: `${searchDate}T23:59:59.999Z`
+  };
+
+  // 2. Busca todos os títulos registrados na mesma data (sem filtrar situações para trazer todas da mesa)
+  const payloadTitLocal = {
+    tipoDeData: 'Cadastro',
+    dataInicial: `${searchDate}T00:00:00`,
+    dataFinal: `${searchDate}T23:59:59`
   };
 
   const payloadTitIso = {
     tipoDeData: 'Cadastro',
-    dataInicial: `${prevDate}T00:00:00.000Z`,
-    dataFinal: `${nextDate}T23:59:59.999Z`,
-    situacoes: SITUACOES_MESA
+    dataInicial: `${searchDate}T00:00:00.000Z`,
+    dataFinal: `${searchDate}T23:59:59.999Z`
   };
 
   // Executa busca em /recebiveis/operacoes e /recebiveis/titulos
   const [resOps, resTitLocal, resTitIso] = await Promise.allSettled([
-    fetch(`${API_BASE_URL}/recebiveis/operacoes`, { method: 'POST', headers, body: JSON.stringify(payloadOps) }),
-    fetch(`${API_BASE_URL}/recebiveis/titulos`, { method: 'POST', headers, body: JSON.stringify(payloadTit) }),
+    fetch(`${API_BASE_URL}/recebiveis/operacoes`, { method: 'POST', headers, body: JSON.stringify(payloadOpsLocal) }),
+    fetch(`${API_BASE_URL}/recebiveis/titulos`, { method: 'POST', headers, body: JSON.stringify(payloadTitLocal) }),
     fetch(`${API_BASE_URL}/recebiveis/titulos`, { method: 'POST', headers, body: JSON.stringify(payloadTitIso) })
   ]);
 
@@ -469,17 +455,13 @@ export async function listOperationsByDate({ token, date, statusFilter }) {
     } catch (_) {}
   }
 
-  // Se payloadOps não retornar operações, tenta ISO
+  // Se payload local não retornar operações, tenta ISO
   if (rawOps.length === 0) {
     try {
       const resOpsIso = await fetch(`${API_BASE_URL}/recebiveis/operacoes`, {
         method: 'POST',
         headers,
-        body: JSON.stringify({
-          tipoDeData: 'Cadastro',
-          dataInicial: `${searchDate}T00:00:00.000Z`,
-          dataFinal: `${nextDate}T23:59:59.999Z`
-        })
+        body: JSON.stringify(payloadOpsIso)
       });
       if (resOpsIso.ok) {
         const dataIso = await resOpsIso.json();
@@ -502,7 +484,7 @@ export async function listOperationsByDate({ token, date, statusFilter }) {
     } catch (_) {}
   }
 
-  console.log(`[MESA OPERAÇÕES] Total operações: ${rawOps.length}, Total títulos da janela: ${rawTitulos.length}`);
+  console.log(`[MESA OPERAÇÕES] Total operações: ${rawOps.length}, Total títulos retornados: ${rawTitulos.length}`);
 
   // Agrupa títulos por identificador da operação
   const titulosByOp = new Map();
@@ -520,6 +502,12 @@ export async function listOperationsByDate({ token, date, statusFilter }) {
   for (const op of rawOps) {
     const opId = String(op.id || op.numero || op.codigo || '').trim();
     if (!opId) continue;
+
+    // Garante que só traz o que está exatamente na data filtrada
+    if (op.dataDeCadastro) {
+      const opDt = String(op.dataDeCadastro).substring(0, 10);
+      if (opDt !== searchDate) continue;
+    }
 
     const directTitulos = Array.isArray(op.titulos) ? op.titulos : (Array.isArray(op.recebiveis) ? op.recebiveis : []);
     const mappedTitulos = titulosByOp.get(opId) || [];
@@ -661,10 +649,6 @@ export async function getOperationDetails({ token, operacaoId, date }) {
   if (!operacaoId) throw new Error('ID da operação não informado.');
 
   const searchDate = date || new Date().toISOString().substring(0, 10);
-  const d = new Date(searchDate);
-  const startDate = new Date(d.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString().substring(0, 10);
-  const endDate = new Date(d.getTime() + 3 * 24 * 60 * 60 * 1000).toISOString().substring(0, 10);
-
   const headers = {
     'Content-Type': 'application/json',
     'Authorization': `UNLTD-BackEnd ${token}`
@@ -681,6 +665,9 @@ export async function getOperationDetails({ token, operacaoId, date }) {
   } catch (err) {
     console.warn(`[MESA OPERAÇÕES] Aviso ao consultar operação ${operacaoId}:`, err.message);
   }
+
+  // A DATA FILTRADA = DATA DO CADASTRO DA OPERAÇÃO
+  const opCadastroDate = (opInfo?.dataDeCadastro ? String(opInfo.dataDeCadastro).substring(0, 10) : '') || searchDate;
 
   // Mapeia sacados da operação caso existam no nó opInfo.sacados
   const sacadosById = new Map();
@@ -703,29 +690,62 @@ export async function getOperationDetails({ token, operacaoId, date }) {
     }
   }
 
-  // 2. Localiza os títulos da operação através de múltiplas estratégias
+  // 2. Localiza os títulos da operação na data exata de cadastro da operação
   let titulos = [];
 
-  // Estratégia A: Os títulos vieram diretamente dentro do objeto opInfo (titulos, recebiveis ou itens)
-  if (Array.isArray(opInfo?.titulos) && opInfo.titulos.length > 0) {
-    titulos = opInfo.titulos;
-    console.log(`[MESA OPERAÇÕES #${operacaoId}] ${titulos.length} títulos encontrados no nó opInfo.titulos.`);
-  } else if (Array.isArray(opInfo?.recebiveis) && opInfo.recebiveis.length > 0) {
-    titulos = opInfo.recebiveis;
-    console.log(`[MESA OPERAÇÕES #${operacaoId}] ${titulos.length} títulos encontrados no nó opInfo.recebiveis.`);
-  } else if (Array.isArray(opInfo?.itens) && opInfo.itens.length > 0) {
-    titulos = opInfo.itens;
-    console.log(`[MESA OPERAÇÕES #${operacaoId}] ${titulos.length} títulos encontrados no nó opInfo.itens.`);
+  try {
+    const [resTitLocal, resTitIso] = await Promise.allSettled([
+      fetch(`${API_BASE_URL}/recebiveis/titulos`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          tipoDeData: 'Cadastro',
+          dataInicial: `${opCadastroDate}T00:00:00`,
+          dataFinal: `${opCadastroDate}T23:59:59`
+        })
+      }),
+      fetch(`${API_BASE_URL}/recebiveis/titulos`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          tipoDeData: 'Cadastro',
+          dataInicial: `${opCadastroDate}T00:00:00.000Z`,
+          dataFinal: `${opCadastroDate}T23:59:59.999Z`
+        })
+      })
+    ]);
+
+    let allTit = [];
+    if (resTitLocal.status === 'fulfilled' && resTitLocal.value.ok) {
+      try {
+        const d = await resTitLocal.value.json();
+        if (Array.isArray(d)) allTit = d;
+      } catch (_) {}
+    }
+    if (allTit.length === 0 && resTitIso.status === 'fulfilled' && resTitIso.value.ok) {
+      try {
+        const d = await resTitIso.value.json();
+        if (Array.isArray(d)) allTit = d;
+      } catch (_) {}
+    }
+
+    if (allTit.length > 0) {
+      const matchingTit = allTit.filter(t => {
+        const idStr = getOperacaoIdFromTitulo(t);
+        const isMatch = idStr === String(operacaoId).trim() || opTituloIds.has(Number(t.id));
+        return isMatch;
+      });
+      if (matchingTit.length > 0) {
+        titulos = matchingTit;
+        console.log(`[MESA OPERAÇÕES #${operacaoId}] ${titulos.length} títulos filtrados com sucesso na data ${opCadastroDate}.`);
+      }
+    }
+  } catch (err) {
+    console.warn(`[MESA OPERAÇÕES] Erro ao buscar títulos da operação ${operacaoId}:`, err.message);
   }
 
-  const primeiroTemDetalhes = titulos.length > 0 && (
-    extractTituloFields(titulos[0], sacadosById).valor > 0 ||
-    extractTituloFields(titulos[0], sacadosById).documento !== ''
-  );
-
-  // Se titulos estiver vazio ou se tiver apenas IDs/stubs sem sacado ou valor:
-  if (!primeiroTemDetalhes) {
-    // Estratégia B: Endpoint sub-recurso /recebiveis/operacoes/{id}/titulos
+  // Fallback 1: Endpoint sub-recurso /recebiveis/operacoes/{id}/titulos
+  if (!titulos.length) {
     try {
       const resSub = await fetch(`${API_BASE_URL}/recebiveis/operacoes/${operacaoId}/titulos`, { headers });
       if (resSub.ok) {
@@ -736,87 +756,16 @@ export async function getOperationDetails({ token, operacaoId, date }) {
         }
       }
     } catch (_) {}
+  }
 
-    // Estratégia C: POST /recebiveis/titulos buscando em janela ampliada com SITUACOES_MESA
-    const primeiroSubTemDetalhes = titulos.length > 0 && (
-      extractTituloFields(titulos[0], sacadosById).valor > 0 ||
-      extractTituloFields(titulos[0], sacadosById).documento !== ''
-    );
-
-    if (!primeiroSubTemDetalhes) {
-      try {
-        const [resTitLocal, resTitIso] = await Promise.allSettled([
-          fetch(`${API_BASE_URL}/recebiveis/titulos`, {
-            method: 'POST',
-            headers,
-            body: JSON.stringify({
-              tipoDeData: 'Cadastro',
-              dataInicial: `${startDate}T00:00:00`,
-              dataFinal: `${endDate}T23:59:59`,
-              situacoes: SITUACOES_MESA
-            })
-          }),
-          fetch(`${API_BASE_URL}/recebiveis/titulos`, {
-            method: 'POST',
-            headers,
-            body: JSON.stringify({
-              tipoDeData: 'Cadastro',
-              dataInicial: `${startDate}T00:00:00.000Z`,
-              dataFinal: `${endDate}T23:59:59.999Z`,
-              situacoes: SITUACOES_MESA
-            })
-          })
-        ]);
-
-        let allTit = [];
-        if (resTitLocal.status === 'fulfilled' && resTitLocal.value.ok) {
-          try {
-            const d = await resTitLocal.value.json();
-            if (Array.isArray(d)) allTit = d;
-          } catch (_) {}
-        }
-        if (allTit.length === 0 && resTitIso.status === 'fulfilled' && resTitIso.value.ok) {
-          try {
-            const d = await resTitIso.value.json();
-            if (Array.isArray(d)) allTit = d;
-          } catch (_) {}
-        }
-
-        if (allTit.length > 0) {
-          const matchingTit = allTit.filter(t => {
-            const idStr = getOperacaoIdFromTitulo(t);
-            const isMatch = idStr === String(operacaoId).trim() || opTituloIds.has(Number(t.id));
-            return isMatch;
-          });
-          if (matchingTit.length > 0) {
-            titulos = matchingTit;
-            console.log(`[MESA OPERAÇÕES #${operacaoId}] ${titulos.length} títulos filtrados com sucesso de ${allTit.length} títulos.`);
-          }
-        }
-      } catch (err) {
-        console.warn(`[MESA OPERAÇÕES] Erro ao buscar títulos da operação ${operacaoId}:`, err.message);
-      }
-    }
-
-    // Estratégia D: POST /recebiveis/titulos com filtro direto { operacaoId }
-    if (!titulos.length || extractTituloFields(titulos[0], sacadosById).valor === 0) {
-      try {
-        const resDirect = await fetch(`${API_BASE_URL}/recebiveis/titulos`, {
-          method: 'POST',
-          headers,
-          body: JSON.stringify({
-            operacaoId: Number(operacaoId) || operacaoId,
-            situacoes: SITUACOES_MESA
-          })
-        });
-        if (resDirect.ok) {
-          const directData = await resDirect.json();
-          if (Array.isArray(directData) && directData.length > 0) {
-            titulos = directData;
-            console.log(`[MESA OPERAÇÕES #${operacaoId}] ${titulos.length} títulos obtidos via POST /recebiveis/titulos direto.`);
-          }
-        }
-      } catch (_) {}
+  // Fallback 2: Os títulos vieram diretamente dentro do objeto opInfo (titulos, recebiveis ou itens)
+  if (!titulos.length) {
+    if (Array.isArray(opInfo?.titulos) && opInfo.titulos.length > 0) {
+      titulos = opInfo.titulos;
+    } else if (Array.isArray(opInfo?.recebiveis) && opInfo.recebiveis.length > 0) {
+      titulos = opInfo.recebiveis;
+    } else if (Array.isArray(opInfo?.itens) && opInfo.itens.length > 0) {
+      titulos = opInfo.itens;
     }
   }
 
