@@ -1,7 +1,8 @@
 import {
   listOperationsByDate,
   getOperationDetails,
-  generateSacadosInconsistentesExcel
+  generateSacadosInconsistentesExcel,
+  generateTitulosInconsistentesExcel
 } from './operationsService.js';
 
 export function registerOperationsRoutes(app, {
@@ -90,6 +91,42 @@ export function registerOperationsRoutes(app, {
     } catch (err) {
       console.error(`Erro ao exportar XLSX da operação ${req.params.id}:`, err);
       return res.status(500).json({ error: `Erro ao exportar planilha: ${err.message}` });
+    }
+  });
+
+  // 4. Exportação granular de TÍTULOS e SACADOS com erro para refazer a operação
+  app.get('/api/mesa-operacoes/operacoes/:id/exportar-titulos-xlsx', requireSession, checkAccess, async (req, res) => {
+    try {
+      const token = getToken();
+      if (!token) {
+        return res.status(400).json({ error: 'Token UNLTD_API_TOKEN não configurado no servidor.' });
+      }
+
+      const operacaoId = req.params.id;
+      const { data } = req.query;
+
+      const details = await getOperationDetails({
+        token,
+        operacaoId,
+        date: data
+      });
+
+      if (!details.sacadosInconsistentes || details.sacadosInconsistentes.length === 0) {
+        return res.status(400).json({ error: 'Esta operação não possui sacados com erro de CEP para exportar.' });
+      }
+
+      const buffer = await generateTitulosInconsistentesExcel({
+        operacao: details,
+        sacadosInconsistentes: details.sacadosInconsistentes
+      });
+
+      const filename = `Titulos_e_Sacados_Com_Erro_Op_${operacaoId}.xlsx`;
+      res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+      return res.send(Buffer.from(buffer));
+    } catch (err) {
+      console.error(`Erro ao exportar títulos em XLSX da operação ${req.params.id}:`, err);
+      return res.status(500).json({ error: `Erro ao exportar planilha de títulos: ${err.message}` });
     }
   });
 }

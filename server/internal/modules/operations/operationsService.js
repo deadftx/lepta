@@ -152,6 +152,31 @@ async function fetchEntityDetails(document, token) {
 /**
  * Lista as operações ativas registradas na data (padrão dia atual)
  */
+function getOperacaoIdFromTitulo(t) {
+  if (!t) return '';
+  if (typeof t.operacao === 'object' && t.operacao !== null) {
+    const id = t.operacao.id || t.operacao.numero || t.operacao.codigo;
+    if (id) return String(id).trim();
+  }
+  if (typeof t.bordero === 'object' && t.bordero !== null) {
+    const bId = t.bordero.id || t.bordero.numero;
+    if (bId) return String(bId).trim();
+  }
+  return String(
+    t.operacaoId ||
+    t.idOperacao ||
+    t.operacao_id ||
+    t.operacao ||
+    t.bordero ||
+    t.numeroBordero ||
+    t.idBordero ||
+    ''
+  ).trim();
+}
+
+/**
+ * Lista as operações ativas registradas na data (padrão dia atual)
+ */
 export async function listOperationsByDate({ token, date, statusFilter }) {
   if (!token) throw new Error('Token UNLTD_API_TOKEN não configurado.');
 
@@ -161,16 +186,24 @@ export async function listOperationsByDate({ token, date, statusFilter }) {
     'Authorization': `UNLTD-BackEnd ${token}`
   };
 
-  const payload = {
+  // Formato local sem Z e formato ISO para compatibilidade máxima
+  const payloadLocal = {
+    tipoDeData: 'Cadastro',
+    dataInicial: `${searchDate}T00:00:00`,
+    dataFinal: `${searchDate}T23:59:59`
+  };
+
+  const payloadIso = {
     tipoDeData: 'Cadastro',
     dataInicial: `${searchDate}T00:00:00.000Z`,
     dataFinal: `${searchDate}T23:59:59.999Z`
   };
 
-  // Executa busca paralela em /recebiveis/operacoes e /recebiveis/titulos
-  const [resOps, resTit] = await Promise.allSettled([
-    fetch(`${API_BASE_URL}/recebiveis/operacoes`, { method: 'POST', headers, body: JSON.stringify(payload) }),
-    fetch(`${API_BASE_URL}/recebiveis/titulos`, { method: 'POST', headers, body: JSON.stringify(payload) })
+  // Executa busca em /recebiveis/operacoes e /recebiveis/titulos
+  const [resOps, resTitLocal, resTitIso] = await Promise.allSettled([
+    fetch(`${API_BASE_URL}/recebiveis/operacoes`, { method: 'POST', headers, body: JSON.stringify(payloadLocal) }),
+    fetch(`${API_BASE_URL}/recebiveis/titulos`, { method: 'POST', headers, body: JSON.stringify(payloadLocal) }),
+    fetch(`${API_BASE_URL}/recebiveis/titulos`, { method: 'POST', headers, body: JSON.stringify(payloadIso) })
   ]);
 
   let rawOps = [];
@@ -181,27 +214,40 @@ export async function listOperationsByDate({ token, date, statusFilter }) {
     } catch (_) {}
   }
 
-  let rawTitulos = [];
-  if (resTit.status === 'fulfilled' && resTit.value.ok) {
+  // Se payloadLocal não retornar operações, tenta payloadIso
+  if (rawOps.length === 0) {
     try {
-      const data = await resTit.value.json();
-      if (Array.isArray(data)) rawTitulos = data;
+      const resOpsIso = await fetch(`${API_BASE_URL}/recebiveis/operacoes`, { method: 'POST', headers, body: JSON.stringify(payloadIso) });
+      if (resOpsIso.ok) {
+        const dataIso = await resOpsIso.json();
+        if (Array.isArray(dataIso)) rawOps = dataIso;
+      }
     } catch (_) {}
   }
+
+  let rawTitulos = [];
+  if (resTitLocal.status === 'fulfilled' && resTitLocal.value.ok) {
+    try {
+      const data = await resTitLocal.value.json();
+      if (Array.isArray(data) && data.length > 0) rawTitulos = data;
+    } catch (_) {}
+  }
+  if (rawTitulos.length === 0 && resTitIso.status === 'fulfilled' && resTitIso.value.ok) {
+    try {
+      const dataIso = await resTitIso.json();
+      if (Array.isArray(dataIso)) rawTitulos = dataIso;
+    } catch (_) {}
+  }
+
+  if (rawOps.length > 0) {
+    console.log('[MESA OPERAÇÕES] Exemplo de operação recebida:', Object.keys(rawOps[0]));
+  }
+  console.log(`[MESA OPERAÇÕES] Total operações: ${rawOps.length}, Total títulos do dia: ${rawTitulos.length}`);
 
   // Agrupa títulos por identificador da operação
   const titulosByOp = new Map();
   for (const t of rawTitulos) {
-    const opKey = String(
-      t.operacao?.id ||
-      t.operacaoId ||
-      t.operacao?.numero ||
-      t.operacao ||
-      t.bordero ||
-      t.idOperacao ||
-      ''
-    ).trim();
-
+    const opKey = getOperacaoIdFromTitulo(t);
     if (!opKey) continue;
     if (!titulosByOp.has(opKey)) titulosByOp.set(opKey, []);
     titulosByOp.get(opKey).push(t);
@@ -215,9 +261,33 @@ export async function listOperationsByDate({ token, date, statusFilter }) {
     const opId = String(op.id || op.numero || op.codigo || '').trim();
     if (!opId) continue;
 
-    const opTitulos = titulosByOp.get(opId) || [];
-    const valorTitulos = opTitulos.reduce((acc, t) => acc + Number(t.valorNominal || t.valor || 0), 0);
-    const valorFinal = Number(op.valorTotal || op.valor || valorTitulos || 0);
+    const directTitulos = Array.isArray(op.titulos) ? op.titulos : (Array.isArray(op.recebiveis) ? op.recebiveis : []);
+    const mappedTitulos = titulosByOp.get(opId) || [];
+    const opTitulos = directTitulos.length > 0 ? directTitulos : mappedTitulos;
+
+    const valorTitulos = opTitulos.reduce((acc, t) => acc + Number(t.valorNominal || t.valor || t.valor_nominal || 0), 0);
+    const valorFinal = Number(
+      op.valorNominal ||
+      op.valorTotalNominal ||
+      op.valorDaOperacao ||
+      op.valorTotal ||
+      op.totalNominal ||
+      op.valorBruto ||
+      op.valor ||
+      op.valorSolicitado ||
+      op.valorAprovado ||
+      valorTitulos ||
+      0
+    );
+
+    const titulosCount = opTitulos.length || Number(
+      op.quantidadeTitulos ||
+      op.quantidadeDeTitulos ||
+      op.qtdTitulos ||
+      op.titulosCount ||
+      op.totalTitulos ||
+      0
+    );
 
     const cedenteNome = (
       op.cliente?.nome ||
@@ -255,6 +325,7 @@ export async function listOperationsByDate({ token, date, statusFilter }) {
     const gerenteNome = (
       op.gerente?.nome ||
       op.contaOperacional?.gerente?.nome ||
+      (typeof op.gerente === 'string' ? op.gerente : null) ||
       opTitulos[0]?.gerente?.nome ||
       '-'
     ).trim();
@@ -267,7 +338,7 @@ export async function listOperationsByDate({ token, date, statusFilter }) {
       unidadeAdministrativa: uaNome,
       gerente: gerenteNome,
       valorTotal: valorFinal,
-      titulosCount: opTitulos.length || Number(op.quantidadeTitulos || 0),
+      titulosCount,
       status: statusOp,
       titulos: opTitulos
     });
@@ -348,48 +419,116 @@ export async function getOperationDetails({ token, operacaoId, date }) {
     'Authorization': `UNLTD-BackEnd ${token}`
   };
 
-  // Busca os títulos do período
-  let titulos = [];
-  try {
-    const resTit = await fetch(`${API_BASE_URL}/recebiveis/titulos`, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({
-        tipoDeData: 'Cadastro',
-        dataInicial: `${startDate}T00:00:00.000Z`,
-        dataFinal: `${searchDate}T23:59:59.999Z`
-      })
-    });
-
-    if (resTit.ok) {
-      const allTit = await resTit.json();
-      if (Array.isArray(allTit)) {
-        titulos = allTit.filter(t => {
-          const idStr = String(
-            t.operacao?.id ||
-            t.operacaoId ||
-            t.operacao?.numero ||
-            t.operacao ||
-            t.bordero ||
-            t.idOperacao ||
-            ''
-          ).trim();
-          return idStr === String(operacaoId).trim();
-        });
-      }
-    }
-  } catch (err) {
-    console.warn(`Erro ao buscar títulos da operação ${operacaoId}:`, err.message);
-  }
-
-  // Tenta buscar dados da própria operação no endpoint direto
+  // 1. Tenta buscar detalhes completos da operação no endpoint direto
   let opInfo = null;
   try {
     const resOp = await fetch(`${API_BASE_URL}/recebiveis/operacoes/${operacaoId}`, { headers });
     if (resOp.ok) {
       opInfo = await resOp.json();
+      console.log(`[MESA OPERAÇÕES #${operacaoId}] Dados da operação:`, Object.keys(opInfo));
     }
-  } catch (_) {}
+  } catch (err) {
+    console.warn(`[MESA OPERAÇÕES] Aviso ao consultar operação ${operacaoId}:`, err.message);
+  }
+
+  // 2. Localiza os títulos da operação através de múltiplas estratégias
+  let titulos = [];
+
+  // Estratégia A: Os títulos vieram diretamente dentro do objeto opInfo (titulos, recebiveis ou itens)
+  if (Array.isArray(opInfo?.titulos) && opInfo.titulos.length > 0) {
+    titulos = opInfo.titulos;
+    console.log(`[MESA OPERAÇÕES #${operacaoId}] ${titulos.length} títulos encontrados no nó opInfo.titulos.`);
+  } else if (Array.isArray(opInfo?.recebiveis) && opInfo.recebiveis.length > 0) {
+    titulos = opInfo.recebiveis;
+    console.log(`[MESA OPERAÇÕES #${operacaoId}] ${titulos.length} títulos encontrados no nó opInfo.recebiveis.`);
+  } else if (Array.isArray(opInfo?.itens) && opInfo.itens.length > 0) {
+    titulos = opInfo.itens;
+    console.log(`[MESA OPERAÇÕES #${operacaoId}] ${titulos.length} títulos encontrados no nó opInfo.itens.`);
+  }
+
+  // Estratégia B: Endpoint sub-recurso /recebiveis/operacoes/{id}/titulos
+  if (titulos.length === 0) {
+    try {
+      const resSub = await fetch(`${API_BASE_URL}/recebiveis/operacoes/${operacaoId}/titulos`, { headers });
+      if (resSub.ok) {
+        const subData = await resSub.json();
+        if (Array.isArray(subData) && subData.length > 0) {
+          titulos = subData;
+          console.log(`[MESA OPERAÇÕES #${operacaoId}] ${titulos.length} títulos encontrados em /recebiveis/operacoes/${operacaoId}/titulos.`);
+        }
+      }
+    } catch (_) {}
+  }
+
+  // Estratégia C: POST /recebiveis/titulos buscando por período (formato local e ISO)
+  if (titulos.length === 0) {
+    try {
+      const [resTitLocal, resTitIso] = await Promise.allSettled([
+        fetch(`${API_BASE_URL}/recebiveis/titulos`, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({
+            tipoDeData: 'Cadastro',
+            dataInicial: `${startDate}T00:00:00`,
+            dataFinal: `${searchDate}T23:59:59`
+          })
+        }),
+        fetch(`${API_BASE_URL}/recebiveis/titulos`, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({
+            tipoDeData: 'Cadastro',
+            dataInicial: `${startDate}T00:00:00.000Z`,
+            dataFinal: `${searchDate}T23:59:59.999Z`
+          })
+        })
+      ]);
+
+      let allTit = [];
+      if (resTitLocal.status === 'fulfilled' && resTitLocal.value.ok) {
+        try {
+          const d = await resTitLocal.value.json();
+          if (Array.isArray(d)) allTit = d;
+        } catch (_) {}
+      }
+      if (allTit.length === 0 && resTitIso.status === 'fulfilled' && resTitIso.value.ok) {
+        try {
+          const d = await resTitIso.value.json();
+          if (Array.isArray(d)) allTit = d;
+        } catch (_) {}
+      }
+
+      if (allTit.length > 0) {
+        titulos = allTit.filter(t => {
+          const idStr = getOperacaoIdFromTitulo(t);
+          return idStr === String(operacaoId).trim();
+        });
+        console.log(`[MESA OPERAÇÕES #${operacaoId}] ${titulos.length} títulos filtrados de ${allTit.length} títulos do período.`);
+      }
+    } catch (err) {
+      console.warn(`[MESA OPERAÇÕES] Erro ao buscar títulos da operação ${operacaoId}:`, err.message);
+    }
+  }
+
+  // Estratégia D: POST /recebiveis/titulos com filtro direto { operacaoId }
+  if (titulos.length === 0) {
+    try {
+      const resDirect = await fetch(`${API_BASE_URL}/recebiveis/titulos`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          operacaoId: Number(operacaoId) || operacaoId
+        })
+      });
+      if (resDirect.ok) {
+        const directData = await resDirect.json();
+        if (Array.isArray(directData) && directData.length > 0) {
+          titulos = directData;
+          console.log(`[MESA OPERAÇÕES #${operacaoId}] ${titulos.length} títulos obtidos via POST /recebiveis/titulos direto.`);
+        }
+      }
+    } catch (_) {}
+  }
 
   // Dados do Cedente da Operação
   const cedenteDoc = String(
@@ -453,7 +592,21 @@ export async function getOperationDetails({ token, operacaoId, date }) {
     item.valorTotal += Number(t.valorNominal || t.valor || 0);
   }
 
-  const valorTotalOperacao = titulos.reduce((acc, t) => acc + Number(t.valorNominal || t.valor || 0), 0);
+  const valorTotalOperacao = (titulos.length > 0
+    ? titulos.reduce((acc, t) => acc + Number(t.valorNominal || t.valor || t.valor_nominal || 0), 0)
+    : 0) ||
+    Number(
+      opInfo?.valorNominal ||
+      opInfo?.valorTotalNominal ||
+      opInfo?.valorDaOperacao ||
+      opInfo?.valorTotal ||
+      opInfo?.totalNominal ||
+      opInfo?.valorBruto ||
+      opInfo?.valor ||
+      opInfo?.valorSolicitado ||
+      opInfo?.valorAprovado ||
+      0
+    );
 
   // Consulta e validação de endereço para cada sacado
   const todosSacados = [];
@@ -506,7 +659,8 @@ export async function getOperationDetails({ token, operacaoId, date }) {
       sugestaoCep: validacao.sugestao,
       endereco: enderecoFormatado,
       telefones: [...new Set(telefones)],
-      emails: [...new Set(emails)]
+      emails: [...new Set(emails)],
+      titulos: s.titulos
     };
 
     todosSacados.push(sacadoItem);
@@ -525,14 +679,22 @@ export async function getOperationDetails({ token, operacaoId, date }) {
     ? (valorSacadosInconsistentes / valorTotalOperacao) * 100
     : 0;
 
+  const totalTitulosContados = titulos.length || Number(
+    opInfo?.quantidadeTitulos ||
+    opInfo?.quantidadeDeTitulos ||
+    opInfo?.qtdTitulos ||
+    opInfo?.totalTitulos ||
+    0
+  );
+
   return {
     operacaoId,
     dataCadastro: opInfo?.dataDeCadastro || titulos[0]?.dataDeCadastro || searchDate,
-    status: opInfo?.situacao || opInfo?.status || titulos[0]?.situacao || 'Em Análise',
+    status: opInfo?.situacao || opInfo?.status || opInfo?.fase || titulos[0]?.situacao || 'Em Análise',
     unidadeAdministrativa: opInfo?.unidadeAdministrativa?.nome || titulos[0]?.contaOperacional?.unidadeAdministrativa?.alias || 'Lepta FIDC',
-    gerente: opInfo?.gerente?.nome || titulos[0]?.gerente?.nome || '-',
+    gerente: opInfo?.gerente?.nome || (typeof opInfo?.gerente === 'string' ? opInfo.gerente : null) || titulos[0]?.gerente?.nome || '-',
     valorTotalOperacao,
-    totalTitulos: titulos.length,
+    totalTitulos: totalTitulosContados,
     cedente: {
       nome: cedenteNome,
       documento: cedenteDoc,
@@ -556,8 +718,8 @@ export async function getOperationDetails({ token, operacaoId, date }) {
       numero: t.numero || t.numero_titulo || '-',
       sacadoNome: t.sacado?.entidade?.nome || t.sacado?.nome || t.sacado_nome || '-',
       sacadoDoc: t.sacado?.entidade?.documento || t.sacado?.documento || t.sacado_cnpj || '-',
-      valorNominal: Number(t.valorNominal || t.valor || 0),
-      vencimento: t.dataDeVencimento || t.vencimento || '-',
+      valorNominal: Number(t.valorNominal || t.valor || t.valor_nominal || 0),
+      vencimento: t.dataDeVencimento || t.vencimento || t.data_vencimento || '-',
       situacao: t.situacao || 'Em Aberto'
     }))
   };
@@ -702,6 +864,168 @@ export async function generateSacadosInconsistentesExcel({ operacao, sacadosInco
     { width: 20 }, // Valor Retido
     { width: 28 }, // Telefone Sacado
     { width: 32 }  // E-mail Sacado
+  ];
+
+  return await workbook.xlsx.writeBuffer();
+}
+
+/**
+ * Gera arquivo Excel (.xlsx) granular com cada TÍTULO e respectivo SACADO que possui erro de CEP
+ * Permite refazer a operação título a título com todos os dados preenchidos
+ */
+export async function generateTitulosInconsistentesExcel({ operacao, sacadosInconsistentes }) {
+  const workbook = new ExcelJS.Workbook();
+  workbook.creator = 'LeptaSys - Mesa de Operações';
+  workbook.created = new Date();
+
+  const worksheet = workbook.addWorksheet('Títulos com Erro de CEP', {
+    properties: { tabColor: { argb: 'FFDC2626' } }
+  });
+
+  // Título e cabeçalho visual
+  worksheet.mergeCells('A1:M1');
+  const titleCell = worksheet.getCell('A1');
+  titleCell.value = `LEPTASYS - RELATÓRIO DE TÍTULOS E SACADOS COM ERRO DE CEP (OPERAÇÃO #${operacao.operacaoId})`;
+  titleCell.font = { name: 'Calibri', size: 14, bold: true, color: { argb: 'FFFFFFFF' } };
+  titleCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF0F172A' } };
+  titleCell.alignment = { horizontal: 'center', vertical: 'middle' };
+  worksheet.getRow(1).height = 32;
+
+  // Informações da Operação
+  worksheet.addRow([
+    `Cedente: ${operacao.cedente.nome} (${operacao.cedente.documento})`,
+    '', '', '',
+    `Valor da Operação: R$ ${operacao.valorTotalOperacao.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`,
+    '', '', '',
+    `Impacto Retido: R$ ${operacao.alertaBitfin.valorAfetado.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} (${operacao.alertaBitfin.percentualAfetado.toFixed(2)}%)`
+  ]);
+  worksheet.mergeCells('A2:D2');
+  worksheet.mergeCells('E2:H2');
+  worksheet.mergeCells('I2:M2');
+  worksheet.getRow(2).font = { name: 'Calibri', size: 11, bold: true, color: { argb: 'FF1E293B' } };
+  worksheet.getRow(2).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF1F5F9' } };
+  worksheet.getRow(2).height = 24;
+
+  worksheet.addRow([]); // Linha em branco
+
+  // Cabeçalho das Colunas
+  const headerRow = worksheet.addRow([
+    'Nº Operação',
+    'ID Título',
+    'Nº Título / Doc',
+    'Razão Social do Sacado',
+    'CNPJ / CPF Sacado',
+    'CEP Cadastrado',
+    'Diagnóstico do Erro',
+    'Sugestão de CEP',
+    'Valor Nominal (R$)',
+    'Vencimento',
+    'Endereço Completo Sacado',
+    'Telefone Sacado',
+    'E-mail Sacado'
+  ]);
+
+  headerRow.height = 26;
+  headerRow.eachCell(cell => {
+    cell.font = { name: 'Calibri', size: 11, bold: true, color: { argb: 'FFFFFFFF' } };
+    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFBE123C' } };
+    cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+    cell.border = {
+      top: { style: 'thin', color: { argb: 'FFCBD5E1' } },
+      bottom: { style: 'medium', color: { argb: 'FF0F172A' } }
+    };
+  });
+
+  let totalValorTitulos = 0;
+  let totalQtdTitulos = 0;
+  let rowIndex = 0;
+
+  sacadosInconsistentes.forEach(s => {
+    const titulosDoSacado = s.titulos && s.titulos.length > 0 ? s.titulos : [{ id: '-', numero: '-' }];
+
+    titulosDoSacado.forEach(t => {
+      rowIndex++;
+      const isEven = rowIndex % 2 === 0;
+      const vNominal = Number(t.valorNominal || t.valor || s.valorTotal || 0);
+      totalValorTitulos += vNominal;
+      totalQtdTitulos++;
+
+      const row = worksheet.addRow([
+        operacao.operacaoId,
+        t.id || '-',
+        t.numero || t.numero_titulo || '-',
+        s.nome,
+        s.documento || '-',
+        s.cep,
+        s.errorReason,
+        s.sugestaoCep || '-',
+        vNominal,
+        t.dataDeVencimento || t.vencimento || '-',
+        s.endereco,
+        s.telefones.length ? s.telefones.join('; ') : '-',
+        s.emails.length ? s.emails.join('; ') : '-'
+      ]);
+
+      row.height = 22;
+      row.eachCell((cell, colNumber) => {
+        cell.font = { name: 'Calibri', size: 10 };
+        cell.fill = {
+          type: 'pattern',
+          pattern: 'solid',
+          fgColor: { argb: isEven ? 'FFFFFFFF' : 'FFF8FAFC' }
+        };
+        cell.border = {
+          bottom: { style: 'thin', color: { argb: 'FFE2E8F0' } }
+        };
+
+        if (colNumber === 9) { // Coluna de Valor Nominal
+          cell.numFmt = 'R$ #,##0.00';
+          cell.font = { name: 'Calibri', size: 10, bold: true, color: { argb: 'FFBE123C' } };
+          cell.alignment = { horizontal: 'right', vertical: 'middle' };
+        } else if (colNumber === 2 || colNumber === 3 || colNumber === 10) {
+          cell.alignment = { horizontal: 'center', vertical: 'middle' };
+        } else {
+          cell.alignment = { vertical: 'middle' };
+        }
+      });
+    });
+  });
+
+  // Linha de Totalizador
+  const totalRow = worksheet.addRow([
+    'TOTAL',
+    '',
+    `Qtd Títulos: ${totalQtdTitulos}`,
+    '', '', '', '', '',
+    totalValorTitulos,
+    '', '', '', ''
+  ]);
+  totalRow.height = 26;
+  totalRow.eachCell((cell, colNumber) => {
+    cell.font = { name: 'Calibri', size: 11, bold: true, color: { argb: 'FFFFFFFF' } };
+    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF0F172A' } };
+    cell.alignment = { vertical: 'middle' };
+    if (colNumber === 9) {
+      cell.numFmt = 'R$ #,##0.00';
+      cell.alignment = { horizontal: 'right', vertical: 'middle' };
+    }
+  });
+
+  // Largura das Colunas
+  worksheet.columns = [
+    { width: 14 }, // Nº Operação
+    { width: 14 }, // ID Título
+    { width: 18 }, // Nº Título
+    { width: 36 }, // Razão Social do Sacado
+    { width: 20 }, // CNPJ / CPF Sacado
+    { width: 16 }, // CEP Cadastrado
+    { width: 34 }, // Diagnóstico do Erro
+    { width: 18 }, // Sugestão de CEP
+    { width: 20 }, // Valor Nominal (R$)
+    { width: 16 }, // Vencimento
+    { width: 44 }, // Endereço Completo
+    { width: 26 }, // Telefone Sacado
+    { width: 28 }  // E-mail Sacado
   ];
 
   return await workbook.xlsx.writeBuffer();

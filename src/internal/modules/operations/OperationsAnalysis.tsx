@@ -103,6 +103,7 @@ export const OperationsAnalysis: React.FC = () => {
   const [operationDetail, setOperationDetail] = useState<OperacaoDetail | null>(null);
   const [detailTab, setDetailTab] = useState<'inconsistencias' | 'todos_sacados' | 'titulos'>('inconsistencias');
   const [downloadingXlsx, setDownloadingXlsx] = useState<boolean>(false);
+  const [downloadingTitulosXlsx, setDownloadingTitulosXlsx] = useState<boolean>(false);
 
   // Busca listagem de operações
   const fetchOperations = useCallback(async () => {
@@ -192,6 +193,36 @@ export const OperationsAnalysis: React.FC = () => {
       alert(`Erro no download da planilha: ${err.message}`);
     } finally {
       setDownloadingXlsx(false);
+    }
+  };
+
+  // Download da planilha Excel de TÍTULOS e SACADOS com erro (para refazer a operação)
+  const handleDownloadTitulosXlsx = async (opId: string) => {
+    setDownloadingTitulosXlsx(true);
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/mesa-operacoes/operacoes/${opId}/exportar-titulos-xlsx?data=${dataFiltro}`, {
+        headers: getAuthHeaders()
+      });
+
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => ({}));
+        throw new Error(errJson.error || 'Erro ao gerar planilha de títulos.');
+      }
+
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `Titulos_e_Sacados_Com_Erro_Op_${opId}.xlsx`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+    } catch (err: any) {
+      console.error('Erro ao exportar títulos XLSX:', err);
+      alert(`Erro no download da planilha de títulos: ${err.message}`);
+    } finally {
+      setDownloadingTitulosXlsx(false);
     }
   };
 
@@ -522,16 +553,28 @@ export const OperationsAnalysis: React.FC = () => {
                           <AlertTriangle size={16} />
                           <strong>{operationDetail.alertaBitfin.totalSacadosAfetados} sacado(s)</strong> com inconsistência de CEP nesta operação.
                         </span>
-                        <button
-                          type="button"
-                          className="oa-btn-export-xlsx"
-                          onClick={() => handleDownloadXlsx(operationDetail.operacaoId)}
-                          disabled={downloadingXlsx}
-                          title="Exportar relação completa com sacados, CEPs incorretos e telefones em Excel"
-                        >
-                          <FileSpreadsheet size={16} />
-                          {downloadingXlsx ? 'Gerando Excel...' : 'Exportar Sacados com Erro (.xlsx)'}
-                        </button>
+                        <div className="oa-btn-group-export">
+                          <button
+                            type="button"
+                            className="oa-btn-export-xlsx"
+                            onClick={() => handleDownloadXlsx(operationDetail.operacaoId)}
+                            disabled={downloadingXlsx}
+                            title="Exportar resumo de sacados com CEP incorreto"
+                          >
+                            <FileSpreadsheet size={16} />
+                            {downloadingXlsx ? 'Gerando...' : 'Exportar Sacados (.xlsx)'}
+                          </button>
+                          <button
+                            type="button"
+                            className="oa-btn-export-xlsx titulos"
+                            onClick={() => handleDownloadTitulosXlsx(operationDetail.operacaoId)}
+                            disabled={downloadingTitulosXlsx}
+                            title="Exportar cada título dos sacados com erro para refazer a operação no Bitfin"
+                          >
+                            <Download size={16} />
+                            {downloadingTitulosXlsx ? 'Gerando...' : 'Exportar Sacado + Título (.xlsx)'}
+                          </button>
+                        </div>
                       </div>
                     </div>
                   ) : (
@@ -758,15 +801,26 @@ export const OperationsAnalysis: React.FC = () => {
             {/* Rodapé do Modal */}
             <div className="oa-modal-footer">
               {operationDetail && operationDetail.sacadosInconsistentes.length > 0 && (
-                <button
-                  type="button"
-                  className="oa-btn primary"
-                  onClick={() => handleDownloadXlsx(operationDetail.operacaoId)}
-                  disabled={downloadingXlsx}
-                >
-                  <Download size={16} />
-                  {downloadingXlsx ? 'Exportando...' : 'Exportar XLSX para Correção'}
-                </button>
+                <>
+                  <button
+                    type="button"
+                    className="oa-btn secondary"
+                    onClick={() => handleDownloadXlsx(operationDetail.operacaoId)}
+                    disabled={downloadingXlsx}
+                  >
+                    <FileSpreadsheet size={16} />
+                    {downloadingXlsx ? 'Exportando...' : 'Exportar Sacados (.xlsx)'}
+                  </button>
+                  <button
+                    type="button"
+                    className="oa-btn primary"
+                    onClick={() => handleDownloadTitulosXlsx(operationDetail.operacaoId)}
+                    disabled={downloadingTitulosXlsx}
+                  >
+                    <Download size={16} />
+                    {downloadingTitulosXlsx ? 'Exportando...' : 'Exportar Sacado + Título (.xlsx)'}
+                  </button>
+                </>
               )}
               <button
                 type="button"

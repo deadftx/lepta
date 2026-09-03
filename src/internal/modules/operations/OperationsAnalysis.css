@@ -563,6 +563,13 @@
   font-size: 0.85rem;
 }
 
+.oa-btn-group-export {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
 .oa-btn-export-xlsx {
   display: inline-flex;
   align-items: center;
@@ -580,6 +587,16 @@
 }
 
 .oa-btn-export-xlsx:hover:not(:disabled) {
+  transform: translateY(-1px);
+  filter: brightness(1.1);
+}
+
+.oa-btn-export-xlsx.titulos {
+  background: linear-gradient(135deg, #0284c7 0%, #0369a1 100%);
+  box-shadow: 0 2px 10px rgba(2, 132, 199, 0.3);
+}
+
+.oa-btn-export-xlsx.titulos:hover:not(:disabled) {
   transform: translateY(-1px);
   filter: brightness(1.1);
 }
