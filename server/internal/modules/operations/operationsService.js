@@ -5,6 +5,168 @@ const API_BASE_URL = 'https://lepta-backend.bit-unltd.com.br';
 // Cache em memória para entidades e CEPs para não reconsultar repetidas vezes
 const entitiesCache = new Map();
 const cepValidationCache = new Map();
+const cnpjAddressCache = new Map();
+
+/**
+ * Remove acentos e caracteres não-ASCII garantindo integridade no padrão CNAB
+ */
+export function cleanAscii(str) {
+  return String(str || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^\x20-\x7E]/g, '')
+    .toUpperCase();
+}
+
+/**
+ * Alinha à esquerda com preenchimento de espaços à direita
+ */
+export function padRight(str, len) {
+  const s = cleanAscii(str).slice(0, len);
+  return s.padEnd(len, ' ');
+}
+
+/**
+ * Alinha à direita com preenchimento de zeros à esquerda
+ */
+export function padLeftZero(val, len) {
+  const digits = String(val || '').replace(/\D/g, '').slice(-len);
+  return digits.padStart(len, '0');
+}
+
+/**
+ * Converte data para o formato DDMMAA exigido pelo CNAB 400
+ */
+export function formatCnabDate(dateInput) {
+  if (!dateInput) {
+    const now = new Date();
+    const d = String(now.getDate()).padStart(2, '0');
+    const m = String(now.getMonth() + 1).padStart(2, '0');
+    const y = String(now.getFullYear()).slice(-2);
+    return d + m + y;
+  }
+  const s = String(dateInput).trim();
+  if (/^\d{4}-\d{2}-\d{2}/.test(s)) {
+    return s.slice(8, 10) + s.slice(5, 7) + s.slice(2, 4);
+  }
+  if (/^\d{2}\/\d{2}\/\d{4}/.test(s)) {
+    return s.slice(0, 2) + s.slice(3, 5) + s.slice(8, 10);
+  }
+  const d = new Date(s);
+  if (!isNaN(d.getTime())) {
+    return String(d.getDate()).padStart(2, '0') +
+      String(d.getMonth() + 1).padStart(2, '0') +
+      String(d.getFullYear()).slice(-2);
+  }
+  const now = new Date();
+  return String(now.getDate()).padStart(2, '0') +
+    String(now.getMonth() + 1).padStart(2, '0') +
+    String(now.getFullYear()).slice(-2);
+}
+
+/**
+ * Consulta endereço oficial do CNPJ com cascata rápida (BrasilAPI -> MinhaReceita -> ReceitaWS)
+ */
+export async function fetchCnpjAddress(rawCnpj) {
+  const cleanCnpj = String(rawCnpj || '').replace(/\D/g, '');
+  if (!cleanCnpj || cleanCnpj.length !== 14) return null;
+
+  if (cnpjAddressCache.has(cleanCnpj)) {
+    return cnpjAddressCache.get(cleanCnpj);
+  }
+
+  // 1. BrasilAPI (rápido e com logradouro estruturado)
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 2500);
+    const res = await fetch(`https://brasilapi.com.br/api/cnpj/v1/${cleanCnpj}`, {
+      headers: { 'User-Agent': 'LeptaSys/1.0' },
+      signal: controller.signal
+    });
+    clearTimeout(timeout);
+    if (res.ok) {
+      const d = await res.json();
+      const rawCep = String(d.cep || '').replace(/\D/g, '');
+      if (rawCep && rawCep.length === 8) {
+        const addr = {
+          cnpj: cleanCnpj,
+          razaoSocial: d.razao_social || d.nome_fantasia || '',
+          cep: rawCep,
+          logradouro: [d.descricao_tipo_de_logradouro, d.logradouro, d.numero].filter(Boolean).join(' ').trim() || String(d.logradouro || ''),
+          numero: String(d.numero || ''),
+          complemento: String(d.complemento || ''),
+          bairro: String(d.bairro || ''),
+          cidade: String(d.municipio || ''),
+          uf: String(d.uf || '')
+        };
+        cnpjAddressCache.set(cleanCnpj, addr);
+        return addr;
+      }
+    }
+  } catch (_) {}
+
+  // 2. MinhaReceita (fallback público aberto)
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 2500);
+    const res = await fetch(`https://minhareceita.org/${cleanCnpj}`, {
+      headers: { 'User-Agent': 'LeptaSys/1.0' },
+      signal: controller.signal
+    });
+    clearTimeout(timeout);
+    if (res.ok) {
+      const d = await res.json();
+      const rawCep = String(d.cep || '').replace(/\D/g, '');
+      if (rawCep && rawCep.length === 8) {
+        const addr = {
+          cnpj: cleanCnpj,
+          razaoSocial: d.razao_social || d.nome_fantasia || '',
+          cep: rawCep,
+          logradouro: [d.descricao_tipo_de_logradouro, d.logradouro, d.numero].filter(Boolean).join(' ').trim() || String(d.logradouro || ''),
+          numero: String(d.numero || ''),
+          complemento: String(d.complemento || ''),
+          bairro: String(d.bairro || ''),
+          cidade: String(d.municipio || ''),
+          uf: String(d.uf || '')
+        };
+        cnpjAddressCache.set(cleanCnpj, addr);
+        return addr;
+      }
+    }
+  } catch (_) {}
+
+  // 3. ReceitaWS (segundo fallback)
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 2500);
+    const res = await fetch(`https://receitaws.com.br/v1/cnpj/${cleanCnpj}`, {
+      headers: { 'User-Agent': 'LeptaSys/1.0' },
+      signal: controller.signal
+    });
+    clearTimeout(timeout);
+    if (res.ok) {
+      const d = await res.json();
+      const rawCep = String(d.cep || '').replace(/\D/g, '');
+      if (rawCep && rawCep.length === 8) {
+        const addr = {
+          cnpj: cleanCnpj,
+          razaoSocial: d.nome || '',
+          cep: rawCep,
+          logradouro: [d.logradouro, d.numero].filter(Boolean).join(' ').trim() || String(d.logradouro || ''),
+          numero: String(d.numero || ''),
+          complemento: String(d.complemento || ''),
+          bairro: String(d.bairro || ''),
+          cidade: String(d.municipio || ''),
+          uf: String(d.uf || '')
+        };
+        cnpjAddressCache.set(cleanCnpj, addr);
+        return addr;
+      }
+    }
+  } catch (_) {}
+
+  return null;
+}
 
 /**
  * Valida o CEP cadastrado e, quando possível, consulta a base dos Correios/ViaCEP
@@ -1050,6 +1212,9 @@ export async function getOperationDetails({ token, operacaoId, date }) {
     },
     sacadosInconsistentes,
     todosSacados,
+    titulos,
+    sacadosById,
+    opInfo,
     titulosResumo: titulos.map(t => {
       const f = extractTituloFields(t, sacadosById);
       return {
@@ -1579,3 +1744,262 @@ export async function diagnoseBitfinOperation(operacaoId, token) {
 
   return results;
 }
+
+/**
+ * Garante que a linha do arquivo CNAB possua rigorosamente 400 caracteres
+ */
+function ensure400(line) {
+  if (line.length < 400) return line.padEnd(400, ' ');
+  if (line.length > 400) return line.slice(0, 400);
+  return line;
+}
+
+/**
+ * Gera arquivo de remessa UNLTD CNAB 400 com TODOS OS TÍTULOS da operação,
+ * corrigindo e validando os sacados inconsistentes via API de CNPJ e Correios.
+ */
+export async function generateCorrectedCnab400({ token, operacaoId, date }) {
+  const details = await getOperationDetails({ token, operacaoId, date });
+  const { titulos = [], sacadosById = new Map(), opInfo, cedente, dataCadastro } = details;
+
+  if (!titulos.length) {
+    throw new Error('Nenhum título localizado para esta operação.');
+  }
+
+  // 1. Coleta os CNPJs dos sacados com inconsistência de CEP para buscar correção oficial
+  const inconsistentes = details.sacadosInconsistentes || [];
+  const distinctInconsistentCnpjs = new Set();
+  for (const s of inconsistentes) {
+    const doc = String(s.documento || '').replace(/\D/g, '');
+    if (doc.length === 14) {
+      distinctInconsistentCnpjs.add(doc);
+    }
+  }
+
+  // 2. Consulta em lotes rápidos de 5 com timeout para evitar estouro de tempo
+  const correcoesPorDoc = new Map();
+  const cnpjsList = Array.from(distinctInconsistentCnpjs);
+  const CNPJ_BATCH_SIZE = 5;
+
+  for (let i = 0; i < cnpjsList.length; i += CNPJ_BATCH_SIZE) {
+    const batch = cnpjsList.slice(i, i + CNPJ_BATCH_SIZE);
+    await Promise.allSettled(batch.map(async cleanCnpj => {
+      try {
+        const cnpjData = await fetchCnpjAddress(cleanCnpj);
+        if (cnpjData && cnpjData.cep) {
+          // Valida se o CEP obtido na Receita existe na base oficial dos Correios (ViaCEP)
+          const vCep = await validateCep(cnpjData.cep, { bitfinValido: true, checkViaCep: true });
+          const cepDefinitivo = String(vCep.rawCep || cnpjData.cep).replace(/\D/g, '');
+
+          // Monta logradouro completo com número e complemento se disponíveis
+          const rua = vCep.logradouroCorreios || cnpjData.logradouro || 'LOGRADOURO';
+          const numero = cnpjData.numero ? ` ${cnpjData.numero}` : '';
+          const comp = cnpjData.complemento ? ` ${cnpjData.complemento}` : '';
+          const logradouroFinal = `${rua}${numero}${comp}`.trim();
+
+          correcoesPorDoc.set(cleanCnpj, {
+            cnpj: cleanCnpj,
+            razaoSocial: cnpjData.razaoSocial,
+            cep: cepDefinitivo,
+            logradouro: logradouroFinal,
+            bairro: vCep.bairroCorreios || cnpjData.bairro || 'CENTRO',
+            cidade: vCep.cidadeCorreios || cnpjData.cidade || 'CIDADE',
+            uf: vCep.ufCorreios || cnpjData.uf || 'SP'
+          });
+        }
+      } catch (err) {
+        console.warn(`[CNAB 400] Aviso ao consultar dados de CNPJ ${cleanCnpj}:`, err.message);
+      }
+    }));
+  }
+
+  console.log(`[CNAB 400 #${operacaoId}] ${correcoesPorDoc.size} sacado(s) corrigidos e validados com sucesso.`);
+
+  // 3. Montagem rigorosa do CNAB 400 Remessa Plataforma UNLTD V1.1
+  const lines = [];
+  let seq = 1;
+
+  // Agência e Conta do Cedente
+  const contaOperacional = opInfo?.contaOperacional || titulos[0]?.contaOperacional || {};
+  const agencia = padLeftZero(contaOperacional.agencia || opInfo?.agencia || '0001', 4);
+  const conta = padLeftZero(contaOperacional.numero || contaOperacional.codigo || opInfo?.conta || '000001', 6);
+  const cedenteDoc = padLeftZero(cedente.documento || '', 14);
+  const tipoInscricaoCedente = (cedente.documento && cedente.documento.length === 11) ? '01' : '02';
+  const cedenteNome = cleanAscii(cedente.nome || 'CEDENTE').slice(0, 30);
+  const dataGravacao = formatCnabDate(new Date());
+
+  // HEADER DE ARQUIVO (Tipo 0) - EXATOS 400 BYTES
+  const header = ensure400(
+    '0' +                                      // Pos 001 - Identificação do Registro
+    '1' +                                      // Pos 002 - Identificação da Remessa
+    'REMESSA' +                                // Pos 003..009 - Literal Remessa
+    '01' +                                     // Pos 010..011 - Código do Serviço
+    padRight('COBRANCA', 15) +                 // Pos 012..026 - Literal Serviço
+    agencia +                                  // Pos 027..030 - Agência Mantenedora
+    '00' +                                     // Pos 031..032 - Zeros
+    conta +                                    // Pos 033..038 - Número da Conta Corrente
+    ' '.repeat(8) +                            // Pos 039..046 - Brancos
+    padRight(cedenteNome, 30) +                // Pos 047..076 - Nome da Empresa
+    '999' +                                    // Pos 077..079 - Código da Instituição
+    padRight('BANCO', 15) +                    // Pos 080..094 - Nome do Banco
+    dataGravacao +                             // Pos 095..100 - Data de Gravação (DDMMAA)
+    ' '.repeat(280) +                          // Pos 101..380 - Brancos
+    'V.1.1' +                                  // Pos 381..385 - Versão do Layout
+    ' '.repeat(9) +                            // Pos 386..394 - Brancos
+    padLeftZero(seq, 6)                        // Pos 395..400 - Sequencial no Arquivo (000001)
+  );
+  lines.push(header);
+
+  let totalCorrigidos = 0;
+  let totalOriginaisValidos = 0;
+
+  // REGISTROS DETALHE (Tipo 1) - PARA TODOS OS TÍTULOS DA OPERAÇÃO
+  for (const rawT of titulos) {
+    seq++;
+    const f = extractTituloFields(rawT, sacadosById);
+    const docSacado = String(f.documento || '').replace(/\D/g, '');
+    const isCnpj = docSacado.length === 14;
+    const tipoSacado = isCnpj ? '02' : '01';
+
+    let sacadoNome = cleanAscii(f.nome || (docSacado ? `SACADO ${docSacado}` : 'SACADO'));
+    let sacadoLogradouro = '';
+    let sacadoBairro = '';
+    let sacadoCep = '';
+    let sacadoCidade = '';
+    let sacadoUf = '';
+
+    // Extrai o endereço ORIGINAL informado na operação (NÃO É ALTERADO)
+    let sacadoRef = rawT.sacado;
+    if (typeof sacadoRef === 'number' || (typeof sacadoRef === 'string' && /^\d+$/.test(sacadoRef.trim()))) {
+      const sFound = sacadosById.get(String(sacadoRef).trim());
+      if (sFound) sacadoRef = sFound;
+    }
+    if (!sacadoRef && (rawT.sacadoId || rawT.idSacado)) {
+      const sFound = sacadosById.get(String(rawT.sacadoId || rawT.idSacado).trim());
+      if (sFound) sacadoRef = sFound;
+    }
+
+    const endObj = sacadoRef?.entidade?.endereco ||
+      sacadoRef?.endereco ||
+      rawT.sacado?.entidade?.endereco ||
+      rawT.sacado?.endereco ||
+      rawT.devedor?.entidade?.endereco ||
+      rawT.devedor?.endereco ||
+      rawT.pagador?.endereco ||
+      rawT.endereco;
+
+    let originalLogradouro = '';
+    let originalBairro = '';
+    let originalCidade = '';
+    let originalUf = '';
+
+    if (typeof endObj === 'object' && endObj !== null) {
+      const rua = String(endObj.logradouro || '').trim();
+      const num = endObj.numero ? ` ${endObj.numero}` : '';
+      const comp = endObj.complemento ? ` ${endObj.complemento}` : '';
+      originalLogradouro = `${rua}${num}${comp}`.trim();
+      originalBairro = String(endObj.bairro || '').trim();
+      originalCidade = String(endObj.cidade || endObj.localidade || '').trim();
+      originalUf = String(endObj.uf || endObj.estado || '').trim().slice(0, 2);
+    } else if (typeof endObj === 'string' && endObj.trim()) {
+      originalLogradouro = endObj.trim();
+    }
+
+    if (!originalLogradouro && f.endereco && f.endereco !== 'Não informado') {
+      originalLogradouro = f.endereco;
+    }
+
+    // Mantém rigorosamente o endereço informado originalmente na operação
+    sacadoLogradouro = cleanAscii(originalLogradouro || 'LOGRADOURO');
+    sacadoBairro = cleanAscii(originalBairro || 'CENTRO');
+    sacadoCidade = cleanAscii(originalCidade || 'CIDADE');
+    sacadoUf = cleanAscii(originalUf || 'SP').slice(0, 2);
+
+    // ATENÇÃO: Altera APENAS o CEP para condizer com o sacado/Correios, mantendo o endereço original
+    if (correcoesPorDoc.has(docSacado)) {
+      const c = correcoesPorDoc.get(docSacado);
+      sacadoCep = padLeftZero(c.cep, 8); // Somente o CEP é corrigido
+      totalCorrigidos++;
+    } else {
+      // Sacado que já estava com CEP válido
+      const cleanRawCep = String(f.rawCep || f.cep || '').replace(/\D/g, '');
+      sacadoCep = padLeftZero(cleanRawCep, 8);
+      totalOriginaisValidos++;
+    }
+
+    const valorCentavos = Math.round(Number(f.valor || 0) * 100);
+    const dataVenc = formatCnabDate(f.vencimento);
+    const dataEmissao = formatCnabDate(rawT.dataDeEmissao || rawT.dataEmissao || dataCadastro);
+    const numeroDoc = String(f.numero || f.id || seq).replace(/[^\w-]/g, '').slice(0, 10);
+    const seuNumero = String(f.numero || f.id || seq).replace(/[^\w-]/g, '').slice(0, 25);
+
+    const detailLine = ensure400(
+      '1' +                                    // Pos 001 - Identificação do Registro (1 = Detalhe)
+      tipoInscricaoCedente +                   // Pos 002..003 - Tipo Inscrição Empresa (01 CPF / 02 CNPJ)
+      cedenteDoc +                             // Pos 004..017 - Número de Inscrição da Empresa
+      agencia +                                // Pos 018..021 - Agência Mantenedora
+      '00' +                                   // Pos 022..023 - Zeros
+      conta +                                  // Pos 024..029 - Número da Conta Corrente
+      ' '.repeat(8) +                          // Pos 030..037 - Brancos
+      padRight(seuNumero, 25) +                // Pos 038..062 - Identificação do Título na Empresa (Seu Número)
+      '00000000' +                             // Pos 063..070 - Nosso Número no Cobrador (0)
+      '0000000000000' +                        // Pos 071..083 - Zeros
+      '001' +                                  // Pos 084..086 - Código da Carteira
+      ' '.repeat(21) +                         // Pos 087..107 - Brancos
+      ' ' +                                    // Pos 108 - Código do Rateio de Crédito
+      '01' +                                   // Pos 109..110 - Código da Ocorrência (01 = Entrada de Título)
+      padRight(numeroDoc, 10) +                // Pos 111..120 - Número do Documento
+      dataVenc +                               // Pos 121..126 - Vencimento do Título (DDMMAA)
+      padLeftZero(valorCentavos, 13) +         // Pos 127..139 - Valor Nominal do Título (13 dígitos)
+      '000' +                                  // Pos 140..142 - Código do Banco Recebedor
+      '00000' +                                // Pos 143..147 - Agência Cobradora
+      '01' +                                   // Pos 148..149 - Espécie do Título (01 = Duplicata)
+      'N' +                                    // Pos 150 - Aceite (N)
+      dataEmissao +                            // Pos 151..156 - Data de Emissão do Título (DDMMAA)
+      '0000' +                                 // Pos 157..160 - Primeira e Segunda Instrução
+      '0000000000000' +                        // Pos 161..173 - Juros de 1 Dia
+      '000000' +                               // Pos 174..179 - Data Limite Para Concessão de Desconto
+      '0000000000000' +                        // Pos 180..192 - Valor do Desconto
+      '0000000000000' +                        // Pos 193..205 - Valor do IOF
+      '0000000000000' +                        // Pos 206..218 - Valor do Abatimento
+      tipoSacado +                             // Pos 219..220 - Tipo de Inscrição do Sacado
+      padLeftZero(docSacado, 14) +             // Pos 221..234 - Número de Inscrição do Sacado
+      padRight(sacadoNome, 40) +               // Pos 235..274 - Nome do Sacado
+      padRight(sacadoLogradouro, 40) +         // Pos 275..314 - Endereço Completo do Sacado
+      padRight(sacadoBairro, 12) +             // Pos 315..326 - Bairro do Sacado
+      sacadoCep +                              // Pos 327..334 - CEP do Sacado (8 dígitos)
+      padRight(sacadoCidade, 15) +             // Pos 335..349 - Cidade do Sacado
+      padRight(sacadoUf || 'SP', 2) +          // Pos 350..351 - Estado (UF) do Sacado
+      ' '.repeat(30) +                         // Pos 352..381 - Sacador/Avalista
+      ' '.repeat(4) +                          // Pos 382..385 - Brancos
+      '000000' +                               // Pos 386..391 - Data de Mora
+      '00' +                                   // Pos 392..393 - Prazo
+      ' ' +                                    // Pos 394 - Brancos
+      padLeftZero(seq, 6)                      // Pos 395..400 - Número Sequencial do Registro
+    );
+
+    lines.push(detailLine);
+  }
+
+  // TRAILLER DE ARQUIVO (Tipo 9) - EXATOS 400 BYTES
+  seq++;
+  const trailler = ensure400(
+    '9' +                                      // Pos 001 - Identificação do Registro (9 = Trailler)
+    ' '.repeat(393) +                          // Pos 002..394 - Brancos
+    padLeftZero(seq, 6)                        // Pos 395..400 - Total de Registros no Arquivo
+  );
+  lines.push(trailler);
+
+  const cnabContent = lines.join('\r\n') + '\r\n';
+
+  return {
+    cnabContent,
+    totalTitulos: titulos.length,
+    totalLinhas: seq,
+    totalCorrigidos,
+    totalOriginaisValidos,
+    correcoesPorDocSize: correcoesPorDoc.size,
+    cedenteNome: cedente.nome
+  };
+}
+

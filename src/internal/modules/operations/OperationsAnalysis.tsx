@@ -13,6 +13,7 @@ import {
   X,
   UserCheck,
   FileSpreadsheet,
+  FileCode,
   AlertCircle,
   Copy,
   Check
@@ -106,6 +107,7 @@ export const OperationsAnalysis: React.FC = () => {
   const [detailTab, setDetailTab] = useState<'inconsistencias' | 'todos_sacados' | 'titulos'>('inconsistencias');
   const [downloadingXlsx, setDownloadingXlsx] = useState<boolean>(false);
   const [downloadingTitulosXlsx, setDownloadingTitulosXlsx] = useState<boolean>(false);
+  const [downloadingCnab, setDownloadingCnab] = useState<boolean>(false);
 
   // Modal de Diagnóstico Bruto da API BitFin
   const [diagnoseModalOpen, setDiagnoseModalOpen] = useState<boolean>(false);
@@ -249,6 +251,36 @@ export const OperationsAnalysis: React.FC = () => {
       alert(`Erro no download da planilha de títulos: ${err.message}`);
     } finally {
       setDownloadingTitulosXlsx(false);
+    }
+  };
+
+  // Download do arquivo CNAB 400 Remessa Corrigido com todos os títulos da operação
+  const handleDownloadCnab = async (opId: string) => {
+    setDownloadingCnab(true);
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/mesa-operacoes/operacoes/${opId}/exportar-cnab?data=${dataFiltro}`, {
+        headers: getAuthHeaders()
+      });
+
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => ({}));
+        throw new Error(errJson.error || 'Erro ao gerar remessa CNAB 400.');
+      }
+
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `REM_OP_${opId}_CORRIGIDA.REM`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+    } catch (err: any) {
+      console.error('Erro ao exportar CNAB 400:', err);
+      alert(`Erro no download da remessa CNAB: ${err.message}`);
+    } finally {
+      setDownloadingCnab(false);
     }
   };
 
@@ -623,6 +655,23 @@ export const OperationsAnalysis: React.FC = () => {
                             {downloadingTitulosXlsx ? 'Gerando...' : 'Exportar Sacado + Título (.xlsx)'}
                           </button>
                         </div>
+
+                        {/* Botão de Exportação de Remessa CNAB 400 Corrigida abaixo das exportações de XLSX */}
+                        <div className="oa-cnab-export-section">
+                          <button
+                            type="button"
+                            className="oa-btn-export-cnab"
+                            onClick={() => handleDownloadCnab(operationDetail.operacaoId)}
+                            disabled={downloadingCnab}
+                            title="Gerar e baixar arquivo CNAB 400 Remessa corrigido com todos os títulos da operação"
+                          >
+                            <FileCode size={18} />
+                            {downloadingCnab ? 'Gerando Remessa CNAB 400...' : 'Gerar Remessa CNAB 400 Corrigida (.rem)'}
+                          </button>
+                          <span className="oa-cnab-desc-hint">
+                            Gera o arquivo de remessa UNLTD CNAB 400 contendo <strong>todos os títulos</strong> da operação ({operationDetail.totalTitulos} títulos), com os sacados corrigidos e validados via Receita Federal e Correios para envio imediato.
+                          </span>
+                        </div>
                       </div>
                     </div>
                   ) : (
@@ -867,6 +916,16 @@ export const OperationsAnalysis: React.FC = () => {
                   >
                     <Download size={16} />
                     {downloadingTitulosXlsx ? 'Exportando...' : 'Exportar Sacado + Título (.xlsx)'}
+                  </button>
+                  <button
+                    type="button"
+                    className="oa-btn cnab"
+                    onClick={() => handleDownloadCnab(operationDetail.operacaoId)}
+                    disabled={downloadingCnab}
+                    title="Baixar Remessa CNAB 400 Corrigida"
+                  >
+                    <FileCode size={16} />
+                    {downloadingCnab ? 'Gerando Remessa...' : 'Gerar Remessa CNAB (.rem)'}
                   </button>
                 </>
               )}

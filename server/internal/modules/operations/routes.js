@@ -3,7 +3,8 @@ import {
   getOperationDetails,
   generateSacadosInconsistentesExcel,
   generateTitulosInconsistentesExcel,
-  diagnoseBitfinOperation
+  diagnoseBitfinOperation,
+  generateCorrectedCnab400
 } from './operationsService.js';
 
 export function registerOperationsRoutes(app, {
@@ -205,4 +206,32 @@ export function registerOperationsRoutes(app, {
       return res.status(500).json({ error: `Erro ao exportar planilha de títulos: ${err.message}` });
     }
   });
+
+  // 5. Exportação de Remessa CNAB 400 Corrigida (com todos os títulos da operação)
+  app.get('/api/mesa-operacoes/operacoes/:id/exportar-cnab', requireSession, checkAccess, async (req, res) => {
+    try {
+      const token = getToken();
+      if (!token) {
+        return res.status(400).json({ error: 'Token UNLTD_API_TOKEN não configurado no servidor.' });
+      }
+
+      const operacaoId = req.params.id;
+      const { data } = req.query;
+
+      const result = await generateCorrectedCnab400({
+        token,
+        operacaoId,
+        date: data
+      });
+
+      const filename = `REM_OP_${operacaoId}_CORRIGIDA.REM`;
+      res.setHeader('Content-Type', 'text/plain; charset=iso-8859-1');
+      res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+      return res.send(Buffer.from(result.cnabContent, 'latin1'));
+    } catch (err) {
+      console.error(`Erro ao exportar CNAB 400 da operação ${req.params.id}:`, err);
+      return res.status(500).json({ error: `Erro ao gerar remessa CNAB: ${err.message}` });
+    }
+  });
 }
+
