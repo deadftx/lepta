@@ -56,6 +56,7 @@ export const ValidateCepsCnab: React.FC = () => {
   const [analysis, setAnalysis] = useState<AnalysisResult | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [generating, setGenerating] = useState(false);
+  const [downloadingSeparated, setDownloadingSeparated] = useState<'validos' | 'erros' | null>(null);
   const [downloadSuccess, setDownloadSuccess] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
@@ -191,6 +192,62 @@ export const ValidateCepsCnab: React.FC = () => {
       setErrorMsg(err.message || 'Falha ao gerar o arquivo CNAB corrigido.');
     } finally {
       setGenerating(false);
+    }
+  };
+
+  const handleExportSeparatedCnab = async (tipo: 'validos' | 'erros') => {
+    if (!selectedFile || !analysis) return;
+
+    setDownloadingSeparated(tipo);
+    setErrorMsg(null);
+    setDownloadSuccess(null);
+
+    try {
+      const formData = new FormData();
+      formData.append('file', selectedFile);
+      const invalidDocs = analysis.sacadosInconsistentes.map(s => s.doc);
+      formData.append('invalidDocs', JSON.stringify(invalidDocs));
+
+      const res = await fetch(`${API_BASE_URL}/api/mesa-operacoes/validar-ceps/exportar-separado?tipo=${tipo}&format=json`, {
+        method: 'POST',
+        headers: getAuthHeaders(),
+        body: formData
+      });
+
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => ({}));
+        throw new Error(errJson.error || `Erro ao gerar CNAB de ${tipo}.`);
+      }
+
+      const data = await res.json();
+
+      if (data.cnabBase64) {
+        const byteCharacters = atob(data.cnabBase64);
+        const byteNumbers = new Array(byteCharacters.length);
+        for (let i = 0; i < byteCharacters.length; i++) {
+          byteNumbers[i] = byteCharacters.charCodeAt(i);
+        }
+        const byteArray = new Uint8Array(byteNumbers);
+        const blob = new Blob([byteArray], { type: 'text/plain;charset=iso-8859-1' });
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = data.filename || `REMESSA_${tipo.toUpperCase()}.REM`;
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(a);
+
+        const tipoDesc = tipo === 'validos' ? 'títulos com CEP válido' : 'títulos com erro de CEP';
+        setDownloadSuccess(
+          `Arquivo "${data.filename}" baixado com sucesso! Contém ${data.totalTitulos} ${tipoDesc} (dados 100% preservados, sem alterações).`
+        );
+      }
+    } catch (err: any) {
+      console.error(`Erro ao exportar CNAB ${tipo}:`, err);
+      setErrorMsg(err.message || `Falha ao exportar CNAB de ${tipo}.`);
+    } finally {
+      setDownloadingSeparated(null);
     }
   };
 
@@ -436,11 +493,41 @@ export const ValidateCepsCnab: React.FC = () => {
                 <>
                   <button
                     type="button"
+                    className="vc-btn-split validos"
+                    onClick={() => handleExportSeparatedCnab('validos')}
+                    disabled={downloadingSeparated !== null}
+                    title="Exportar arquivo CNAB contendo apenas os títulos com CEP válido, sem alterar nada nos dados"
+                  >
+                    {downloadingSeparated === 'validos' ? (
+                      <RefreshCw size={15} className="spin" />
+                    ) : (
+                      <CheckCircle size={15} />
+                    )}
+                    <span>Exportar CNAB Válidos ({analysis.totalValidos})</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    className="vc-btn-split erros"
+                    onClick={() => handleExportSeparatedCnab('erros')}
+                    disabled={downloadingSeparated !== null}
+                    title="Exportar arquivo CNAB contendo apenas os títulos com erro de CEP, sem alterar nada nos dados"
+                  >
+                    {downloadingSeparated === 'erros' ? (
+                      <RefreshCw size={15} className="spin" />
+                    ) : (
+                      <AlertTriangle size={15} />
+                    )}
+                    <span>Exportar CNAB c/ Erro ({analysis.totalInconsistentes})</span>
+                  </button>
+
+                  <button
+                    type="button"
                     className="vc-btn-excel"
                     onClick={handleExportExcel}
                   >
-                    <FileSpreadsheet size={16} />
-                    <span>Baixar Relatório (.XLSX)</span>
+                    <FileSpreadsheet size={15} />
+                    <span>Relatório (.XLSX)</span>
                   </button>
 
                   <button
@@ -448,16 +535,17 @@ export const ValidateCepsCnab: React.FC = () => {
                     className="vc-btn-generate"
                     onClick={handleGenerateCorrectedCnab}
                     disabled={generating}
+                    title="Gerar arquivo único com os CEPs errados corrigidos pelo logradouro oficial"
                   >
                     {generating ? (
                       <>
-                        <RefreshCw size={16} className="spin" />
-                        <span>Gerando Remessa Corrigida...</span>
+                        <RefreshCw size={15} className="spin" />
+                        <span>Gerando...</span>
                       </>
                     ) : (
                       <>
-                        <Download size={16} />
-                        <span>Gerar CNAB Corrigido (.REM)</span>
+                        <Download size={15} />
+                        <span>Gerar CNAB Corrigido</span>
                       </>
                     )}
                   </button>
@@ -469,7 +557,7 @@ export const ValidateCepsCnab: React.FC = () => {
                 className="vc-btn-secondary"
                 onClick={handleReset}
               >
-                <RefreshCw size={16} />
+                <RefreshCw size={15} />
                 <span>Analisar Outro Arquivo</span>
               </button>
             </div>

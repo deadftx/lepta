@@ -2635,6 +2635,243 @@ export async function generateCorrectedCnabFromAnalysis({ fileBuffer, correction
   };
 }
 
+/**
+ * Particiona qualquer arquivo CNAB 400 em dois arquivos separados:
+ * 1. Títulos cujos sacados têm CEP válido.
+ * 2. Títulos cujos sacados têm erro de CEP (inconsistentes).
+ * 
+ * REGRA CRÍTICA: NÃO ALTERA NADA nos dados de CEP, nomes ou endereços.
+ * Preserva o bloco completo de cada título (Tipo 1 + Tipos 2, 3, 4).
+ * Re-indexa o sequencial de linhas (posições 395 a 400) e zera o sequencial de remessa no Header.
+ */
+export function splitCnab400File({ fileBuffer, invalidDocs = [], targetType = 'both' }) {
+  if (!fileBuffer || !fileBuffer.length) {
+    throw new Error('Nenhum arquivo CNAB fornecido para particionamento.');
+  }
+
+  const rawContent = fileBuffer.toString('latin1');
+  const origLines = rawContent.split(/\r?\n/).filter(Boolean);
+
+  if (!origLines.length) {
+    throw new Error('O arquivo CNAB está vazio.');
+  }
+
+  const headerLine = origLines[0];
+  let trailerLine = origLines[origLines.length - 1];
+  if (trailerLine[0] !== '9') {
+    trailerLine = ensure400('9'.padEnd(394, ' ') + padLeftZero(origLines.length, 6));
+  }
+
+  // Agrupa documentos inválidos em um Set para busca instantânea O(1)
+  const invalidSet = new Set(
+    invalidDocs.map(d => String(d || '').replace(/\D/g, '')).filter(Boolean)
+  );
+
+  // Agrupa registros por título (iniciado por linha tipo 1)
+  const validBlocks = [];
+  const errorBlocks = [];
+
+  let currentBlock = null;
+  let currentDoc = null;
+
+  for (let i = 1; i < origLines.length; i++) {
+    const line = origLines[i];
+    if (line[0] === '9') break;
+
+    if (line[0] === '1') {
+      if (currentBlock && currentBlock.length > 0) {
+        if (invalidSet.has(currentDoc)) {
+          errorBlocks.push(currentBlock);
+        } else {
+          validBlocks.push(currentBlock);
+        }
+      }
+      currentDoc = line.substring(220, 234).replace(/\D/g, '');
+      currentBlock = [line];
+    } else if (currentBlock) {
+      currentBlock.push(line);
+    }
+  }
+
+  if (currentBlock && currentBlock.length > 0) {
+    if (invalidSet.has(currentDoc)) {
+      errorBlocks.push(currentBlock);
+    } else {
+      validBlocks.push(currentBlock);
+    }
+  }
+
+  // Função para montar CNAB limpo e re-indexado a partir de uma lista de blocos
+  const buildCnabFromBlocks = (blocks) => {
+    let lineSeq = 1;
+    const resultLines = [];
+
+    // Header com sequencial de remessa zerado e seq 000001
+    const cleanHeader = zeroHeaderRemessaSeq(headerLine);
+    resultLines.push(ensure400(cleanHeader.substring(0, 394) + padLeftZero(lineSeq++, 6)));
+
+    // Linhas de detalhe (conteúdo 100% idêntico, apenas renumera seq nas posições 395 a 400)
+    for (const block of blocks) {
+      for (const line of block) {
+        const lineContent = line.length >= 394 ? line.substring(0, 394) : line.padEnd(394, ' ');
+        resultLines.push(ensure400(lineContent + padLeftZero(lineSeq++, 6)));
+      }
+    }
+
+    // Trailer com total exato de linhas
+    const trailerContent = trailerLine.length >= 394 ? trailerLine.substring(0, 394) : '9'.padEnd(394, ' ');
+    resultLines.push(ensure400(trailerContent + padLeftZero(lineSeq, 6)));
+
+    return {
+      cnabContent: resultLines.join('\r\n') + '\r\n',
+      totalLinhas: resultLines.length,
+      totalTitulos: blocks.length
+    };
+  };
+
+  const validResult = (targetType === 'both' || targetType === 'validos')
+    ? buildCnabFromBlocks(validBlocks)
+    : null;
+
+  const errorResult = (targetType === 'both' || targetType === 'erros')
+    ? buildCnabFromBlocks(errorBlocks)
+    : null;
+
+  return {
+    totalLinhasOriginal: origLines.length,
+    totalTitulosOriginal: validBlocks.length + errorBlocks.length,
+    totalTitulosValidos: validBlocks.length,
+    totalTitulosErros: errorBlocks.length,
+    validCnab: validResult?.cnabContent || null,
+    validTotalLinhas: validResult?.totalLinhas || 0,
+    errorCnab: errorResult?.cnabContent || null,
+    errorTotalLinhas: errorResult?.totalLinhas || 0
+  };
+}
+
+/**
+ * Particiona o CNAB de uma Operação na Mesa de Operações em 'validos' ou 'erros'
+ * sem alterar nenhum CEP, mantendo integridade com a matriz original da remessa.
+ */
+export async function splitOperationCnab400({ token, operacaoId, date, targetType = 'validos' }) {
+  const diagnosis = await diagnoseBitfinOperation({ token, operacaoId, date });
+  const errDocs = (diagnosis.sacadosInconsistentes || []).map(s => String(s.documento || '').replace(/\D/g, ''));
+
+  const cedente = diagnosis.operacao?.cedente || {};
+  const matchingOriginal = findMatchingOriginalRemessa(cedente.documento);
+
+  if (matchingOriginal && fs.existsSync(matchingOriginal)) {
+    const fileBuffer = fs.readFileSync(matchingOriginal);
+    const splitRes = splitCnab400File({ fileBuffer, invalidDocs: errDocs, targetType });
+    return {
+      cnabContent: targetType === 'erros' ? splitRes.errorCnab : splitRes.validCnab,
+      totalTitulos: targetType === 'erros' ? splitRes.totalTitulosErros : splitRes.totalTitulosValidos,
+      totalLinhas: targetType === 'erros' ? splitRes.errorTotalLinhas : splitRes.validTotalLinhas,
+      targetType,
+      operacaoId
+    };
+  }
+
+  // Fallback: filtra os títulos da operação conforme targetType e monta CNAB sem alterar CEPs
+  const errSet = new Set(errDocs);
+  const allTitulos = diagnosis.titulos || [];
+  const filteredTitulos = allTitulos.filter(t => {
+    const f = extractTituloFields(t, diagnosis.sacadosById);
+    const doc = String(f.documento || '').replace(/\D/g, '');
+    const isError = errSet.has(doc);
+    return targetType === 'erros' ? isError : !isError;
+  });
+
+  const lines = [];
+  let seq = 1;
+
+  const opInfo = diagnosis.operacao || {};
+  const contaOperacional = opInfo?.contaOperacional || filteredTitulos[0]?.contaOperacional || {};
+  const agencia = padLeftZero(contaOperacional.agencia || opInfo?.agencia || '0001', 4);
+  const conta = padLeftZero(contaOperacional.numero || contaOperacional.codigo || opInfo?.conta || '002500', 6);
+  const cedenteNome = cleanAscii(cedente.nome || 'CEDENTE').slice(0, 30);
+  const dataGravacao = formatCnabDate(new Date());
+  const remessaSeq = '000000000';
+
+  lines.push(ensure400(
+    '0' +
+    '1' +
+    'REMESSA' +
+    '01' +
+    padRight('COBRANCA', 15) +
+    agencia +
+    '00' +
+    conta +
+    ' '.repeat(8) +
+    padRight(cedenteNome, 30) +
+    '999' +
+    padRight('VORTX DTVM', 15) +
+    dataGravacao +
+    ' '.repeat(280) +
+    'V.1.1' +
+    remessaSeq +
+    padLeftZero(seq++, 6)
+  ));
+
+  for (const rawT of filteredTitulos) {
+    const f = extractTituloFields(rawT, diagnosis.sacadosById);
+    const docSacado = String(f.documento || '').replace(/\D/g, '');
+
+    let sacadoRef = rawT.sacado;
+    if (typeof sacadoRef === 'number' || (typeof sacadoRef === 'string' && /^\d+$/.test(sacadoRef.trim()))) {
+      const sFound = diagnosis.sacadosById.get(String(sacadoRef).trim());
+      if (sFound) sacadoRef = sFound;
+    }
+    if (!sacadoRef && (rawT.sacadoId || rawT.idSacado)) {
+      const sFound = diagnosis.sacadosById.get(String(rawT.sacadoId || rawT.idSacado).trim());
+      if (sFound) sacadoRef = sFound;
+    }
+
+    const endObj = sacadoRef?.entidade?.endereco || sacadoRef?.endereco || {};
+    const cepFinal = padLeftZero(endObj.cep || f.cep || '00000000', 8);
+
+    const tipoInscricao = docSacado.length === 14 ? '02' : '01';
+    const docFormatado = padLeftZero(docSacado, 14);
+    const nomeSacado = cleanAscii(f.sacadoNome || sacadoRef?.nome || 'SACADO').slice(0, 40);
+    const endereco = cleanAscii(endObj.logradouro || f.endereco || 'ENDERECO').slice(0, 40);
+    const bairro = cleanAscii(endObj.bairro || 'BAIRRO').slice(0, 12);
+    const cidade = cleanAscii(endObj.cidade || 'CIDADE').slice(0, 15);
+    const uf = cleanAscii(endObj.uf || 'SP').slice(0, 2);
+
+    const nossoNumero = padLeftZero(f.id || f.numero, 11);
+    const dataVencimento = formatCnabDate(f.vencimento);
+    const valorNominal = padLeftZero(Math.round((f.valor || 0) * 100), 13);
+    const dataEmissao = formatCnabDate(rawT.dataDeEmissao || rawT.emissao || new Date());
+    const numeroDoc = padRight(f.numero, 10);
+
+    lines.push(ensure400(
+      '1' + '00' + ' '.repeat(17) + agencia + '00' + conta + ' '.repeat(8) +
+      numeroDoc + nossoNumero + ' '.repeat(10) + '0' + '000' + ' '.repeat(21) +
+      '0' + '00' + '00' + numeroDoc + dataVencimento + valorNominal +
+      '999' + '0000' + '01' + 'N' + dataEmissao + '00' + '00' +
+      padLeftZero(0, 13) + '000000' + padLeftZero(0, 13) + padLeftZero(0, 13) +
+      padLeftZero(0, 13) + tipoInscricao + docFormatado + padRight(nomeSacado, 40) +
+      padRight(endereco, 40) + padRight(bairro, 12) + cepFinal + padRight(cidade, 15) +
+      padRight(uf, 2) + ' '.repeat(40) + ' '.repeat(4) + padLeftZero(seq++, 6)
+    ));
+  }
+
+  lines.push(ensure400(
+    '9' + ' '.repeat(393) + padLeftZero(seq, 6)
+  ));
+
+  const cnabContent = lines.join('\r\n') + '\r\n';
+
+  return {
+    cnabContent,
+    totalTitulos: filteredTitulos.length,
+    totalLinhas: lines.length,
+    targetType,
+    operacaoId
+  };
+}
+
+
 
 
 

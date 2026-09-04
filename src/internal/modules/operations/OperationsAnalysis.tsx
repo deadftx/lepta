@@ -109,6 +109,7 @@ export const OperationsAnalysis: React.FC = () => {
   const [downloadingXlsx, setDownloadingXlsx] = useState<boolean>(false);
   const [downloadingTitulosXlsx, setDownloadingTitulosXlsx] = useState<boolean>(false);
   const [downloadingCnab, setDownloadingCnab] = useState<boolean>(false);
+  const [downloadingSeparatedCnab, setDownloadingSeparatedCnab] = useState<'validos' | 'erros' | null>(null);
   const [uploadingCnab, setUploadingCnab] = useState<boolean>(false);
   const [uploadResultModal, setUploadResultModal] = useState<any>(null);
   const fileInputRef = React.useRef<HTMLInputElement | null>(null);
@@ -285,6 +286,37 @@ export const OperationsAnalysis: React.FC = () => {
       alert(`Erro no download da remessa CNAB: ${err.message}`);
     } finally {
       setDownloadingCnab(false);
+    }
+  };
+
+  // Download particionado do arquivo CNAB (apenas válidos ou apenas com erro) sem alterar dados
+  const handleDownloadSeparatedCnab = async (opId: string, tipo: 'validos' | 'erros') => {
+    setDownloadingSeparatedCnab(tipo);
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/mesa-operacoes/operacoes/${opId}/exportar-cnab-separado?tipo=${tipo}&data=${dataFiltro}`, {
+        headers: getAuthHeaders()
+      });
+
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => ({}));
+        throw new Error(errJson.error || `Erro ao gerar remessa CNAB de ${tipo}.`);
+      }
+
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      const suffix = tipo === 'erros' ? 'COM_ERRO_CEP' : 'VALIDOS';
+      a.download = `REM_OP_${opId}_${suffix}.REM`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+    } catch (err: any) {
+      console.error(`Erro ao exportar CNAB separado (${tipo}):`, err);
+      alert(`Erro no download da remessa CNAB (${tipo}): ${err.message}`);
+    } finally {
+      setDownloadingSeparatedCnab(null);
     }
   };
 
@@ -733,23 +765,53 @@ export const OperationsAnalysis: React.FC = () => {
                           <div className="oa-actions-dual-cnab">
                             <button
                               type="button"
+                              className="oa-btn-split-cnab validos"
+                              onClick={() => handleDownloadSeparatedCnab(operationDetail.operacaoId, 'validos')}
+                              disabled={downloadingSeparatedCnab !== null}
+                              title="Exportar arquivo CNAB contendo apenas os títulos com CEP válido, sem alterar nada nos dados"
+                            >
+                              {downloadingSeparatedCnab === 'validos' ? (
+                                <RefreshCw size={16} className="oa-spin" />
+                              ) : (
+                                <CheckCircle2 size={16} />
+                              )}
+                              <span>Exportar CNAB Válidos ({operationDetail.totalTitulos - (operationDetail.sacadosInconsistentes.reduce((acc: number, s: any) => acc + (s.qtdTitulos || 0), 0))})</span>
+                            </button>
+
+                            <button
+                              type="button"
+                              className="oa-btn-split-cnab erros"
+                              onClick={() => handleDownloadSeparatedCnab(operationDetail.operacaoId, 'erros')}
+                              disabled={downloadingSeparatedCnab !== null}
+                              title="Exportar arquivo CNAB contendo apenas os títulos com erro de CEP, sem alterar nada nos dados"
+                            >
+                              {downloadingSeparatedCnab === 'erros' ? (
+                                <RefreshCw size={16} className="oa-spin" />
+                              ) : (
+                                <AlertTriangle size={16} />
+                              )}
+                              <span>Exportar CNAB c/ Erro CEP ({operationDetail.sacadosInconsistentes.reduce((acc: number, s: any) => acc + (s.qtdTitulos || 0), 0)})</span>
+                            </button>
+
+                            <button
+                              type="button"
                               className="oa-btn-upload-cnab"
                               onClick={() => fileInputRef.current?.click()}
                               disabled={uploadingCnab}
                               title="Subir o arquivo CNAB exato enviado pelo cliente (.txt/.rem) e ajustar pontualmente apenas os CEPs incorretos"
                             >
-                              <Upload size={18} />
-                              {uploadingCnab ? 'Processando e Corrigindo CEPs...' : 'Importar CNAB Cedente e Corrigir CEPs (.txt / .rem)'}
+                              <Upload size={16} />
+                              {uploadingCnab ? 'Processando e Corrigindo CEPs...' : 'Importar Remessa Cedente e Corrigir CEPs'}
                             </button>
                             <button
                               type="button"
                               className="oa-btn-export-cnab"
                               onClick={() => handleDownloadCnab(operationDetail.operacaoId)}
                               disabled={downloadingCnab}
-                              title="Gerar e baixar arquivo CNAB 400 Remessa corrigido com todos os títulos da operação"
+                              title="Gerar e baixar arquivo CNAB 400 Remessa completo com todos os títulos e CEPs corrigidos"
                             >
-                              <FileCode size={18} />
-                              {downloadingCnab ? 'Gerando Remessa...' : 'Gerar Remessa CNAB 400 Direto (.rem)'}
+                              <FileCode size={16} />
+                              {downloadingCnab ? 'Gerando Remessa...' : 'Gerar Remessa Completa Corrigida'}
                             </button>
                           </div>
                           <span className="oa-cnab-desc-hint">

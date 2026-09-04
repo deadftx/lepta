@@ -351,8 +351,53 @@
 .vc-bar-buttons {
   display: flex;
   align-items: center;
-  gap: 0.75rem;
+  gap: 0.65rem;
   flex-wrap: wrap;
+}
+
+.vc-btn-split {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.65rem 1.15rem;
+  border-radius: 8px;
+  font-size: 0.85rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.vc-btn-split.validos {
+  background: rgba(16, 185, 129, 0.12);
+  color: #34d399;
+  border: 1px solid rgba(16, 185, 129, 0.35);
+  box-shadow: 0 2px 8px rgba(16, 185, 129, 0.15);
+}
+
+.vc-btn-split.validos:hover:not(:disabled) {
+  background: rgba(16, 185, 129, 0.25);
+  border-color: #34d399;
+  color: #ffffff;
+  transform: translateY(-1px);
+}
+
+.vc-btn-split.erros {
+  background: rgba(239, 68, 68, 0.12);
+  color: #f87171;
+  border: 1px solid rgba(239, 68, 68, 0.35);
+  box-shadow: 0 2px 8px rgba(239, 68, 68, 0.15);
+}
+
+.vc-btn-split.erros:hover:not(:disabled) {
+  background: rgba(239, 68, 68, 0.25);
+  border-color: #f87171;
+  color: #ffffff;
+  transform: translateY(-1px);
+}
+
+.vc-btn-split:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
 }
 
 .vc-btn-generate {
