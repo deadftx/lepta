@@ -297,60 +297,104 @@ export async function validateCep(cepInput, { bitfinValido = true, checkViaCep =
     return result;
   }
 
-  // Validação em base oficial dos Correios (BrasilAPI com fallback para ViaCEP)
+  // Validação oficial prioritária na base dos Correios (ViaCEP)
   if (checkViaCep) {
-    // 1. Tenta BrasilAPI primeiro (alta velocidade, CDN nacional, sem rate-limit agressivo)
+    // 1. Consulta prioritária na base oficial do ViaCEP (espelho direto do DNE dos Correios)
     try {
       const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 2000);
-      const res = await fetch(`https://brasilapi.com.br/api/cep/v1/${digits}`, { signal: controller.signal });
+      const timeout = setTimeout(() => controller.abort(), 2500);
+      const res = await fetch(`https://viacep.com.br/ws/${digits}/json/`, {
+        headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' },
+        signal: controller.signal
+      });
       clearTimeout(timeout);
 
       if (res.ok) {
         const data = await res.json();
-        const result = {
+        if (data.erro || data.erro === 'true') {
+          const invalidResult = {
+            valid: false,
+            viaCepChecked: true,
+            rawCep: raw,
+            formattedCep: `${digits.slice(0, 5)}-${digits.slice(5)}`,
+            errorReason: 'CEP não localizado ou extinto na base oficial dos Correios',
+            sugestao: null
+          };
+          cepValidationCache.set(digits, invalidResult);
+          return invalidResult;
+        }
+
+        const validResult = {
           valid: true,
           viaCepChecked: true,
           rawCep: raw,
           formattedCep: `${digits.slice(0, 5)}-${digits.slice(5)}`,
           errorReason: null,
           sugestao: null,
-          logradouroCorreios: data.street,
-          bairroCorreios: data.neighborhood,
-          cidadeCorreios: data.city,
-          ufCorreios: data.state
+          logradouroCorreios: data.logradouro,
+          bairroCorreios: data.bairro,
+          cidadeCorreios: data.localidade,
+          ufCorreios: data.uf
         };
-        cepValidationCache.set(digits, result);
-        return result;
+        cepValidationCache.set(digits, validResult);
+        return validResult;
       } else if (res.status === 404) {
-        // Se a BrasilAPI retornou 404, faz contraprova com o ViaCEP antes de considerar inválido
-        try {
-          const controller2 = new AbortController();
-          const timeout2 = setTimeout(() => controller2.abort(), 2000);
-          const res2 = await fetch(`https://viacep.com.br/ws/${digits}/json/`, { signal: controller2.signal });
-          clearTimeout(timeout2);
+        const invalidResult = {
+          valid: false,
+          viaCepChecked: true,
+          rawCep: raw,
+          formattedCep: `${digits.slice(0, 5)}-${digits.slice(5)}`,
+          errorReason: 'CEP inexistente na base oficial dos Correios',
+          sugestao: null
+        };
+        cepValidationCache.set(digits, invalidResult);
+        return invalidResult;
+      }
+    } catch (_) {
+      // Falha de rede no ViaCEP (ex: timeout) -> fallback para BrasilAPI
+    }
 
-          if (res2.ok) {
-            const data2 = await res2.json();
-            if (!data2.erro && data2.erro !== 'true') {
-              const result = {
-                valid: true,
-                viaCepChecked: true,
-                rawCep: raw,
-                formattedCep: `${digits.slice(0, 5)}-${digits.slice(5)}`,
-                errorReason: null,
-                sugestao: null,
-                logradouroCorreios: data2.logradouro,
-                bairroCorreios: data2.bairro,
-                cidadeCorreios: data2.localidade,
-                ufCorreios: data2.uf
-              };
-              cepValidationCache.set(digits, result);
-              return result;
-            }
-          }
-        } catch (_) {}
+    // 2. Fallback para BrasilAPI apenas se ViaCEP estiver inacessível por rede
+    try {
+      const controller2 = new AbortController();
+      const timeout2 = setTimeout(() => controller2.abort(), 2500);
+      const res2 = await fetch(`https://brasilapi.com.br/api/cep/v1/${digits}`, {
+        headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' },
+        signal: controller2.signal
+      });
+      clearTimeout(timeout2);
 
+      if (res2.ok) {
+        const data2 = await res2.json();
+        // Se a BrasilAPI usou "open-cep" e termina em 000, é base legada desatualizada!
+        if (data2.service === 'open-cep' && digits.endsWith('000')) {
+          const invalidResult = {
+            valid: false,
+            viaCepChecked: true,
+            rawCep: raw,
+            formattedCep: `${digits.slice(0, 5)}-${digits.slice(5)}`,
+            errorReason: 'CEP genérico/desatualizado nos Correios (município codificado por logradouro)',
+            sugestao: null
+          };
+          cepValidationCache.set(digits, invalidResult);
+          return invalidResult;
+        }
+
+        const validResult = {
+          valid: true,
+          viaCepChecked: true,
+          rawCep: raw,
+          formattedCep: `${digits.slice(0, 5)}-${digits.slice(5)}`,
+          errorReason: null,
+          sugestao: null,
+          logradouroCorreios: data2.street,
+          bairroCorreios: data2.neighborhood,
+          cidadeCorreios: data2.city,
+          ufCorreios: data2.state
+        };
+        cepValidationCache.set(digits, validResult);
+        return validResult;
+      } else if (res2.status === 404) {
         const invalidResult = {
           valid: false,
           viaCepChecked: true,
@@ -361,45 +405,6 @@ export async function validateCep(cepInput, { bitfinValido = true, checkViaCep =
         };
         cepValidationCache.set(digits, invalidResult);
         return invalidResult;
-      }
-    } catch (_) {}
-
-    // 2. Fallback geral para ViaCEP caso BrasilAPI falhe na conexão
-    try {
-      const controller3 = new AbortController();
-      const timeout3 = setTimeout(() => controller3.abort(), 2000);
-      const res3 = await fetch(`https://viacep.com.br/ws/${digits}/json/`, { signal: controller3.signal });
-      clearTimeout(timeout3);
-
-      if (res3.ok) {
-        const data3 = await res3.json();
-        if (data3.erro || data3.erro === 'true') {
-          const result = {
-            valid: false,
-            viaCepChecked: true,
-            rawCep: raw,
-            formattedCep: `${digits.slice(0, 5)}-${digits.slice(5)}`,
-            errorReason: 'CEP não localizado na base dos Correios',
-            sugestao: null
-          };
-          cepValidationCache.set(digits, result);
-          return result;
-        }
-
-        const result = {
-          valid: true,
-          viaCepChecked: true,
-          rawCep: raw,
-          formattedCep: `${digits.slice(0, 5)}-${digits.slice(5)}`,
-          errorReason: null,
-          sugestao: null,
-          logradouroCorreios: data3.logradouro,
-          bairroCorreios: data3.bairro,
-          cidadeCorreios: data3.localidade,
-          ufCorreios: data3.uf
-        };
-        cepValidationCache.set(digits, result);
-        return result;
       }
     } catch (_) {}
   }
@@ -414,6 +419,92 @@ export async function validateCep(cepInput, { bitfinValido = true, checkViaCep =
   };
   // Não armazena defaultResult não-verificado no cache para permitir validação ViaCEP posterior
   return defaultResult;
+}
+
+/**
+ * Extrai o nome significativo do logradouro para busca nos Correios
+ */
+function cleanStreetForSearch(rawAddress) {
+  if (!rawAddress) return '';
+  return rawAddress
+    .replace(/,\s*\d+.*$/, '') // remove vírgula e número no final
+    .replace(/\b(rua|avenida|ave|av|rodovia|rod|alameda|alm|travessa|tv|praca|praça|r\.)\b/gi, '')
+    .trim()
+    .replace(/[^\w\sÀ-ÿ]/g, '')
+    .split(/\s+/)
+    .slice(0, 3)
+    .join(' ')
+    .trim();
+}
+
+function normalizeCityForSearch(city) {
+  if (!city) return '';
+  return city
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim();
+}
+
+/**
+ * Busca o CEP atualizado nos Correios (ViaCEP) a partir do endereço (UF, Cidade, Logradouro, Bairro)
+ */
+export async function findNewCepByAddress({ uf, cidade, logradouro, bairro }) {
+  if (!uf || !cidade || !logradouro) return null;
+
+  const cleanStreet = cleanStreetForSearch(logradouro);
+  if (cleanStreet.length < 3) return null;
+
+  const cleanCity = normalizeCityForSearch(cidade);
+  const cleanUf = String(uf).trim().toUpperCase();
+
+  const urls = [
+    `https://viacep.com.br/ws/${encodeURIComponent(cleanUf)}/${encodeURIComponent(cleanCity)}/${encodeURIComponent(cleanStreet)}/json/`,
+    `https://viacep.com.br/ws/${encodeURIComponent(cleanUf)}/${encodeURIComponent(String(cidade).trim())}/${encodeURIComponent(cleanStreet)}/json/`
+  ];
+
+  for (const url of urls) {
+    try {
+      const res = await fetch(url, {
+        headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' }
+      });
+      if (!res.ok) continue;
+      const list = await res.json();
+      if (!Array.isArray(list) || list.length === 0) continue;
+
+      // Se tiver bairro informado, prioriza o registro com mesmo bairro
+      if (bairro) {
+        const normBairro = String(bairro).trim().toLowerCase();
+        const matchBairro = list.find(item => item.bairro && item.bairro.toLowerCase().includes(normBairro));
+        if (matchBairro && matchBairro.cep) {
+          const rawDigits = matchBairro.cep.replace(/\D/g, '');
+          return {
+            cep: rawDigits,
+            formattedCep: matchBairro.cep,
+            logradouro: matchBairro.logradouro,
+            bairro: matchBairro.bairro,
+            cidade: matchBairro.localidade,
+            uf: matchBairro.uf
+          };
+        }
+      }
+
+      // Caso contrário pega o primeiro resultado oficial retornado pelos Correios
+      const first = list[0];
+      if (first && first.cep) {
+        const rawDigits = first.cep.replace(/\D/g, '');
+        return {
+          cep: rawDigits,
+          formattedCep: first.cep,
+          logradouro: first.logradouro,
+          bairro: first.bairro,
+          cidade: first.localidade,
+          uf: first.uf
+        };
+      }
+    } catch (_) {}
+  }
+
+  return null;
 }
 
 /**
@@ -2296,9 +2387,12 @@ export async function correctUploadedCnab({ fileBuffer, operacaoId, inconsistent
       const cep = line.substring(326, 334).replace(/\D/g, '');
       const nome = line.substring(234, 274).trim();
       const endereco = line.substring(274, 314).trim();
+      const bairro = line.substring(314, 326).trim();
+      const cidade = line.substring(334, 349).trim();
+      const uf = line.substring(349, 351).trim();
 
       if (doc.length === 14 && !distinctSacados.has(doc)) {
-        distinctSacados.set(doc, { doc, cep, nome, endereco, titlesCount: 0 });
+        distinctSacados.set(doc, { doc, cep, nome, endereco, bairro, cidade, uf, titlesCount: 0 });
       }
       if (distinctSacados.has(doc)) {
         distinctSacados.get(doc).titlesCount++;
@@ -2357,23 +2451,45 @@ export async function correctUploadedCnab({ fileBuffer, operacaoId, inconsistent
     }
   }
 
-  // 4. Consulta a Receita Federal via CNPJ apenas para os sacados com inconsistência
+  // 4. Consulta a Receita Federal e os Correios via CNPJ/endereço para os sacados com inconsistência
   const correctionsMap = new Map();
   for (const s of invalidSacados) {
     try {
-      const cnpjInfo = await fetchCnpjAddress(s.doc);
-      if (cnpjInfo && cnpjInfo.cep) {
-        const vCep = await validateCep(cnpjInfo.cep, { bitfinValido: true, checkViaCep: true });
-        const newCep = String(vCep?.rawCep || cnpjInfo.cep).replace(/\D/g, '').padStart(8, '0');
-        if (newCep && newCep !== s.cep) {
-          correctionsMap.set(s.doc, {
-            doc: s.doc,
-            nome: s.nome,
-            endereco: s.endereco,
-            oldCep: s.cep,
-            newCep
-          });
+      let cnpjInfo = null;
+      let newCep = null;
+
+      if (s.doc.length === 14) {
+        cnpjInfo = await fetchCnpjAddress(s.doc);
+        if (cnpjInfo && cnpjInfo.cep) {
+          const vCep = await validateCep(cnpjInfo.cep, { bitfinValido: true, checkViaCep: true });
+          if (vCep && vCep.valid) {
+            newCep = String(vCep.rawCep || cnpjInfo.cep).replace(/\D/g, '').padStart(8, '0');
+          }
         }
+      }
+
+      // Se a Receita Federal não trouxe um CEP válido nos Correios ou manteve o mesmo CEP extinto,
+      // busca o novo CEP nos Correios diretamente pelo logradouro
+      if (!newCep || newCep === s.cep) {
+        const foundNew = await findNewCepByAddress({
+          uf: s.uf || cnpjInfo?.uf,
+          cidade: s.cidade || cnpjInfo?.cidade,
+          logradouro: s.endereco || cnpjInfo?.logradouro,
+          bairro: s.bairro || cnpjInfo?.bairro
+        });
+        if (foundNew && foundNew.cep) {
+          newCep = foundNew.cep;
+        }
+      }
+
+      if (newCep && newCep !== s.cep) {
+        correctionsMap.set(s.doc, {
+          doc: s.doc,
+          nome: s.nome,
+          endereco: s.endereco,
+          oldCep: s.cep,
+          newCep
+        });
       }
     } catch (err) {
       console.warn(`[UPLOAD CNAB #${operacaoId}] Aviso ao consultar CNPJ ${s.doc}:`, err.message);
@@ -2507,28 +2623,54 @@ export async function analyzeCnabCeps(fileBuffer) {
       let cepOficial = null;
       let enderecoOficial = null;
       let razaoOficial = s.nome;
+      let cnpjInfo = null;
 
       if (s.doc.length === 14) {
-        const cnpjInfo = await fetchCnpjAddress(s.doc);
+        cnpjInfo = await fetchCnpjAddress(s.doc);
         if (cnpjInfo && cnpjInfo.cep) {
           const vCep = await validateCep(cnpjInfo.cep, { bitfinValido: true, checkViaCep: true });
-          cepOficial = String(vCep?.rawCep || cnpjInfo.cep).replace(/\D/g, '').padStart(8, '0');
-          razaoOficial = cnpjInfo.razaoSocial || s.nome;
-          enderecoOficial = `${cnpjInfo.logradouro || ''}, ${cnpjInfo.numero || 'S/N'} - ${cnpjInfo.bairro || ''}, ${cnpjInfo.cidade || ''}/${cnpjInfo.uf || ''}`.trim();
+          if (vCep && vCep.valid) {
+            cepOficial = String(vCep.rawCep || cnpjInfo.cep).replace(/\D/g, '').padStart(8, '0');
+            razaoOficial = cnpjInfo.razaoSocial || s.nome;
+            enderecoOficial = `${cnpjInfo.logradouro || ''}, ${cnpjInfo.numero || 'S/N'} - ${cnpjInfo.bairro || ''}, ${cnpjInfo.cidade || ''}/${cnpjInfo.uf || ''}`.trim();
+          }
+        }
+      }
+
+      // Validação do CEP original do arquivo contra a base oficial dos Correios
+      const vOriginal = cepValidationCache.get(s.cep);
+      const originalValidoNosCorreios = vOriginal && vOriginal.valid === true;
+
+      // Se o CEP original NÃO é válido nos Correios e ainda não temos um cepOficial válido,
+      // busca o novo CEP nos Correios diretamente pelo endereço via ViaCEP
+      if (!originalValidoNosCorreios && !cepOficial) {
+        const foundNew = await findNewCepByAddress({
+          uf: s.uf || cnpjInfo?.uf,
+          cidade: s.cidade || cnpjInfo?.cidade,
+          logradouro: s.endereco || cnpjInfo?.logradouro,
+          bairro: s.bairro || cnpjInfo?.bairro
+        });
+
+        if (foundNew && foundNew.cep) {
+          cepOficial = foundNew.cep;
+          enderecoOficial = `${foundNew.logradouro || s.endereco} - ${foundNew.bairro || s.bairro}, ${foundNew.cidade || s.cidade}/${foundNew.uf || s.uf}`;
         }
       }
 
       // CRITÉRIO DE INCONSISTÊNCIA REAL:
-      // O sacado SÓ é inconsistente se:
-      // A) O CEP na Receita Federal é DIFERENTE do CEP no arquivo (ex: 83750000 -> 83750103) -> CORRIGÍVEL!
-      // B) O CEP no arquivo é expressamente inválido nos Correios E a Receita também não achou outro válido.
-      const vOriginal = cepValidationCache.get(s.cep);
-      const originalValidoNosCorreios = vOriginal && vOriginal.valid === true;
+      // 1. Se encontramos um novo CEP oficial VÁLIDO nos Correios diferente do informado no arquivo:
+      //    -> CORRIGÍVEL (vai para correcoesMap com o novo CEP dos Correios)
+      // 2. Se o CEP original NÃO é válido nos Correios (ou formato inválido) e não foi encontrado substituto:
+      //    -> NÃO LOCALIZADO (inconsistência crítica, CEP inexistente no Correios)
+      // Em AMBOS OS CASOS, o sacado entra em sacadosInconsistentes!
+      // Dessa forma, quando o usuário exportar os arquivos separados:
+      // - O CNAB de "Válidos" NUNCA conterá nenhum título com CEP inexistente nos Correios.
+      // - O CNAB de "Com Erro" conterá todos os títulos com erro de CEP para tratamento separado.
+
       const temDivergencia = Boolean(cepOficial && cepOficial !== s.cep);
-      const originalInvalido = !originalValidoNosCorreios && (s.cep.length !== 8 || vOriginal?.valid === false);
+      const originalInvalido = !originalValidoNosCorreios || s.cep.length !== 8 || vOriginal?.valid === false;
 
       if (temDivergencia) {
-        // Encontramos o CEP oficial do logradouro diferente do informado!
         const item = {
           doc: s.doc,
           nome: razaoOficial,
@@ -2540,7 +2682,7 @@ export async function analyzeCnabCeps(fileBuffer) {
           cepOficial,
           enderecoOficial: enderecoOficial || s.endereco,
           titlesCount: s.titlesCount,
-          errorReason: `CEP genérico/desatualizado no arquivo (${s.cep} ➔ Oficial ${cepOficial})`,
+          errorReason: `CEP extinto ou desatualizado nos Correios (${s.cep} ➔ Oficial ${cepOficial})`,
           status: 'CORRIGIVEL'
         };
 
@@ -2551,8 +2693,7 @@ export async function analyzeCnabCeps(fileBuffer) {
           newCep: cepOficial,
           nome: razaoOficial
         });
-      } else if (originalInvalido && !cepOficial) {
-        // CEP inválido no arquivo e Receita não encontrou substituto
+      } else if (originalInvalido) {
         sacadosInconsistentes.push({
           doc: s.doc,
           nome: razaoOficial,
@@ -2564,7 +2705,7 @@ export async function analyzeCnabCeps(fileBuffer) {
           cepOficial: s.cep,
           enderecoOficial: s.endereco,
           titlesCount: s.titlesCount,
-          errorReason: s.errorReason,
+          errorReason: vOriginal?.errorReason || s.errorReason || 'CEP inexistente ou extinto na base oficial dos Correios',
           status: 'NAO_LOCALIZADO'
         });
       }
@@ -2754,10 +2895,10 @@ export function splitCnab400File({ fileBuffer, invalidDocs = [], targetType = 'b
  * sem alterar nenhum CEP, mantendo integridade com a matriz original da remessa.
  */
 export async function splitOperationCnab400({ token, operacaoId, date, targetType = 'validos' }) {
-  const diagnosis = await diagnoseBitfinOperation({ token, operacaoId, date });
+  const diagnosis = await getOperationDetails({ token, operacaoId, date });
   const errDocs = (diagnosis.sacadosInconsistentes || []).map(s => String(s.documento || '').replace(/\D/g, ''));
 
-  const cedente = diagnosis.operacao?.cedente || {};
+  const cedente = diagnosis.cedente || {};
   const matchingOriginal = findMatchingOriginalRemessa(cedente.documento);
 
   if (matchingOriginal && fs.existsSync(matchingOriginal)) {

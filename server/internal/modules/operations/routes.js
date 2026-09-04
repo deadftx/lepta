@@ -410,7 +410,7 @@ export function registerOperationsRoutes(app, {
       }
 
       if (!inconsistentCnpjs.length) {
-        const diag = await diagnoseBitfinOperation({ token: getToken(), operacaoId });
+        const diag = await getOperationDetails({ token: getToken(), operacaoId });
         inconsistentCnpjs = (diag.sacadosInconsistentes || []).map(s => String(s.documento || '').replace(/\D/g, ''));
       }
 
