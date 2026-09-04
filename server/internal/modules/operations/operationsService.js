@@ -198,7 +198,10 @@ export async function validateCep(cepInput, { bitfinValido = true, checkViaCep =
 
   // Verifica cache
   if (cepValidationCache.has(digits)) {
-    return cepValidationCache.get(digits);
+    const cached = cepValidationCache.get(digits);
+    if (!checkViaCep || cached.viaCepChecked) {
+      return cached;
+    }
   }
 
   // Se tiver 7 dígitos, é clássico caso de perda do zero à esquerda pelo Excel
@@ -206,6 +209,7 @@ export async function validateCep(cepInput, { bitfinValido = true, checkViaCep =
     const padded = '0' + digits;
     const result = {
       valid: false,
+      viaCepChecked: true,
       rawCep: raw,
       formattedCep: digits,
       errorReason: 'CEP incompleto (7 dígitos - possível perda do 0 inicial)',
@@ -218,6 +222,7 @@ export async function validateCep(cepInput, { bitfinValido = true, checkViaCep =
   if (digits.length !== 8) {
     const result = {
       valid: false,
+      viaCepChecked: true,
       rawCep: raw,
       formattedCep: digits,
       errorReason: `CEP inválido (${digits.length} dígitos em vez de 8)`,
@@ -231,6 +236,7 @@ export async function validateCep(cepInput, { bitfinValido = true, checkViaCep =
   if (/^(\d)\1{7}$/.test(digits) || digits === '00000000' || digits.startsWith('00000')) {
     const result = {
       valid: false,
+      viaCepChecked: true,
       rawCep: raw,
       formattedCep: `${digits.slice(0, 5)}-${digits.slice(5)}`,
       errorReason: 'CEP genérico fictício (ex: 00000-000 ou 99999-999)',
@@ -244,6 +250,7 @@ export async function validateCep(cepInput, { bitfinValido = true, checkViaCep =
   if (bitfinValido === false) {
     const result = {
       valid: false,
+      viaCepChecked: true,
       rawCep: raw,
       formattedCep: `${digits.slice(0, 5)}-${digits.slice(5)}`,
       errorReason: 'Endereço não verificado na base dos Correios (BitFin)',
@@ -262,9 +269,10 @@ export async function validateCep(cepInput, { bitfinValido = true, checkViaCep =
 
       if (res.ok) {
         const data = await res.json();
-        if (data.erro) {
+        if (data.erro || data.erro === 'true') {
           const result = {
             valid: false,
+            viaCepChecked: true,
             rawCep: raw,
             formattedCep: `${digits.slice(0, 5)}-${digits.slice(5)}`,
             errorReason: 'CEP não localizado na base dos Correios',
@@ -276,6 +284,7 @@ export async function validateCep(cepInput, { bitfinValido = true, checkViaCep =
 
         const result = {
           valid: true,
+          viaCepChecked: true,
           rawCep: raw,
           formattedCep: `${digits.slice(0, 5)}-${digits.slice(5)}`,
           errorReason: null,
@@ -293,12 +302,13 @@ export async function validateCep(cepInput, { bitfinValido = true, checkViaCep =
 
   const defaultResult = {
     valid: true,
+    viaCepChecked: false,
     rawCep: raw,
     formattedCep: `${digits.slice(0, 5)}-${digits.slice(5)}`,
     errorReason: null,
     sugestao: null
   };
-  cepValidationCache.set(digits, defaultResult);
+  // Não armazena defaultResult não-verificado no cache para permitir validação ViaCEP posterior
   return defaultResult;
 }
 
@@ -1073,7 +1083,7 @@ export async function getOperationDetails({ token, operacaoId, date }) {
   for (const s of sacadosMap.values()) {
     const raw = String(s.rawCep || '').trim();
     const digits = raw.replace(/\D/g, '');
-    if (digits.length === 8 && !cepValidationCache.has(digits)) {
+    if (digits.length === 8 && (!cepValidationCache.has(digits) || !cepValidationCache.get(digits)?.viaCepChecked)) {
       distinctCepsToVerify.add(digits);
     }
   }
@@ -1090,9 +1100,10 @@ export async function getOperationDetails({ token, operacaoId, date }) {
         clearTimeout(timeout);
         if (res.ok) {
           const data = await res.json();
-          if (data.erro) {
+          if (data.erro || data.erro === 'true') {
             cepValidationCache.set(digits, {
               valid: false,
+              viaCepChecked: true,
               rawCep: digits,
               formattedCep: `${digits.slice(0, 5)}-${digits.slice(5)}`,
               errorReason: 'Endereço não verificado na base dos Correios (CEP inexistente)',
@@ -1101,6 +1112,7 @@ export async function getOperationDetails({ token, operacaoId, date }) {
           } else {
             cepValidationCache.set(digits, {
               valid: true,
+              viaCepChecked: true,
               rawCep: digits,
               formattedCep: `${digits.slice(0, 5)}-${digits.slice(5)}`,
               errorReason: null,
@@ -1801,6 +1813,56 @@ export async function generateCorrectedCnab400({ token, operacaoId, date }) {
     }
   }
 
+  // Também varre os títulos carregados pela API para garantir que qualquer sacado com CEP inconsistente seja incluído
+  for (const t of titulos) {
+    const f = extractTituloFields(t, sacadosById);
+    const doc = String(f.documento || '').replace(/\D/g, '');
+    const cep = String(f.cep || f.rawCep || '').replace(/\D/g, '');
+    if (doc.length === 14 && cep) {
+      const v = cepValidationCache.get(cep);
+      if (v && v.valid === false) {
+        distinctInconsistentCnpjs.add(doc);
+      }
+    }
+  }
+
+  const cedenteDoc = padLeftZero(cedente.documento || '', 14);
+  const matchingOriginal = findMatchingOriginalRemessa(cedenteDoc);
+  let origLines = null;
+  if (matchingOriginal) {
+    try {
+      origLines = fs.readFileSync(matchingOriginal, 'utf8').split(/\r?\n/).filter(Boolean);
+      // Varre as linhas tipo 1 do arquivo de remessa original para detectar outros CEPs que falham no ViaCEP
+      const cepsToCheck = new Set();
+      const docToCepMap = new Map();
+      for (const l of origLines) {
+        if (l[0] === '1') {
+          const doc = l.substring(220, 234).replace(/\D/g, '');
+          const cep = l.substring(326, 334).replace(/\D/g, '');
+          if (doc.length === 14 && cep) {
+            cepsToCheck.add(cep);
+            docToCepMap.set(doc, cep);
+          }
+        }
+      }
+      const cepArr = Array.from(cepsToCheck);
+      for (let i = 0; i < cepArr.length; i += 30) {
+        const slice = cepArr.slice(i, i + 30);
+        await Promise.all(slice.map(async c => {
+          try {
+            await validateCep(c, { bitfinValido: true, checkViaCep: true });
+          } catch (_) {}
+        }));
+      }
+      for (const [doc, cep] of docToCepMap.entries()) {
+        const v = cepValidationCache.get(cep);
+        if (!v || v.valid !== true) {
+          distinctInconsistentCnpjs.add(doc);
+        }
+      }
+    } catch (_) {}
+  }
+
   // 2. Consulta em lotes rápidos de 5 com timeout para evitar estouro de tempo
   const correcoesPorDoc = new Map();
   const cnpjsList = Array.from(distinctInconsistentCnpjs);
@@ -1814,10 +1876,10 @@ export async function generateCorrectedCnab400({ token, operacaoId, date }) {
         if (cnpjData && cnpjData.cep) {
           // Valida se o CEP obtido na Receita existe na base oficial dos Correios (ViaCEP)
           const vCep = await validateCep(cnpjData.cep, { bitfinValido: true, checkViaCep: true });
-          const cepDefinitivo = String(vCep.rawCep || cnpjData.cep).replace(/\D/g, '');
+          const cepDefinitivo = String(vCep?.rawCep || cnpjData.cep).replace(/\D/g, '').padStart(8, '0');
 
           // Monta logradouro completo com número e complemento se disponíveis
-          const rua = vCep.logradouroCorreios || cnpjData.logradouro || 'LOGRADOURO';
+          const rua = vCep?.logradouroCorreios || cnpjData.logradouro || 'LOGRADOURO';
           const numero = cnpjData.numero ? ` ${cnpjData.numero}` : '';
           const comp = cnpjData.complemento ? ` ${cnpjData.complemento}` : '';
           const logradouroFinal = `${rua}${numero}${comp}`.trim();
@@ -1827,9 +1889,9 @@ export async function generateCorrectedCnab400({ token, operacaoId, date }) {
             razaoSocial: cnpjData.razaoSocial,
             cep: cepDefinitivo,
             logradouro: logradouroFinal,
-            bairro: vCep.bairroCorreios || cnpjData.bairro || 'CENTRO',
-            cidade: vCep.cidadeCorreios || cnpjData.cidade || 'CIDADE',
-            uf: vCep.ufCorreios || cnpjData.uf || 'SP'
+            bairro: vCep?.bairroCorreios || cnpjData.bairro || 'CENTRO',
+            cidade: vCep?.cidadeCorreios || cnpjData.cidade || 'CIDADE',
+            uf: vCep?.ufCorreios || cnpjData.uf || 'SP'
           });
         }
       } catch (err) {
@@ -1840,17 +1902,14 @@ export async function generateCorrectedCnab400({ token, operacaoId, date }) {
 
   console.log(`[CNAB 400 #${operacaoId}] ${correcoesPorDoc.size} sacado(s) corrigidos e validados com sucesso.`);
 
-  const cedenteDoc = padLeftZero(cedente.documento || '', 14);
   let totalCorrigidos = 0;
   let totalOriginaisValidos = 0;
 
   // 3. ESTRATÉGIA A: Se o arquivo de remessa original enviado pelo cliente estiver disponível
   // Reutiliza o arquivo base mantendo 100% dos 4 registros por título (Tipos 1, 2, 3 e 4),
   // chaves de NF-e, controle e mensagens, alterando ESTRITAMENTE as posições 327 a 334 (CEP) dos sacados inconsistentes!
-  const matchingOriginal = findMatchingOriginalRemessa(cedenteDoc);
-  if (matchingOriginal) {
+  if (matchingOriginal && origLines) {
     console.log(`[CNAB 400 #${operacaoId}] Utilizando arquivo de remessa original como matriz: ${matchingOriginal}`);
-    const origLines = fs.readFileSync(matchingOriginal, 'utf8').split(/\r?\n/).filter(Boolean);
 
     const correctedLines = origLines.map(line => {
       if (line[0] === '1') {
