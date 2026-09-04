@@ -1404,37 +1404,11 @@ export async function diagnoseBitfinOperation(operacaoId, token) {
     }
   }));
 
-  // 3. Inspeção profunda nos itens e sacados embutidos em opDirect
-  if (Array.isArray(opDirect?.itens) && opDirect.itens.length > 0) {
-    const item0 = opDirect.itens[0];
-    results.tests.itensSampleKeys = item0 ? Object.keys(item0) : [];
-    if (item0?.titulo) results.tests.itensTituloSampleKeys = Object.keys(item0.titulo);
-    if (item0?.sacado) results.tests.itensSacadoSampleKeys = Object.keys(item0.sacado);
-
-    const itensComErro = opDirect.itens.filter(it => {
-      const itStr = JSON.stringify(it);
-      return itStr.includes('false') || itStr.includes('invalido') || itStr.includes('pendente') || itStr.includes('alerta') || itStr.includes('rejeit');
-    });
-    results.tests.itensPossiveisComErro = {
-      total: itensComErro.length,
-      sample3: itensComErro.slice(0, 3)
-    };
-  }
-
-  if (Array.isArray(opDirect?.sacados) && opDirect.sacados.length > 0) {
-    const s0 = opDirect.sacados[0];
-    results.tests.sacadosSampleKeys = s0 ? Object.keys(s0) : [];
-    const sacadosInvalidos = opDirect.sacados.filter(s => {
-      return s.valido === false || s.endereco?.valido === false || s.endereco?.verificado === false || s.verificado === false;
-    });
-    results.tests.sacadosComFlagInvalido = {
-      total: sacadosInvalidos.length,
-      sample: sacadosInvalidos.slice(0, 5)
-    };
-  }
-
-  // 4. Varredura nos títulos cadastrados para a data da operação
+  // 3. Inspeção profunda nos 2.876 itens e cruzamento com os títulos da data
+  const itens = Array.isArray(opDirect?.itens) ? opDirect.itens : [];
   const dataOp = opDirect?.dataDeCadastro ? String(opDirect.dataDeCadastro).substring(0, 10) : '2026-09-04';
+
+  let allTit = [];
   try {
     const resTit = await fetch(`${API_BASE}/recebiveis/titulos`, {
       method: 'POST',
@@ -1446,47 +1420,93 @@ export async function diagnoseBitfinOperation(operacaoId, token) {
       })
     });
     if (resTit.ok) {
-      const allTit = await resTit.json();
-      if (Array.isArray(allTit)) {
-        const opTitulos = allTit.filter(t => {
-          const idOp = String(t.operacao?.id || t.operacaoId || t.operacao?.numero || t.operacao || t.bordero || t.idOperacao || '').trim();
-          return idOp === String(operacaoId).trim();
-        });
-
-        results.tests.titulosDataOperacao = {
-          totalNoDia: allTit.length,
-          totalDaOperacao: opTitulos.length,
-          primeiroTituloKeys: opTitulos[0] ? Object.keys(opTitulos[0]) : [],
-          primeiroTituloSacadoKeys: opTitulos[0]?.sacado ? Object.keys(opTitulos[0].sacado) : []
-        };
-
-        // Identifica títulos com alguma flag negativa
-        const titulosComFlag = opTitulos.filter(t => {
-          const s = t.sacado;
-          const end = s?.entidade?.endereco || s?.endereco;
-          return s?.valido === false || s?.verificado === false || end?.valido === false || end?.verificado === false || Boolean(t.analises) || Boolean(t.ocorrencias) || Boolean(t.regras) || Boolean(t.pendencias);
-        });
-
-        const somaFlags = titulosComFlag.reduce((acc, t) => acc + Number(t.valorNominal || t.valor || 0), 0);
-        results.tests.titulosComFlagNegativa = {
-          total: titulosComFlag.length,
-          somaValorNominal: somaFlags,
-          bateu71295: Math.abs(somaFlags - 71295.23) < 1,
-          sample: titulosComFlag.slice(0, 3)
-        };
-
-        // Procura menções a 71295 ou Correios na serialização dos títulos
-        const matchingStr = opTitulos.filter(t => {
-          const str = JSON.stringify(t);
-          return str.includes('Correios') || str.includes('71295') || str.includes('71.295');
-        });
-        if (matchingStr.length > 0) {
-          results.descoberta.titulosComTextoCorreiosOu71295 = matchingStr.slice(0, 5);
-        }
-      }
+      const parsed = await resTit.json();
+      if (Array.isArray(parsed)) allTit = parsed;
     }
   } catch (err) {
-    results.tests.titulosDataOperacao = { error: err.message };
+    results.tests.erroBuscarTitulosData = err.message;
+  }
+
+  const titulosMapById = new Map();
+  allTit.forEach(t => {
+    if (t.id) titulosMapById.set(Number(t.id), t);
+  });
+
+  results.tests.cruzamento = {
+    totalItensNaOperacao: itens.length,
+    totalTitulosNoDia: allTit.length,
+    titulosCruzadosComSucesso: itens.filter(it => titulosMapById.has(Number(it.titulo?.id))).length
+  };
+
+  // Grupos para descobrir onde estão os 71.295,23
+  const grupos = {
+    enderecoValidoFalse: [],
+    sacadoValidoFalse: [],
+    entidadeValidoFalse: [],
+    tituloValidoFalse: [],
+    tituloDiaValidoFalse: [],
+    sacadoDiaValidoFalse: [],
+    enderecoDiaValidoFalse: [],
+    cepInvalidoDigitos: [],
+    cepComZeroInicialOuFicticio: []
+  };
+
+  itens.forEach((it, idx) => {
+    const titOp = it.titulo || {};
+    const tDia = titulosMapById.get(Number(titOp.id)) || {};
+    const sacOp = titOp.sacado || {};
+    const entOp = sacOp.entidade || {};
+    const endOp = entOp.endereco || {};
+
+    const sacDia = tDia.sacado || {};
+    const entDia = sacDia.entidade || {};
+    const endDia = entDia.endereco || sacDia.endereco || {};
+
+    // Valor nominal real
+    const vNominal = Number(tDia.valorNominal || tDia.valor || titOp.valorNominal || it.valorDeAquisicao || 0);
+
+    const doc = entOp.documento || entDia.documento || sacOp.documento || sacDia.documento || '';
+    const nome = entOp.nome || entDia.nome || sacOp.nome || sacDia.nome || 'Desconhecido';
+    const cep = endOp.cep || endDia.cep || '';
+    const cepDigits = String(cep).replace(/\D/g, '');
+
+    const itemRef = {
+      index: idx,
+      id: titOp.id,
+      numero: titOp.numero || tDia.numero,
+      doc,
+      nome,
+      cep,
+      vNominal,
+      vencimento: titOp.dataDeVencimento || tDia.dataDeVencimento
+    };
+
+    if (endOp.valido === false) grupos.enderecoValidoFalse.push(itemRef);
+    if (sacOp.valido === false) grupos.sacadoValidoFalse.push(itemRef);
+    if (entOp.valido === false) grupos.entidadeValidoFalse.push(itemRef);
+    if (titOp.valido === false) grupos.tituloValidoFalse.push(itemRef);
+
+    if (tDia.valido === false) grupos.tituloDiaValidoFalse.push(itemRef);
+    if (sacDia.valido === false || entDia.valido === false) grupos.sacadoDiaValidoFalse.push(itemRef);
+    if (endDia.valido === false) grupos.enderecoDiaValidoFalse.push(itemRef);
+
+    if (cepDigits.length !== 8) grupos.cepInvalidoDigitos.push(itemRef);
+    if (cepDigits.length === 8 && (cepDigits.startsWith('000') || /^(\d)\1{7}$/.test(cepDigits))) {
+      grupos.cepComZeroInicialOuFicticio.push(itemRef);
+    }
+  });
+
+  results.descobertaGrupos = {};
+  for (const [key, list] of Object.entries(grupos)) {
+    const soma = list.reduce((acc, x) => acc + x.vNominal, 0);
+    const sacadosUnicos = new Set(list.map(x => x.doc || x.nome)).size;
+    results.descobertaGrupos[key] = {
+      qtdTitulos: list.length,
+      qtdSacados: sacadosUnicos,
+      somaValor: Number(soma.toFixed(2)),
+      bateu71295: Math.abs(soma - 71295.23) < 1,
+      amostra: list.slice(0, 5)
+    };
   }
 
   return results;
