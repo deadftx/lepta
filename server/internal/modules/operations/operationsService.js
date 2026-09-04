@@ -43,6 +43,25 @@ export function ensure400(line) {
 }
 
 /**
+ * Zera o identificador/sequencial de remessa no Header (registro tipo 0) do CNAB 400.
+ * Conforme regra da Vórtx/Bitfin e FEBRABAN: quando o sequencial está com zeros (000000000),
+ * o sistema do custodiante/banco despreza a validação da sequência de arquivos e aceita a importação.
+ */
+export function zeroHeaderRemessaSeq(headerLine) {
+  if (!headerLine || headerLine[0] !== '0') return ensure400(headerLine);
+  let line = headerLine;
+  // 1. Zera sequencial Vórtx/Bitfin nas posições 386 a 394 (9 dígitos)
+  if (line.length >= 394) {
+    line = line.substring(0, 385) + '000000000' + line.substring(394);
+  }
+  // 2. Se as posições 111 a 117 contiverem 7 dígitos (sequencial padrão FEBRABAN de outros bancos), zera também
+  if (line.length >= 117 && /^\d{7}$/.test(line.substring(110, 117))) {
+    line = line.substring(0, 110) + '0000000' + line.substring(117);
+  }
+  return ensure400(line);
+}
+
+/**
  * Concorrência controlada para consultas assíncronas de alta performance
  */
 export async function pMap(array, fn, concurrency = 40) {
@@ -1996,7 +2015,11 @@ export async function generateCorrectedCnab400({ token, operacaoId, date }) {
   if (matchingOriginal && origLines) {
     console.log(`[CNAB 400 #${operacaoId}] Utilizando arquivo de remessa original como matriz: ${matchingOriginal}`);
 
-    const correctedLines = origLines.map(line => {
+    const correctedLines = origLines.map((line, idx) => {
+      if (idx === 0 && line[0] === '0') {
+        // Zera o sequencial de remessa no header para o Bitfin desprezar validação de sequência
+        return zeroHeaderRemessaSeq(line);
+      }
       if (line[0] === '1') {
         const docSacado = line.substring(220, 234).replace(/\D/g, '');
         if (correcoesPorDoc.has(docSacado)) {
@@ -2034,7 +2057,8 @@ export async function generateCorrectedCnab400({ token, operacaoId, date }) {
   const conta = padLeftZero(contaOperacional.numero || contaOperacional.codigo || opInfo?.conta || '002500', 6);
   const cedenteNome = cleanAscii(cedente.nome || 'CEDENTE').slice(0, 30);
   const dataGravacao = formatCnabDate(new Date());
-  const remessaSeq = padLeftZero(opInfo?.id || 1, 9);
+  // Remessa zerada (000000000): instrui o Bitfin a desprezar a validação sequencial de arquivos
+  const remessaSeq = '000000000';
 
   // HEADER DE ARQUIVO (Tipo 0) - EXATOS 400 BYTES
   const header = ensure400(
@@ -2360,7 +2384,11 @@ export async function correctUploadedCnab({ fileBuffer, operacaoId, inconsistent
   let totalCorrigidos = 0;
   let totalOriginaisValidos = 0;
 
-  const correctedLines = origLines.map(line => {
+  const correctedLines = origLines.map((line, idx) => {
+    if (idx === 0 && line[0] === '0') {
+      // Zera o sequencial de remessa no header para o Bitfin desprezar validação de sequência
+      return zeroHeaderRemessaSeq(line);
+    }
     if (line[0] === '1') {
       const doc = line.substring(220, 234).replace(/\D/g, '');
       if (correctionsMap.has(doc)) {
@@ -2579,7 +2607,11 @@ export async function generateCorrectedCnabFromAnalysis({ fileBuffer, correction
   }
 
   let totalCorrigidos = 0;
-  const correctedLines = origLines.map(line => {
+  const correctedLines = origLines.map((line, idx) => {
+    if (idx === 0 && line[0] === '0') {
+      // Zera o sequencial de remessa no header para o Bitfin desprezar validação de sequência
+      return zeroHeaderRemessaSeq(line);
+    }
     if (line[0] === '1') {
       const doc = line.substring(220, 234).replace(/\D/g, '');
       if (correctionsMap.has(doc)) {
