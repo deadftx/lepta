@@ -731,6 +731,7 @@ export async function getOperationDetails({ token, operacaoId, date }) {
 
   // 2. Localiza os títulos da operação na data exata de cadastro da operação
   let titulos = [];
+  let allTit = [];
 
   try {
     const [resTitLocal, resTitIso] = await Promise.allSettled([
@@ -754,7 +755,6 @@ export async function getOperationDetails({ token, operacaoId, date }) {
       })
     ]);
 
-    let allTit = [];
     if (resTitLocal.status === 'fulfilled' && resTitLocal.value.ok) {
       try {
         const d = await resTitLocal.value.json();
@@ -806,6 +806,26 @@ export async function getOperationDetails({ token, operacaoId, date }) {
     } else if (Array.isArray(opInfo?.itens) && opInfo.itens.length > 0) {
       titulos = opInfo.itens;
     }
+  }
+
+  // Enriquecimento com allTit pelo ID do título para garantir valores nominais reais e dados completos
+  if (allTit.length > 0 && titulos.length > 0) {
+    const titMapById = new Map();
+    allTit.forEach(t => { if (t.id) titMapById.set(Number(t.id), t); });
+    titulos = titulos.map(rawT => {
+      const itId = rawT?.id || rawT?.titulo?.id;
+      const fullT = itId ? titMapById.get(Number(itId)) : null;
+      if (fullT) {
+        return {
+          ...fullT,
+          ...rawT,
+          ...(rawT?.titulo || {}),
+          valorNominal: Number(fullT.valorNominal || fullT.valor || rawT?.titulo?.valorNominal || 0),
+          valorFace: Number(fullT.valorFace || fullT.valorNominal || rawT?.titulo?.valorFace || 0)
+        };
+      }
+      return rawT;
+    });
   }
 
   // Dados do Cedente da Operação
@@ -875,7 +895,55 @@ export async function getOperationDetails({ token, operacaoId, date }) {
     }
   }
 
-  // O valor total da operação é literalmente a soma de todo o valor face de todos os títulos da operação
+  // 3. Validação dos CEPs únicos da operação contra a base dos Correios (ViaCEP em lotes rápidos)
+  const distinctCepsToVerify = new Set();
+  for (const s of sacadosMap.values()) {
+    const raw = String(s.rawCep || '').trim();
+    const digits = raw.replace(/\D/g, '');
+    if (digits.length === 8 && !cepValidationCache.has(digits)) {
+      distinctCepsToVerify.add(digits);
+    }
+  }
+
+  const cepsList = Array.from(distinctCepsToVerify);
+  const BATCH_SIZE = 25;
+  for (let i = 0; i < cepsList.length; i += BATCH_SIZE) {
+    const batch = cepsList.slice(i, i + BATCH_SIZE);
+    await Promise.allSettled(batch.map(async digits => {
+      try {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 1800);
+        const res = await fetch(`https://viacep.com.br/ws/${digits}/json/`, { signal: controller.signal });
+        clearTimeout(timeout);
+        if (res.ok) {
+          const data = await res.json();
+          if (data.erro) {
+            cepValidationCache.set(digits, {
+              valid: false,
+              rawCep: digits,
+              formattedCep: `${digits.slice(0, 5)}-${digits.slice(5)}`,
+              errorReason: 'Endereço não verificado na base dos Correios (CEP inexistente)',
+              sugestao: null
+            });
+          } else {
+            cepValidationCache.set(digits, {
+              valid: true,
+              rawCep: digits,
+              formattedCep: `${digits.slice(0, 5)}-${digits.slice(5)}`,
+              errorReason: null,
+              sugestao: null,
+              logradouroCorreios: data.logradouro,
+              bairroCorreios: data.bairro,
+              cidadeCorreios: data.localidade,
+              ufCorreios: data.uf
+            });
+          }
+        }
+      } catch (_) {}
+    }));
+  }
+
+  // O valor total da operação é a soma de todo o valor face de todos os títulos da operação
   const somaFaceTitulos = titulos.reduce((acc, t) => acc + extractTituloFields(t, sacadosById).valor, 0);
   const valorTotalOperacao = somaFaceTitulos > 0 ? somaFaceTitulos : extractOperationValue(opInfo, titulos);
 
@@ -912,7 +980,7 @@ export async function getOperationDetails({ token, operacaoId, date }) {
                            primeiroTitulo?.titulo?.sacado?.valido !== false &&
                            primeiroTitulo?.titulo?.sacado?.entidade?.valido !== false;
 
-    // Validação instantânea em memória (0ms, sem chamadas HTTP lentas no loop)
+    // Validação instantânea em memória utilizando o cache populado pelos Correios
     const validacao = await validateCep(rawCep, { bitfinValido: isValidoBitfin, checkViaCep: false });
 
     const sacadoItem = {
