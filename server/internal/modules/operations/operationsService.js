@@ -1,3 +1,4 @@
+import fs from 'fs';
 import ExcelJS from 'exceljs';
 
 const API_BASE_URL = 'https://lepta-backend.bit-unltd.com.br';
@@ -32,6 +33,16 @@ export function padRight(str, len) {
 export function padLeftZero(val, len) {
   const digits = String(val || '').replace(/\D/g, '').slice(-len);
   return digits.padStart(len, '0');
+}
+
+/**
+ * Garante que a linha possui exatamente 400 caracteres
+ */
+export function ensure400(line) {
+  const str = String(line || '');
+  if (str.length === 400) return str;
+  if (str.length > 400) return str.slice(0, 400);
+  return str.padEnd(400, ' ');
 }
 
 /**
@@ -1746,17 +1757,31 @@ export async function diagnoseBitfinOperation(operacaoId, token) {
 }
 
 /**
- * Garante que a linha do arquivo CNAB possua rigorosamente 400 caracteres
+ * Localiza arquivo de remessa original enviado pelo cliente se disponível no diretório
  */
-function ensure400(line) {
-  if (line.length < 400) return line.padEnd(400, ' ');
-  if (line.length > 400) return line.slice(0, 400);
-  return line;
+function findMatchingOriginalRemessa(cedenteCnpj) {
+  const cleanCedente = String(cedenteCnpj || '').replace(/\D/g, '');
+  if (!cleanCedente) return null;
+
+  try {
+    const candidates = fs.readdirSync('.').filter(f => /\.(txt|rem)$/i.test(f) && !f.includes('_CORRIGIDA'));
+    for (const file of candidates) {
+      try {
+        const content = fs.readFileSync(file, 'utf8');
+        const firstLines = content.slice(0, 4000);
+        if (firstLines.includes(cleanCedente)) {
+          return file;
+        }
+      } catch (_) {}
+    }
+  } catch (_) {}
+  return null;
 }
 
 /**
  * Gera arquivo de remessa UNLTD CNAB 400 com TODOS OS TÍTULOS da operação,
- * corrigindo e validando os sacados inconsistentes via API de CNPJ e Correios.
+ * replicando rigorosamente o padrão de 4 registros por título (Tipos 1, 2, 3 e 4)
+ * e corrigindo exclusivamente os CEPs inconsistentes.
  */
 export async function generateCorrectedCnab400({ token, operacaoId, date }) {
   const details = await getOperationDetails({ token, operacaoId, date });
@@ -1815,18 +1840,57 @@ export async function generateCorrectedCnab400({ token, operacaoId, date }) {
 
   console.log(`[CNAB 400 #${operacaoId}] ${correcoesPorDoc.size} sacado(s) corrigidos e validados com sucesso.`);
 
-  // 3. Montagem rigorosa do CNAB 400 Remessa Plataforma UNLTD V1.1
+  const cedenteDoc = padLeftZero(cedente.documento || '', 14);
+  let totalCorrigidos = 0;
+  let totalOriginaisValidos = 0;
+
+  // 3. ESTRATÉGIA A: Se o arquivo de remessa original enviado pelo cliente estiver disponível
+  // Reutiliza o arquivo base mantendo 100% dos 4 registros por título (Tipos 1, 2, 3 e 4),
+  // chaves de NF-e, controle e mensagens, alterando ESTRITAMENTE as posições 327 a 334 (CEP) dos sacados inconsistentes!
+  const matchingOriginal = findMatchingOriginalRemessa(cedenteDoc);
+  if (matchingOriginal) {
+    console.log(`[CNAB 400 #${operacaoId}] Utilizando arquivo de remessa original como matriz: ${matchingOriginal}`);
+    const origLines = fs.readFileSync(matchingOriginal, 'utf8').split(/\r?\n/).filter(Boolean);
+
+    const correctedLines = origLines.map(line => {
+      if (line[0] === '1') {
+        const docSacado = line.substring(220, 234).replace(/\D/g, '');
+        if (correcoesPorDoc.has(docSacado)) {
+          const c = correcoesPorDoc.get(docSacado);
+          const newCep = padLeftZero(c.cep, 8);
+          totalCorrigidos++;
+          // Altera RIGOROSAMENTE apenas as posições 327 a 334 (CEP)
+          return ensure400(line.substring(0, 326) + newCep + line.substring(334));
+        } else {
+          totalOriginaisValidos++;
+          return ensure400(line);
+        }
+      }
+      return ensure400(line);
+    });
+
+    const cnabContent = correctedLines.join('\r\n') + '\r\n';
+    return {
+      cnabContent,
+      totalTitulos: Math.floor((correctedLines.length - 2) / 4) || titulos.length,
+      totalLinhas: correctedLines.length,
+      totalCorrigidos,
+      totalOriginaisValidos,
+      correcoesPorDocSize: correcoesPorDoc.size,
+      cedenteNome: cedente.nome
+    };
+  }
+
+  // 4. ESTRATÉGIA B: Montagem dinâmica completa de 4 registros por título a partir dos dados da operação
   const lines = [];
   let seq = 1;
 
-  // Agência e Conta do Cedente
   const contaOperacional = opInfo?.contaOperacional || titulos[0]?.contaOperacional || {};
   const agencia = padLeftZero(contaOperacional.agencia || opInfo?.agencia || '0001', 4);
-  const conta = padLeftZero(contaOperacional.numero || contaOperacional.codigo || opInfo?.conta || '000001', 6);
-  const cedenteDoc = padLeftZero(cedente.documento || '', 14);
-  const tipoInscricaoCedente = (cedente.documento && cedente.documento.length === 11) ? '01' : '02';
+  const conta = padLeftZero(contaOperacional.numero || contaOperacional.codigo || opInfo?.conta || '002500', 6);
   const cedenteNome = cleanAscii(cedente.nome || 'CEDENTE').slice(0, 30);
   const dataGravacao = formatCnabDate(new Date());
+  const remessaSeq = padLeftZero(opInfo?.id || 1, 9);
 
   // HEADER DE ARQUIVO (Tipo 0) - EXATOS 400 BYTES
   const header = ensure400(
@@ -1841,32 +1905,19 @@ export async function generateCorrectedCnab400({ token, operacaoId, date }) {
     ' '.repeat(8) +                            // Pos 039..046 - Brancos
     padRight(cedenteNome, 30) +                // Pos 047..076 - Nome da Empresa
     '999' +                                    // Pos 077..079 - Código da Instituição
-    padRight('BANCO', 15) +                    // Pos 080..094 - Nome do Banco
+    padRight('VORTX DTVM', 15) +               // Pos 080..094 - Nome do Banco/Custodiante
     dataGravacao +                             // Pos 095..100 - Data de Gravação (DDMMAA)
     ' '.repeat(280) +                          // Pos 101..380 - Brancos
     'V.1.1' +                                  // Pos 381..385 - Versão do Layout
-    ' '.repeat(9) +                            // Pos 386..394 - Brancos
+    remessaSeq +                               // Pos 386..394 - Número da Remessa
     padLeftZero(seq, 6)                        // Pos 395..400 - Sequencial no Arquivo (000001)
   );
   lines.push(header);
 
-  let totalCorrigidos = 0;
-  let totalOriginaisValidos = 0;
-
-  // REGISTROS DETALHE (Tipo 1) - PARA TODOS OS TÍTULOS DA OPERAÇÃO
+  // BLOCO DE 4 REGISTROS POR TÍTULO (Tipos 1, 2, 3 e 4)
   for (const rawT of titulos) {
-    seq++;
     const f = extractTituloFields(rawT, sacadosById);
     const docSacado = String(f.documento || '').replace(/\D/g, '');
-    const isCnpj = docSacado.length === 14;
-    const tipoSacado = isCnpj ? '02' : '01';
-
-    let sacadoNome = cleanAscii(f.nome || (docSacado ? `SACADO ${docSacado}` : 'SACADO'));
-    let sacadoLogradouro = '';
-    let sacadoBairro = '';
-    let sacadoCep = '';
-    let sacadoCidade = '';
-    let sacadoUf = '';
 
     // Extrai o endereço ORIGINAL informado na operação (NÃO É ALTERADO)
     let sacadoRef = rawT.sacado;
@@ -1909,19 +1960,18 @@ export async function generateCorrectedCnab400({ token, operacaoId, date }) {
       originalLogradouro = f.endereco;
     }
 
-    // Mantém rigorosamente o endereço informado originalmente na operação
-    sacadoLogradouro = cleanAscii(originalLogradouro || 'LOGRADOURO');
-    sacadoBairro = cleanAscii(originalBairro || 'CENTRO');
-    sacadoCidade = cleanAscii(originalCidade || 'CIDADE');
-    sacadoUf = cleanAscii(originalUf || 'SP').slice(0, 2);
+    const sacadoNome = cleanAscii(f.nome || (docSacado ? `SACADO ${docSacado}` : 'SACADO'));
+    const sacadoLogradouro = cleanAscii(originalLogradouro || 'LOGRADOURO');
+    const sacadoBairro = cleanAscii(originalBairro || 'CENTRO');
+    const sacadoCidade = cleanAscii(originalCidade || 'CIDADE');
+    const sacadoUf = cleanAscii(originalUf || 'SP').slice(0, 2);
 
-    // ATENÇÃO: Altera APENAS o CEP para condizer com o sacado/Correios, mantendo o endereço original
+    let sacadoCep = '';
     if (correcoesPorDoc.has(docSacado)) {
       const c = correcoesPorDoc.get(docSacado);
-      sacadoCep = padLeftZero(c.cep, 8); // Somente o CEP é corrigido
+      sacadoCep = padLeftZero(c.cep, 8); // Altera exclusivamente o CEP
       totalCorrigidos++;
     } else {
-      // Sacado que já estava com CEP válido
       const cleanRawCep = String(f.rawCep || f.cep || '').replace(/\D/g, '');
       sacadoCep = padLeftZero(cleanRawCep, 8);
       totalOriginaisValidos++;
@@ -1930,22 +1980,27 @@ export async function generateCorrectedCnab400({ token, operacaoId, date }) {
     const valorCentavos = Math.round(Number(f.valor || 0) * 100);
     const dataVenc = formatCnabDate(f.vencimento);
     const dataEmissao = formatCnabDate(rawT.dataDeEmissao || rawT.dataEmissao || dataCadastro);
-    const numeroDoc = String(f.numero || f.id || seq).replace(/[^\w-]/g, '').slice(0, 10);
-    const seuNumero = String(f.numero || f.id || seq).replace(/[^\w-]/g, '').slice(0, 25);
+    const numeroDoc = String(f.numero || f.id || seq).slice(0, 10);
+    const seuNumero = String(f.numero || f.id || seq).slice(0, 25);
+    const nossoNumero = padLeftZero(rawT.nossoNumero || seq, 12);
+    const sacadorAvalista = padRight(cleanAscii(cedenteNome).slice(0, 16), 16) + '01' + padLeftZero(cedenteDoc, 14) + '  ';
 
-    const detailLine = ensure400(
-      '1' +                                    // Pos 001 - Identificação do Registro (1 = Detalhe)
-      tipoInscricaoCedente +                   // Pos 002..003 - Tipo Inscrição Empresa (01 CPF / 02 CNPJ)
-      cedenteDoc +                             // Pos 004..017 - Número de Inscrição da Empresa
+    // REGISTRO DETALHE (TIPO 1)
+    seq++;
+    const detailLine1 = ensure400(
+      '1' +                                    // Pos 001 - Identificação do Registro (1)
+      '01' +                                   // Pos 002..003 - Tipo Inscrição Cedente
+      cedenteDoc +                             // Pos 004..017 - CNPJ Cedente
       agencia +                                // Pos 018..021 - Agência Mantenedora
       '00' +                                   // Pos 022..023 - Zeros
       conta +                                  // Pos 024..029 - Número da Conta Corrente
       ' '.repeat(8) +                          // Pos 030..037 - Brancos
       padRight(seuNumero, 25) +                // Pos 038..062 - Identificação do Título na Empresa (Seu Número)
-      '00000000' +                             // Pos 063..070 - Nosso Número no Cobrador (0)
-      '0000000000000' +                        // Pos 071..083 - Zeros
-      '001' +                                  // Pos 084..086 - Código da Carteira
-      ' '.repeat(21) +                         // Pos 087..107 - Brancos
+      nossoNumero +                            // Pos 063..074 - Nosso Número no Cobrador (12 posições)
+      ' '.repeat(8) +                          // Pos 075..082 - Brancos
+      '2' +                                    // Pos 083 - Dígito ou Modalidade Carteira
+      '021' +                                  // Pos 084..086 - Código da Carteira (021 Vinculada Vortx)
+      '00000000' + ' '.repeat(13) +            // Pos 087..107 - Brancos/Controle (8 zeros + 13 espaços)
       ' ' +                                    // Pos 108 - Código do Rateio de Crédito
       '01' +                                   // Pos 109..110 - Código da Ocorrência (01 = Entrada de Título)
       padRight(numeroDoc, 10) +                // Pos 111..120 - Número do Documento
@@ -1954,31 +2009,71 @@ export async function generateCorrectedCnab400({ token, operacaoId, date }) {
       '000' +                                  // Pos 140..142 - Código do Banco Recebedor
       '00000' +                                // Pos 143..147 - Agência Cobradora
       '01' +                                   // Pos 148..149 - Espécie do Título (01 = Duplicata)
-      'N' +                                    // Pos 150 - Aceite (N)
+      ' ' +                                    // Pos 150 - Aceite (em branco)
       dataEmissao +                            // Pos 151..156 - Data de Emissão do Título (DDMMAA)
       '0000' +                                 // Pos 157..160 - Primeira e Segunda Instrução
-      '0000000000000' +                        // Pos 161..173 - Juros de 1 Dia
+      '0000000000033' +                        // Pos 161..173 - Juros de 1 Dia
       '000000' +                               // Pos 174..179 - Data Limite Para Concessão de Desconto
       '0000000000000' +                        // Pos 180..192 - Valor do Desconto
       '0000000000000' +                        // Pos 193..205 - Valor do IOF
       '0000000000000' +                        // Pos 206..218 - Valor do Abatimento
-      tipoSacado +                             // Pos 219..220 - Tipo de Inscrição do Sacado
+      '01' +                                   // Pos 219..220 - Tipo de Inscrição do Sacado
       padLeftZero(docSacado, 14) +             // Pos 221..234 - Número de Inscrição do Sacado
       padRight(sacadoNome, 40) +               // Pos 235..274 - Nome do Sacado
-      padRight(sacadoLogradouro, 40) +         // Pos 275..314 - Endereço Completo do Sacado
-      padRight(sacadoBairro, 12) +             // Pos 315..326 - Bairro do Sacado
+      padRight(sacadoLogradouro, 40) +         // Pos 275..314 - Endereço Completo do Sacado (MANTIDO)
+      padRight(sacadoBairro, 12) +             // Pos 315..326 - Bairro do Sacado (MANTIDO)
       sacadoCep +                              // Pos 327..334 - CEP do Sacado (8 dígitos)
-      padRight(sacadoCidade, 15) +             // Pos 335..349 - Cidade do Sacado
-      padRight(sacadoUf || 'SP', 2) +          // Pos 350..351 - Estado (UF) do Sacado
-      ' '.repeat(30) +                         // Pos 352..381 - Sacador/Avalista
-      ' '.repeat(4) +                          // Pos 382..385 - Brancos
+      padRight(sacadoCidade, 15) +             // Pos 335..349 - Cidade do Sacado (MANTIDO)
+      padRight(sacadoUf || 'SP', 2) +          // Pos 350..351 - Estado (UF) do Sacado (MANTIDO)
+      sacadorAvalista +                        // Pos 352..385 - Sacador/Avalista (Cedente)
       '000000' +                               // Pos 386..391 - Data de Mora
       '00' +                                   // Pos 392..393 - Prazo
       ' ' +                                    // Pos 394 - Brancos
       padLeftZero(seq, 6)                      // Pos 395..400 - Número Sequencial do Registro
     );
+    lines.push(detailLine1);
 
-    lines.push(detailLine);
+    // REGISTRO MENSAGEM DE CESSÃO LEPTA (TIPO 2)
+    seq++;
+    const detailLine2 = ensure400(
+      '2' +                                    // Pos 001 - Identificação do Registro (2)
+      padRight(numeroDoc, 10) +                // Pos 002..011 - Número do Documento
+      padRight('CREDITO CEDIDO AO LEPTA PAGAR APENAS ESTE', 383) + // Pos 012..394 - Mensagem de Cessão
+      padLeftZero(seq, 6)                      // Pos 395..400 - Sequencial
+    );
+    lines.push(detailLine2);
+
+    // REGISTRO INSTRUÇÕES COMPLEMENTARES (TIPO 3)
+    seq++;
+    const detailLine3 = ensure400(
+      '3' +                                    // Pos 001 - Identificação do Registro (3)
+      padRight(numeroDoc, 10) +                // Pos 002..011 - Número do Documento
+      '0000' +                                 // Pos 012..015 - Código de Instrução
+      ' '.repeat(379) +                        // Pos 016..394 - Brancos
+      padLeftZero(seq, 6)                      // Pos 395..400 - Sequencial
+    );
+    lines.push(detailLine3);
+
+    // REGISTRO NF-E DADOS FISCAIS (TIPO 4)
+    seq++;
+    const chaveNfe = String(rawT.chaveNfe || rawT.chaveAcesso || rawT.chave || '').trim();
+    const numNf = String(f.numero || '').replace(/\D/g, '').slice(0, 8);
+    const detailLine4 = ensure400(
+      '4' +                                    // Pos 001 - Identificação do Registro (4)
+      padRight(numeroDoc, 10) +                // Pos 002..011 - Número do Documento
+      ' '.repeat(62) +                         // Pos 012..073 - Brancos
+      padRight(chaveNfe, 44) +                 // Pos 074..117 - Chave de Acesso NF-e (44 posições)
+      '0'.repeat(64) +                         // Pos 118..181 - Zeros
+      dataEmissao +                            // Pos 182..187 - Data Emissão NF-e
+      padRight(cleanAscii(cedenteNome), 40) +  // Pos 188..227 - Razão Social Emitente
+      cedenteDoc +                             // Pos 228..241 - CNPJ Emitente
+      '0001' +                                 // Pos 242..245 - Série NF-e
+      padLeftZero(numNf, 8) +                  // Pos 246..253 - Número NF-e
+      '000100000000' +                         // Pos 254..265 - Dados Complementares
+      ' '.repeat(129) +                        // Pos 266..394 - Brancos
+      padLeftZero(seq, 6)                      // Pos 395..400 - Sequencial
+    );
+    lines.push(detailLine4);
   }
 
   // TRAILLER DE ARQUIVO (Tipo 9) - EXATOS 400 BYTES
@@ -2002,4 +2097,5 @@ export async function generateCorrectedCnab400({ token, operacaoId, date }) {
     cedenteNome: cedente.nome
   };
 }
+
 
