@@ -1317,174 +1317,176 @@ export async function diagnoseBitfinOperation(operacaoId, token) {
   const results = {
     operacaoId,
     timestamp: new Date().toISOString(),
+    descoberta: {},
     tests: {}
   };
 
   // 1. GET /recebiveis/operacoes/:id
+  let opDirect = null;
   try {
     const res = await fetch(`${API_BASE}/recebiveis/operacoes/${operacaoId}`, { headers });
     const text = await res.text();
-    let json = null;
-    try { json = JSON.parse(text); } catch (_) {}
+    try { opDirect = JSON.parse(text); } catch (_) {}
     results.tests.getOperacao = {
       status: res.status,
       ok: res.ok,
-      keys: json && typeof json === 'object' ? Object.keys(json) : [],
-      titulosLength: Array.isArray(json?.titulos) ? json.titulos.length : null,
-      titulosSample3: Array.isArray(json?.titulos) ? json.titulos.slice(0, 3) : null,
-      sacadosLength: Array.isArray(json?.sacados) ? json.sacados.length : null,
-      sacadosSample3: Array.isArray(json?.sacados) ? json.sacados.slice(0, 3) : null,
-      recebiveisLength: Array.isArray(json?.recebiveis) ? json.recebiveis.length : null,
-      recebiveisSample3: Array.isArray(json?.recebiveis) ? json.recebiveis.slice(0, 3) : null,
-      rawSummary: json ? {
-        id: json.id,
-        numero: json.numero,
-        situacao: json.situacao || json.status,
-        dataDeCadastro: json.dataDeCadastro,
-        valorTotal: json.valorTotal,
-        valorFace: json.valorFace,
-        valorNominal: json.valorNominal,
-        valor: json.valor,
-        total: json.total,
-        quantidadeTitulos: json.quantidadeTitulos
+      keys: opDirect && typeof opDirect === 'object' ? Object.keys(opDirect) : [],
+      titulosLength: Array.isArray(opDirect?.titulos) ? opDirect.titulos.length : null,
+      sacadosLength: Array.isArray(opDirect?.sacados) ? opDirect.sacados.length : null,
+      recebiveisLength: Array.isArray(opDirect?.recebiveis) ? opDirect.recebiveis.length : null,
+      itensLength: Array.isArray(opDirect?.itens) ? opDirect.itens.length : null,
+      analisesDiretas: opDirect?.analises || null,
+      regrasDiretas: opDirect?.regras || null,
+      ocorrenciasDiretas: opDirect?.ocorrencias || null,
+      criticasDiretas: opDirect?.criticas || null,
+      pendenciasDiretas: opDirect?.pendencias || null,
+      validacoesDiretas: opDirect?.validacoes || null,
+      concentracoesDiretas: opDirect?.concentracoes || null,
+      esteiraDireta: opDirect?.esteira || null,
+      motorDireto: opDirect?.motorCredito || opDirect?.politicaCredito || null,
+      rawSummary: opDirect ? {
+        id: opDirect.id,
+        numero: opDirect.numero,
+        situacao: opDirect.situacao || opDirect.status,
+        dataDeCadastro: opDirect.dataDeCadastro,
+        valorTotal: opDirect.valorTotal,
+        valorFace: opDirect.valorFace,
+        valorNominal: opDirect.valorNominal,
+        valor: opDirect.valor,
+        total: opDirect.total,
+        quantidadeTitulos: opDirect.quantidadeTitulos
       } : text.substring(0, 300)
     };
   } catch (err) {
     results.tests.getOperacao = { error: err.message };
   }
 
-  // 2. GET /recebiveis/operacoes/:id/titulos
-  try {
-    const res = await fetch(`${API_BASE}/recebiveis/operacoes/${operacaoId}/titulos`, { headers });
-    const text = await res.text();
-    let json = null;
-    try { json = JSON.parse(text); } catch (_) {}
-    results.tests.getOperacaoTitulos = {
-      status: res.status,
-      ok: res.ok,
-      isArray: Array.isArray(json),
-      length: Array.isArray(json) ? json.length : null,
-      sample3: Array.isArray(json) ? json.slice(0, 3) : (json || text.substring(0, 300))
-    };
-  } catch (err) {
-    results.tests.getOperacaoTitulos = { error: err.message };
-  }
+  // 2. Varredura paralela de todos os sub-endpoints potenciais de análise, regras e pendências
+  const subEndpoints = [
+    { name: 'operacao_analises', url: `${API_BASE}/recebiveis/operacoes/${operacaoId}/analises` },
+    { name: 'operacao_regras', url: `${API_BASE}/recebiveis/operacoes/${operacaoId}/regras` },
+    { name: 'operacao_ocorrencias', url: `${API_BASE}/recebiveis/operacoes/${operacaoId}/ocorrencias` },
+    { name: 'operacao_criticas', url: `${API_BASE}/recebiveis/operacoes/${operacaoId}/criticas` },
+    { name: 'operacao_pendencias', url: `${API_BASE}/recebiveis/operacoes/${operacaoId}/pendencias` },
+    { name: 'operacao_validacoes', url: `${API_BASE}/recebiveis/operacoes/${operacaoId}/validacoes` },
+    { name: 'operacao_concentracoes', url: `${API_BASE}/recebiveis/operacoes/${operacaoId}/concentracoes` },
+    { name: 'operacao_esteira', url: `${API_BASE}/recebiveis/operacoes/${operacaoId}/esteira` },
+    { name: 'operacao_auditoria', url: `${API_BASE}/recebiveis/operacoes/${operacaoId}/auditoria` },
+    { name: 'operacao_titulos', url: `${API_BASE}/recebiveis/operacoes/${operacaoId}/titulos` },
+    { name: 'operacao_itens', url: `${API_BASE}/recebiveis/operacoes/${operacaoId}/itens` },
+    { name: 'operacao_sacados', url: `${API_BASE}/recebiveis/operacoes/${operacaoId}/sacados` },
+    { name: 'analises_raiz', url: `${API_BASE}/analises/operacoes/${operacaoId}` },
+    { name: 'analises_query', url: `${API_BASE}/analises?operacaoId=${operacaoId}` },
+    { name: 'recebiveis_analises', url: `${API_BASE}/recebiveis/analises?operacaoId=${operacaoId}` }
+  ];
 
-  // 3. GET /recebiveis/operacoes/:id/recebiveis
-  try {
-    const res = await fetch(`${API_BASE}/recebiveis/operacoes/${operacaoId}/recebiveis`, { headers });
-    const text = await res.text();
-    let json = null;
-    try { json = JSON.parse(text); } catch (_) {}
-    results.tests.getOperacaoRecebiveis = {
-      status: res.status,
-      ok: res.ok,
-      isArray: Array.isArray(json),
-      length: Array.isArray(json) ? json.length : null,
-      sample3: Array.isArray(json) ? json.slice(0, 3) : (json || text.substring(0, 300))
-    };
-  } catch (err) {
-    results.tests.getOperacaoRecebiveis = { error: err.message };
-  }
-
-  // 4. POST /recebiveis/titulos com { operacaoId }
-  try {
-    const res = await fetch(`${API_BASE}/recebiveis/titulos`, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({ operacaoId: Number(operacaoId) || operacaoId })
-    });
-    const text = await res.text();
-    let json = null;
-    try { json = JSON.parse(text); } catch (_) {}
-    results.tests.postTitulosByOperacaoId = {
-      status: res.status,
-      ok: res.ok,
-      isArray: Array.isArray(json),
-      length: Array.isArray(json) ? json.length : null,
-      sample3: Array.isArray(json) ? json.slice(0, 3) : (json || text.substring(0, 300))
-    };
-  } catch (err) {
-    results.tests.postTitulosByOperacaoId = { error: err.message };
-  }
-
-  // 5. POST /recebiveis/titulos com { operacao: operacaoId }
-  try {
-    const res = await fetch(`${API_BASE}/recebiveis/titulos`, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({ operacao: Number(operacaoId) || operacaoId })
-    });
-    const text = await res.text();
-    let json = null;
-    try { json = JSON.parse(text); } catch (_) {}
-    results.tests.postTitulosByOperacao = {
-      status: res.status,
-      ok: res.ok,
-      isArray: Array.isArray(json),
-      length: Array.isArray(json) ? json.length : null,
-      sample3: Array.isArray(json) ? json.slice(0, 3) : (json || text.substring(0, 300))
-    };
-  } catch (err) {
-    results.tests.postTitulosByOperacao = { error: err.message };
-  }
-
-  // 6. POST /recebiveis/titulos para datas 2026-09-04 e 2026-09-03
-  for (const dt of ['2026-09-04', '2026-09-03']) {
+  await Promise.allSettled(subEndpoints.map(async sub => {
     try {
-      const res = await fetch(`${API_BASE}/recebiveis/titulos`, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({
-          tipoDeData: 'Cadastro',
-          dataInicial: `${dt}T00:00:00`,
-          dataFinal: `${dt}T23:59:59`
-        })
-      });
+      const res = await fetch(sub.url, { headers });
       const text = await res.text();
       let json = null;
       try { json = JSON.parse(text); } catch (_) {}
-      const matching = Array.isArray(json) ? json.filter(t => {
-        const str = JSON.stringify(t);
-        return str.includes(String(operacaoId));
-      }) : [];
-      results.tests[`postTitulosData_${dt}`] = {
+      results.tests[sub.name] = {
         status: res.status,
         ok: res.ok,
-        totalTitulosData: Array.isArray(json) ? json.length : null,
-        matchingOperacao: matching.length,
-        matchingSample3: matching.slice(0, 3),
-        firstTituloKeys: Array.isArray(json) && json[0] ? Object.keys(json[0]) : [],
-        firstTituloSample: Array.isArray(json) && json[0] ? json[0] : null
+        isArray: Array.isArray(json),
+        length: Array.isArray(json) ? json.length : (json && typeof json === 'object' ? Object.keys(json).length : null),
+        sample: Array.isArray(json) ? json.slice(0, 3) : (json || text.substring(0, 300))
       };
+      if (res.ok && json) {
+        const textStr = JSON.stringify(json);
+        if (textStr.includes('71295') || textStr.includes('71.295') || textStr.includes('Endereço Verificado') || textStr.includes('Endereco Verificado') || textStr.includes('Correios')) {
+          results.descoberta[sub.name] = json;
+        }
+      }
     } catch (err) {
-      results.tests[`postTitulosData_${dt}`] = { error: err.message };
+      results.tests[sub.name] = { error: err.message };
     }
+  }));
+
+  // 3. Inspeção profunda nos itens e sacados embutidos em opDirect
+  if (Array.isArray(opDirect?.itens) && opDirect.itens.length > 0) {
+    const item0 = opDirect.itens[0];
+    results.tests.itensSampleKeys = item0 ? Object.keys(item0) : [];
+    if (item0?.titulo) results.tests.itensTituloSampleKeys = Object.keys(item0.titulo);
+    if (item0?.sacado) results.tests.itensSacadoSampleKeys = Object.keys(item0.sacado);
+
+    const itensComErro = opDirect.itens.filter(it => {
+      const itStr = JSON.stringify(it);
+      return itStr.includes('false') || itStr.includes('invalido') || itStr.includes('pendente') || itStr.includes('alerta') || itStr.includes('rejeit');
+    });
+    results.tests.itensPossiveisComErro = {
+      total: itensComErro.length,
+      sample3: itensComErro.slice(0, 3)
+    };
   }
 
-  // 7. POST /recebiveis/operacoes na data 2026-09-04 para ver a operacao no array
+  if (Array.isArray(opDirect?.sacados) && opDirect.sacados.length > 0) {
+    const s0 = opDirect.sacados[0];
+    results.tests.sacadosSampleKeys = s0 ? Object.keys(s0) : [];
+    const sacadosInvalidos = opDirect.sacados.filter(s => {
+      return s.valido === false || s.endereco?.valido === false || s.endereco?.verificado === false || s.verificado === false;
+    });
+    results.tests.sacadosComFlagInvalido = {
+      total: sacadosInvalidos.length,
+      sample: sacadosInvalidos.slice(0, 5)
+    };
+  }
+
+  // 4. Varredura nos títulos cadastrados para a data da operação
+  const dataOp = opDirect?.dataDeCadastro ? String(opDirect.dataDeCadastro).substring(0, 10) : '2026-09-04';
   try {
-    const res = await fetch(`${API_BASE}/recebiveis/operacoes`, {
+    const resTit = await fetch(`${API_BASE}/recebiveis/titulos`, {
       method: 'POST',
       headers,
       body: JSON.stringify({
         tipoDeData: 'Cadastro',
-        dataInicial: '2026-09-04T00:00:00',
-        dataFinal: '2026-09-04T23:59:59'
+        dataInicial: `${dataOp}T00:00:00`,
+        dataFinal: `${dataOp}T23:59:59`
       })
     });
-    const text = await res.text();
-    let json = null;
-    try { json = JSON.parse(text); } catch (_) {}
-    const opFound = Array.isArray(json) ? json.find(o => String(o.id) === String(operacaoId) || String(o.numero) === String(operacaoId)) : null;
-    results.tests.postOperacoesArray_20260904 = {
-      status: res.status,
-      ok: res.ok,
-      totalOpsData: Array.isArray(json) ? json.length : null,
-      operacao13902NoArray: opFound || null
-    };
+    if (resTit.ok) {
+      const allTit = await resTit.json();
+      if (Array.isArray(allTit)) {
+        const opTitulos = allTit.filter(t => {
+          const idOp = String(t.operacao?.id || t.operacaoId || t.operacao?.numero || t.operacao || t.bordero || t.idOperacao || '').trim();
+          return idOp === String(operacaoId).trim();
+        });
+
+        results.tests.titulosDataOperacao = {
+          totalNoDia: allTit.length,
+          totalDaOperacao: opTitulos.length,
+          primeiroTituloKeys: opTitulos[0] ? Object.keys(opTitulos[0]) : [],
+          primeiroTituloSacadoKeys: opTitulos[0]?.sacado ? Object.keys(opTitulos[0].sacado) : []
+        };
+
+        // Identifica títulos com alguma flag negativa
+        const titulosComFlag = opTitulos.filter(t => {
+          const s = t.sacado;
+          const end = s?.entidade?.endereco || s?.endereco;
+          return s?.valido === false || s?.verificado === false || end?.valido === false || end?.verificado === false || Boolean(t.analises) || Boolean(t.ocorrencias) || Boolean(t.regras) || Boolean(t.pendencias);
+        });
+
+        const somaFlags = titulosComFlag.reduce((acc, t) => acc + Number(t.valorNominal || t.valor || 0), 0);
+        results.tests.titulosComFlagNegativa = {
+          total: titulosComFlag.length,
+          somaValorNominal: somaFlags,
+          bateu71295: Math.abs(somaFlags - 71295.23) < 1,
+          sample: titulosComFlag.slice(0, 3)
+        };
+
+        // Procura menções a 71295 ou Correios na serialização dos títulos
+        const matchingStr = opTitulos.filter(t => {
+          const str = JSON.stringify(t);
+          return str.includes('Correios') || str.includes('71295') || str.includes('71.295');
+        });
+        if (matchingStr.length > 0) {
+          results.descoberta.titulosComTextoCorreiosOu71295 = matchingStr.slice(0, 5);
+        }
+      }
+    }
   } catch (err) {
-    results.tests.postOperacoesArray_20260904 = { error: err.message };
+    results.tests.titulosDataOperacao = { error: err.message };
   }
 
   return results;
