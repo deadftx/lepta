@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { LogOut, User, ShieldAlert, Shield, UserPlus, Users, ChevronDown, ChevronRight, LayoutDashboard, Sliders, Home, Calendar, CalendarCheck, Menu, X, Wallet, FileSpreadsheet, BrainCircuit, Database, ClipboardCheck, ContactRound, ShieldCheck, Landmark, Briefcase, ShoppingCart, SlidersHorizontal, DollarSign, Mail, Search, TrendingUp, UserCheck, Scale, FileCheck, Layers } from 'lucide-react';
+import { LogOut, User, ShieldAlert, Shield, UserPlus, Users, ChevronDown, ChevronRight, LayoutDashboard, Sliders, Home, Calendar, CalendarCheck, Menu, X, Wallet, FileSpreadsheet, BrainCircuit, Database, ClipboardCheck, ContactRound, ShieldCheck, Landmark, Briefcase, ShoppingCart, SlidersHorizontal, DollarSign, Mail, Search, TrendingUp, UserCheck, Scale, FileCheck, Layers, MapPin } from 'lucide-react';
 import { useNavigate, Outlet, Link, useLocation } from 'react-router-dom';
 import { useAuth } from './AuthContext';
 import NotificationBell from './NotificationBell';
@@ -363,6 +363,11 @@ const InternalLayout = () => {
                   {hasAccess('14.1') && (
                     <Link to="/mesa-operacoes/analise" className={navItemClass('/mesa-operacoes/analise')}>
                       <Search size={18} /> Análise de Operação
+                    </Link>
+                  )}
+                  {hasAccess('14.2') && (
+                    <Link to="/mesa-operacoes/validar-ceps" className={navItemClass('/mesa-operacoes/validar-ceps')}>
+                      <MapPin size={18} /> Validar CEPs
                     </Link>
                   )}
                 </div>

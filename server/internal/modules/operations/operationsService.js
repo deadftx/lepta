@@ -35,14 +35,31 @@ export function padLeftZero(val, len) {
   return digits.padStart(len, '0');
 }
 
-/**
- * Garante que a linha possui exatamente 400 caracteres
- */
 export function ensure400(line) {
   const str = String(line || '');
   if (str.length === 400) return str;
   if (str.length > 400) return str.slice(0, 400);
   return str.padEnd(400, ' ');
+}
+
+/**
+ * Concorrência controlada para consultas assíncronas de alta performance
+ */
+export async function pMap(array, fn, concurrency = 40) {
+  let index = 0;
+  const results = new Array(array.length);
+  const workers = new Array(Math.min(concurrency, array.length)).fill(0).map(async () => {
+    while (index < array.length) {
+      const i = index++;
+      try {
+        results[i] = await fn(array[i], i);
+      } catch (_) {
+        results[i] = null;
+      }
+    }
+  });
+  await Promise.all(workers);
+  return results;
 }
 
 /**
@@ -2156,5 +2173,340 @@ export async function generateCorrectedCnab400({ token, operacaoId, date }) {
     cedenteNome: cedente.nome
   };
 }
+
+/**
+ * Recebe o arquivo CNAB 400 importado pelo usuário (.txt ou .rem),
+ * faz a varredura direta de todos os títulos, valida os CEPs contra os Correios/ViaCEP,
+ * consulta a Receita Federal via CNPJ exclusivamente para os sacados com erro,
+ * e substitui RIGOROSAMENTE APENAS as 8 posições do CEP (327 a 334),
+ * preservando 100% de todos os outros registros (endereço original, cessão Tipo 2, instruções Tipo 3, NF-e Tipo 4).
+ */
+export async function correctUploadedCnab({ fileBuffer, operacaoId, inconsistentCnpjs = [], token = null }) {
+  if (!fileBuffer || !fileBuffer.length) {
+    throw new Error('Nenhum arquivo CNAB enviado para processamento.');
+  }
+
+  const rawContent = fileBuffer.toString('latin1');
+  const origLines = rawContent.split(/\r?\n/).filter(Boolean);
+
+  if (!origLines.length) {
+    throw new Error('O arquivo CNAB importado está vazio.');
+  }
+
+  // 1. Mapeia todos os títulos (linhas tipo 1) e identifica sacados e CEPs únicos
+  const distinctSacados = new Map();
+  let totalTitulos = 0;
+
+  for (const line of origLines) {
+    if (line[0] === '1') {
+      totalTitulos++;
+      const doc = line.substring(220, 234).replace(/\D/g, '');
+      const cep = line.substring(326, 334).replace(/\D/g, '');
+      const nome = line.substring(234, 274).trim();
+      const endereco = line.substring(274, 314).trim();
+
+      if (doc.length === 14 && !distinctSacados.has(doc)) {
+        distinctSacados.set(doc, { doc, cep, nome, endereco, titlesCount: 0 });
+      }
+      if (distinctSacados.has(doc)) {
+        distinctSacados.get(doc).titlesCount++;
+      }
+    }
+  }
+
+  // 2. Determina quais sacados devem ser corrigidos
+  // Prioridade: CNPJs com inconsistência já detectados pelo sistema
+  let targetCnpjsSet = new Set(
+    (inconsistentCnpjs || []).map(c => String(c).replace(/\D/g, '')).filter(Boolean)
+  );
+
+  // Se não foi informada a lista pré-diagnosticada e temos token + operacaoId, consulta o diagnóstico
+  if (targetCnpjsSet.size === 0 && operacaoId && token) {
+    try {
+      const opDetails = await getOperationDetails({ token, operacaoId });
+      if (Array.isArray(opDetails?.sacadosInconsistentes)) {
+        for (const s of opDetails.sacadosInconsistentes) {
+          const c = String(s.documento || '').replace(/\D/g, '');
+          if (c) targetCnpjsSet.add(c);
+        }
+      }
+    } catch (_) {}
+  }
+
+  const invalidSacados = [];
+  if (targetCnpjsSet.size > 0) {
+    // Foco estrito nos sacados apontados com erro pelo sistema
+    for (const s of distinctSacados.values()) {
+      if (targetCnpjsSet.has(s.doc)) {
+        invalidSacados.push(s);
+      }
+    }
+  } else {
+    // Fallback: valida apenas CEPs de formato atípico ou não-único
+    const distinctCeps = new Set(Array.from(distinctSacados.values()).map(s => s.cep));
+    const cepArray = Array.from(distinctCeps);
+    const suspiciousCeps = cepArray.filter(c => c.length !== 8 || c.endsWith('000') || /^(\d)\1{7}$/.test(c));
+    const cepsToValidate = suspiciousCeps.length > 0 ? suspiciousCeps : cepArray.slice(0, 100);
+
+    for (let i = 0; i < cepsToValidate.length; i += 20) {
+      const chunk = cepsToValidate.slice(i, i + 20);
+      await Promise.all(chunk.map(async c => {
+        try {
+          await validateCep(c, { bitfinValido: true, checkViaCep: true });
+        } catch (_) {}
+      }));
+    }
+
+    for (const s of distinctSacados.values()) {
+      const v = cepValidationCache.get(s.cep);
+      if (v && v.valid !== true) {
+        invalidSacados.push(s);
+      }
+    }
+  }
+
+  // 4. Consulta a Receita Federal via CNPJ apenas para os sacados com inconsistência
+  const correctionsMap = new Map();
+  for (const s of invalidSacados) {
+    try {
+      const cnpjInfo = await fetchCnpjAddress(s.doc);
+      if (cnpjInfo && cnpjInfo.cep) {
+        const vCep = await validateCep(cnpjInfo.cep, { bitfinValido: true, checkViaCep: true });
+        const newCep = String(vCep?.rawCep || cnpjInfo.cep).replace(/\D/g, '').padStart(8, '0');
+        if (newCep && newCep !== s.cep) {
+          correctionsMap.set(s.doc, {
+            doc: s.doc,
+            nome: s.nome,
+            endereco: s.endereco,
+            oldCep: s.cep,
+            newCep
+          });
+        }
+      }
+    } catch (err) {
+      console.warn(`[UPLOAD CNAB #${operacaoId}] Aviso ao consultar CNPJ ${s.doc}:`, err.message);
+    }
+  }
+
+  // 5. Substitui RIGOROSAMENTE apenas as posições 327 a 334 nas linhas do tipo 1
+  let totalCorrigidos = 0;
+  let totalOriginaisValidos = 0;
+
+  const correctedLines = origLines.map(line => {
+    if (line[0] === '1') {
+      const doc = line.substring(220, 234).replace(/\D/g, '');
+      if (correctionsMap.has(doc)) {
+        const corr = correctionsMap.get(doc);
+        const oldCepInLine = line.substring(326, 334);
+        if (oldCepInLine !== corr.newCep) {
+          totalCorrigidos++;
+          // Altera RIGOROSAMENTE apenas as 8 posições de CEP
+          return ensure400(line.substring(0, 326) + corr.newCep + line.substring(334));
+        }
+      }
+      totalOriginaisValidos++;
+    }
+    return ensure400(line);
+  });
+
+  const cnabContent = correctedLines.join('\r\n') + '\r\n';
+
+  return {
+    cnabContent,
+    totalLinhas: correctedLines.length,
+    totalTitulos,
+    totalCorrigidos,
+    totalOriginaisValidos,
+    detalhesCorrecoes: Array.from(correctionsMap.values())
+  };
+}
+
+/**
+ * Analisa qualquer arquivo CNAB 400 enviado (.txt ou .rem),
+ * mapeando exclusivamente a integridade dos CEPs dos sacados (linhas tipo 1),
+ * validando na base dos Correios e consultando a Receita Federal para os inconsistentes.
+ */
+export async function analyzeCnabCeps(fileBuffer) {
+  if (!fileBuffer || !fileBuffer.length) {
+    throw new Error('Nenhum arquivo CNAB fornecido para análise.');
+  }
+
+  const rawContent = fileBuffer.toString('latin1');
+  const origLines = rawContent.split(/\r?\n/).filter(Boolean);
+
+  if (!origLines.length) {
+    throw new Error('O arquivo CNAB está vazio.');
+  }
+
+  const distinctSacados = new Map();
+  const distinctCeps = new Set();
+  let totalTitulos = 0;
+
+  for (const line of origLines) {
+    if (line[0] === '1') {
+      totalTitulos++;
+      const doc = line.substring(220, 234).replace(/\D/g, '');
+      const cep = line.substring(326, 334).replace(/\D/g, '');
+      const nome = line.substring(234, 274).trim();
+      const endereco = line.substring(274, 314).trim();
+      const bairro = line.substring(314, 326).trim();
+      const cidade = line.substring(334, 349).trim();
+      const uf = line.substring(349, 351).trim();
+
+      if (cep) distinctCeps.add(cep);
+
+      if (doc && !distinctSacados.has(doc)) {
+        distinctSacados.set(doc, {
+          doc,
+          cep,
+          nome,
+          endereco,
+          bairro,
+          cidade,
+          uf,
+          titlesCount: 0
+        });
+      }
+      if (doc && distinctSacados.has(doc)) {
+        distinctSacados.get(doc).titlesCount++;
+      }
+    }
+  }
+
+  // Validação rápida e paralela dos CEPs únicos no ViaCEP / Correios
+  const cepArray = Array.from(distinctCeps);
+  await pMap(cepArray, async c => {
+    try {
+      await validateCep(c, { bitfinValido: true, checkViaCep: true });
+    } catch (_) {}
+  }, 40);
+
+  // Identifica sacados cujo CEP não é válido ou foi apontado com inconsistência
+  const invalidSacados = [];
+  for (const s of distinctSacados.values()) {
+    const v = cepValidationCache.get(s.cep);
+    if (!v || v.valid !== true) {
+      invalidSacados.push({
+        ...s,
+        errorReason: v?.errorReason || 'CEP não localizado na base dos Correios'
+      });
+    }
+  }
+
+  // Consulta a Receita Federal via CNPJ para os sacados com inconsistência
+  const sacadosInconsistentes = [];
+  const correcoesMap = new Map();
+
+  await pMap(invalidSacados, async s => {
+    try {
+      let cepOficial = null;
+      let enderecoOficial = null;
+      let razaoOficial = s.nome;
+
+      if (s.doc.length === 14) {
+        const cnpjInfo = await fetchCnpjAddress(s.doc);
+        if (cnpjInfo && cnpjInfo.cep) {
+          const vCep = await validateCep(cnpjInfo.cep, { bitfinValido: true, checkViaCep: true });
+          cepOficial = String(vCep?.rawCep || cnpjInfo.cep).replace(/\D/g, '').padStart(8, '0');
+          razaoOficial = cnpjInfo.razaoSocial || s.nome;
+          enderecoOficial = `${cnpjInfo.logradouro || ''}, ${cnpjInfo.numero || 'S/N'} - ${cnpjInfo.bairro || ''}, ${cnpjInfo.cidade || ''}/${cnpjInfo.uf || ''}`.trim();
+        }
+      }
+
+      const item = {
+        doc: s.doc,
+        nome: razaoOficial,
+        endereco: s.endereco,
+        bairro: s.bairro,
+        cidade: s.cidade,
+        uf: s.uf,
+        cepArquivo: s.cep,
+        cepOficial: cepOficial || s.cep,
+        enderecoOficial: enderecoOficial || s.endereco,
+        titlesCount: s.titlesCount,
+        errorReason: s.errorReason,
+        status: cepOficial && cepOficial !== s.cep ? 'CORRIGIVEL' : 'NAO_LOCALIZADO'
+      };
+
+      sacadosInconsistentes.push(item);
+
+      if (cepOficial && cepOficial !== s.cep) {
+        correcoesMap.set(s.doc, {
+          doc: s.doc,
+          oldCep: s.cep,
+          newCep: cepOficial,
+          nome: razaoOficial
+        });
+      }
+    } catch (err) {
+      console.warn(`[VALIDAR CEPS CNAB] Erro ao consultar documento ${s.doc}:`, err.message);
+      sacadosInconsistentes.push({
+        ...s,
+        cepArquivo: s.cep,
+        cepOficial: s.cep,
+        status: 'ERRO_CONSULTA'
+      });
+    }
+  }, 5);
+
+  return {
+    totalLinhas: origLines.length,
+    totalTitulos,
+    totalSacadosUnicos: distinctSacados.size,
+    totalCepsUnicos: distinctCeps.size,
+    totalValidos: distinctSacados.size - sacadosInconsistentes.length,
+    totalInconsistentes: sacadosInconsistentes.length,
+    sacadosInconsistentes,
+    correcoesSugeridas: Array.from(correcoesMap.values())
+  };
+}
+
+/**
+ * Gera um novo arquivo CNAB 400 replicando 100% dos dados do arquivo original,
+ * aplicando a correção cirurgicamente APENAS nas posições 327 a 334 (o CEP) das linhas tipo 1.
+ */
+export async function generateCorrectedCnabFromAnalysis({ fileBuffer, corrections = [] }) {
+  if (!fileBuffer || !fileBuffer.length) {
+    throw new Error('Nenhum arquivo CNAB fornecido.');
+  }
+
+  const rawContent = fileBuffer.toString('latin1');
+  const origLines = rawContent.split(/\r?\n/).filter(Boolean);
+
+  const correctionsMap = new Map();
+  for (const c of corrections) {
+    const doc = String(c.doc || '').replace(/\D/g, '');
+    const newCep = String(c.newCep || c.cepOficial || '').replace(/\D/g, '').padStart(8, '0');
+    if (doc && newCep.length === 8) {
+      correctionsMap.set(doc, newCep);
+    }
+  }
+
+  let totalCorrigidos = 0;
+  const correctedLines = origLines.map(line => {
+    if (line[0] === '1') {
+      const doc = line.substring(220, 234).replace(/\D/g, '');
+      if (correctionsMap.has(doc)) {
+        const newCep = correctionsMap.get(doc);
+        const oldCepInLine = line.substring(326, 334);
+        if (oldCepInLine !== newCep) {
+          totalCorrigidos++;
+          return ensure400(line.substring(0, 326) + newCep + line.substring(334));
+        }
+      }
+    }
+    return ensure400(line);
+  });
+
+  const cnabContent = correctedLines.join('\r\n') + '\r\n';
+
+  return {
+    cnabContent,
+    totalLinhas: correctedLines.length,
+    totalCorrigidos
+  };
+}
+
+
 
 

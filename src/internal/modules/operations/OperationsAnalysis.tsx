@@ -14,6 +14,7 @@ import {
   UserCheck,
   FileSpreadsheet,
   FileCode,
+  Upload,
   AlertCircle,
   Copy,
   Check
@@ -108,6 +109,9 @@ export const OperationsAnalysis: React.FC = () => {
   const [downloadingXlsx, setDownloadingXlsx] = useState<boolean>(false);
   const [downloadingTitulosXlsx, setDownloadingTitulosXlsx] = useState<boolean>(false);
   const [downloadingCnab, setDownloadingCnab] = useState<boolean>(false);
+  const [uploadingCnab, setUploadingCnab] = useState<boolean>(false);
+  const [uploadResultModal, setUploadResultModal] = useState<any>(null);
+  const fileInputRef = React.useRef<HTMLInputElement | null>(null);
 
   // Modal de Diagnóstico Bruto da API BitFin
   const [diagnoseModalOpen, setDiagnoseModalOpen] = useState<boolean>(false);
@@ -283,6 +287,67 @@ export const OperationsAnalysis: React.FC = () => {
       setDownloadingCnab(false);
     }
   };
+
+  // Upload e correção do CNAB original enviado pelo cedente (.txt ou .rem)
+  const handleUploadCnab = async (e: React.ChangeEvent<HTMLInputElement>, opId: string) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setUploadingCnab(true);
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      if (operationDetail?.sacadosInconsistentes?.length) {
+        const errCnpjs = operationDetail.sacadosInconsistentes
+          .map((s: any) => String(s.documento || '').replace(/\D/g, ''))
+          .filter(Boolean);
+        formData.append('inconsistentCnpjs', JSON.stringify(errCnpjs));
+      }
+
+      const res = await fetch(`${API_BASE_URL}/api/mesa-operacoes/operacoes/${opId}/corrigir-cnab-upload?format=json`, {
+        method: 'POST',
+        headers: getAuthHeaders(),
+        body: formData
+      });
+
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => ({}));
+        throw new Error(errJson.error || 'Erro ao processar o arquivo CNAB enviado.');
+      }
+
+      const data = await res.json();
+
+      // Download automático do arquivo CNAB corrigido
+      if (data.cnabBase64) {
+        const byteCharacters = atob(data.cnabBase64);
+        const byteNumbers = new Array(byteCharacters.length);
+        for (let i = 0; i < byteCharacters.length; i++) {
+          byteNumbers[i] = byteCharacters.charCodeAt(i);
+        }
+        const byteArray = new Uint8Array(byteNumbers);
+        const blob = new Blob([byteArray], { type: 'text/plain;charset=iso-8859-1' });
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = data.filename || `REM_OP_${opId}_CORRIGIDA.REM`;
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(a);
+      }
+
+      setUploadResultModal(data);
+    } catch (err: any) {
+      console.error('Erro ao processar upload do CNAB:', err);
+      alert(`Erro no upload da remessa: ${err.message}`);
+    } finally {
+      setUploadingCnab(false);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+    }
+  };
+
 
   // Filtro de busca textual
   const filteredOperacoes = useMemo(() => {
@@ -656,20 +721,39 @@ export const OperationsAnalysis: React.FC = () => {
                           </button>
                         </div>
 
-                        {/* Botão de Exportação de Remessa CNAB 400 Corrigida abaixo das exportações de XLSX */}
+                        {/* Botões de CNAB Corrigido: Importar Arquivo Original do Cedente ou Gerar Direto */}
                         <div className="oa-cnab-export-section">
-                          <button
-                            type="button"
-                            className="oa-btn-export-cnab"
-                            onClick={() => handleDownloadCnab(operationDetail.operacaoId)}
-                            disabled={downloadingCnab}
-                            title="Gerar e baixar arquivo CNAB 400 Remessa corrigido com todos os títulos da operação"
-                          >
-                            <FileCode size={18} />
-                            {downloadingCnab ? 'Gerando Remessa CNAB 400...' : 'Gerar Remessa CNAB 400 Corrigida (.rem)'}
-                          </button>
+                          <input
+                            type="file"
+                            ref={fileInputRef}
+                            style={{ display: 'none' }}
+                            accept=".txt,.rem"
+                            onChange={e => handleUploadCnab(e, operationDetail.operacaoId)}
+                          />
+                          <div className="oa-actions-dual-cnab">
+                            <button
+                              type="button"
+                              className="oa-btn-upload-cnab"
+                              onClick={() => fileInputRef.current?.click()}
+                              disabled={uploadingCnab}
+                              title="Subir o arquivo CNAB exato enviado pelo cliente (.txt/.rem) e ajustar pontualmente apenas os CEPs incorretos"
+                            >
+                              <Upload size={18} />
+                              {uploadingCnab ? 'Processando e Corrigindo CEPs...' : 'Importar CNAB Cedente e Corrigir CEPs (.txt / .rem)'}
+                            </button>
+                            <button
+                              type="button"
+                              className="oa-btn-export-cnab"
+                              onClick={() => handleDownloadCnab(operationDetail.operacaoId)}
+                              disabled={downloadingCnab}
+                              title="Gerar e baixar arquivo CNAB 400 Remessa corrigido com todos os títulos da operação"
+                            >
+                              <FileCode size={18} />
+                              {downloadingCnab ? 'Gerando Remessa...' : 'Gerar Remessa CNAB 400 Direto (.rem)'}
+                            </button>
+                          </div>
                           <span className="oa-cnab-desc-hint">
-                            Gera o arquivo de remessa UNLTD CNAB 400 contendo <strong>todos os títulos</strong> da operação ({operationDetail.totalTitulos} títulos), com os sacados corrigidos e validados via Receita Federal e Correios para envio imediato.
+                            <strong>Importar CNAB Cedente:</strong> Você importa exatamente o mesmo arquivo que o cliente enviou (.txt/.rem). O sistema lê linha a linha, preserva 100% dos dados originais (endereços, cessão Tipo 2, instruções Tipo 3, NF-e Tipo 4) e substitui <strong>estritamente as 8 posições dos CEPs inconsistentes</strong> pelo CEP oficial consultado na Receita Federal via CNPJ.
                           </span>
                         </div>
                       </div>
@@ -927,6 +1011,16 @@ export const OperationsAnalysis: React.FC = () => {
                     <FileCode size={16} />
                     {downloadingCnab ? 'Gerando Remessa...' : 'Gerar Remessa CNAB (.rem)'}
                   </button>
+                  <button
+                    type="button"
+                    className="oa-btn upload"
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={uploadingCnab}
+                    title="Importar arquivo CNAB do cedente e corrigir pontualmente os CEPs com erro"
+                  >
+                    <Upload size={16} />
+                    {uploadingCnab ? 'Processando CNAB...' : 'Importar CNAB e Corrigir (.txt / .rem)'}
+                  </button>
                 </>
               )}
               <button
@@ -1027,8 +1121,88 @@ export const OperationsAnalysis: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* ── MODAL DE RESULTADO DO UPLOAD DO CNAB ── */}
+      {uploadResultModal && (
+        <div className="oa-modal-overlay" style={{ zIndex: 1200 }} onClick={() => setUploadResultModal(null)}>
+          <div className="oa-modal-content glass" style={{ maxWidth: '900px', maxHeight: '88vh' }} onClick={e => e.stopPropagation()}>
+            <div className="oa-modal-header">
+              <div className="oa-modal-title-group">
+                <span className="oa-modal-badge" style={{ background: '#0284c7', color: '#fff' }}>CNAB PROCESSADO E AJUSTADO</span>
+                <h2>Remessa CNAB Corrigida a Partir do Arquivo Cedente</h2>
+              </div>
+              <button className="oa-modal-close-btn" onClick={() => setUploadResultModal(null)}>
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="oa-modal-body" style={{ padding: '20px' }}>
+              <div style={{
+                background: 'rgba(16, 185, 129, 0.1)',
+                border: '1px solid rgba(16, 185, 129, 0.3)',
+                borderRadius: '8px',
+                padding: '16px',
+                marginBottom: '20px'
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#34d399', fontWeight: 700, marginBottom: '6px' }}>
+                  <CheckCircle2 size={20} />
+                  <span>Download Concluído: {uploadResultModal.filename}</span>
+                </div>
+                <p style={{ color: '#cbd5e1', fontSize: '13px', margin: 0 }}>
+                  O arquivo foi lido linha a linha preservando 100% dos dados originais do cedente (endereços, cessão, instruções e NF-e). 
+                  Foram verificados <strong>{uploadResultModal.totalTitulos} títulos</strong> ({uploadResultModal.totalLinhas} linhas).
+                  Total de títulos com CEP substituído pelo oficial da Receita Federal: <strong>{uploadResultModal.totalCorrigidos}</strong>.
+                </p>
+              </div>
+
+              {uploadResultModal.detalhesCorrecoes?.length > 0 && (
+                <div>
+                  <h4 style={{ color: '#f8fafc', fontSize: '14px', marginBottom: '10px' }}>
+                    Relação de Sacados e CEPs Substituídos pelo Oficial do CNPJ ({uploadResultModal.detalhesCorrecoes.length} sacados):
+                  </h4>
+                  <div style={{ maxHeight: '380px', overflowY: 'auto', border: '1px solid #1e293b', borderRadius: '8px' }}>
+                    <table className="oa-table" style={{ fontSize: '12px' }}>
+                      <thead>
+                        <tr>
+                          <th>CNPJ</th>
+                          <th>Razão Social</th>
+                          <th>Endereço Original (Intacto)</th>
+                          <th style={{ textAlign: 'center' }}>CEP Anterior</th>
+                          <th style={{ textAlign: 'center' }}>Novo CEP Oficial</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {uploadResultModal.detalhesCorrecoes.map((item: any, idx: number) => (
+                          <tr key={idx} className="oa-row">
+                            <td><code>{item.doc}</code></td>
+                            <td>{item.nome}</td>
+                            <td>{item.endereco}</td>
+                            <td style={{ textAlign: 'center', color: '#f87171' }}>{item.oldCep}</td>
+                            <td style={{ textAlign: 'center', color: '#4ade80', fontWeight: 700 }}>{item.newCep}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="oa-modal-footer">
+              <button
+                type="button"
+                className="oa-btn primary"
+                onClick={() => setUploadResultModal(null)}
+              >
+                Concluir e Fechar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
 
 export default OperationsAnalysis;
+

@@ -4999,7 +4999,7 @@ registerConfirmationRoutes(app, {
 
 registerOperationsRoutes(app, {
   requireSession,
-  checkAccess: requirePermission('14.1'),
+  checkAccess: requirePermission('14.1', '14.2', '14'),
   unltdToken: UNLTD_TOKEN
 });
 

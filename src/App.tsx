@@ -33,6 +33,7 @@ import ConfirmationAnalise from './internal/modules/confirmation/ConfirmationAna
 import OverdueAnalysis from './internal/modules/cobranca/OverdueAnalysis';
 import LegalPaymentApproval from './internal/modules/legal/LegalPaymentApproval';
 import OperationsAnalysis from './internal/modules/operations/OperationsAnalysis';
+import ValidateCepsCnab from './internal/modules/operations/ValidateCepsCnab';
 import MonitorDashboard from './internal/modules/monitor/MonitorDashboard';
 import ProtectedRoute from './internal/core/ProtectedRoute';
 import InternalLayout from './internal/core/InternalLayout';
@@ -112,6 +113,7 @@ function App() {
               <Route path="/cobranca/analise-vencidos" element={<AccessRoute permission="12.1"><OverdueAnalysis /></AccessRoute>} />
               <Route path="/juridico/aprovacao-pagamentos" element={<AccessRoute permission="13.1"><LegalPaymentApproval /></AccessRoute>} />
               <Route path="/mesa-operacoes/analise" element={<AccessRoute permission="14.1"><OperationsAnalysis /></AccessRoute>} />
+              <Route path="/mesa-operacoes/validar-ceps" element={<AccessRoute permission="14.2"><ValidateCepsCnab /></AccessRoute>} />
               <Route path="/banco-de-dados" element={<AccessRoute permission="9"><DatabaseManagement /></AccessRoute>} />
               <Route path="/permissions" element={<AccessRoute masterOnly><Permissions /></AccessRoute>} />
               <Route path="/permissions/create-user" element={<AccessRoute masterOnly><CreateUser /></AccessRoute>} />
