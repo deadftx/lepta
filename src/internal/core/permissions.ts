@@ -70,7 +70,8 @@ export const permissionGroups: PermissionGroup[] = [
     name: 'Mesa de Operação',
     children: [
       { id: '14.1', name: 'Análise de Operação' },
-      { id: '14.2', name: 'Validar CEPs' }
+      { id: '14.2', name: 'Validar CEPs' },
+      { id: '14.3', name: 'Relatório Diário' }
     ]
   },
   { id: '9', name: 'Banco de Dados' },
@@ -84,7 +85,7 @@ const legacyChildren: Record<string, string[]> = {
   '10': ['10.1', '10.2'],
   '11': ['11.1', '11.2', '11.3'],
   '12': ['12.1'],
-  '14': ['14.1', '14.2']
+  '14': ['14.1', '14.2', '14.3']
 };
 
 export const allPermissionIds = permissionGroups.flatMap(group =>
@@ -107,6 +108,9 @@ export const hasPermission = (user: User | null, permissionId: string) => {
   const perms = normalizePermissions(user.permissions);
   if (perms.includes(permissionId)) return true;
   if (permissionId === '8.6' && (perms.includes('8.1') || perms.includes('8'))) return true;
+  // Herança e migração: 14.3 herda acessos de 10.1 / 10 / 14
+  if (permissionId === '14.3' && (perms.includes('10.1') || perms.includes('10') || perms.includes('14'))) return true;
+  if (permissionId === '10.1' && (perms.includes('14.3') || perms.includes('14') || perms.includes('10'))) return true;
 
   // 2. Fallback resiliente: verifica grupos cacheados no navegador
   try {
@@ -130,6 +134,8 @@ export const hasPermission = (user: User | null, permissionId: string) => {
             const groupPerms = normalizePermissions(g.permissions || []);
             if (groupPerms.includes(permissionId)) return true;
             if (permissionId === '8.6' && (groupPerms.includes('8.1') || groupPerms.includes('8'))) return true;
+            if (permissionId === '14.3' && (groupPerms.includes('10.1') || groupPerms.includes('10') || groupPerms.includes('14'))) return true;
+            if (permissionId === '10.1' && (groupPerms.includes('14.3') || groupPerms.includes('14') || groupPerms.includes('10'))) return true;
           }
         }
       }

@@ -4,6 +4,7 @@ import {
   getOperationDetails,
   generateSacadosInconsistentesExcel,
   generateTitulosInconsistentesExcel,
+  generateFullOperationExcel,
   diagnoseBitfinOperation,
   generateCorrectedCnab400,
   correctUploadedCnab,
@@ -175,6 +176,38 @@ export function registerOperationsRoutes(app, {
     } catch (err) {
       console.error(`Erro ao exportar XLSX da operação ${req.params.id}:`, err);
       return res.status(500).json({ error: `Erro ao exportar planilha: ${err.message}` });
+    }
+  });
+
+  // 3.1 Exportação em XLSX Completa da Operação (todos os dados, sacados, títulos, CEP e endereço - com ou sem erro)
+  app.get('/api/mesa-operacoes/operacoes/:id/exportar-completo-xlsx', requireSession, checkAccess, async (req, res) => {
+    try {
+      const token = getToken();
+      if (!token) {
+        return res.status(400).json({ error: 'Token UNLTD_API_TOKEN não configurado no servidor.' });
+      }
+
+      const operacaoId = req.params.id;
+      const { data } = req.query;
+
+      const details = await getOperationDetails({
+        token,
+        operacaoId,
+        date: data
+      });
+
+      const buffer = await generateFullOperationExcel({
+        operacao: details
+      });
+
+      const safeName = String(details.cedente?.nome || 'Operacao').replace(/[^a-zA-Z0-9]/g, '_').slice(0, 30);
+      const filename = `Operacao_${operacaoId}_Completa_${safeName}.xlsx`;
+      res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+      return res.send(Buffer.from(buffer));
+    } catch (err) {
+      console.error(`Erro ao exportar XLSX completo da operação ${req.params.id}:`, err);
+      return res.status(500).json({ error: `Erro ao exportar operação completa: ${err.message}` });
     }
   });
 

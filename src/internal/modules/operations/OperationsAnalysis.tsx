@@ -108,6 +108,7 @@ export const OperationsAnalysis: React.FC = () => {
   const [detailTab, setDetailTab] = useState<'inconsistencias' | 'todos_sacados' | 'titulos'>('inconsistencias');
   const [downloadingXlsx, setDownloadingXlsx] = useState<boolean>(false);
   const [downloadingTitulosXlsx, setDownloadingTitulosXlsx] = useState<boolean>(false);
+  const [downloadingFullXlsx, setDownloadingFullXlsx] = useState<boolean>(false);
   const [downloadingCnab, setDownloadingCnab] = useState<boolean>(false);
   const [downloadingSeparatedCnab, setDownloadingSeparatedCnab] = useState<'validos' | 'erros' | null>(null);
   const [uploadingCnab, setUploadingCnab] = useState<boolean>(false);
@@ -256,6 +257,36 @@ export const OperationsAnalysis: React.FC = () => {
       alert(`Erro no download da planilha de títulos: ${err.message}`);
     } finally {
       setDownloadingTitulosXlsx(false);
+    }
+  };
+
+  // Download da planilha Excel completa da operação (todos os dados, sacados, títulos, CEPs e endereços)
+  const handleDownloadFullOperationXlsx = async (opId: string) => {
+    setDownloadingFullXlsx(true);
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/mesa-operacoes/operacoes/${opId}/exportar-completo-xlsx?data=${dataFiltro}`, {
+        headers: getAuthHeaders()
+      });
+
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => ({}));
+        throw new Error(errJson.error || 'Erro ao gerar planilha completa da operação.');
+      }
+
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `Operacao_${opId}_Completa.xlsx`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+    } catch (err: any) {
+      console.error('Erro ao exportar XLSX completo:', err);
+      alert(`Erro no download da planilha completa: ${err.message}`);
+    } finally {
+      setDownloadingFullXlsx(false);
     }
   };
 
@@ -620,13 +651,27 @@ export const OperationsAnalysis: React.FC = () => {
                       </span>
                     </td>
                     <td style={{ textAlign: 'center' }}>
-                      <button
-                        className="oa-action-btn primary"
-                        onClick={() => handleOpenOperation(op.id)}
-                        title="Auditar sacados e inconsistências de endereço"
-                      >
-                        <Search size={14} /> Analisar
-                      </button>
+                      <div className="oa-action-group">
+                        <button
+                          className="oa-action-btn primary"
+                          onClick={() => handleOpenOperation(op.id)}
+                          title="Auditar sacados e inconsistências de endereço"
+                        >
+                          <Search size={14} /> Analisar
+                        </button>
+                        <button
+                          type="button"
+                          className="oa-action-btn-icon"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleDownloadFullOperationXlsx(op.id);
+                          }}
+                          disabled={downloadingFullXlsx}
+                          title="Exportar operação completa em planilha Excel (.xlsx)"
+                        >
+                          <FileSpreadsheet size={14} />
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -647,6 +692,20 @@ export const OperationsAnalysis: React.FC = () => {
                 <h2>Auditoria Cadastral de Sacados</h2>
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <button
+                  type="button"
+                  onClick={() => handleDownloadFullOperationXlsx(selectedOpId)}
+                  disabled={downloadingFullXlsx || detailLoading}
+                  className="oa-btn-export-full-modal"
+                  title="Exportar operação inteira em Excel (todos os sacados, títulos, CEPs e endereços)"
+                >
+                  {downloadingFullXlsx ? (
+                    <RefreshCw size={13} className="oa-spin" />
+                  ) : (
+                    <FileSpreadsheet size={13} />
+                  )}
+                  <span>{downloadingFullXlsx ? 'Exportando...' : 'Exportar Operação (.xlsx)'}</span>
+                </button>
                 <button
                   type="button"
                   onClick={() => handleDiagnose(selectedOpId)}
@@ -731,6 +790,16 @@ export const OperationsAnalysis: React.FC = () => {
                           <strong>{operationDetail.alertaBitfin.totalSacadosAfetados} sacado(s)</strong> com inconsistência de CEP nesta operação.
                         </span>
                         <div className="oa-btn-group-export">
+                          <button
+                            type="button"
+                            className="oa-btn-export-xlsx full"
+                            onClick={() => handleDownloadFullOperationXlsx(operationDetail.operacaoId)}
+                            disabled={downloadingFullXlsx}
+                            title="Exportar todos os sacados, títulos, CEPs e endereços da operação inteira em Excel"
+                          >
+                            {downloadingFullXlsx ? <RefreshCw size={16} className="oa-spin" /> : <FileSpreadsheet size={16} />}
+                            {downloadingFullXlsx ? 'Gerando...' : 'Exportar Operação Completa (.xlsx)'}
+                          </button>
                           <button
                             type="button"
                             className="oa-btn-export-xlsx"
@@ -822,11 +891,27 @@ export const OperationsAnalysis: React.FC = () => {
                     </div>
                   ) : (
                     <div className="oa-bitfin-success-card">
-                      <CheckCircle2 size={24} color="#10b981" />
-                      <div>
-                        <h4>Endereços de Todos os Sacados Verificados</h4>
-                        <p>Nenhum erro de CEP ou endereço pendente foi detectado nos sacados desta operação.</p>
+                      <div className="oa-bitfin-success-info">
+                        <CheckCircle2 size={24} color="#10b981" />
+                        <div>
+                          <h4>Endereços de Todos os Sacados Verificados</h4>
+                          <p>Nenhum erro de CEP ou endereço pendente foi detectado nos sacados desta operação.</p>
+                        </div>
                       </div>
+                      <button
+                        type="button"
+                        className="oa-btn-export-full-success"
+                        onClick={() => handleDownloadFullOperationXlsx(operationDetail.operacaoId)}
+                        disabled={downloadingFullXlsx}
+                        title="Exportar todos os sacados e títulos com endereços e CEPs completos em planilha Excel"
+                      >
+                        {downloadingFullXlsx ? (
+                          <RefreshCw size={15} className="oa-spin" />
+                        ) : (
+                          <FileSpreadsheet size={15} />
+                        )}
+                        <span>{downloadingFullXlsx ? 'Gerando Planilha...' : `Exportar Operação Completa (${operationDetail.todosSacados.length} Sacados / ${operationDetail.totalTitulos} Títulos)`}</span>
+                      </button>
                     </div>
                   )}
 
@@ -1043,6 +1128,18 @@ export const OperationsAnalysis: React.FC = () => {
 
             {/* Rodapé do Modal */}
             <div className="oa-modal-footer">
+              {operationDetail && (
+                <button
+                  type="button"
+                  className="oa-btn success"
+                  onClick={() => handleDownloadFullOperationXlsx(operationDetail.operacaoId)}
+                  disabled={downloadingFullXlsx}
+                  title="Exportar operação inteira com todos os sacados, títulos, CEPs e endereços em planilha Excel (.xlsx)"
+                >
+                  {downloadingFullXlsx ? <RefreshCw size={16} className="oa-spin" /> : <FileSpreadsheet size={16} />}
+                  <span>{downloadingFullXlsx ? 'Gerando Planilha...' : 'Exportar Operação Completa (.xlsx)'}</span>
+                </button>
+              )}
               {operationDetail && operationDetail.sacadosInconsistentes.length > 0 && (
                 <>
                   <button

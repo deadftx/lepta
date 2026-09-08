@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
-  ClipboardCheck, LayoutDashboard, TrendingUp, Layers,
-  Search, Users, DollarSign, RefreshCw, Calendar, Database, CheckCircle2, AlertCircle, X, FileText
+  LayoutDashboard, TrendingUp, Layers,
+  Search, Users, DollarSign, RefreshCw, Calendar, Database, CheckCircle2, AlertCircle, X, FileText, FileSpreadsheet
 } from 'lucide-react';
 import { API_BASE_URL, getAuthHeaders } from '../../../config/api';
 import { useAuth } from '../../core/AuthContext';
@@ -167,7 +167,7 @@ export const ConfirmationSystem: React.FC = () => {
         <div className="cs-title-group">
           <div>
             <h1 className="cs-title">
-              <ClipboardCheck size={26} color="#38bdf8" /> Sistema de Confirmação & FIDCs
+              <FileSpreadsheet size={26} color="#38bdf8" /> Relatório Diário & FIDCs
             </h1>
             <p className="cs-subtitle">
               Monitoramento diário de carteiras, subordinação de cotas, estoque de títulos e limites regulamentares.

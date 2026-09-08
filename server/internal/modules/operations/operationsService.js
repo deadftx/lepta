@@ -1756,6 +1756,464 @@ export async function generateTitulosInconsistentesExcel({ operacao, sacadosInco
 }
 
 /**
+ * Gera arquivo Excel (.xlsx) completo da operação inteira
+ * Contém todas as informações da operação, todos os sacados com CEP e endereço, e todos os títulos,
+ * independente de possuir erros ou não.
+ */
+export async function generateFullOperationExcel({ operacao }) {
+  const workbook = new ExcelJS.Workbook();
+  workbook.creator = 'LeptaSys - Mesa de Operações';
+  workbook.created = new Date();
+
+  // ── ABA 1: RESUMO EXECUTIVO DA OPERAÇÃO ──
+  const wsResumo = workbook.addWorksheet('Resumo da Operação', {
+    properties: { tabColor: { argb: 'FF0284C7' } }
+  });
+
+  wsResumo.mergeCells('A1:D1');
+  const title1 = wsResumo.getCell('A1');
+  title1.value = `LEPTASYS - AUDITORIA GERAL DA OPERAÇÃO #${operacao.operacaoId}`;
+  title1.font = { name: 'Calibri', size: 14, bold: true, color: { argb: 'FFFFFFFF' } };
+  title1.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF0F172A' } };
+  title1.alignment = { horizontal: 'center', vertical: 'middle' };
+  wsResumo.getRow(1).height = 32;
+
+  const cedenteTelefones = operacao.cedente?.telefones?.length ? operacao.cedente.telefones.join('; ') : 'Não informado';
+  const cedenteEmails = operacao.cedente?.emails?.length ? operacao.cedente.emails.join('; ') : 'Não informado';
+
+  const resumoDados = [
+    ['Nº da Operação', `#${operacao.operacaoId}`, 'Status da Operação', operacao.status || '-'],
+    ['Data de Cadastro', operacao.dataCadastro ? String(operacao.dataCadastro).substring(0, 10).split('-').reverse().join('/') : '-', 'Unidade Administrativa / Fundo', operacao.unidadeAdministrativa || '-'],
+    ['Razão Social Cedente', operacao.cedente?.nome || '-', 'CNPJ Cedente', operacao.cedente?.documento || '-'],
+    ['Telefone(s) Cedente', cedenteTelefones, 'E-mail(s) Cedente', cedenteEmails],
+    ['Gerente Responsável', operacao.gerente || '-', 'Auditoria Cadastral de CEP', operacao.alertaBitfin?.possuiInconsistencias ? 'Possui Inconsistências de CEP' : 'Endereços 100% Verificados'],
+    ['Total de Sacados', (operacao.todosSacados || []).length, 'Sacados com Erro de CEP', (operacao.sacadosInconsistentes || []).length],
+    ['Quantidade Total de Títulos', operacao.totalTitulos || 0, 'Impacto / Valor Retido', operacao.alertaBitfin?.valorAfetado || 0],
+    ['Valor Total da Operação', operacao.valorTotalOperacao || 0, 'Percentual Retido', `${(operacao.alertaBitfin?.percentualAfetado || 0).toFixed(2)}%`]
+  ];
+
+  resumoDados.forEach((r, idx) => {
+    const row = wsResumo.addRow(r);
+    row.height = 24;
+    const isEven = idx % 2 === 0;
+    row.eachCell((cell, colNumber) => {
+      if (colNumber === 1 || colNumber === 3) {
+        cell.font = { name: 'Calibri', size: 10, bold: true, color: { argb: 'FF1E293B' } };
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF1F5F9' } };
+      } else {
+        cell.font = { name: 'Calibri', size: 10 };
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: isEven ? 'FFFFFFFF' : 'FFF8FAFC' } };
+      }
+      cell.border = {
+        top: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+        bottom: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+        left: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+        right: { style: 'thin', color: { argb: 'FFE2E8F0' } }
+      };
+      if (colNumber === 2 && r[0] === 'Valor Total da Operação') {
+        cell.numFmt = 'R$ #,##0.00';
+        cell.font = { name: 'Calibri', size: 10, bold: true, color: { argb: 'FF0284C7' } };
+      }
+      if (colNumber === 4 && r[2] === 'Impacto / Valor Retido') {
+        cell.numFmt = 'R$ #,##0.00';
+        cell.font = { name: 'Calibri', size: 10, bold: true, color: { argb: (operacao.alertaBitfin?.valorAfetado > 0 ? 'FFBE123C' : 'FF10B981') } };
+      }
+    });
+  });
+
+  wsResumo.columns = [
+    { width: 28 },
+    { width: 40 },
+    { width: 30 },
+    { width: 40 }
+  ];
+
+  // ── ABA 2: TODOS OS SACADOS (COM CEP E ENDEREÇO) ──
+  const wsSacados = workbook.addWorksheet('Todos os Sacados', {
+    properties: { tabColor: { argb: 'FF10B981' } }
+  });
+
+  wsSacados.mergeCells('A1:K1');
+  const titleSacados = wsSacados.getCell('A1');
+  titleSacados.value = `RELAÇÃO COMPLETA DE SACADOS - OPERAÇÃO #${operacao.operacaoId} (${(operacao.todosSacados || []).length} SACADOS)`;
+  titleSacados.font = { name: 'Calibri', size: 13, bold: true, color: { argb: 'FFFFFFFF' } };
+  titleSacados.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF0F172A' } };
+  titleSacados.alignment = { horizontal: 'center', vertical: 'middle' };
+  wsSacados.getRow(1).height = 30;
+
+  const headerSacados = wsSacados.addRow([
+    'Nº Operação',
+    'Razão Social do Sacado',
+    'CNPJ / CPF Sacado',
+    'Status do Endereço / CEP',
+    'CEP Cadastrado',
+    'Sugestão Correios / Receita',
+    'Endereço Completo',
+    'Qtd Títulos',
+    'Valor Total (R$)',
+    'Telefone(s)',
+    'E-mail(s)'
+  ]);
+  headerSacados.height = 26;
+  headerSacados.eachCell(cell => {
+    cell.font = { name: 'Calibri', size: 11, bold: true, color: { argb: 'FFFFFFFF' } };
+    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF0284C7' } };
+    cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+    cell.border = {
+      top: { style: 'thin', color: { argb: 'FFCBD5E1' } },
+      bottom: { style: 'medium', color: { argb: 'FF0F172A' } }
+    };
+  });
+
+  let somaTitulosSacados = 0;
+  let somaValorSacados = 0;
+
+  (operacao.todosSacados || []).forEach((s, idx) => {
+    somaTitulosSacados += (s.qtdTitulos || 0);
+    somaValorSacados += (s.valorTotal || 0);
+    const isEven = idx % 2 === 0;
+
+    let statusTexto = s.isValido ? 'Verificado (Válido)' : (s.errorReason || 'Inconsistente');
+
+    const row = wsSacados.addRow([
+      operacao.operacaoId,
+      s.nome,
+      s.documento || '-',
+      statusTexto,
+      s.cep || s.rawCep || 'Não informado',
+      s.sugestaoCep || '-',
+      s.endereco || 'Não informado',
+      s.qtdTitulos || 0,
+      s.valorTotal || 0,
+      s.telefones?.length ? s.telefones.join('; ') : '-',
+      s.emails?.length ? s.emails.join('; ') : '-'
+    ]);
+
+    row.height = 22;
+    row.eachCell((cell, colNumber) => {
+      cell.font = { name: 'Calibri', size: 10 };
+      cell.fill = {
+        type: 'pattern',
+        pattern: 'solid',
+        fgColor: { argb: isEven ? 'FFFFFFFF' : 'FFF8FAFC' }
+      };
+      cell.border = {
+        bottom: { style: 'thin', color: { argb: 'FFE2E8F0' } }
+      };
+
+      if (colNumber === 4) {
+        if (s.isValido) {
+          cell.font = { name: 'Calibri', size: 10, color: { argb: 'FF059669' }, bold: true };
+        } else {
+          cell.font = { name: 'Calibri', size: 10, color: { argb: 'FFBE123C' }, bold: true };
+        }
+        cell.alignment = { horizontal: 'center', vertical: 'middle' };
+      } else if (colNumber === 5 || colNumber === 6) {
+        cell.alignment = { horizontal: 'center', vertical: 'middle' };
+      } else if (colNumber === 8) {
+        cell.alignment = { horizontal: 'center', vertical: 'middle' };
+      } else if (colNumber === 9) {
+        cell.numFmt = 'R$ #,##0.00';
+        cell.font = { name: 'Calibri', size: 10, bold: true, color: { argb: 'FF1E293B' } };
+        cell.alignment = { horizontal: 'right', vertical: 'middle' };
+      } else {
+        cell.alignment = { vertical: 'middle' };
+      }
+    });
+  });
+
+  // Linha totalizadora de sacados
+  const totalSacRow = wsSacados.addRow([
+    'TOTAL',
+    `Total de Sacados: ${(operacao.todosSacados || []).length}`,
+    '', '', '', '', '',
+    somaTitulosSacados,
+    somaValorSacados,
+    '', ''
+  ]);
+  totalSacRow.height = 26;
+  totalSacRow.eachCell((cell, colNumber) => {
+    cell.font = { name: 'Calibri', size: 11, bold: true, color: { argb: 'FFFFFFFF' } };
+    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF0F172A' } };
+    cell.alignment = { vertical: 'middle' };
+    if (colNumber === 8) {
+      cell.alignment = { horizontal: 'center', vertical: 'middle' };
+    }
+    if (colNumber === 9) {
+      cell.numFmt = 'R$ #,##0.00';
+      cell.alignment = { horizontal: 'right', vertical: 'middle' };
+    }
+  });
+
+  wsSacados.columns = [
+    { width: 14 }, // Nº Op
+    { width: 36 }, // Razão Social
+    { width: 20 }, // CNPJ / CPF
+    { width: 26 }, // Status CEP
+    { width: 16 }, // CEP
+    { width: 18 }, // Sugestão
+    { width: 46 }, // Endereço Completo
+    { width: 14 }, // Qtd Títulos
+    { width: 20 }, // Valor Total
+    { width: 28 }, // Telefones
+    { width: 32 }  // E-mails
+  ];
+
+  // ── ABA 3: TODOS OS TÍTULOS DA OPERAÇÃO ──
+  const wsTitulos = workbook.addWorksheet('Todos os Títulos', {
+    properties: { tabColor: { argb: 'FF6366F1' } }
+  });
+
+  wsTitulos.mergeCells('A1:L1');
+  const titleTitulos = wsTitulos.getCell('A1');
+  titleTitulos.value = `RELAÇÃO COMPLETA DE TÍTULOS - OPERAÇÃO #${operacao.operacaoId} (${(operacao.titulos || []).length || operacao.totalTitulos} TÍTULOS)`;
+  titleTitulos.font = { name: 'Calibri', size: 13, bold: true, color: { argb: 'FFFFFFFF' } };
+  titleTitulos.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF0F172A' } };
+  titleTitulos.alignment = { horizontal: 'center', vertical: 'middle' };
+  wsTitulos.getRow(1).height = 30;
+
+  const headerTitulos = wsTitulos.addRow([
+    'Nº Operação',
+    'ID Título',
+    'Nº Título / Doc',
+    'Razão Social do Sacado',
+    'CNPJ / CPF Sacado',
+    'CEP Sacado',
+    'Endereço Completo Sacado',
+    'Valor Nominal (R$)',
+    'Data de Vencimento',
+    'Situação / Status',
+    'Telefone Sacado',
+    'E-mail Sacado'
+  ]);
+  headerTitulos.height = 26;
+  headerTitulos.eachCell(cell => {
+    cell.font = { name: 'Calibri', size: 11, bold: true, color: { argb: 'FFFFFFFF' } };
+    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF4F46E5' } };
+    cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+    cell.border = {
+      top: { style: 'thin', color: { argb: 'FFCBD5E1' } },
+      bottom: { style: 'medium', color: { argb: 'FF0F172A' } }
+    };
+  });
+
+  // Mapeia dados complementares dos sacados para os títulos
+  const sacadoMapByDoc = new Map();
+  (operacao.todosSacados || []).forEach(s => {
+    if (s.documento) sacadoMapByDoc.set(String(s.documento).replace(/\D/g, ''), s);
+    if (s.nome) sacadoMapByDoc.set(String(s.nome).trim().toUpperCase(), s);
+  });
+
+  let somaValorTitulos = 0;
+  const titulosList = Array.isArray(operacao.titulos) && operacao.titulos.length > 0
+    ? operacao.titulos
+    : (operacao.todosSacados || []).flatMap(s => (s.titulos || []));
+
+  titulosList.forEach((rawT, idx) => {
+    const isEven = idx % 2 === 0;
+    const f = extractTituloFields(rawT, operacao.sacadosById);
+    const docClean = String(f.documento || '').replace(/\D/g, '');
+    const sacadoObj = sacadoMapByDoc.get(docClean) || sacadoMapByDoc.get(String(f.nome || '').trim().toUpperCase());
+
+    const valorNominal = Number(f.valor || rawT.valorNominal || rawT.valor || 0);
+    somaValorTitulos += valorNominal;
+
+    const cepFinal = sacadoObj?.cep || f.cep || rawT.cep || 'Não informado';
+    const enderecoFinal = sacadoObj?.endereco || f.endereco || 'Não informado';
+    const telefonesFinal = sacadoObj?.telefones?.length ? sacadoObj.telefones.join('; ') : '-';
+    const emailsFinal = sacadoObj?.emails?.length ? sacadoObj.emails.join('; ') : '-';
+    const situacaoFinal = rawT.situacao || rawT.status || rawT.fase || operacao.status || 'Ativo';
+
+    const row = wsTitulos.addRow([
+      operacao.operacaoId,
+      rawT.id || f.id || '-',
+      f.numero || rawT.numero || '-',
+      f.nome || sacadoObj?.nome || 'Sacado Não Identificado',
+      f.documento || sacadoObj?.documento || '-',
+      cepFinal,
+      enderecoFinal,
+      valorNominal,
+      f.vencimento ? String(f.vencimento).substring(0, 10).split('-').reverse().join('/') : '-',
+      situacaoFinal,
+      telefonesFinal,
+      emailsFinal
+    ]);
+
+    row.height = 22;
+    row.eachCell((cell, colNumber) => {
+      cell.font = { name: 'Calibri', size: 10 };
+      cell.fill = {
+        type: 'pattern',
+        pattern: 'solid',
+        fgColor: { argb: isEven ? 'FFFFFFFF' : 'FFF8FAFC' }
+      };
+      cell.border = {
+        bottom: { style: 'thin', color: { argb: 'FFE2E8F0' } }
+      };
+
+      if (colNumber === 8) {
+        cell.numFmt = 'R$ #,##0.00';
+        cell.font = { name: 'Calibri', size: 10, bold: true, color: { argb: 'FF1E293B' } };
+        cell.alignment = { horizontal: 'right', vertical: 'middle' };
+      } else if (colNumber === 2 || colNumber === 3 || colNumber === 6 || colNumber === 9 || colNumber === 10) {
+        cell.alignment = { horizontal: 'center', vertical: 'middle' };
+      } else {
+        cell.alignment = { vertical: 'middle' };
+      }
+    });
+  });
+
+  // Linha totalizadora de títulos
+  const totalTitRow = wsTitulos.addRow([
+    'TOTAL',
+    `Qtd: ${titulosList.length}`,
+    '', '', '', '', '',
+    somaValorTitulos,
+    '', '', '', ''
+  ]);
+  totalTitRow.height = 26;
+  totalTitRow.eachCell((cell, colNumber) => {
+    cell.font = { name: 'Calibri', size: 11, bold: true, color: { argb: 'FFFFFFFF' } };
+    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF0F172A' } };
+    cell.alignment = { vertical: 'middle' };
+    if (colNumber === 2) cell.alignment = { horizontal: 'center', vertical: 'middle' };
+    if (colNumber === 8) {
+      cell.numFmt = 'R$ #,##0.00';
+      cell.alignment = { horizontal: 'right', vertical: 'middle' };
+    }
+  });
+
+  wsTitulos.columns = [
+    { width: 14 }, // Nº Op
+    { width: 14 }, // ID Título
+    { width: 18 }, // Nº Doc
+    { width: 36 }, // Razão Social
+    { width: 20 }, // CNPJ / CPF
+    { width: 16 }, // CEP
+    { width: 46 }, // Endereço Completo
+    { width: 20 }, // Valor Nominal
+    { width: 18 }, // Vencimento
+    { width: 18 }, // Situação
+    { width: 26 }, // Telefones
+    { width: 30 }  // E-mails
+  ];
+
+  // ── ABA 4: SACADOS COM INCONSISTÊNCIA (SE HOUVER) ──
+  if (operacao.sacadosInconsistentes && operacao.sacadosInconsistentes.length > 0) {
+    const wsInconsistentes = workbook.addWorksheet('Sacados com Inconsistência', {
+      properties: { tabColor: { argb: 'FFE11D48' } }
+    });
+
+    wsInconsistentes.mergeCells('A1:K1');
+    const titleInc = wsInconsistentes.getCell('A1');
+    titleInc.value = `SACADOS COM INCONSISTÊNCIA DE CEP / ENDEREÇO - OPERAÇÃO #${operacao.operacaoId}`;
+    titleInc.font = { name: 'Calibri', size: 13, bold: true, color: { argb: 'FFFFFFFF' } };
+    titleInc.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFBE123C' } };
+    titleInc.alignment = { horizontal: 'center', vertical: 'middle' };
+    wsInconsistentes.getRow(1).height = 30;
+
+    const headerInc = wsInconsistentes.addRow([
+      'Nº Operação',
+      'Razão Social do Sacado',
+      'CNPJ / CPF Sacado',
+      'CEP Atual Cadastrado',
+      'Diagnóstico do Erro',
+      'Sugestão de Correção',
+      'Endereço Completo',
+      'Qtd Títulos',
+      'Valor Retido (R$)',
+      'Telefone Sacado',
+      'E-mail Sacado'
+    ]);
+    headerInc.height = 26;
+    headerInc.eachCell(cell => {
+      cell.font = { name: 'Calibri', size: 11, bold: true, color: { argb: 'FFFFFFFF' } };
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF9F1239' } };
+      cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+      cell.border = {
+        top: { style: 'thin', color: { argb: 'FFCBD5E1' } },
+        bottom: { style: 'medium', color: { argb: 'FF0F172A' } }
+      };
+    });
+
+    operacao.sacadosInconsistentes.forEach((s, idx) => {
+      const isEven = idx % 2 === 0;
+      const row = wsInconsistentes.addRow([
+        operacao.operacaoId,
+        s.nome,
+        s.documento || '-',
+        s.cep || s.rawCep || 'Não informado',
+        s.errorReason || 'Inconsistente',
+        s.sugestaoCep || '-',
+        s.endereco || 'Não informado',
+        s.qtdTitulos || 0,
+        s.valorTotal || 0,
+        s.telefones?.length ? s.telefones.join('; ') : '-',
+        s.emails?.length ? s.emails.join('; ') : '-'
+      ]);
+
+      row.height = 22;
+      row.eachCell((cell, colNumber) => {
+        cell.font = { name: 'Calibri', size: 10 };
+        cell.fill = {
+          type: 'pattern',
+          pattern: 'solid',
+          fgColor: { argb: isEven ? 'FFFFFFFF' : 'FFF8FAFC' }
+        };
+        cell.border = {
+          bottom: { style: 'thin', color: { argb: 'FFE2E8F0' } }
+        };
+        if (colNumber === 9) {
+          cell.numFmt = 'R$ #,##0.00';
+          cell.font = { name: 'Calibri', size: 10, bold: true, color: { argb: 'FFBE123C' } };
+          cell.alignment = { horizontal: 'right', vertical: 'middle' };
+        } else if (colNumber === 4 || colNumber === 6 || colNumber === 8) {
+          cell.alignment = { horizontal: 'center', vertical: 'middle' };
+        } else {
+          cell.alignment = { vertical: 'middle' };
+        }
+      });
+    });
+
+    const totalIncRow = wsInconsistentes.addRow([
+      'TOTAL',
+      `Sacados Afetados: ${operacao.sacadosInconsistentes.length}`,
+      '', '', '', '', '',
+      operacao.sacadosInconsistentes.reduce((acc, s) => acc + (s.qtdTitulos || 0), 0),
+      operacao.alertaBitfin?.valorAfetado || 0,
+      '', ''
+    ]);
+    totalIncRow.height = 26;
+    totalIncRow.eachCell((cell, colNumber) => {
+      cell.font = { name: 'Calibri', size: 11, bold: true, color: { argb: 'FFFFFFFF' } };
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF0F172A' } };
+      cell.alignment = { vertical: 'middle' };
+      if (colNumber === 8) cell.alignment = { horizontal: 'center', vertical: 'middle' };
+      if (colNumber === 9) {
+        cell.numFmt = 'R$ #,##0.00';
+        cell.alignment = { horizontal: 'right', vertical: 'middle' };
+      }
+    });
+
+    wsInconsistentes.columns = [
+      { width: 14 },
+      { width: 36 },
+      { width: 20 },
+      { width: 18 },
+      { width: 34 },
+      { width: 18 },
+      { width: 44 },
+      { width: 14 },
+      { width: 20 },
+      { width: 28 },
+      { width: 32 }
+    ];
+  }
+
+  return await workbook.xlsx.writeBuffer();
+}
+
+/**
  * Realiza varredura investigativa profunda na API BitFin para localizar os títulos e dados da operação
  */
 export async function diagnoseBitfinOperation(operacaoId, token) {

@@ -1,11 +1,21 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import {
   Search, Calendar, Download, RefreshCw, Layers, DollarSign,
   FileSpreadsheet, Share2, Copy, Check, ExternalLink,
-  Building2, ArrowUpDown
+  Building2, ArrowUpDown, UserX, Trash2, Users, Save, CheckCircle2, AlertCircle, X
 } from 'lucide-react';
 import { API_BASE_URL, getAuthHeaders } from '../../../config/api';
 import './ConfirmationAnalise.css';
+
+export interface NaoCobravelItem {
+  id: string;
+  tipo: 'CEDENTE' | 'SACADO';
+  documento: string;
+  documento_formatado?: string;
+  nome: string;
+  created_at?: string;
+  created_by?: string;
+}
 
 interface TituloRow {
   id: string | number;
@@ -78,6 +88,38 @@ export const ConfirmationAnalise: React.FC = () => {
   const [copied, setCopied] = useState<boolean>(false);
   const [shareFundo, setShareFundo] = useState<'AMBOS' | 'MULTISETORIAL' | 'SPECIAL'>('AMBOS');
 
+  // ── MODAL CLIENTES NÃO COBRÁVEIS ──
+  const [isNaoCobraveisModalOpen, setIsNaoCobraveisModalOpen] = useState<boolean>(false);
+  const [activeNaoCobravelTab, setActiveNaoCobravelTab] = useState<'CEDENTE' | 'SACADO'>('CEDENTE');
+  const [naoCobraveisList, setNaoCobraveisList] = useState<NaoCobravelItem[]>([]);
+  const [searchNaoCobravel, setSearchNaoCobravel] = useState<string>('');
+  const [autocompleteResults, setAutocompleteResults] = useState<NaoCobravelItem[]>([]);
+  const [isSearchingAutocomplete, setIsSearchingAutocomplete] = useState<boolean>(false);
+  const [isSavingNaoCobraveis, setIsSavingNaoCobraveis] = useState<boolean>(false);
+  const [saveStatus, setSaveStatus] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+  const autocompleteDropdownRef = useRef<HTMLDivElement>(null);
+
+  // Carrega lista de clientes não cobráveis salvos no SQLite
+  const fetchNaoCobraveis = useCallback(async () => {
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/confirmacao/analise/nao-cobraveis`, {
+        headers: getAuthHeaders()
+      });
+      if (res.ok) {
+        const json = await res.json();
+        if (Array.isArray(json.items)) {
+          setNaoCobraveisList(json.items);
+        }
+      }
+    } catch (err) {
+      console.warn('Aviso ao carregar clientes não cobráveis:', err);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchNaoCobraveis();
+  }, [fetchNaoCobraveis]);
+
   // Consulta à API UNLTD
   const handleConsultar = useCallback(async () => {
     setLoading(true);
@@ -119,6 +161,119 @@ export const ConfirmationAnalise: React.FC = () => {
     handleConsultar();
   }, [handleConsultar]);
 
+  // Autocomplete com debounce ao digitar na busca do modal
+  useEffect(() => {
+    const term = searchNaoCobravel.trim();
+    if (term.length < 2) {
+      setAutocompleteResults([]);
+      setIsSearchingAutocomplete(false);
+      return;
+    }
+
+    const timer = setTimeout(async () => {
+      setIsSearchingAutocomplete(true);
+      try {
+        const res = await fetch(
+          `${API_BASE_URL}/api/confirmacao/analise/buscar-clientes?tipo=${activeNaoCobravelTab}&q=${encodeURIComponent(term)}`,
+          { headers: getAuthHeaders() }
+        );
+        if (res.ok) {
+          const json = await res.json();
+          setAutocompleteResults(Array.isArray(json.results) ? json.results : []);
+        } else {
+          setAutocompleteResults([]);
+        }
+      } catch (err) {
+        console.warn('Erro na busca de autocomplete:', err);
+        setAutocompleteResults([]);
+      } finally {
+        setIsSearchingAutocomplete(false);
+      }
+    }, 250);
+
+    return () => clearTimeout(timer);
+  }, [searchNaoCobravel, activeNaoCobravelTab]);
+
+  // Adicionar item à lista
+  const handleAddNaoCobravel = (item: NaoCobravelItem) => {
+    const cleanDoc = item.documento.replace(/\D/g, '');
+    const alreadyExists = naoCobraveisList.some(
+      x => x.tipo === item.tipo && x.documento.replace(/\D/g, '') === cleanDoc
+    );
+
+    if (!alreadyExists) {
+      setNaoCobraveisList(prev => [...prev, item]);
+    }
+    setSearchNaoCobravel('');
+    setAutocompleteResults([]);
+  };
+
+  // Remover item da lista
+  const handleRemoveNaoCobravel = (itemToRemove: NaoCobravelItem) => {
+    setNaoCobraveisList(prev =>
+      prev.filter(x => !(x.tipo === itemToRemove.tipo && x.documento === itemToRemove.documento))
+    );
+  };
+
+  // Salvar no SQLite via API
+  const handleSaveNaoCobraveis = async () => {
+    setIsSavingNaoCobraveis(true);
+    setSaveStatus(null);
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/confirmacao/analise/nao-cobraveis`, {
+        method: 'POST',
+        headers: {
+          ...getAuthHeaders(),
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ items: naoCobraveisList })
+      });
+
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => ({}));
+        throw new Error(errJson.error || `Erro HTTP ${res.status}`);
+      }
+
+      const json = await res.json();
+      if (Array.isArray(json.items)) {
+        setNaoCobraveisList(json.items);
+      }
+
+      setSaveStatus({
+        type: 'success',
+        message: 'Clientes não cobráveis salvos com sucesso no banco de dados!'
+      });
+
+      // Recarrega os títulos da página imediatamente para aplicar a isenção
+      handleConsultar();
+
+      setTimeout(() => {
+        setSaveStatus(null);
+      }, 4000);
+    } catch (err: any) {
+      console.error('Erro ao salvar não cobráveis:', err);
+      setSaveStatus({
+        type: 'error',
+        message: err.message || 'Erro ao persistir dados no banco.'
+      });
+    } finally {
+      setIsSavingNaoCobraveis(false);
+    }
+  };
+
+  // Itens filtrados para a aba ativa no modal
+  const activeTabItems = useMemo(() => {
+    return naoCobraveisList.filter(item => item.tipo === activeNaoCobravelTab);
+  }, [naoCobraveisList, activeNaoCobravelTab]);
+
+  const countCedentes = useMemo(() => {
+    return naoCobraveisList.filter(x => x.tipo === 'CEDENTE').length;
+  }, [naoCobraveisList]);
+
+  const countSacados = useMemo(() => {
+    return naoCobraveisList.filter(x => x.tipo === 'SACADO').length;
+  }, [naoCobraveisList]);
+
   // Lista única de gerentes e situações para os selects
   const gerentesList = useMemo(() => {
     const s = new Set<string>();
@@ -132,9 +287,35 @@ export const ConfirmationAnalise: React.FC = () => {
     return Array.from(s).sort();
   }, [titulos]);
 
-  // Aplicação dos filtros
+  // Aplicação dos filtros na tela (com isenção de clientes não cobráveis)
   const filteredTitulos = useMemo(() => {
+    // Sets para isenção estrita
+    const exemptCedDocs = new Set(
+      naoCobraveisList.filter(x => x.tipo === 'CEDENTE').map(x => x.documento.replace(/\D/g, ''))
+    );
+    const exemptCedNames = new Set(
+      naoCobraveisList.filter(x => x.tipo === 'CEDENTE').map(x => x.nome.trim().toLowerCase())
+    );
+    const exemptSacDocs = new Set(
+      naoCobraveisList.filter(x => x.tipo === 'SACADO').map(x => x.documento.replace(/\D/g, ''))
+    );
+    const exemptSacNames = new Set(
+      naoCobraveisList.filter(x => x.tipo === 'SACADO').map(x => x.nome.trim().toLowerCase())
+    );
+
     return titulos.filter(t => {
+      // 1. ISENÇÃO: Descarrega se pertencer a um Cedente ou Sacado Não Cobrável
+      const cedDoc = String(t.documentoCliente || '').replace(/\D/g, '');
+      const sacDoc = String(t.documentoSacado || '').replace(/\D/g, '');
+      const cedName = String(t.cliente || '').trim().toLowerCase();
+      const sacName = String(t.sacado || '').trim().toLowerCase();
+
+      if (cedDoc && exemptCedDocs.has(cedDoc)) return false;
+      if (cedName && exemptCedNames.has(cedName)) return false;
+      if (sacDoc && exemptSacDocs.has(sacDoc)) return false;
+      if (sacName && exemptSacNames.has(sacName)) return false;
+
+      // 2. Filtros interativos da tela
       if (filtroFundo !== 'AMBOS' && t.fundoTipo !== filtroFundo) return false;
       if (filtroSituacao !== 'TODAS' && t.situacao !== filtroSituacao) return false;
       if (filtroGerente !== 'TODOS' && t.gerente !== filtroGerente) return false;
@@ -151,7 +332,7 @@ export const ConfirmationAnalise: React.FC = () => {
       }
       return true;
     });
-  }, [titulos, filtroFundo, filtroSituacao, filtroGerente, searchTerm]);
+  }, [titulos, filtroFundo, filtroSituacao, filtroGerente, searchTerm, naoCobraveisList]);
 
   // Ordenação
   const sortedTitulos = useMemo(() => {
@@ -487,6 +668,18 @@ export const ConfirmationAnalise: React.FC = () => {
 
         {/* Botões de Ações e Exportações */}
         <div className="ca-export-group">
+          {/* Botão Clientes Não Cobráveis ao lado esquerdo do exportar CSV */}
+          <button
+            className="ca-btn-secondary ca-btn-nao-cobraveis"
+            onClick={() => {
+              setIsNaoCobraveisModalOpen(true);
+              fetchNaoCobraveis();
+            }}
+            title="Configurar Cedentes e Sacados não cobráveis (isentos dessa tela e exportações)"
+          >
+            <UserX size={14} color="#f97316" /> Clientes Não Cobráveis
+          </button>
+
           <button
             className="ca-btn-secondary"
             onClick={() => handleExportCsv(filtroFundo)}
@@ -695,8 +888,224 @@ export const ConfirmationAnalise: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* ── MODAL CLIENTES NÃO COBRÁVEIS ── */}
+      {isNaoCobraveisModalOpen && (
+        <div className="ca-modal-overlay" onClick={() => setIsNaoCobraveisModalOpen(false)}>
+          <div className="ca-modal-card ca-modal-nao-cobraveis" onClick={e => e.stopPropagation()}>
+            {/* Header do Modal */}
+            <div className="ca-nc-header">
+              <div className="ca-nc-header-title">
+                <div className="ca-nc-icon-wrapper">
+                  <UserX size={22} color="#f97316" />
+                </div>
+                <div>
+                  <h3 className="ca-nc-title">Clientes Não Cobráveis</h3>
+                  <p className="ca-nc-subtitle">
+                    Cedentes e Sacados configurados aqui são isentos de cobrança e excluídos de todos os relatórios, exportações e métricas desta tela.
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                className="ca-nc-close-btn"
+                onClick={() => setIsNaoCobraveisModalOpen(false)}
+                title="Fechar modal"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Abas Horizontais: CEDENTE e SACADO */}
+            <div className="ca-nc-tabs">
+              <button
+                type="button"
+                className={`ca-nc-tab-btn ${activeNaoCobravelTab === 'CEDENTE' ? 'active' : ''}`}
+                onClick={() => {
+                  setActiveNaoCobravelTab('CEDENTE');
+                  setSearchNaoCobravel('');
+                  setAutocompleteResults([]);
+                }}
+              >
+                <Building2 size={16} />
+                <span>CEDENTE</span>
+                <span className="ca-nc-badge">{countCedentes}</span>
+              </button>
+
+              <button
+                type="button"
+                className={`ca-nc-tab-btn ${activeNaoCobravelTab === 'SACADO' ? 'active' : ''}`}
+                onClick={() => {
+                  setActiveNaoCobravelTab('SACADO');
+                  setSearchNaoCobravel('');
+                  setAutocompleteResults([]);
+                }}
+              >
+                <Users size={16} />
+                <span>SACADO</span>
+                <span className="ca-nc-badge">{countSacados}</span>
+              </button>
+            </div>
+
+            {/* Campo de Busca com Autocomplete da API do BitFin */}
+            <div className="ca-nc-search-box" ref={autocompleteDropdownRef}>
+              <div className="ca-nc-input-wrapper">
+                <Search size={16} color="#94a3b8" className="ca-nc-search-icon" />
+                <input
+                  type="text"
+                  className="ca-nc-search-input"
+                  placeholder={
+                    activeNaoCobravelTab === 'CEDENTE'
+                      ? 'Buscar Cedente por Nome ou CNPJ para isenção...'
+                      : 'Buscar Sacado por Nome ou CNPJ para isenção...'
+                  }
+                  value={searchNaoCobravel}
+                  onChange={e => setSearchNaoCobravel(e.target.value)}
+                  autoComplete="off"
+                />
+                {isSearchingAutocomplete && (
+                  <RefreshCw size={14} className="pwc-spinner ca-nc-spinner" color="#38bdf8" />
+                )}
+                {searchNaoCobravel && (
+                  <button
+                    type="button"
+                    className="ca-nc-clear-search"
+                    onClick={() => {
+                      setSearchNaoCobravel('');
+                      setAutocompleteResults([]);
+                    }}
+                    title="Limpar busca"
+                  >
+                    <X size={14} />
+                  </button>
+                )}
+              </div>
+
+              {/* Dropdown de Autocomplete */}
+              {autocompleteResults.length > 0 && (
+                <div className="ca-nc-autocomplete-dropdown">
+                  <div className="ca-nc-autocomplete-header">
+                    <span>Resultados da API ({autocompleteResults.length}):</span>
+                  </div>
+                  <div className="ca-nc-autocomplete-list">
+                    {autocompleteResults.map(item => {
+                      const cleanDoc = item.documento.replace(/\D/g, '');
+                      const isAdded = naoCobraveisList.some(
+                        x => x.tipo === item.tipo && x.documento.replace(/\D/g, '') === cleanDoc
+                      );
+                      return (
+                        <div
+                          key={item.id || `${item.tipo}_${item.documento}`}
+                          className={`ca-nc-autocomplete-item ${isAdded ? 'added' : ''}`}
+                          onClick={() => handleAddNaoCobravel(item)}
+                        >
+                          <div className="ca-nc-item-info">
+                            <span className="ca-nc-item-name">{item.nome}</span>
+                            <span className="ca-nc-item-doc">
+                              CNPJ/CPF: {item.documento_formatado || item.documento}
+                            </span>
+                          </div>
+                          {isAdded ? (
+                            <span className="ca-nc-already-badge">Já Adicionado</span>
+                          ) : (
+                            <button type="button" className="ca-nc-add-btn">
+                              + Adicionar
+                            </button>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Lista dos Clientes Não Cobráveis Selecionados */}
+            <div className="ca-nc-list-container">
+              <div className="ca-nc-list-header">
+                <span>
+                  {activeNaoCobravelTab === 'CEDENTE' ? 'Cedentes' : 'Sacados'} Selecionados ({activeTabItems.length})
+                </span>
+                <span className="ca-nc-tip">Clique na lixeira ao lado para excluir</span>
+              </div>
+
+              <div className="ca-nc-cards-list">
+                {activeTabItems.length === 0 ? (
+                  <div className="ca-nc-empty-state">
+                    <UserX size={32} color="#64748b" />
+                    <p>Nenhum {activeNaoCobravelTab.toLowerCase()} na lista de não cobráveis.</p>
+                    <small>Digite o nome ou CNPJ acima para buscar na API e selecionar.</small>
+                  </div>
+                ) : (
+                  activeTabItems.map(item => (
+                    <div key={item.id || `${item.tipo}_${item.documento}`} className="ca-nc-card">
+                      <div className="ca-nc-card-left">
+                        {item.tipo === 'CEDENTE' ? (
+                          <Building2 size={18} color="#38bdf8" />
+                        ) : (
+                          <Users size={18} color="#fbbf24" />
+                        )}
+                        <div className="ca-nc-card-texts">
+                          <span className="ca-nc-card-name" title={item.nome}>{item.nome}</span>
+                          <span className="ca-nc-card-doc">
+                            {item.documento_formatado || item.documento}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Ícone de Lixinho para exclusão */}
+                      <button
+                        type="button"
+                        className="ca-nc-trash-btn"
+                        onClick={() => handleRemoveNaoCobravel(item)}
+                        title={`Excluir ${item.nome} da lista`}
+                      >
+                        <Trash2 size={16} />
+                      </button>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+
+            {/* Mensagem de Feedback de Salvamento */}
+            {saveStatus && (
+              <div className={`ca-nc-feedback-box ${saveStatus.type}`}>
+                {saveStatus.type === 'success' ? (
+                  <CheckCircle2 size={16} color="#4ade80" />
+                ) : (
+                  <AlertCircle size={16} color="#ef4444" />
+                )}
+                <span>{saveStatus.message}</span>
+              </div>
+            )}
+
+            {/* Rodapé com botão Laranja de SALVAR */}
+            <div className="ca-nc-footer">
+              <button
+                type="button"
+                className="ca-btn-secondary"
+                onClick={() => setIsNaoCobraveisModalOpen(false)}
+              >
+                Fechar
+              </button>
+
+              <button
+                type="button"
+                className="ca-btn-save-orange"
+                onClick={handleSaveNaoCobraveis}
+                disabled={isSavingNaoCobraveis}
+              >
+                <Save size={16} />
+                {isSavingNaoCobraveis ? 'Salvando no Banco...' : 'Salvar Clientes Não Cobráveis'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
 
 export default ConfirmationAnalise;
+

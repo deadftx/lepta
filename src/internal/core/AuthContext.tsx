@@ -276,6 +276,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         if (!isCancelled) {
           localStorage.removeItem('lepta_user');
           localStorage.removeItem('lepta_auth_token');
+          setUser(null);
+          setIsAuthenticated(false);
         }
       } finally {
         if (!isCancelled) setIsLoading(false);

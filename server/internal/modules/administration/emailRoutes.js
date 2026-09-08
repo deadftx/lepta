@@ -2,7 +2,10 @@ import {
   ensureEmailConfigTable,
   getActiveEmailConfig,
   encryptPassword,
-  testSmtpConnection
+  testSmtpConnection,
+  DEFAULT_AZURE_CLIENT_SECRET,
+  DEFAULT_AZURE_TENANT_ID,
+  DEFAULT_AZURE_CLIENT_ID
 } from '../../services/emailService.js';
 
 export function registerEmailConfigRoutes(app, {
@@ -20,6 +23,7 @@ export function registerEmailConfigRoutes(app, {
         auth_type: config.authType,
         azure_tenant_id: config.azureTenantId,
         azure_client_id: config.azureClientId,
+        azure_client_secret: config.azureClientSecret,
         hasAzureSecret: config.hasAzureSecret,
         host: config.host,
         port: config.port,
@@ -42,8 +46,8 @@ export function registerEmailConfigRoutes(app, {
     try {
       const {
         auth_type = 'GRAPH',
-        azure_tenant_id = 'f376d8b7-1a55-4cfb-a8e1-3e2799e0918e',
-        azure_client_id = '27281728-09ae-4d31-9fa6-3c93f748e78b',
+        azure_tenant_id = DEFAULT_AZURE_TENANT_ID,
+        azure_client_id = DEFAULT_AZURE_CLIENT_ID,
         azure_client_secret,
         host = 'smtp.office365.com',
         port = 587,

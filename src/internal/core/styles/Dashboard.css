@@ -23,7 +23,7 @@
     top: 0;
     left: 0;
     height: 100vh;
-    width: 14px;
+    width: 21px;
     background: linear-gradient(180deg, #1e293b 0%, #0f172a 100%);
     border-right: 2px solid rgba(56, 189, 248, 0.5);
     box-shadow: 2px 0 12px rgba(0, 0, 0, 0.5), 0 0 10px rgba(56, 189, 248, 0.25);
@@ -38,10 +38,10 @@
     content: '';
     position: absolute;
     top: 50%;
-    left: 3px;
+    left: 6px;
     transform: translateY(-50%);
-    width: 6px;
-    height: 48px;
+    width: 9px;
+    height: 52px;
     background: linear-gradient(180deg, #38bdf8 0%, #0284c7 100%);
     border-radius: 999px;
     box-shadow: 0 0 10px rgba(56, 189, 248, 0.7);
@@ -81,8 +81,8 @@
 
   /* Conteúdo Principal aproveita todo o espaço da tela */
   .internal-content {
-    margin-left: 14px;
-    width: calc(100vw - 14px);
+    margin-left: 21px;
+    width: calc(100vw - 21px);
     flex-grow: 1;
     min-width: 0;
   }

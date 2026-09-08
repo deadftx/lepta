@@ -1,9 +1,11 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useLocation, useSearchParams } from 'react-router-dom';
-import { Lock, User, ArrowRight, AlertCircle, CheckCircle2, KeyRound, Mail, ArrowLeft, LogOut } from 'lucide-react';
+import { Lock, User, ArrowRight, AlertCircle, CheckCircle2, KeyRound, Mail, ArrowLeft, LogOut, RefreshCw } from 'lucide-react';
 import { useAuth } from '../internal/core/AuthContext';
 import { API_BASE_URL } from '../config/api';
 import { authenticateWithMicrosoft } from '../config/msalConfig';
+import { checkServerVersion } from '../internal/core/version/versionService';
+import { UpdateRequiredModal } from '../internal/core/version/UpdateRequiredModal';
 import './Login.css';
 
 const MicrosoftIcon = () => (
@@ -55,6 +57,11 @@ const Login = () => {
   const [recoveryPassword, setRecoveryPassword] = useState('');
   const [recoveryError, setRecoveryError] = useState('');
 
+  const [continueChecking, setContinueChecking] = useState(false);
+  const [showUpdateModal, setShowUpdateModal] = useState(false);
+  const [updateModalServerCommit, setUpdateModalServerCommit] = useState('');
+  const [updateModalReason, setUpdateModalReason] = useState('commit_mismatch');
+
   const navigateToDestination = () => {
     const fromState = (location.state as any)?.from;
     let targetUrl = '/dashboard';
@@ -64,6 +71,49 @@ const Login = () => {
       targetUrl = searchParams.get('redirect')!;
     }
     navigate(targetUrl, { replace: true });
+  };
+
+  const handleContinue = async () => {
+    setContinueChecking(true);
+    try {
+      // 1. Checa se o commit do servidor é diferente do bundle do cliente
+      const versionResult = await checkServerVersion();
+      if (versionResult.updateAvailable) {
+        setUpdateModalServerCommit(versionResult.serverCommit);
+        setUpdateModalReason('commit_mismatch');
+        setShowUpdateModal(true);
+        setContinueChecking(false);
+        return;
+      }
+
+      // 2. Checa se a sessão do usuário ainda é válida no backend
+      const token = localStorage.getItem('lepta_auth_token');
+      if (!token) {
+        logout();
+        setContinueChecking(false);
+        return;
+      }
+
+      const res = await fetch(`${API_BASE_URL}/api/auth/me`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+
+      if (!res.ok) {
+        setUpdateModalServerCommit(versionResult.serverCommit || 'nova versão');
+        setUpdateModalReason('session_expired_deploy');
+        setShowUpdateModal(true);
+        setContinueChecking(false);
+        return;
+      }
+
+      // Sessão e versão íntegras: navega normalmente ao destino
+      navigateToDestination();
+    } catch {
+      // Em caso de falha de conexão temporária, tenta navegar para não bloquear o usuário
+      navigateToDestination();
+    } finally {
+      setContinueChecking(false);
+    }
   };
 
   const handleLogin = async (e: React.FormEvent) => {
@@ -292,11 +342,21 @@ const Login = () => {
               <button
                 type="button"
                 className="btn-primary login-submit"
-                onClick={() => navigateToDestination()}
+                onClick={handleContinue}
+                disabled={continueChecking}
                 style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
               >
-                <ArrowRight size={18} />
-                CONTINUAR NO SISTEMA
+                {continueChecking ? (
+                  <>
+                    <RefreshCw className="spin" size={18} />
+                    VERIFICANDO...
+                  </>
+                ) : (
+                  <>
+                    <ArrowRight size={18} />
+                    CONTINUAR NO SISTEMA
+                  </>
+                )}
               </button>
 
               <button
@@ -527,6 +587,15 @@ const Login = () => {
           </>
         )}
       </div>
+      <UpdateRequiredModal
+        isOpen={showUpdateModal}
+        serverCommit={updateModalServerCommit}
+        reason={updateModalReason}
+        onConfirm={() => {
+          logout();
+          setShowUpdateModal(false);
+        }}
+      />
     </div>
   );
 };

@@ -93,6 +93,19 @@
   color: #ffffff;
 }
 
+.oa-btn.success {
+  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+  color: #ffffff;
+  box-shadow: 0 2px 10px rgba(16, 185, 129, 0.35);
+  border: none;
+}
+
+.oa-btn.success:hover:not(:disabled) {
+  transform: translateY(-1px);
+  filter: brightness(1.1);
+  box-shadow: 0 4px 14px rgba(16, 185, 129, 0.45);
+}
+
 .oa-btn:disabled {
   opacity: 0.6;
   cursor: not-allowed;
@@ -601,6 +614,16 @@
   filter: brightness(1.1);
 }
 
+.oa-btn-export-xlsx.full {
+  background: linear-gradient(135deg, #059669 0%, #0d9488 100%);
+  box-shadow: 0 2px 10px rgba(13, 148, 136, 0.35);
+}
+
+.oa-btn-export-xlsx.full:hover:not(:disabled) {
+  transform: translateY(-1px);
+  filter: brightness(1.1);
+}
+
 /* ── BOTÃO EXPORTAÇÃO REMESSA CNAB 400 CORRIGIDA ── */
 .oa-cnab-export-section {
   display: flex;
@@ -754,13 +777,21 @@
 /* ── CARD SUCESSO ── */
 .oa-bitfin-success-card {
   display: flex;
+  justify-content: space-between;
   align-items: center;
-  gap: 14px;
+  gap: 16px;
+  flex-wrap: wrap;
   background: rgba(16, 185, 129, 0.08);
   border: 1px solid rgba(16, 185, 129, 0.25);
   border-radius: 10px;
   padding: 16px 20px;
   margin-bottom: 22px;
+}
+
+.oa-bitfin-success-info {
+  display: flex;
+  align-items: center;
+  gap: 14px;
 }
 
 .oa-bitfin-success-card h4 {
@@ -773,6 +804,29 @@
   font-size: 0.8rem;
   color: #94a3b8;
   margin: 0;
+}
+
+.oa-btn-export-full-success {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: linear-gradient(135deg, #059669 0%, #047857 100%);
+  color: #ffffff;
+  border: 1px solid rgba(52, 211, 153, 0.4);
+  padding: 9px 18px;
+  border-radius: 8px;
+  font-weight: 700;
+  font-size: 0.85rem;
+  cursor: pointer;
+  box-shadow: 0 2px 10px rgba(5, 150, 105, 0.35);
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+
+.oa-btn-export-full-success:hover:not(:disabled) {
+  transform: translateY(-1px);
+  filter: brightness(1.1);
+  box-shadow: 0 4px 14px rgba(5, 150, 105, 0.5);
 }
 
 /* ── CEDENTE E CONTATO DIRETO ── */
@@ -1015,3 +1069,63 @@
   cursor: pointer;
   font-weight: 600;
 }
+
+/* ── BOTÃO DE EXPORTAÇÃO NO CABEÇALHO DO MODAL ── */
+.oa-btn-export-full-modal {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(16, 185, 129, 0.15);
+  border: 1px solid rgba(16, 185, 129, 0.4);
+  color: #34d399;
+  border-radius: 6px;
+  padding: 6px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.oa-btn-export-full-modal:hover:not(:disabled) {
+  background: rgba(16, 185, 129, 0.25);
+  color: #6ee7b7;
+  transform: translateY(-1px);
+}
+
+.oa-btn-export-full-modal:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* ── GRUPO DE AÇÕES NA TABELA PRINCIPAL ── */
+.oa-action-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.oa-action-btn-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(16, 185, 129, 0.12);
+  border: 1px solid rgba(16, 185, 129, 0.35);
+  color: #34d399;
+  border-radius: 6px;
+  width: 32px;
+  height: 32px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.oa-action-btn-icon:hover:not(:disabled) {
+  background: rgba(16, 185, 129, 0.25);
+  color: #6ee7b7;
+  transform: translateY(-1px);
+}
+
+.oa-action-btn-icon:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+

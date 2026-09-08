@@ -1,5 +1,6 @@
 import ExcelJS from 'exceljs';
 import crypto from 'crypto';
+import { getFidcDb, getNaoCobraveisSets } from './fidcDb.js';
 
 const API_BASE_URL = 'https://lepta-backend.bit-unltd.com.br';
 
@@ -45,6 +46,176 @@ function normalizeStr(str) {
     .replace(/[\u0300-\u036f]/g, '')
     .trim()
     .toLowerCase();
+}
+
+/**
+ * Formata CPF/CNPJ com pontuação padrão
+ */
+export function formatCnpjCpf(doc) {
+  const clean = String(doc || '').replace(/\D/g, '');
+  if (clean.length === 14) {
+    return clean.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, '$1.$2.$3/$4-$5');
+  }
+  if (clean.length === 11) {
+    return clean.replace(/^(\d{3})(\d{3})(\d{3})(\d{2})$/, '$1.$2.$3-$4');
+  }
+  return doc || '';
+}
+
+/**
+ * Filtra títulos excluindo Cedentes e Sacados cadastrados como Não Cobráveis
+ */
+export function filterTitulosNaoCobraveis(titulos, db = null) {
+  if (!Array.isArray(titulos) || titulos.length === 0) return [];
+  try {
+    const targetDb = db || getFidcDb();
+    if (!targetDb) return titulos;
+
+    const {
+      exemptCedentesDocs,
+      exemptCedentesNames,
+      exemptSacadosDocs,
+      exemptSacadosNames,
+      totalExempt
+    } = getNaoCobraveisSets(targetDb);
+
+    if (totalExempt === 0) return titulos;
+
+    return titulos.filter(t => {
+      const cedDoc = String(t.documentoCliente || '').replace(/\D/g, '');
+      const sacDoc = String(t.documentoSacado || '').replace(/\D/g, '');
+      const cedNome = normalizeStr(t.cliente);
+      const sacNome = normalizeStr(t.sacado);
+
+      // Descarta se o cedente for isento
+      if (cedDoc && exemptCedentesDocs.has(cedDoc)) return false;
+      if (cedNome && exemptCedentesNames.has(cedNome)) return false;
+
+      // Descarta se o sacado for isento
+      if (sacDoc && exemptSacadosDocs.has(sacDoc)) return false;
+      if (sacNome && exemptSacadosNames.has(sacNome)) return false;
+
+      return true;
+    });
+  } catch (err) {
+    console.warn('Aviso ao filtrar títulos não cobráveis:', err.message);
+    return titulos;
+  }
+}
+
+/**
+ * Busca clientes (Cedentes ou Sacados) para autocomplete consultando BitFin e bases locais
+ */
+export async function searchClientesParaAutocomplete({ tipo, query, unltdToken, db = null }) {
+  const q = String(query || '').trim();
+  if (q.length < 2) return [];
+
+  const targetTipo = (tipo || '').toUpperCase() === 'SACADO' ? 'SACADO' : 'CEDENTE';
+  const cleanDoc = q.replace(/\D/g, '');
+  const likeTerm = `%${q}%`;
+  const candidatesMap = new Map();
+
+  const addCandidate = (doc, nome) => {
+    const d = String(doc || '').replace(/\D/g, '');
+    const n = String(nome || '').trim();
+    if (!d || !n || n === '-' || n.toLowerCase() === 'indefinido') return;
+    if (!candidatesMap.has(d)) {
+      candidatesMap.set(d, {
+        id: `${targetTipo}_${d}`,
+        tipo: targetTipo,
+        documento: d,
+        documento_formatado: formatCnpjCpf(d),
+        nome: n
+      });
+    }
+  };
+
+  // 1. Se for busca com dígitos de CNPJ/CPF e houver token BitFin, tenta buscar na API UNLTD/BitFin
+  if ([11, 14].includes(cleanDoc.length) && unltdToken) {
+    try {
+      if (targetTipo === 'CEDENTE') {
+        const rCli = await fetch(`${API_BASE_URL}/entidades/cliente/${cleanDoc}`, {
+          headers: { 'Authorization': `UNLTD-BackEnd ${unltdToken}` }
+        });
+        if (rCli.ok) {
+          const cliData = await rCli.json();
+          const item = Array.isArray(cliData) ? cliData[0] : cliData;
+          const nome = item?.entidade?.nome || item?.nome;
+          if (nome) addCandidate(cleanDoc, nome);
+        }
+      }
+      const rEnt = await fetch(`${API_BASE_URL}/entidades/${cleanDoc}`, {
+        headers: { 'Authorization': `UNLTD-BackEnd ${unltdToken}` }
+      });
+      if (rEnt.ok) {
+        const entData = await rEnt.json();
+        const item = Array.isArray(entData) ? entData[0] : entData;
+        const nome = item?.nome || item?.razaoSocial;
+        if (nome) addCandidate(cleanDoc, nome);
+      }
+    } catch (e) {
+      console.warn('Aviso ao consultar BitFin para autocomplete:', e.message);
+    }
+  }
+
+  // 2. Busca no banco de dados SQLite local
+  try {
+    const targetDb = db || getFidcDb();
+    if (targetDb) {
+      if (targetTipo === 'CEDENTE') {
+        // Tabela cedentes
+        try {
+          const rowsCedentes = targetDb.prepare(`
+            SELECT cnpj_raiz as doc, nome, razao_social, nome_fantasia, documento_formatado
+            FROM cedentes
+            WHERE nome LIKE ? OR razao_social LIKE ? OR nome_fantasia LIKE ? OR cnpj_raiz LIKE ? OR documento_formatado LIKE ?
+            LIMIT 20
+          `).all(likeTerm, likeTerm, likeTerm, likeTerm, likeTerm);
+
+          for (const r of rowsCedentes) {
+            const nome = r.razao_social || r.nome || r.nome_fantasia;
+            addCandidate(r.doc, nome);
+          }
+        } catch (_) {}
+
+        // Tabela estoque_titulos (cedentes)
+        try {
+          const rowsEstoqueCed = targetDb.prepare(`
+            SELECT DISTINCT cedente_cnpj as doc, cedente_nome as nome
+            FROM estoque_titulos
+            WHERE (cedente_nome LIKE ? OR cedente_cnpj LIKE ?)
+              AND cedente_nome IS NOT NULL AND cedente_cnpj IS NOT NULL
+            LIMIT 25
+          `).all(likeTerm, likeTerm);
+
+          for (const r of rowsEstoqueCed) {
+            addCandidate(r.doc, r.nome);
+          }
+        } catch (_) {}
+      } else {
+        // SACADO: Tabela estoque_titulos
+        try {
+          const rowsEstoqueSac = targetDb.prepare(`
+            SELECT DISTINCT sacado_cnpj as doc, sacado_nome as nome
+            FROM estoque_titulos
+            WHERE (sacado_nome LIKE ? OR sacado_cnpj LIKE ?)
+              AND sacado_nome IS NOT NULL AND sacado_cnpj IS NOT NULL
+            LIMIT 30
+          `).all(likeTerm, likeTerm);
+
+          for (const r of rowsEstoqueSac) {
+            addCandidate(r.doc, r.nome);
+          }
+        } catch (_) {}
+      }
+    }
+  } catch (err) {
+    console.warn('Aviso ao buscar clientes no SQLite local:', err.message);
+  }
+
+  const results = Array.from(candidatesMap.values());
+  results.sort((a, b) => a.nome.localeCompare(b.nome));
+  return results.slice(0, 30);
 }
 
 /**
@@ -299,7 +470,7 @@ export function normalizeTituloRecord(t) {
 /**
  * Consulta a API UNLTD para a data de cadastro informada aplicando os filtros estritos
  */
-export async function fetchTitulosAnaliseByDate({ dataCadastro, unltdToken }) {
+export async function fetchTitulosAnaliseByDate({ dataCadastro, unltdToken, db = null }) {
   if (!unltdToken) {
     throw new Error('Token de autenticação UNLTD (UNLTD_API_TOKEN) não configurado no servidor.');
   }
@@ -348,19 +519,20 @@ export async function fetchTitulosAnaliseByDate({ dataCadastro, unltdToken }) {
       t.contaOperacional?.unidadeAdministrativa?.alias ||
       t.contaOperacional?.unidadeAdministrativa?.nome ||
       t.unidadeAdministrativa?.nome ||
-      t.ua ||
-      'VAZIO'
+      t.unidadeAdministrativa?.alias ||
+      t.fundo ||
+      ''
     );
-    rawUas[uaStr] = (rawUas[uaStr] || 0) + v;
+    rawUas[uaStr] = (rawUas[uaStr] || 0) + 1;
 
-    const prodStr = extractText(t.contaOperacional?.produto?.descricao || t.contaOperacional?.produto?.sigla || t.produto || 'VAZIO');
-    rawProds[prodStr] = (rawProds[prodStr] || 0) + v;
+    const prodStr = extractText(t.contaOperacional?.produto?.sigla || t.produto?.sigla || t.produto || '');
+    rawProds[prodStr] = (rawProds[prodStr] || 0) + 1;
 
-    const sigStr = extractText(t.sigla || t.tipoDocumento || t.especie || 'VAZIO');
-    rawSiglas[sigStr] = (rawSiglas[sigStr] || 0) + v;
+    const siglaStr = extractText(t.tipoDocumento?.sigla || t.especie?.sigla || t.sigla || '');
+    rawSiglas[siglaStr] = (rawSiglas[siglaStr] || 0) + 1;
 
-    const manStr = extractText(t.situacaoManifesto || t.manifesto || 'VAZIO');
-    rawManifs[manStr] = (rawManifs[manStr] || 0) + v;
+    const manStr = extractText(t.situacaoManifesto || t.manifesto || '');
+    rawManifs[manStr] = (rawManifs[manStr] || 0) + 1;
 
     if (!getUnidadeAdministrativaInfo(t)) rejectedReasons.ua += v;
     else if (!isProdutoValido(t)) rejectedReasons.produto += v;
@@ -379,7 +551,10 @@ export async function fetchTitulosAnaliseByDate({ dataCadastro, unltdToken }) {
   const filteredRaw = rawTitulos.filter(t => isTituloValidoParaAnalise(t, dataCadastro));
 
   // 2. Normaliza para o modelo canônico de 36 colunas
-  const normalized = filteredRaw.map(normalizeTituloRecord);
+  const normalizedAll = filteredRaw.map(normalizeTituloRecord);
+
+  // 3. Aplica a isenção de Clientes Não Cobráveis (Cedentes e Sacados)
+  const normalized = filterTitulosNaoCobraveis(normalizedAll, db);
 
   // Calcula estatísticas gerais
   const totalTitulos = normalized.length;
@@ -460,8 +635,9 @@ export const CSV_HEADERS = [
 /**
  * Gera a string CSV idêntica ao padrão oficial do sistema
  */
-export function generateTitulosCsv({ titulos, fundo = 'AMBOS' }) {
-  let filtered = titulos || [];
+export function generateTitulosCsv({ titulos, fundo = 'AMBOS', db = null }) {
+  const safeTitulos = filterTitulosNaoCobraveis(titulos || [], db);
+  let filtered = safeTitulos;
   if (fundo === 'MULTISETORIAL' || fundo === 'MS') {
     filtered = filtered.filter(t => t.fundoTipo === 'MULTISETORIAL');
   } else if (fundo === 'SPECIAL') {
@@ -520,8 +696,9 @@ export function generateTitulosCsv({ titulos, fundo = 'AMBOS' }) {
 /**
  * Gera um arquivo Excel (.xlsx) usando ExcelJS
  */
-export async function generateTitulosExcel({ titulos, fundo = 'AMBOS', dataCadastro }) {
-  let filtered = titulos || [];
+export async function generateTitulosExcel({ titulos, fundo = 'AMBOS', dataCadastro, db = null }) {
+  const safeTitulos = filterTitulosNaoCobraveis(titulos || [], db);
+  let filtered = safeTitulos;
   if (fundo === 'MULTISETORIAL' || fundo === 'MS') {
     filtered = filtered.filter(t => t.fundoTipo === 'MULTISETORIAL');
   } else if (fundo === 'SPECIAL') {
@@ -595,7 +772,7 @@ export async function generateTitulosExcel({ titulos, fundo = 'AMBOS', dataCadas
   return buffer;
 }
 
-export function createShareToken({ dataCadastro, fundo = 'AMBOS', titulos }) {
+export function createShareToken({ dataCadastro, fundo = 'AMBOS', titulos, db = null }) {
   const token = crypto.randomBytes(16).toString('hex');
   const now = Date.now();
   const expiresAt = now + 7 * 24 * 3600 * 1000;
@@ -603,7 +780,7 @@ export function createShareToken({ dataCadastro, fundo = 'AMBOS', titulos }) {
   const data = {
     dataCadastro,
     fundo,
-    titulos: titulos || [],
+    titulos: filterTitulosNaoCobraveis(titulos || [], db),
     createdAt: now,
     expiresAt
   };
@@ -623,8 +800,9 @@ export function getSharedDataByToken(token) {
   return data;
 }
 
-export function generateAnaliseHtmlReport({ dataCadastro, fundo = 'AMBOS', titulos }) {
-  let filtered = titulos || [];
+export function generateAnaliseHtmlReport({ dataCadastro, fundo = 'AMBOS', titulos, db = null }) {
+  const safeTitulos = filterTitulosNaoCobraveis(titulos || [], db);
+  let filtered = safeTitulos;
   if (fundo === 'MULTISETORIAL' || fundo === 'MS') {
     filtered = filtered.filter(t => t.fundoTipo === 'MULTISETORIAL');
   } else if (fundo === 'SPECIAL') {

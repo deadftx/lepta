@@ -14,7 +14,14 @@ import {
   importReceitasFromExcel,
   importEstoqueFile
 } from './fidcService.js';
-import { setFidcDb, getFidcDb, importBackupIntoMainDb } from './fidcDb.js';
+import {
+  setFidcDb,
+  getFidcDb,
+  importBackupIntoMainDb,
+  getNaoCobraveisList,
+  saveNaoCobraveisBatch,
+  deleteNaoCobravelById
+} from './fidcDb.js';
 import { generateRelatorioDiarioHtml } from './reportService.js';
 import {
   fetchTitulosAnaliseByDate,
@@ -22,7 +29,8 @@ import {
   generateTitulosExcel,
   createShareToken,
   getSharedDataByToken,
-  generateAnaliseHtmlReport
+  generateAnaliseHtmlReport,
+  searchClientesParaAutocomplete
 } from './analiseService.js';
 
 export function registerConfirmationRoutes(app, {
@@ -93,9 +101,9 @@ export function registerConfirmationRoutes(app, {
   }
 
   const checkAccess = (req, res, next) => {
-    // Permissão 10.1 / 10.2 / 10 é Confirmação
+    // Permissão 10.1 / 10.2 / 10 é Confirmação; 14.3 / 14 é Mesa de Operação > Relatório Diário
     if (req.authSession?.role === 'MASTER' || req.authSession?.role === 'ADMIN') return next();
-    return requirePermission(['10.1', '10.2', '10'])(req, res, next);
+    return requirePermission(['10.1', '10.2', '10', '14.3', '14'])(req, res, next);
   };
 
   // --- 1. LISTA DE FUNDOS E CLASSES ---
@@ -612,6 +620,64 @@ export function registerConfirmationRoutes(app, {
 
   // --- 13. ANÁLISE DE CONFIRMAÇÃO (API UNLTD / BITFIN) ---
 
+  // Listar clientes não cobráveis (Cedentes e Sacados)
+  app.get('/api/confirmacao/analise/nao-cobraveis', requireSession, checkAccess, (req, res) => {
+    try {
+      const items = getNaoCobraveisList(db);
+      return res.json({ success: true, items });
+    } catch (err) {
+      console.error('Erro ao listar clientes não cobráveis:', err);
+      return res.status(500).json({ error: `Erro ao obter lista de não cobráveis: ${err.message}` });
+    }
+  });
+
+  // Salvar clientes não cobráveis (cria tabela caso não exista e salva no banco)
+  app.post('/api/confirmacao/analise/nao-cobraveis', requireSession, checkAccess, (req, res) => {
+    try {
+      const { items } = req.body || {};
+      if (!Array.isArray(items)) {
+        return res.status(400).json({ error: 'O payload deve conter a lista "items".' });
+      }
+
+      const user = req.authSession?.email || req.authSession?.nome || 'USUARIO';
+      const updated = saveNaoCobraveisBatch(db, items, user);
+      return res.json({ success: true, items: updated });
+    } catch (err) {
+      console.error('Erro ao salvar clientes não cobráveis:', err);
+      return res.status(500).json({ error: `Erro ao salvar clientes não cobráveis: ${err.message}` });
+    }
+  });
+
+  // Remover um cliente não cobrável específico
+  app.delete('/api/confirmacao/analise/nao-cobraveis/:id', requireSession, checkAccess, (req, res) => {
+    try {
+      const { id } = req.params;
+      const updated = deleteNaoCobravelById(db, id);
+      return res.json({ success: true, items: updated });
+    } catch (err) {
+      console.error('Erro ao excluir cliente não cobrável:', err);
+      return res.status(500).json({ error: `Erro ao excluir: ${err.message}` });
+    }
+  });
+
+  // Autocomplete de Cedentes e Sacados (busca da API do BitFin + bases locais)
+  app.get('/api/confirmacao/analise/buscar-clientes', requireSession, checkAccess, async (req, res) => {
+    try {
+      const { tipo, q } = req.query;
+      const token = unltdToken || process.env.UNLTD_API_TOKEN;
+      const results = await searchClientesParaAutocomplete({
+        tipo,
+        query: q,
+        unltdToken: token,
+        db
+      });
+      return res.json({ success: true, results });
+    } catch (err) {
+      console.error('Erro no autocomplete de clientes:', err);
+      return res.status(500).json({ error: `Erro ao buscar clientes: ${err.message}` });
+    }
+  });
+
   // Consulta títulos por Data de Cadastro na API UNLTD
   app.get('/api/confirmacao/analise/consultar', requireSession, checkAccess, async (req, res) => {
     try {
@@ -622,7 +688,7 @@ export function registerConfirmationRoutes(app, {
       }
 
       const dataCadastro = data || new Date().toISOString().substring(0, 10);
-      const result = await fetchTitulosAnaliseByDate({ dataCadastro, unltdToken: token });
+      const result = await fetchTitulosAnaliseByDate({ dataCadastro, unltdToken: token, db });
       return res.json({ success: true, ...result });
     } catch (err) {
       console.error('Erro ao consultar análise de títulos UNLTD:', err);
@@ -639,11 +705,11 @@ export function registerConfirmationRoutes(app, {
 
       if (!titulos || !titulos.length) {
         const token = unltdToken || process.env.UNLTD_API_TOKEN;
-        const fetched = await fetchTitulosAnaliseByDate({ dataCadastro, unltdToken: token });
+        const fetched = await fetchTitulosAnaliseByDate({ dataCadastro, unltdToken: token, db });
         titulos = fetched.titulos;
       }
 
-      const csvContent = generateTitulosCsv({ titulos, fundo });
+      const csvContent = generateTitulosCsv({ titulos, fundo, db });
       const prefix = fundo === 'SPECIAL' ? 'Lepta Special FIDC - Titulos' : fundo === 'MULTISETORIAL' ? 'Lepta MS FIDC - Titulos' : 'Lepta Geral FIDC - Titulos';
       const filename = `${prefix} - ${dataCadastro} - ${dataCadastro}.csv`;
 
@@ -665,11 +731,11 @@ export function registerConfirmationRoutes(app, {
 
       if (!titulos || !titulos.length) {
         const token = unltdToken || process.env.UNLTD_API_TOKEN;
-        const fetched = await fetchTitulosAnaliseByDate({ dataCadastro, unltdToken: token });
+        const fetched = await fetchTitulosAnaliseByDate({ dataCadastro, unltdToken: token, db });
         titulos = fetched.titulos;
       }
 
-      const buffer = await generateTitulosExcel({ titulos, fundo, dataCadastro });
+      const buffer = await generateTitulosExcel({ titulos, fundo, dataCadastro, db });
       const prefix = fundo === 'SPECIAL' ? 'Lepta_Special_FIDC_Titulos' : fundo === 'MULTISETORIAL' ? 'Lepta_MS_FIDC_Titulos' : 'Lepta_Geral_FIDC_Titulos';
       const filename = `${prefix}_${dataCadastro}.xlsx`;
 
@@ -691,11 +757,11 @@ export function registerConfirmationRoutes(app, {
 
       if (!titulos || !titulos.length) {
         const token = unltdToken || process.env.UNLTD_API_TOKEN;
-        const fetched = await fetchTitulosAnaliseByDate({ dataCadastro, unltdToken: token });
+        const fetched = await fetchTitulosAnaliseByDate({ dataCadastro, unltdToken: token, db });
         titulos = fetched.titulos;
       }
 
-      const token = createShareToken({ dataCadastro, fundo, titulos });
+      const token = createShareToken({ dataCadastro, fundo, titulos, db });
       const host = req.get('host') || 'lepta.com.br';
       const protocol = req.protocol === 'https' || req.get('x-forwarded-proto') === 'https' ? 'https' : 'http';
       const shareUrl = `/api/confirmacao/analise/public/${token}`;
@@ -738,7 +804,8 @@ export function registerConfirmationRoutes(app, {
         const buffer = await generateTitulosExcel({
           titulos: data.titulos,
           fundo: data.fundo,
-          dataCadastro: data.dataCadastro
+          dataCadastro: data.dataCadastro,
+          db
         });
         const prefix = data.fundo === 'SPECIAL' ? 'Lepta_Special_FIDC_Titulos' : data.fundo === 'MULTISETORIAL' ? 'Lepta_MS_FIDC_Titulos' : 'Lepta_Geral_FIDC_Titulos';
         const filename = `${prefix}_${data.dataCadastro}.xlsx`;
@@ -750,7 +817,7 @@ export function registerConfirmationRoutes(app, {
 
       // Download direto de CSV
       if (download === 'csv') {
-        const csv = generateTitulosCsv({ titulos: data.titulos, fundo: data.fundo });
+        const csv = generateTitulosCsv({ titulos: data.titulos, fundo: data.fundo, db });
         const prefix = data.fundo === 'SPECIAL' ? 'Lepta Special FIDC - Titulos' : data.fundo === 'MULTISETORIAL' ? 'Lepta MS FIDC - Titulos' : 'Lepta Geral FIDC - Titulos';
         const filename = `${prefix} - ${data.dataCadastro} - ${data.dataCadastro}.csv`;
 
@@ -764,7 +831,8 @@ export function registerConfirmationRoutes(app, {
         titulos: data.titulos,
         dataCadastro: data.dataCadastro,
         fundo: data.fundo,
-        shareToken: token
+        shareToken: token,
+        db
       });
 
       res.setHeader('Content-Type', 'text/html; charset=utf-8');

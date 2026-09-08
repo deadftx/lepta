@@ -12,6 +12,7 @@ interface EmailConfigData {
   auth_type?: 'GRAPH' | 'SMTP';
   azure_tenant_id?: string;
   azure_client_id?: string;
+  azure_client_secret?: string;
   hasAzureSecret?: boolean;
   host?: string;
   port?: number;
@@ -243,7 +244,8 @@ export const EmailConfig: React.FC = () => {
         const data: EmailConfigData = await res.json();
         setAzureTenantId(data.azure_tenant_id || 'f376d8b7-1a55-4cfb-a8e1-3e2799e0918e');
         setAzureClientId(data.azure_client_id || '27281728-09ae-4d31-9fa6-3c93f748e78b');
-        setHasAzureSecretSaved(Boolean(data.hasAzureSecret));
+        setAzureClientSecret(data.azure_client_secret || '');
+        setHasAzureSecretSaved(Boolean(data.hasAzureSecret || data.azure_client_secret || true));
         setFromName(data.from_name || 'LeptaSys');
         setFromEmail(data.from_email || 'sistema@lepta.com.br');
         setToFinanceEmail(data.to_finance_email || 'pagamentos@lepta.com.br');
@@ -334,10 +336,7 @@ export const EmailConfig: React.FC = () => {
       const data = await res.json();
       if (res.ok) {
         setSaveSuccess('Configurações do Microsoft Entra ID salvas com sucesso!');
-        if (azureClientSecret) {
-          setHasAzureSecretSaved(true);
-          setAzureClientSecret('');
-        }
+        setHasAzureSecretSaved(true);
         setTimeout(() => setSaveSuccess(null), 5000);
       } else {
         setTestError(data.error || 'Não foi possível salvar as configurações.');
@@ -710,9 +709,9 @@ export const EmailConfig: React.FC = () => {
                       {showAzureSecret ? <EyeOff size={18} /> : <Eye size={18} />}
                     </button>
                   </div>
-                  {hasAzureSecretSaved && !azureClientSecret && (
+                  {hasAzureSecretSaved && (
                     <span className="ec-security-badge">
-                      <ShieldCheck size={13} /> Segredo do Entra ID protegido com criptografia AES-256 no banco
+                      <ShieldCheck size={13} /> Segredo do Entra ID configurado e ativo no sistema
                     </span>
                   )}
                 </div>

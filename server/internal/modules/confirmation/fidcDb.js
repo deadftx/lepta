@@ -175,7 +175,129 @@ export function ensureFidcSchema(db) {
       detalhe TEXT,
       data TEXT DEFAULT (datetime('now'))
     );
+    CREATE TABLE IF NOT EXISTS confirmacao_nao_cobraveis (
+      id TEXT PRIMARY KEY,
+      tipo TEXT NOT NULL,
+      documento TEXT NOT NULL,
+      documento_formatado TEXT,
+      nome TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      created_by TEXT
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_conf_nc_tipo_doc ON confirmacao_nao_cobraveis(tipo, documento);
   `);
+}
+
+/**
+ * Retorna todos os clientes não cobráveis cadastrados
+ */
+export function getNaoCobraveisList(db) {
+  const targetDb = db || getFidcDb();
+  return targetDb.prepare(`
+    SELECT id, tipo, documento, documento_formatado, nome, created_at, created_by
+    FROM confirmacao_nao_cobraveis
+    ORDER BY nome ASC
+  `).all();
+}
+
+/**
+ * Retorna Sets de documentos e nomes de cedentes e sacados isentos para filtragem ultra rápida
+ */
+export function getNaoCobraveisSets(db) {
+  const list = getNaoCobraveisList(db);
+  const exemptCedentesDocs = new Set();
+  const exemptCedentesNames = new Set();
+  const exemptSacadosDocs = new Set();
+  const exemptSacadosNames = new Set();
+
+  for (const item of list) {
+    const docClean = String(item.documento || '').replace(/\D/g, '');
+    const nomeClean = String(item.nome || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toLowerCase();
+
+    if (item.tipo === 'CEDENTE') {
+      if (docClean) exemptCedentesDocs.add(docClean);
+      if (nomeClean) exemptCedentesNames.add(nomeClean);
+    } else if (item.tipo === 'SACADO') {
+      if (docClean) exemptSacadosDocs.add(docClean);
+      if (nomeClean) exemptSacadosNames.add(nomeClean);
+    }
+  }
+
+  return {
+    exemptCedentesDocs,
+    exemptCedentesNames,
+    exemptSacadosDocs,
+    exemptSacadosNames,
+    totalExempt: list.length
+  };
+}
+
+/**
+ * Salva a lista de clientes não cobráveis em lote
+ */
+export function saveNaoCobraveisBatch(db, items, user = null) {
+  const targetDb = db || getFidcDb();
+  const insertStmt = targetDb.prepare(`
+    INSERT INTO confirmacao_nao_cobraveis (id, tipo, documento, documento_formatado, nome, created_at, created_by)
+    VALUES (@id, @tipo, @documento, @documento_formatado, @nome, @created_at, @created_by)
+    ON CONFLICT(tipo, documento) DO UPDATE SET
+      nome = excluded.nome,
+      documento_formatado = excluded.documento_formatado
+  `);
+
+  const deleteNotIn = (tipo, allowedIds) => {
+    if (!allowedIds || allowedIds.length === 0) {
+      targetDb.prepare(`DELETE FROM confirmacao_nao_cobraveis WHERE tipo = ?`).run(tipo);
+    } else {
+      const placeholders = allowedIds.map(() => '?').join(',');
+      targetDb.prepare(`DELETE FROM confirmacao_nao_cobraveis WHERE tipo = ? AND id NOT IN (${placeholders})`).run(tipo, ...allowedIds);
+    }
+  };
+
+  const runBatch = targetDb.transaction(() => {
+    const cedenteIds = [];
+    const sacadoIds = [];
+    const now = new Date().toISOString();
+
+    for (const raw of items) {
+      const tipo = (raw.tipo || '').toUpperCase() === 'SACADO' ? 'SACADO' : 'CEDENTE';
+      const documento = String(raw.documento || '').replace(/\D/g, '');
+      if (!documento) continue;
+
+      const nome = String(raw.nome || '').trim();
+      const id = raw.id || `${tipo}_${documento}`;
+      const documento_formatado = raw.documento_formatado || documento;
+
+      insertStmt.run({
+        id,
+        tipo,
+        documento,
+        documento_formatado,
+        nome,
+        created_at: raw.created_at || now,
+        created_by: raw.created_by || user || 'SISTEMA'
+      });
+
+      if (tipo === 'CEDENTE') cedenteIds.push(id);
+      else sacadoIds.push(id);
+    }
+
+    // Se a requisição veio especificando a lista completa de um tipo ou de ambos, sincroniza
+    deleteNotIn('CEDENTE', cedenteIds);
+    deleteNotIn('SACADO', sacadoIds);
+  });
+
+  runBatch();
+  return getNaoCobraveisList(targetDb);
+}
+
+/**
+ * Deleta um cliente não cobrável pelo ID
+ */
+export function deleteNaoCobravelById(db, id) {
+  const targetDb = db || getFidcDb();
+  targetDb.prepare(`DELETE FROM confirmacao_nao_cobraveis WHERE id = ?`).run(id);
+  return getNaoCobraveisList(targetDb);
 }
 
 /**

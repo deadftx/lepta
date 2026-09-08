@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { BrowserRouter as Router, Routes, Route, Outlet } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Outlet, Navigate } from 'react-router-dom';
 import Navbar from './components/Navbar';
 import Footer from './components/Footer';
 import Home from './pages/Home';
@@ -39,6 +39,7 @@ import ProtectedRoute from './internal/core/ProtectedRoute';
 import InternalLayout from './internal/core/InternalLayout';
 import AccessRoute from './internal/core/AccessRoute';
 import { AuthProvider } from './internal/core/AuthContext';
+import { SystemErrorBoundary } from './internal/core/SystemErrorBoundary';
 import './App.css';
 
 import { API_BASE_URL } from './config/api';
@@ -76,55 +77,80 @@ const PublicLayout = () => {
 };
 
 function App() {
-  return (
-    <AuthProvider>
-      <Router>
-        <Routes>
-          {/* Rotas Públicas com Navbar e Footer */}
-          <Route element={<PublicLayout />}>
-            <Route path="/" element={<Home />} />
-            <Route path="/login" element={<Login />} />
-          </Route>
+  // Intercepta erros de carregamento assíncrono de chunks do Vite após novo deploy
+  useEffect(() => {
+    const handleRejection = (event: PromiseRejectionEvent) => {
+      const reason = String(event?.reason?.message || event?.reason || '');
+      if (
+        reason.includes('Failed to fetch dynamically imported module') ||
+        reason.includes('Loading chunk') ||
+        reason.includes('ChunkLoadError')
+      ) {
+        console.warn('Detectada divergência de chunks atualizados no servidor:', reason);
+        window.dispatchEvent(new CustomEvent('lepta_system_update_available', {
+          detail: { reason: 'chunk_load_error' }
+        }));
+      }
+    };
 
-          {/* Rotas Internas protegidas com o InternalLayout */}
-          <Route element={<ProtectedRoute />}>
-            <Route element={<InternalLayout />}>
-              <Route path="/dashboard" element={<Dashboard />} />
-              <Route path="/marketing" element={<AccessRoute permission="6"><Marketing /></AccessRoute>} />
-              <Route path="/dashboards" element={<AccessRoute permission="5"><DashboardsView /></AccessRoute>} />
-              <Route path="/bi" element={<AccessRoute permission="4"><BI /></AccessRoute>} />
-              <Route path="/financeiro" element={<AccessRoute permission="7"><FinanceDashboard /></AccessRoute>} />
-              <Route path="/financeiro/extratos" element={<AccessRoute permission="7.1"><Finance /></AccessRoute>} />
-              <Route path="/financeiro/grafeno" element={<AccessRoute permission="7.2"><GrafenoIntegration /></AccessRoute>} />
-              <Route path="/financeiro/reembolsos-despesas" element={<AccessRoute permission="7.4"><FinanceRefundsExpenses /></AccessRoute>} />
-              <Route path="/financeiro/calendario-pagamentos" element={<AccessRoute permission="7.5"><FinancePaymentCalendar /></AccessRoute>} />
-              <Route path="/intelligence/analise-clientes" element={<AccessRoute permission="8.1"><CustomerAnalysis /></AccessRoute>} />
-              <Route path="/intelligence/cadastro-clientes" element={<AccessRoute permission="8.2"><CustomerRegistration /></AccessRoute>} />
-              <Route path="/intelligence/analise-riscos" element={<AccessRoute permission="8.3"><RiskAnalysis /></AccessRoute>} />
-              <Route path="/intelligence/npl" element={<AccessRoute permission="8.4"><NplManagement /></AccessRoute>} />
-              <Route path="/intelligence/esteira-comite" element={<AccessRoute permission="8.5"><CommitteePipeline /></AccessRoute>} />
-              <Route path="/intelligence/consulta-smartfactor" element={<AccessRoute permission="8.6"><SmartFactorQuery /></AccessRoute>} />
-              <Route path="/intelligence/cadastro-gerentes" element={<AccessRoute permission="8.7"><ManagerRegistration /></AccessRoute>} />
-              <Route path="/administrativo/compras" element={<AccessRoute permission="11.1"><PurchaseApproval /></AccessRoute>} />
-              <Route path="/administrativo/configuracao-compras" element={<AccessRoute permission="11.2"><PurchaseWorkflowConfig /></AccessRoute>} />
-              <Route path="/administrativo/salas-reuniao" element={<AccessRoute permission="11.3"><MeetingRoomBooking /></AccessRoute>} />
-              <Route path="/confirmacao/sistema" element={<AccessRoute permission="10.1"><ConfirmationSystem /></AccessRoute>} />
-              <Route path="/confirmacao/analise" element={<AccessRoute permission="10.2"><ConfirmationAnalise /></AccessRoute>} />
-              <Route path="/cobranca/analise-vencidos" element={<AccessRoute permission="12.1"><OverdueAnalysis /></AccessRoute>} />
-              <Route path="/juridico/aprovacao-pagamentos" element={<AccessRoute permission="13.1"><LegalPaymentApproval /></AccessRoute>} />
-              <Route path="/mesa-operacoes/analise" element={<AccessRoute permission="14.1"><OperationsAnalysis /></AccessRoute>} />
-              <Route path="/mesa-operacoes/validar-ceps" element={<AccessRoute permission="14.2"><ValidateCepsCnab /></AccessRoute>} />
-              <Route path="/banco-de-dados" element={<AccessRoute permission="9"><DatabaseManagement /></AccessRoute>} />
-              <Route path="/permissions" element={<AccessRoute masterOnly><Permissions /></AccessRoute>} />
-              <Route path="/permissions/create-user" element={<AccessRoute masterOnly><CreateUser /></AccessRoute>} />
-              <Route path="/permissions/groups" element={<AccessRoute masterOnly><Groups /></AccessRoute>} />
-              <Route path="/permissions/email-config" element={<AccessRoute masterOnly><EmailConfig /></AccessRoute>} />
-              <Route path="/monitor" element={<AccessRoute masterOnly><MonitorDashboard /></AccessRoute>} />
+    window.addEventListener('unhandledrejection', handleRejection);
+    return () => {
+      window.removeEventListener('unhandledrejection', handleRejection);
+    };
+  }, []);
+
+  return (
+    <SystemErrorBoundary>
+      <AuthProvider>
+        <Router>
+          <Routes>
+            {/* Rotas Públicas com Navbar e Footer */}
+            <Route element={<PublicLayout />}>
+              <Route path="/" element={<Home />} />
+              <Route path="/login" element={<Login />} />
             </Route>
-          </Route>
-        </Routes>
-      </Router>
-    </AuthProvider>
+
+            {/* Rotas Internas protegidas com o InternalLayout */}
+            <Route element={<ProtectedRoute />}>
+              <Route element={<InternalLayout />}>
+                <Route path="/dashboard" element={<Dashboard />} />
+                <Route path="/marketing" element={<AccessRoute permission="6"><Marketing /></AccessRoute>} />
+                <Route path="/dashboards" element={<AccessRoute permission="5"><DashboardsView /></AccessRoute>} />
+                <Route path="/bi" element={<AccessRoute permission="4"><BI /></AccessRoute>} />
+                <Route path="/financeiro" element={<AccessRoute permission="7"><FinanceDashboard /></AccessRoute>} />
+                <Route path="/financeiro/extratos" element={<AccessRoute permission="7.1"><Finance /></AccessRoute>} />
+                <Route path="/financeiro/grafeno" element={<AccessRoute permission="7.2"><GrafenoIntegration /></AccessRoute>} />
+                <Route path="/financeiro/reembolsos-despesas" element={<AccessRoute permission="7.4"><FinanceRefundsExpenses /></AccessRoute>} />
+                <Route path="/financeiro/calendario-pagamentos" element={<AccessRoute permission="7.5"><FinancePaymentCalendar /></AccessRoute>} />
+                <Route path="/intelligence/analise-clientes" element={<AccessRoute permission="8.1"><CustomerAnalysis /></AccessRoute>} />
+                <Route path="/intelligence/cadastro-clientes" element={<AccessRoute permission="8.2"><CustomerRegistration /></AccessRoute>} />
+                <Route path="/intelligence/analise-riscos" element={<AccessRoute permission="8.3"><RiskAnalysis /></AccessRoute>} />
+                <Route path="/intelligence/npl" element={<AccessRoute permission="8.4"><NplManagement /></AccessRoute>} />
+                <Route path="/intelligence/esteira-comite" element={<AccessRoute permission="8.5"><CommitteePipeline /></AccessRoute>} />
+                <Route path="/intelligence/consulta-smartfactor" element={<AccessRoute permission="8.6"><SmartFactorQuery /></AccessRoute>} />
+                <Route path="/intelligence/cadastro-gerentes" element={<AccessRoute permission="8.7"><ManagerRegistration /></AccessRoute>} />
+                <Route path="/administrativo/compras" element={<AccessRoute permission="11.1"><PurchaseApproval /></AccessRoute>} />
+                <Route path="/administrativo/configuracao-compras" element={<AccessRoute permission="11.2"><PurchaseWorkflowConfig /></AccessRoute>} />
+                <Route path="/administrativo/salas-reuniao" element={<AccessRoute permission="11.3"><MeetingRoomBooking /></AccessRoute>} />
+                <Route path="/confirmacao/sistema" element={<Navigate to="/mesa-operacoes/relatorio-diario" replace />} />
+                <Route path="/confirmacao/analise" element={<AccessRoute permission="10.2"><ConfirmationAnalise /></AccessRoute>} />
+                <Route path="/cobranca/analise-vencidos" element={<AccessRoute permission="12.1"><OverdueAnalysis /></AccessRoute>} />
+                <Route path="/juridico/aprovacao-pagamentos" element={<AccessRoute permission="13.1"><LegalPaymentApproval /></AccessRoute>} />
+                <Route path="/mesa-operacoes/analise" element={<AccessRoute permission="14.1"><OperationsAnalysis /></AccessRoute>} />
+                <Route path="/mesa-operacoes/validar-ceps" element={<AccessRoute permission="14.2"><ValidateCepsCnab /></AccessRoute>} />
+                <Route path="/mesa-operacoes/relatorio-diario" element={<AccessRoute permission="14.3"><ConfirmationSystem /></AccessRoute>} />
+                <Route path="/banco-de-dados" element={<AccessRoute permission="9"><DatabaseManagement /></AccessRoute>} />
+                <Route path="/permissions" element={<AccessRoute masterOnly><Permissions /></AccessRoute>} />
+                <Route path="/permissions/create-user" element={<AccessRoute masterOnly><CreateUser /></AccessRoute>} />
+                <Route path="/permissions/groups" element={<AccessRoute masterOnly><Groups /></AccessRoute>} />
+                <Route path="/permissions/email-config" element={<AccessRoute masterOnly><EmailConfig /></AccessRoute>} />
+                <Route path="/monitor" element={<AccessRoute masterOnly><MonitorDashboard /></AccessRoute>} />
+              </Route>
+            </Route>
+          </Routes>
+        </Router>
+      </AuthProvider>
+    </SystemErrorBoundary>
   );
 }
 

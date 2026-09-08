@@ -41,6 +41,7 @@ import './SystemSearchModal.css';
 interface SystemSearchModalProps {
   isOpen: boolean;
   onClose: () => void;
+  initialQuery?: string;
 }
 
 // Icon mapper helper
@@ -86,7 +87,7 @@ const normalize = (text: string) => {
     .trim();
 };
 
-export const SystemSearchModal: React.FC<SystemSearchModalProps> = ({ isOpen, onClose }) => {
+export const SystemSearchModal: React.FC<SystemSearchModalProps> = ({ isOpen, onClose, initialQuery = '' }) => {
   const { user } = useAuth();
   const navigate = useNavigate();
   const [query, setQuery] = useState('');
@@ -180,13 +181,17 @@ export const SystemSearchModal: React.FC<SystemSearchModalProps> = ({ isOpen, on
   // Focus input on open
   useEffect(() => {
     if (isOpen) {
-      setQuery('');
+      setQuery(initialQuery || '');
       setSelectedIndex(0);
       setTimeout(() => {
-        inputRef.current?.focus();
+        if (inputRef.current) {
+          inputRef.current.focus();
+          const len = (initialQuery || '').length;
+          inputRef.current.setSelectionRange(len, len);
+        }
       }, 50);
     }
-  }, [isOpen]);
+  }, [isOpen, initialQuery]);
 
   // Scroll selected item into view
   useEffect(() => {

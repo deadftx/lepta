@@ -29,6 +29,26 @@ const app = express();
 app.disable('x-powered-by');
 app.set('trust proxy', 1);
 
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const projectRoot = path.resolve(__dirname, '..', '..');
+
+// Captura o hash do commit Git atual ou lê do version.json gerado no build
+let serverCommit = 'local';
+try {
+  serverCommit = execSync('git rev-parse --short HEAD', { cwd: projectRoot }).toString().trim();
+} catch {}
+if (serverCommit === 'local') {
+  try {
+    const vPath = path.join(projectRoot, 'dist', 'version.json');
+    if (fs.existsSync(vPath)) {
+      const vJson = JSON.parse(fs.readFileSync(vPath, 'utf8'));
+      if (vJson?.commit) serverCommit = vJson.commit;
+    }
+  } catch {}
+}
+const serverStartedAt = new Date().toISOString();
+
 const configuredOrigins = String(process.env.LEPTA_ALLOWED_ORIGINS || '')
   .split(',')
   .map(origin => origin.trim())
@@ -55,7 +75,7 @@ function isAllowedOrigin(origin) {
 }
 
 app.use(cors({
-  exposedHeaders: ['x-data-source'],
+  exposedHeaders: ['x-data-source', 'x-app-commit'],
   origin(origin, callback) {
     callback(null, isAllowedOrigin(origin));
   }
@@ -88,9 +108,20 @@ app.use((req, res, next) => {
   res.setHeader('X-Frame-Options', 'SAMEORIGIN');
   res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
   res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
+  res.setHeader('X-App-Commit', serverCommit);
   if (req.secure) res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
   if (req.path.startsWith('/api/auth/')) res.setHeader('Cache-Control', 'no-store');
   next();
+});
+
+// Endpoint público para consulta e monitoramento da versão e commit atual
+app.get('/api/system/version', (req, res) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
+  res.json({
+    commit: serverCommit,
+    startedAt: serverStartedAt,
+    status: 'online'
+  });
 });
 
 // Load aliases globally
@@ -105,9 +136,6 @@ try {
 }
 
 // Serve arquivos estáticos do frontend (pasta dist) em produção
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-const projectRoot = path.resolve(__dirname, '..', '..');
 app.use(express.static(path.join(projectRoot, 'dist')));
 
 // Inicializa banco de dados com concorrência máxima e timeout de 60s
@@ -469,7 +497,16 @@ function ensureAccessAreas() {
     ['10.2', 'Confirmação > Análise de Confirmação'],
     ['11', 'Administrativo'],
     ['11.1', 'Administrativo > Solicitações Financeiras'],
-    ['11.2', 'Administrativo > Configuração de Esteira de Compras']
+    ['11.2', 'Administrativo > Configuração de Esteira de Compras'],
+    ['11.3', 'Administrativo > Salas de Reunião'],
+    ['12', 'Cobrança'],
+    ['12.1', 'Cobrança > Análise de Vencidos'],
+    ['13', 'Jurídico'],
+    ['13.1', 'Jurídico > Aprovação de Pagamentos'],
+    ['14', 'Mesa de Operação'],
+    ['14.1', 'Mesa de Operação > Análise de Operação'],
+    ['14.2', 'Mesa de Operação > Validar CEPs'],
+    ['14.3', 'Mesa de Operação > Relatório Diário']
   ];
   try {
     const insert = db.prepare(`INSERT OR IGNORE INTO areas (id, name) VALUES (?, ?)`);
@@ -1276,30 +1313,91 @@ function extractManagerName(item) {
   return '';
 }
 
-function extractManagerFromClientPayload(payload, document) {
-  if (!payload || typeof payload !== 'object') return { gerente: '', superintendente: '' };
+function extractManagerFromClientPayload(payload, document, entityName = '') {
+  if (!payload || typeof payload !== 'object') payload = {};
   
   const entidade = payload.entidade || {};
-  let foundManager = extractManagerName(payload);
+  const doc = normalizeEntityDocument(document || entidade.documento || payload.documento);
+  const rootDoc = doc ? doc.slice(0, 8) : '';
+  const name = String(entityName || entidade.nome || payload.nome || '').trim();
+
+  let foundManager = extractManagerName(payload) || extractManagerName(entidade);
   let foundSuperintendente = '';
 
-  if (!foundManager && Array.isArray(payload.contasOperacionais)) {
+  // 1. Procura em contas operacionais
+  if (Array.isArray(payload.contasOperacionais)) {
     for (const acc of payload.contasOperacionais) {
-      const s = acc?.superintendente?.nome || acc?.superintendente;
-      if (s && typeof s === 'string') {
-        foundSuperintendente = s.trim();
-        break;
+      if (!foundManager) {
+        const g = extractManagerName(acc);
+        if (g) foundManager = g;
+      }
+      if (!foundSuperintendente) {
+        const s = acc?.superintendente?.nome || acc?.superintendente;
+        if (s && typeof s === 'string' && s.trim()) {
+          foundSuperintendente = s.trim();
+        }
       }
     }
   }
 
+  // 2. Procura em gerentes_cedentes_cache (base do Cadastro de Gerentes / Gestores)
+  if (!foundManager) {
+    try {
+      ensureGerentesCedentesCacheTable();
+      const rowCache = db.prepare(`
+        SELECT gerente_id, gerente_nome, superintendente_nome 
+        FROM gerentes_cedentes_cache 
+        WHERE (? != '' AND (documento = ? OR documento = ? OR (LENGTH(?) >= 8 AND SUBSTR(documento, 1, 8) = ?)))
+           OR (? != '' AND UPPER(nome) = UPPER(?))
+           OR (? != '' AND nome LIKE ?)
+        ORDER BY updated_at DESC
+        LIMIT 1
+      `).get(doc, doc, rootDoc, rootDoc, rootDoc, name, name, name, `%${name}%`);
+
+      if (rowCache?.gerente_nome) {
+        foundManager = rowCache.gerente_nome.trim();
+        if (!foundSuperintendente && rowCache.superintendente_nome) {
+          foundSuperintendente = rowCache.superintendente_nome.trim();
+        }
+      }
+    } catch (e) {
+      console.warn('Aviso ao consultar gerentes_cedentes_cache:', e.message);
+    }
+  }
+
+  // 3. Procura nas tabelas de cedentes da Carteira FIDC (cedentes e fidc_cedentes) com JOIN em gerentes
+  if (!foundManager && tableExists('gerentes')) {
+    try {
+      const unionCed = [];
+      if (tableExists('fidc_cedentes')) unionCed.push('SELECT cnpj_raiz, nome, gerente_id FROM fidc_cedentes WHERE gerente_id IS NOT NULL');
+      if (tableExists('cedentes')) unionCed.push('SELECT cnpj_raiz, nome, gerente_id FROM cedentes WHERE gerente_id IS NOT NULL');
+
+      if (unionCed.length > 0) {
+        const rowCed = db.prepare(`
+          SELECT g.nome as gerente_nome 
+          FROM (${unionCed.join(' UNION ')}) c 
+          JOIN gerentes g ON g.id = c.gerente_id 
+          WHERE (LENGTH(?) >= 8 AND c.cnpj_raiz = ?)
+             OR (? != '' AND UPPER(c.nome) = UPPER(?))
+             OR (? != '' AND c.nome LIKE ?)
+          LIMIT 1
+        `).get(rootDoc, rootDoc, name, name, name, `%${name}%`);
+
+        if (rowCed?.gerente_nome) {
+          foundManager = rowCed.gerente_nome.trim();
+        }
+      }
+    } catch (e) {
+      console.warn('Aviso ao consultar carteira FIDC de cedentes:', e.message);
+    }
+  }
+
   // 4. Se ainda não achou, consulta no cache de títulos da API UNLTD/BitFin para este documento
-  if (!foundManager && document) {
-    const docClean = normalizeEntityDocument(document);
+  if (!foundManager && doc) {
     if (Array.isArray(unltdFullHistoryCache?.data)) {
       for (const t of unltdFullHistoryCache.data) {
         const tDoc = normalizeEntityDocument(t.contaOperacional?.cliente?.entidade?.documento || t.cliente?.documento || t.cedente_cnpj);
-        if (tDoc === docClean) {
+        if (tDoc === doc || (rootDoc && tDoc.startsWith(rootDoc))) {
           const gName = extractManagerName(t);
           if (gName) {
             foundManager = gName;
@@ -1311,22 +1409,42 @@ function extractManagerFromClientPayload(payload, document) {
   }
 
   // 5. Se ainda não achou, consulta na BASE_SMARTFACTOR
-  if (!foundManager && document && tableExists('BASE_SMARTFACTOR')) {
+  if (!foundManager && (doc || name) && tableExists('BASE_SMARTFACTOR')) {
     try {
-      const docClean = normalizeEntityDocument(document);
       const sfRow = db.prepare(`
         SELECT GERENTE FROM BASE_SMARTFACTOR 
-        WHERE (DOCUMENTO = ? OR DOCUMENTO = ?) AND GERENTE IS NOT NULL AND GERENTE != ''
+        WHERE ((DOCUMENTO = ? OR DOCUMENTO = ? OR (LENGTH(?) >= 8 AND SUBSTR(DOCUMENTO, 1, 8) = ?))
+           OR (? != '' AND (UPPER(NOME_CLIENTE) = UPPER(?) OR NOME_CLIENTE LIKE ?)))
+          AND GERENTE IS NOT NULL AND GERENTE != ''
         LIMIT 1
-      `).get(document, docClean);
+      `).get(document, doc, rootDoc, rootDoc, name, name, `%${name}%`);
       if (sfRow?.GERENTE) {
         foundManager = sfRow.GERENTE.trim();
       }
     } catch {}
   }
 
+  // 6. Normaliza com os gerentes cadastrados oficialmente na lista de gerentes (gerentes_contas)
+  try {
+    ensureGerentesContasTable();
+    const registered = db.prepare(`SELECT * FROM gerentes_contas WHERE ativo = 1`).all();
+    if (foundManager) {
+      const matched = matchRegisteredManager(foundManager, registered);
+      if (matched) {
+        foundManager = matched.nome;
+        if (!foundSuperintendente || foundSuperintendente === 'Sebastiao Neto') {
+          foundSuperintendente = matched.superintendente_nome || (matched.cargo === 'SUPERINTENDENTE' ? matched.nome : 'Rafael Pereira');
+        }
+      }
+    }
+  } catch {}
+
+  if (!foundSuperintendente || foundSuperintendente === 'Sebastiao Neto') {
+    foundSuperintendente = 'Rafael Pereira';
+  }
+
   return {
-    gerente: foundManager,
+    gerente: foundManager || '',
     superintendente: foundSuperintendente
   };
 }
@@ -1335,10 +1453,13 @@ function enrichClientWithManagers(payload) {
   if (!payload || typeof payload !== 'object') return payload;
   const entidade = payload.entidade || {};
   const doc = entidade.documento || payload.documento;
+  const name = entidade.nome || payload.nome;
 
-  const extracted = extractManagerFromClientPayload(payload, doc);
+  const isBlank = (val) => !val || !String(val).trim() || String(val).trim().toLowerCase() === 'não informado';
 
-  if (!entidade.gerente) {
+  const extracted = extractManagerFromClientPayload(payload, doc, name);
+
+  if (isBlank(entidade.gerente)) {
     entidade.gerente = extracted.gerente || '';
   }
 
@@ -1353,7 +1474,7 @@ function enrichClientWithManagers(payload) {
     }
   } catch (err) {}
   
-  if (entidade.superintendente === undefined || entidade.superintendente === null || !entidade.superintendente || entidade.superintendente === 'Sebastiao Neto') {
+  if (isBlank(entidade.superintendente) || entidade.superintendente === 'Sebastiao Neto') {
     const fromAccounts = (payload.contasOperacionais || [])
       .map(acc => acc?.superintendente?.nome || acc?.superintendente)
       .find(Boolean);
@@ -1579,17 +1700,35 @@ function composeClientRegistration(apiData, localRow) {
   const contacts = mergeClientContacts(localContacts, apiContacts);
 
   const doc = normalizeEntityDocument(mergedData?.entidade?.documento || localRow?.documento || base?.entidade?.documento);
+  const entityName = mergedData?.entidade?.nome || base?.entidade?.nome || localRow?.nome || '';
+
+  const isBlank = (val) => !val || !String(val).trim() || String(val).trim().toLowerCase() === 'não informado';
 
   // Se override tiver gerente explicitamente preenchido pelo usuário (que não seja string vazia ou "Não informado"), usa ele
   let effectiveGerente = override?.entidade?.gerente;
   let effectiveSuperintendente = override?.entidade?.superintendente;
 
-  // Se não foi definido no override ou se está vazio, busca na base/API/entidade extraída
-  if (!effectiveGerente || effectiveGerente === 'Não informado' || !effectiveGerente.trim()) {
-    const extracted = extractManagerFromClientPayload(base, doc);
-    effectiveGerente = base?.entidade?.gerente || extracted.gerente || '';
-    if (!effectiveSuperintendente) {
-      effectiveSuperintendente = base?.entidade?.superintendente || extracted.superintendente || '';
+  // Se não foi definido no override ou se está "Não informado", busca na base/API ou extrai via cascata
+  if (isBlank(effectiveGerente)) {
+    const fromBase = base?.entidade?.gerente;
+    if (!isBlank(fromBase)) {
+      effectiveGerente = fromBase;
+    } else {
+      const extracted = extractManagerFromClientPayload(base, doc, entityName);
+      effectiveGerente = extracted.gerente || '';
+      if (isBlank(effectiveSuperintendente) && extracted.superintendente) {
+        effectiveSuperintendente = extracted.superintendente;
+      }
+    }
+  }
+
+  if (isBlank(effectiveSuperintendente)) {
+    const fromBaseSup = base?.entidade?.superintendente;
+    if (!isBlank(fromBaseSup)) {
+      effectiveSuperintendente = fromBaseSup;
+    } else {
+      const extracted = extractManagerFromClientPayload(base, doc, entityName);
+      effectiveSuperintendente = extracted.superintendente || 'Rafael Pereira';
     }
   }
 
@@ -1600,11 +1739,13 @@ function composeClientRegistration(apiData, localRow) {
     const matched = matchRegisteredManager(effectiveGerente, registered);
     if (matched) {
       effectiveGerente = matched.nome;
-      effectiveSuperintendente = matched.superintendente_nome || (matched.cargo === 'SUPERINTENDENTE' ? matched.nome : 'Rafael Pereira');
+      if (isBlank(effectiveSuperintendente) || effectiveSuperintendente === 'Sebastiao Neto') {
+        effectiveSuperintendente = matched.superintendente_nome || (matched.cargo === 'SUPERINTENDENTE' ? matched.nome : 'Rafael Pereira');
+      }
     }
   } catch {}
 
-  if (!effectiveSuperintendente || effectiveSuperintendente === 'Sebastiao Neto') {
+  if (isBlank(effectiveSuperintendente) || effectiveSuperintendente === 'Sebastiao Neto') {
     effectiveSuperintendente = 'Rafael Pereira';
   }
 
@@ -1769,7 +1910,32 @@ app.post('/api/clientes-cadastro', requireSession, requireClientRegistrationAcce
       created_at, updated_at, updated_by
     ) VALUES (?, NULL, ?, 1, ?, ?, ?)
   `).run(document, JSON.stringify(data), now, now, req.clientRegistrationUser.username || req.clientRegistrationUser.id);
-  return res.status(201).json(composeClientRegistration(null, getLocalClientRow(document)));
+  const composed = composeClientRegistration(null, getLocalClientRow(document));
+  try {
+    const gName = composed.data?.entidade?.gerente;
+    if (gName && gName !== 'Não informado') {
+      ensureGerentesContasTable();
+      ensureGerentesCedentesCacheTable();
+      const registered = db.prepare(`SELECT * FROM gerentes_contas WHERE ativo = 1`).all();
+      const matched = matchRegisteredManager(gName, registered);
+      if (matched) {
+        upsertDiscoveredCedente({
+          documento: document,
+          nome: composed.data?.entidade?.nome || 'Cliente Interno',
+          email: composed.data?.entidade?.email || '-',
+          telefone: composed.data?.entidade?.telefone || '-',
+          tipo: composed.data?.entidade?.tipo || 'PJ',
+          gerenteId: matched.id,
+          gerenteNome: matched.nome,
+          superintendenteNome: matched.superintendente_nome || (matched.cargo === 'SUPERINTENDENTE' ? matched.nome : 'Rafael Pereira'),
+          source: 'Cadastro de Clientes'
+        });
+      }
+    }
+  } catch (errSync) {
+    console.warn('Aviso ao sincronizar novo cliente no cache de gerentes:', errSync.message);
+  }
+  return res.status(201).json(composed);
 });
 
 app.put('/api/clientes-cadastro/:documento', requireSession, requireClientRegistrationAccess, async (req, res) => {
@@ -1805,7 +1971,32 @@ app.put('/api/clientes-cadastro/:documento', requireSession, requireClientRegist
     now,
     req.clientRegistrationUser.username || req.clientRegistrationUser.id
   );
-  return res.json(composeClientRegistration(apiData, getLocalClientRow(document)));
+  const composed = composeClientRegistration(apiData, getLocalClientRow(document));
+  try {
+    const gName = composed.data?.entidade?.gerente;
+    if (gName && gName !== 'Não informado') {
+      ensureGerentesContasTable();
+      ensureGerentesCedentesCacheTable();
+      const registered = db.prepare(`SELECT * FROM gerentes_contas WHERE ativo = 1`).all();
+      const matched = matchRegisteredManager(gName, registered);
+      if (matched) {
+        upsertDiscoveredCedente({
+          documento: document,
+          nome: composed.data?.entidade?.nome || 'Cliente Interno',
+          email: composed.data?.entidade?.email || '-',
+          telefone: composed.data?.entidade?.telefone || '-',
+          tipo: composed.data?.entidade?.tipo || 'PJ',
+          gerenteId: matched.id,
+          gerenteNome: matched.nome,
+          superintendenteNome: matched.superintendente_nome || (matched.cargo === 'SUPERINTENDENTE' ? matched.nome : 'Rafael Pereira'),
+          source: 'Cadastro de Clientes'
+        });
+      }
+    }
+  } catch (errSync) {
+    console.warn('Aviso ao sincronizar cedente salvo no cache de gerentes:', errSync.message);
+  }
+  return res.json(composed);
 });
 
 app.delete('/api/clientes-cadastro/:documento', requireSession, requireClientRegistrationAccess, (req, res) => {
@@ -4999,7 +5190,7 @@ registerConfirmationRoutes(app, {
 
 registerOperationsRoutes(app, {
   requireSession,
-  checkAccess: requirePermission('14.1', '14.2', '14'),
+  checkAccess: requirePermission('14.1', '14.2', '14.3', '14', '10.1'),
   unltdToken: UNLTD_TOKEN
 });
 

@@ -357,18 +357,49 @@ export const systemSearchItems: SearchItem[] = [
   // ==========================================
   // GRUPO CONFIRMAÇÃO
   // ==========================================
+  // ==========================================
+  // GRUPO MESA DE OPERAÇÃO
+  // ==========================================
   {
-    id: 'conf-sistema',
-    title: 'Sistema de Confirmação de Títulos',
-    category: 'Confirmação',
-    breadcrumb: ['Grupos', 'Confirmação', 'Sistema de Confirmação'],
-    path: '/confirmacao/sistema',
-    permissionId: '10.1',
-    description: 'Checagem de lastro, contato com sacados, gravação de confirmação e validação de entrega de mercadorias/serviços.',
-    explanation: 'Acesse Grupos > Confirmação > Sistema de Confirmação para checar operações e ligar para sacados.',
-    tags: ['Checagem de Lastro', 'Gravação Sacados', 'Canhotos', 'Notas Fiscais'],
-    keywords: ['confirmacao', 'sistema de confirmacao', 'checar titulos', 'sacados confirmacao', 'gravacao', 'lastro', 'entrega', 'canhoto', 'nota fiscal confirmada', 'checagem'],
-    icon: 'ClipboardCheck',
+    id: 'mesa-analise',
+    title: 'Análise de Operação',
+    category: 'Mesa de Operação',
+    breadcrumb: ['Grupos', 'Mesa de Operação', 'Análise de Operação'],
+    path: '/mesa-operacoes/analise',
+    permissionId: '14.1',
+    description: 'Análise, acompanhamento e monitoramento das operações da mesa de crédito.',
+    explanation: 'Acesse Grupos > Mesa de Operação > Análise de Operação para monitorar bordereôs e operações.',
+    tags: ['Operações', 'Bordereôs', 'Análise de Crédito'],
+    keywords: ['mesa de operacao', 'analise de operacao', 'operacoes', 'bordereos', 'credito'],
+    icon: 'Search',
+    badge: 'Submenu'
+  },
+  {
+    id: 'mesa-validar-ceps',
+    title: 'Validar CEPs (CNAB)',
+    category: 'Mesa de Operação',
+    breadcrumb: ['Grupos', 'Mesa de Operação', 'Validar CEPs'],
+    path: '/mesa-operacoes/validar-ceps',
+    permissionId: '14.2',
+    description: 'Validação e enriquecimento de CEPs em arquivos CNAB para a mesa de operações.',
+    explanation: 'Acesse Grupos > Mesa de Operação > Validar CEPs para checagem e correção de endereços e CEPs.',
+    tags: ['CEPs', 'CNAB', 'Validação de Endereço'],
+    keywords: ['validar ceps', 'ceps', 'cnab', 'mesa de operacao', 'enderecos'],
+    icon: 'MapPin',
+    badge: 'Submenu'
+  },
+  {
+    id: 'mesa-relatorio-diario',
+    title: 'Relatório Diário (FIDC)',
+    category: 'Mesa de Operação',
+    breadcrumb: ['Grupos', 'Mesa de Operação', 'Relatório Diário'],
+    path: '/mesa-operacoes/relatorio-diario',
+    permissionId: '14.3',
+    description: 'Monitoramento diário de carteiras, subordinação de cotas, estoque de títulos e limites regulamentares dos FIDCs.',
+    explanation: 'Acesse Grupos > Mesa de Operação > Relatório Diário para acompanhar indicadores, cotas e posições diárias.',
+    tags: ['Relatório Diário', 'FIDC', 'Cotas', 'Carteira', 'Subordinação'],
+    keywords: ['relatorio diario', 'mesa de operacao', 'confirmacao', 'sistema de confirmacao', 'fidc', 'cotas', 'carteira', 'posicao diaria', 'estoque titulos'],
+    icon: 'FileSpreadsheet',
     badge: 'Submenu'
   },
   {

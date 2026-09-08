@@ -5,6 +5,8 @@ import { useAuth } from './AuthContext';
 import NotificationBell from './NotificationBell';
 import TopHeaderTicker from './TopHeaderTicker';
 import SystemSearchModal from './SystemSearchModal';
+import { startVersionWatcher } from './version/versionService';
+import { UpdateRequiredModal } from './version/UpdateRequiredModal';
 import './styles/Dashboard.css';
 import { hasAnyPermission, hasPermission } from './permissions';
 import { API_BASE_URL, getAuthHeaders } from '../../config/api';
@@ -42,18 +44,84 @@ const InternalLayout = () => {
   
   // Mobile sidebar state
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
+  const [searchInitialQuery, setSearchInitialQuery] = useState('');
 
-  // Global shortcut (Ctrl+K or Cmd+K) to toggle search modal
+  // Monitora novas atualizações / novos commits no ambiente em segundo plano
   useEffect(() => {
+    const stopWatcher = startVersionWatcher(45000);
+    return () => {
+      stopWatcher();
+    };
+  }, []);
+
+  // Global shortcut (Ctrl+K or Cmd+K) to toggle search modal, or direct typing when no text input is focused
+  useEffect(() => {
+    const isInputActive = (el: HTMLElement | null): boolean => {
+      if (!el) return false;
+      const tag = (el.tagName || '').toUpperCase();
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return true;
+      if (el.isContentEditable) return true;
+      const role = el.getAttribute?.('role');
+      if (role === 'textbox' || role === 'searchbox' || role === 'combobox') return true;
+      if (el.closest?.('input, textarea, select, [contenteditable="true"], [role="textbox"], [role="searchbox"]')) {
+        return true;
+      }
+      return false;
+    };
+
     const handleKeyDown = (e: KeyboardEvent) => {
+      // 1. Atalho Ctrl+K ou Cmd+K para alternar a busca
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
         e.preventDefault();
+        setSearchInitialQuery('');
         setIsSearchOpen(prev => !prev);
+        return;
       }
+
+      // Se a busca já estiver aberta, os eventos normais de digitação ocorrem nela
+      if (isSearchOpen) return;
+
+      // 2. Não intercepta combinações com teclas modificadoras (Ctrl, Alt, Meta)
+      if (e.ctrlKey || e.metaKey || e.altKey) {
+        return;
+      }
+
+      // 3. Apenas caracteres digitáveis comuns (comprimento 1 e não vazio)
+      // Descarta teclas especiais como Escape, Tab, Enter, Backspace, Delete, Arrows, F1-F12, etc.
+      if (e.key.length !== 1 || e.key.trim() === '') {
+        return;
+      }
+
+      // 4. Ignora repetição de tecla por segurar pressionada
+      if (e.repeat) {
+        return;
+      }
+
+      // 5. GARANTIA ABSOLUTA: só ativa se NÃO tiver nenhum campo de texto selecionado/ativo
+      const activeEl = document.activeElement as HTMLElement | null;
+      const targetEl = e.target as HTMLElement | null;
+
+      if (isInputActive(activeEl) || isInputActive(targetEl)) {
+        return;
+      }
+
+      // 6. Se houver alguma outra janela modal ou pop-up aberta no sistema, não intercepta
+      const hasOtherModal = document.querySelector(
+        '.pa-modal-overlay, .oa-modal-overlay, .cs-modal-overlay, .ca-modal-overlay, .manager-modal-overlay, .title-modal-overlay, .due-diligence-modal-overlay, .mr-modal-overlay, .modal-overlay, [role="dialog"]'
+      );
+      if (hasOtherModal) {
+        return;
+      }
+
+      // 7. Abre a busca inteligente pré-carregada com o primeiro caractere digitado
+      e.preventDefault();
+      setSearchInitialQuery(e.key);
+      setIsSearchOpen(true);
     };
+
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, []);
+  }, [isSearchOpen]);
 
   // Close sidebar on navigation on mobile
   useEffect(() => {
@@ -268,7 +336,7 @@ const InternalLayout = () => {
               )}
             </div>
           )}
-          {hasAnyPermission(user, ['10.1', '10.2', '10']) && (
+          {hasAnyPermission(user, ['10.2', '10']) && (
             <div className="nav-menu-group">
               <div
                 className={`nav-item nav-item-parent ${isConfirmationActive ? 'active' : ''}`}
@@ -283,11 +351,6 @@ const InternalLayout = () => {
 
               {isConfirmationOpen && (
                 <div className="nav-submenu" style={{ paddingLeft: '1rem' }}>
-                  {hasAccess('10.1') && (
-                    <Link to="/confirmacao/sistema" className={navItemClass('/confirmacao/sistema')}>
-                      <ClipboardCheck size={18} /> Sistema de Confirmação
-                    </Link>
-                  )}
                   {hasAccess('10.2') && (
                     <Link to="/confirmacao/analise" className={navItemClass('/confirmacao/analise')}>
                       <Search size={18} /> Análise de Confirmação
@@ -345,7 +408,7 @@ const InternalLayout = () => {
               )}
             </div>
           )}
-          {hasAnyPermission(user, ['14.1', '14']) && (
+          {hasAnyPermission(user, ['14.1', '14.2', '14.3', '14', '10.1']) && (
             <div className="nav-menu-group">
               <div
                 className={`nav-item nav-item-parent ${isOperationsActive ? 'active' : ''}`}
@@ -368,6 +431,11 @@ const InternalLayout = () => {
                   {hasAccess('14.2') && (
                     <Link to="/mesa-operacoes/validar-ceps" className={navItemClass('/mesa-operacoes/validar-ceps')}>
                       <MapPin size={18} /> Validar CEPs
+                    </Link>
+                  )}
+                  {hasAccess('14.3') && (
+                    <Link to="/mesa-operacoes/relatorio-diario" className={navItemClass('/mesa-operacoes/relatorio-diario')}>
+                      <FileSpreadsheet size={18} /> Relatório Diário
                     </Link>
                   )}
                 </div>
@@ -442,7 +510,10 @@ const InternalLayout = () => {
 
             <button 
               className="header-search-btn" 
-              onClick={() => setIsSearchOpen(true)}
+              onClick={() => {
+                setSearchInitialQuery('');
+                setIsSearchOpen(true);
+              }}
               title="Buscar módulos, recursos ou termos no sistema (Ctrl + K)"
             >
               <div className="header-search-icon-circle">
@@ -468,8 +539,15 @@ const InternalLayout = () => {
       {/* Global System Search & Navigation Assistant */}
       <SystemSearchModal
         isOpen={isSearchOpen}
-        onClose={() => setIsSearchOpen(false)}
+        initialQuery={searchInitialQuery}
+        onClose={() => {
+          setIsSearchOpen(false);
+          setSearchInitialQuery('');
+        }}
       />
+
+      {/* Modal de Nova Versão / Commit Detectado em Segundo Plano */}
+      <UpdateRequiredModal />
     </div>
   );
 };
