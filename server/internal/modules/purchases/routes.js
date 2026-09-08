@@ -25,7 +25,7 @@ const storage = multer.diskStorage({
   filename: function (req, file, cb) {
     const ext = path.extname(file.originalname);
     const basename = path.basename(file.originalname, ext);
-    const safeBaseName = basename.replace(/[^a-zA-Z0-9_\-\.\s]/g, '_');
+    const safeBaseName = basename.replace(/[^a-zA-Z0-9_\-.\s]/g, '_');
     cb(null, `${safeBaseName}-${Date.now()}-${randomUUID().substring(0, 8)}${ext}`);
   }
 });
@@ -190,6 +190,7 @@ export function registerPurchaseRoutes(app, {
       { name: 'juridico_aprovador_nome', sql: 'ALTER TABLE compras_requisicoes ADD COLUMN juridico_aprovador_nome TEXT' },
       { name: 'juridico_motivo', sql: 'ALTER TABLE compras_requisicoes ADD COLUMN juridico_motivo TEXT' },
       { name: 'juridico_decidido_em', sql: 'ALTER TABLE compras_requisicoes ADD COLUMN juridico_decidido_em TEXT' },
+      { name: 'chave_pix', sql: 'ALTER TABLE compras_requisicoes ADD COLUMN chave_pix TEXT' },
     ];
     for (const col of requiredCols) {
       if (!cols.includes(col.name)) {
@@ -200,6 +201,9 @@ export function registerPurchaseRoutes(app, {
     const itemCols = db.prepare("PRAGMA table_info(compras_requisicoes_itens)").all().map(c => c.name.toLowerCase());
     if (!itemCols.includes('empresa_pagadora')) {
       db.exec("ALTER TABLE compras_requisicoes_itens ADD COLUMN empresa_pagadora TEXT DEFAULT 'INDIFERENTE'");
+    }
+    if (!itemCols.includes('chave_pix')) {
+      db.exec("ALTER TABLE compras_requisicoes_itens ADD COLUMN chave_pix TEXT");
     }
   } catch (err) {
     console.warn('Aviso na migração SQLite de compras_requisicoes:', err.message);
@@ -548,9 +552,13 @@ export function registerPurchaseRoutes(app, {
       const forma_pagamento = String(it?.forma_pagamento || '').trim().toUpperCase();
       const produto_servico = String(it?.produto_servico || '').trim();
       const valor = Number(it?.valor);
+      const chave_pix = String(it?.chave_pix || req.body?.chave_pix || '').trim();
 
       if (!categoria) {
         return res.status(400).json({ error: `${prefix}A Categoria é obrigatória (Insumos, Visita, Reembolso, Festas, Aniversários, Eventos, Outros).` });
+      }
+      if (categoria === 'Reembolso' && !chave_pix) {
+        return res.status(400).json({ error: `${prefix}Para solicitações de Reembolso, a Chave PIX para recebimento é obrigatória.` });
       }
       if (!tipo_destino || !['DEPARTAMENTO', 'CENTRO_DE_CUSTO', 'EMPRESA', 'CLIENTE'].includes(tipo_destino)) {
         return res.status(400).json({ error: `${prefix}Selecione o Tipo de Destino (Departamento, Centro de Custo, Empresa ou Cliente).` });
@@ -592,6 +600,7 @@ export function registerPurchaseRoutes(app, {
         let totalQtd = 0;
         const firstItem = itens[0];
         const mainEmpresaPagadora = String(firstItem.empresa_pagadora || req.body?.empresa_pagadora || 'INDIFERENTE').trim();
+        const mainChavePix = String(firstItem.chave_pix || req.body?.chave_pix || '').trim();
 
         const mainProdutoServico = itens.length === 1 
           ? firstItem.produto_servico 
@@ -628,11 +637,11 @@ export function registerPurchaseRoutes(app, {
           INSERT INTO compras_requisicoes (
             id, numero, tipo_destino, empresa_pagadora, categoria, fornecedor_nome, fornecedor_contato, forma_pagamento,
             quantidade_parcelas, departamento_centro_custo, produto_servico,
-            valor, quantidade, observacoes, status, arquivado, arquivado_manualmente,
+            valor, quantidade, observacoes, chave_pix, status, arquivado, arquivado_manualmente,
             requer_juridico, juridico_status,
             solicitante_id, solicitante_nome, solicitante_email,
             created_at, updated_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?, ?, ?, ?, ?, ?, ?)
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?, ?, ?, ?, ?, ?, ?)
         `).run(
           id,
           count,
@@ -648,6 +657,7 @@ export function registerPurchaseRoutes(app, {
           totalValor,
           totalQtd,
           firstItem.observacoes || '',
+          mainChavePix,
           initialStatus,
           requerJuridico ? 1 : 0,
           initialJuridicoStatus,
@@ -663,8 +673,8 @@ export function registerPurchaseRoutes(app, {
           INSERT INTO compras_requisicoes_itens (
             id, requisicao_id, numero_item, tipo_destino, empresa_pagadora, departamento_centro_custo,
             categoria, fornecedor_nome, fornecedor_contato, forma_pagamento,
-            quantidade_parcelas, produto_servico, valor, quantidade, observacoes, created_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            quantidade_parcelas, produto_servico, valor, quantidade, observacoes, chave_pix, created_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `);
 
         for (let i = 0; i < itens.length; i++) {
@@ -675,6 +685,7 @@ export function registerPurchaseRoutes(app, {
           const itVal = Number(it.valor);
           const itParcelas = Math.max(1, Number(it.quantidade_parcelas) || 1);
           const itEmpresa = String(it.empresa_pagadora || mainEmpresaPagadora).trim();
+          const itChavePix = String(it.chave_pix || mainChavePix).trim();
 
           insertItemStmt.run(
             itemId,
@@ -692,6 +703,7 @@ export function registerPurchaseRoutes(app, {
             itVal,
             itQtd,
             String(it.observacoes || '').trim(),
+            itChavePix,
             now
           );
 
@@ -711,6 +723,7 @@ export function registerPurchaseRoutes(app, {
             valor: itVal,
             quantidade: itQtd,
             observacoes: it.observacoes || '',
+            chave_pix: itChavePix,
             created_at: now
           });
         }
@@ -813,6 +826,39 @@ export function registerPurchaseRoutes(app, {
     }
   });
 
+  // --- ROTA: SOLICITAÇÕES REVISADAS (ACESSO VITALÍCIO PARA APROVADORES E MASTER) ---
+  app.get('/api/compras/revisadas', requireSession, requireAccess, (req, res) => {
+    try {
+      const isMaster = req.authUser.role === 'MASTER';
+      const userId = req.authUser.id;
+
+      const sql = `
+        SELECT r.*,
+          (SELECT COUNT(*) FROM compras_mensagens m WHERE m.requisicao_id = r.id) as total_mensagens,
+          COALESCE((SELECT COUNT(*) FROM compras_requisicoes_itens i WHERE i.requisicao_id = r.id), 1) as total_itens,
+          COALESCE((SELECT COUNT(*) FROM compras_anexos a WHERE a.requisicao_id = r.id), 0) as total_anexos
+        FROM compras_requisicoes r
+        WHERE (
+          r.aprovador_id = ?
+          OR EXISTS (
+            SELECT 1 FROM compras_mensagens m 
+            WHERE m.requisicao_id = r.id 
+              AND m.autor_id = ? 
+              AND m.autor_role = 'APROVADOR'
+          )
+          ${isMaster ? `OR (r.decidido_em IS NOT NULL OR r.aprovador_id IS NOT NULL OR r.status IN ('APROVADO', 'NEGADO', 'PAGO', 'PAGAMENTO_PAUSADO', 'SOLICITACAO_CONCLUIDA'))` : ''}
+        )
+        ORDER BY COALESCE(r.decidido_em, r.updated_at) DESC
+      `;
+
+      const rows = db.prepare(sql).all(userId, userId);
+      return res.json(rows);
+    } catch (error) {
+      console.error('Erro ao carregar solicitações revisadas:', error.message);
+      return res.status(500).json({ error: 'Erro ao carregar solicitações revisadas.' });
+    }
+  });
+
   // --- ROTA: FILA DE APROVAÇÃO DO JURÍDICO (SOLICITAÇÕES >= R$ 2.000) ---
   app.get('/api/compras/juridico/fila', requireSession, requirePermission(['13.1', '13']), (req, res) => {
     try {
@@ -833,7 +879,7 @@ export function registerPurchaseRoutes(app, {
     }
   });
 
-  // --- ROTA: HISTÓRICO GERAL DO JURÍDICO (SOLICITAÇÕES APROVADAS / REJEITADAS / AVALIADAS PELO JURÍDICO) ---
+  // --- ROTA: HISTÓRICO GERAL DO JURÍDICO (SOLICITAÇÕES APROVADAS / REJEITADAS / AVALIADAS PELO JURÍDICO - ACESSO VITALÍCIO) ---
   app.get('/api/compras/juridico/historico', requireSession, requirePermission(['13.1', '13']), (req, res) => {
     try {
       const rows = db.prepare(`
@@ -842,7 +888,11 @@ export function registerPurchaseRoutes(app, {
           COALESCE((SELECT COUNT(*) FROM compras_requisicoes_itens i WHERE i.requisicao_id = r.id), 1) as total_itens,
           COALESCE((SELECT COUNT(*) FROM compras_anexos a WHERE a.requisicao_id = r.id), 0) as total_anexos
         FROM compras_requisicoes r
-        WHERE r.requer_juridico = 1 OR r.status = 'NEGADO_JURIDICO' OR r.juridico_status IN ('APROVADO', 'REJEITADO')
+        WHERE r.requer_juridico = 1 
+           OR r.status = 'NEGADO_JURIDICO' 
+           OR r.juridico_status IN ('APROVADO', 'REJEITADO')
+           OR r.juridico_aprovador_id IS NOT NULL
+           OR EXISTS (SELECT 1 FROM compras_mensagens m WHERE m.requisicao_id = r.id AND m.autor_role = 'JURIDICO')
         ORDER BY COALESCE(r.juridico_decidido_em, r.decidido_em, r.updated_at) DESC
       `).all();
 
@@ -1054,7 +1104,13 @@ export function registerPurchaseRoutes(app, {
       const hasFinanceAccess = req.authUser.role === 'MASTER' || checkUserPermission(req.authUser, '7') || checkUserPermission(req.authUser, '7.3') || checkUserPermission(req.authUser, '7.4') || checkUserPermission(req.authUser, '7.5');
       const isLegal = req.authUser.role === 'MASTER' || checkUserPermission(req.authUser, '13') || checkUserPermission(req.authUser, '13.1');
 
-      if (!isOwner && !isApprover && !hasFinanceAccess && !isLegal) {
+      // Acesso vitalício para aprovador que revisou/decidiu
+      const isReviewer = requisicao.aprovador_id === req.authUser.id || Boolean(db.prepare(`SELECT 1 FROM compras_mensagens WHERE requisicao_id = ? AND autor_id = ?`).get(req.params.id, req.authUser.id));
+
+      // Acesso vitalício para o Jurídico (se a solicitação passou pela esteira jurídica ou usuário tem papel jurídico)
+      const hasLegalHistory = isLegal || requisicao.requer_juridico === 1 || requisicao.juridico_aprovador_id === req.authUser.id || requisicao.juridico_status !== 'DISPENSADO' || Boolean(db.prepare(`SELECT 1 FROM compras_mensagens WHERE requisicao_id = ? AND autor_role = 'JURIDICO'`).get(req.params.id));
+
+      if (!isOwner && !isApprover && !hasFinanceAccess && !isReviewer && !hasLegalHistory) {
         return res.status(403).json({ error: 'Sem permissão para visualizar esta solicitação.' });
       }
 
@@ -1082,6 +1138,7 @@ export function registerPurchaseRoutes(app, {
           valor: requisicao.valor,
           quantidade: requisicao.quantidade,
           observacoes: requisicao.observacoes || '',
+          chave_pix: requisicao.chave_pix || '',
           created_at: requisicao.created_at
         }];
       }

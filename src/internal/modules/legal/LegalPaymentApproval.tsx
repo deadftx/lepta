@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import {
   Scale, CheckCircle2, XCircle, Clock, MessageSquare, Send, X,
   AlertCircle, RefreshCw, User, Eye, Download,
-  Paperclip, Check
+  Paperclip, Check, Copy, Zap
 } from 'lucide-react';
 import { API_BASE_URL, getAuthHeaders } from '../../../config/api';
 import '../administrative/purchases/PurchaseApproval.css';
@@ -22,6 +22,7 @@ interface PurchaseItem {
   produto_servico: string;
   valor: number;
   quantidade: number;
+  chave_pix?: string;
   observacoes?: string;
   created_at?: string;
 }
@@ -58,6 +59,7 @@ interface PurchaseRequest {
   produto_servico: string;
   valor: number;
   quantidade: number;
+  chave_pix?: string;
   observacoes?: string;
   status: string;
   arquivado: number;
@@ -112,6 +114,7 @@ const LegalPaymentApproval: React.FC = () => {
   const [selectedReq, setSelectedReq] = useState<PurchaseRequest | null>(null);
   const [loadingDetails, setLoadingDetails] = useState(false);
   const [reqAttachments, setReqAttachments] = useState<PurchaseAttachment[]>([]);
+  const [copiedPix, setCopiedPix] = useState(false);
 
   // Ações de Parecer Jurídico
   const [isApproveModalOpen, setIsApproveModalOpen] = useState(false);
@@ -1054,6 +1057,57 @@ const LegalPaymentApproval: React.FC = () => {
                 </div>
               </div>
 
+              {(selectedReq.chave_pix || selectedReq.categoria === 'Reembolso' || selectedReq.itens?.some(i => i.chave_pix)) && (
+                <div style={{
+                  background: 'rgba(16, 185, 129, 0.08)',
+                  border: '1px solid rgba(16, 185, 129, 0.3)',
+                  padding: '12px 16px',
+                  borderRadius: '10px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  flexWrap: 'wrap',
+                  gap: '12px'
+                }}>
+                  <div>
+                    <span style={{ color: '#34d399', fontSize: '0.75rem', textTransform: 'uppercase', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <Zap size={14} /> Chave PIX para Reembolso (Destinatário)
+                    </span>
+                    <div style={{ color: '#f8fafc', fontWeight: 750, fontSize: '1.05rem', marginTop: '4px', wordBreak: 'break-all' }}>
+                      {selectedReq.chave_pix || selectedReq.itens?.find(i => i.chave_pix)?.chave_pix || 'Não informada'}
+                    </div>
+                  </div>
+                  {(selectedReq.chave_pix || selectedReq.itens?.find(i => i.chave_pix)?.chave_pix) && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const pix = selectedReq.chave_pix || selectedReq.itens?.find(i => i.chave_pix)?.chave_pix || '';
+                        navigator.clipboard.writeText(pix);
+                        setCopiedPix(true);
+                        setTimeout(() => setCopiedPix(false), 2000);
+                      }}
+                      style={{
+                        background: copiedPix ? '#059669' : '#10b981',
+                        color: '#0f172a',
+                        border: 'none',
+                        padding: '6px 14px',
+                        borderRadius: '6px',
+                        fontWeight: 700,
+                        fontSize: '0.8rem',
+                        cursor: 'pointer',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                        transition: 'all 0.2s'
+                      }}
+                    >
+                      {copiedPix ? <Check size={14} /> : <Copy size={13} />}
+                      {copiedPix ? 'Copiado!' : 'Copiar Chave PIX'}
+                    </button>
+                  )}
+                </div>
+              )}
+
               {/* TABELA DE ITENS */}
               <div>
                 <h3 style={{ fontSize: '1rem', fontWeight: 'bold', color: '#f8fafc', margin: '0 0 8px 0' }}>
@@ -1079,11 +1133,19 @@ const LegalPaymentApproval: React.FC = () => {
                         categoria: selectedReq.categoria || 'Outros',
                         fornecedor_nome: selectedReq.fornecedor_nome || '-',
                         quantidade: selectedReq.quantidade || 1,
-                        valor: selectedReq.valor
+                        valor: selectedReq.valor,
+                        chave_pix: selectedReq.chave_pix
                       }]).map((it, idx) => (
                         <tr key={idx} style={{ borderBottom: '1px solid rgba(255, 255, 255, 0.04)' }}>
                           <td style={{ padding: '8px 12px', color: '#64748b' }}>{it.numero_item || idx + 1}</td>
-                          <td style={{ padding: '8px 12px', color: '#f8fafc', fontWeight: 500 }}>{it.produto_servico}</td>
+                          <td style={{ padding: '8px 12px', color: '#f8fafc', fontWeight: 500 }}>
+                            <div>{it.produto_servico}</div>
+                            {it.chave_pix && (
+                              <div style={{ fontSize: '0.75rem', color: '#34d399', marginTop: '2px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                <Zap size={11} /> PIX: {it.chave_pix}
+                              </div>
+                            )}
+                          </td>
                           <td style={{ padding: '8px 12px', color: '#94a3b8' }}>{it.categoria}</td>
                           <td style={{ padding: '8px 12px', color: '#cbd5e1' }}>{it.fornecedor_nome}</td>
                           <td style={{ padding: '8px 12px', color: '#94a3b8' }}>{it.quantidade}</td>

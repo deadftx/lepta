@@ -2444,11 +2444,38 @@ function findMatchingOriginalRemessa(cedenteCnpj) {
 }
 
 /**
+ * Aplica as definições do modelo bancário (BitFin vs Vortex) nas linhas CNAB 400:
+ * - Header (Tipo 0): Nome da Instituição na posição 80..94 ('BITFIN' vs 'VORTX DTVM')
+ * - Detalhe (Tipo 1): Código da Carteira na posição 84..86 ('001' vs '021')
+ */
+export function applyModeloToCnabLines(lines, modelo = 'vortex') {
+  const isBitfin = String(modelo || '').toLowerCase() === 'bitfin';
+  const instNome = isBitfin ? padRight('BITFIN', 15) : padRight('VORTX DTVM', 15);
+  const carteira = isBitfin ? '001' : '021';
+
+  return lines.map((line, idx) => {
+    if (!line || line.length < 10) return line;
+    if (idx === 0 && line[0] === '0') {
+      let h = zeroHeaderRemessaSeq(line);
+      // Posições 080..094 (0-indexed 79..94)
+      h = h.substring(0, 79) + instNome + h.substring(94);
+      return ensure400(h);
+    }
+    if (line[0] === '1') {
+      // Posições 084..086 (0-indexed 83..86)
+      let d = line.substring(0, 83) + carteira + line.substring(86);
+      return ensure400(d);
+    }
+    return ensure400(line);
+  });
+}
+
+/**
  * Gera arquivo de remessa UNLTD CNAB 400 com TODOS OS TÍTULOS da operação,
  * replicando rigorosamente o padrão de 4 registros por título (Tipos 1, 2, 3 e 4)
  * e corrigindo exclusivamente os CEPs inconsistentes.
  */
-export async function generateCorrectedCnab400({ token, operacaoId, date }) {
+export async function generateCorrectedCnab400({ token, operacaoId, date, modelo = 'vortex' }) {
   const details = await getOperationDetails({ token, operacaoId, date });
   const { titulos = [], sacadosById = new Map(), opInfo, cedente, dataCadastro } = details;
 
@@ -2562,7 +2589,7 @@ export async function generateCorrectedCnab400({ token, operacaoId, date }) {
   // Reutiliza o arquivo base mantendo 100% dos 4 registros por título (Tipos 1, 2, 3 e 4),
   // chaves de NF-e, controle e mensagens, alterando ESTRITAMENTE as posições 327 a 334 (CEP) dos sacados inconsistentes!
   if (matchingOriginal && origLines) {
-    console.log(`[CNAB 400 #${operacaoId}] Utilizando arquivo de remessa original como matriz: ${matchingOriginal}`);
+    console.log(`[CNAB 400 #${operacaoId}] Utilizando arquivo de remessa original como matriz: ${matchingOriginal} (Modelo: ${modelo})`);
 
     const correctedLines = origLines.map((line, idx) => {
       if (idx === 0 && line[0] === '0') {
@@ -2585,7 +2612,8 @@ export async function generateCorrectedCnab400({ token, operacaoId, date }) {
       return ensure400(line);
     });
 
-    const cnabContent = correctedLines.join('\r\n') + '\r\n';
+    const finalLines = applyModeloToCnabLines(correctedLines, modelo);
+    const cnabContent = finalLines.join('\r\n') + '\r\n';
     return {
       cnabContent,
       totalTitulos: Math.floor((correctedLines.length - 2) / 4) || titulos.length,
@@ -2593,13 +2621,18 @@ export async function generateCorrectedCnab400({ token, operacaoId, date }) {
       totalCorrigidos,
       totalOriginaisValidos,
       correcoesPorDocSize: correcoesPorDoc.size,
-      cedenteNome: cedente.nome
+      cedenteNome: cedente.nome,
+      modelo
     };
   }
 
   // 4. ESTRATÉGIA B: Montagem dinâmica completa de 4 registros por título a partir dos dados da operação
   const lines = [];
   let seq = 1;
+
+  const isBitfin = String(modelo || '').toLowerCase() === 'bitfin';
+  const instNome = isBitfin ? padRight('BITFIN', 15) : padRight('VORTX DTVM', 15);
+  const carteira = isBitfin ? '001' : '021';
 
   const contaOperacional = opInfo?.contaOperacional || titulos[0]?.contaOperacional || {};
   const agencia = padLeftZero(contaOperacional.agencia || opInfo?.agencia || '0001', 4);
@@ -2622,7 +2655,7 @@ export async function generateCorrectedCnab400({ token, operacaoId, date }) {
     ' '.repeat(8) +                            // Pos 039..046 - Brancos
     padRight(cedenteNome, 30) +                // Pos 047..076 - Nome da Empresa
     '999' +                                    // Pos 077..079 - Código da Instituição
-    padRight('VORTX DTVM', 15) +               // Pos 080..094 - Nome do Banco/Custodiante
+    instNome +                                 // Pos 080..094 - Nome do Banco/Custodiante (BITFIN vs VORTX DTVM)
     dataGravacao +                             // Pos 095..100 - Data de Gravação (DDMMAA)
     ' '.repeat(280) +                          // Pos 101..380 - Brancos
     'V.1.1' +                                  // Pos 381..385 - Versão do Layout
@@ -2716,7 +2749,7 @@ export async function generateCorrectedCnab400({ token, operacaoId, date }) {
       nossoNumero +                            // Pos 063..074 - Nosso Número no Cobrador (12 posições)
       ' '.repeat(8) +                          // Pos 075..082 - Brancos
       '2' +                                    // Pos 083 - Dígito ou Modalidade Carteira
-      '021' +                                  // Pos 084..086 - Código da Carteira (021 Vinculada Vortx)
+      carteira +                               // Pos 084..086 - Código da Carteira (001 Bitfin / 021 Vortx)
       '00000000' + ' '.repeat(13) +            // Pos 087..107 - Brancos/Controle (8 zeros + 13 espaços)
       ' ' +                                    // Pos 108 - Código do Rateio de Crédito
       '01' +                                   // Pos 109..110 - Código da Ocorrência (01 = Entrada de Título)
@@ -3352,7 +3385,7 @@ export function splitCnab400File({ fileBuffer, invalidDocs = [], targetType = 'b
  * Particiona o CNAB de uma Operação na Mesa de Operações em 'validos' ou 'erros'
  * sem alterar nenhum CEP, mantendo integridade com a matriz original da remessa.
  */
-export async function splitOperationCnab400({ token, operacaoId, date, targetType = 'validos' }) {
+export async function splitOperationCnab400({ token, operacaoId, date, targetType = 'validos', modelo = 'vortex' }) {
   const diagnosis = await getOperationDetails({ token, operacaoId, date });
   const errDocs = (diagnosis.sacadosInconsistentes || []).map(s => String(s.documento || '').replace(/\D/g, ''));
 
@@ -3362,12 +3395,21 @@ export async function splitOperationCnab400({ token, operacaoId, date, targetTyp
   if (matchingOriginal && fs.existsSync(matchingOriginal)) {
     const fileBuffer = fs.readFileSync(matchingOriginal);
     const splitRes = splitCnab400File({ fileBuffer, invalidDocs: errDocs, targetType });
+    let cnabText = targetType === 'erros' ? splitRes.errorCnab : splitRes.validCnab;
+
+    if (cnabText) {
+      const spLines = cnabText.split(/\r?\n/).filter(Boolean);
+      const adaptedLines = applyModeloToCnabLines(spLines, modelo);
+      cnabText = adaptedLines.join('\r\n') + '\r\n';
+    }
+
     return {
-      cnabContent: targetType === 'erros' ? splitRes.errorCnab : splitRes.validCnab,
+      cnabContent: cnabText,
       totalTitulos: targetType === 'erros' ? splitRes.totalTitulosErros : splitRes.totalTitulosValidos,
       totalLinhas: targetType === 'erros' ? splitRes.errorTotalLinhas : splitRes.validTotalLinhas,
       targetType,
-      operacaoId
+      operacaoId,
+      modelo
     };
   }
 
@@ -3380,6 +3422,10 @@ export async function splitOperationCnab400({ token, operacaoId, date, targetTyp
     const isError = errSet.has(doc);
     return targetType === 'erros' ? isError : !isError;
   });
+
+  const isBitfin = String(modelo || '').toLowerCase() === 'bitfin';
+  const instNome = isBitfin ? padRight('BITFIN', 15) : padRight('VORTX DTVM', 15);
+  const carteira = isBitfin ? '001' : '021';
 
   const lines = [];
   let seq = 1;
@@ -3404,7 +3450,7 @@ export async function splitOperationCnab400({ token, operacaoId, date, targetTyp
     ' '.repeat(8) +
     padRight(cedenteNome, 30) +
     '999' +
-    padRight('VORTX DTVM', 15) +
+    instNome +
     dataGravacao +
     ' '.repeat(280) +
     'V.1.1' +
@@ -3445,7 +3491,7 @@ export async function splitOperationCnab400({ token, operacaoId, date, targetTyp
 
     lines.push(ensure400(
       '1' + '00' + ' '.repeat(17) + agencia + '00' + conta + ' '.repeat(8) +
-      numeroDoc + nossoNumero + ' '.repeat(10) + '0' + '000' + ' '.repeat(21) +
+      numeroDoc + nossoNumero + ' '.repeat(10) + '2' + carteira + ' '.repeat(21) +
       '0' + '00' + '00' + numeroDoc + dataVencimento + valorNominal +
       '999' + '0000' + '01' + 'N' + dataEmissao + '00' + '00' +
       padLeftZero(0, 13) + '000000' + padLeftZero(0, 13) + padLeftZero(0, 13) +
@@ -3466,7 +3512,43 @@ export async function splitOperationCnab400({ token, operacaoId, date, targetTyp
     totalTitulos: filteredTitulos.length,
     totalLinhas: lines.length,
     targetType,
-    operacaoId
+    operacaoId,
+    modelo
+  };
+}
+
+/**
+ * Construtor Unificado de Remessas CNAB 400 da Operação.
+ * Suporta:
+ *   - escopo: 'validos' | 'erros' | 'completo'
+ *   - modelo: 'vortex' (Vortx DTVM / Carteira 021) | 'bitfin' (BitFin / Carteira 001)
+ */
+export async function buildUnifiedCnabRemessa({ token, operacaoId, date, escopo = 'completo', modelo = 'vortex' }) {
+  const normalizedEscopo = String(escopo || 'completo').toLowerCase();
+  const normalizedModelo = String(modelo || 'vortex').toLowerCase() === 'bitfin' ? 'bitfin' : 'vortex';
+
+  let result;
+  let filename;
+  const prefix = normalizedModelo === 'bitfin' ? 'BITFIN' : 'VORTX';
+
+  if (normalizedEscopo === 'completo') {
+    result = await generateCorrectedCnab400({ token, operacaoId, date, modelo: normalizedModelo });
+    filename = `REMESSA_${prefix}_OP_${operacaoId}_COMPLETO.REM`;
+  } else if (normalizedEscopo === 'validos') {
+    result = await splitOperationCnab400({ token, operacaoId, date, targetType: 'validos', modelo: normalizedModelo });
+    filename = `REMESSA_${prefix}_OP_${operacaoId}_VALIDOS.REM`;
+  } else if (normalizedEscopo === 'erros' || normalizedEscopo === 'erro') {
+    result = await splitOperationCnab400({ token, operacaoId, date, targetType: 'erros', modelo: normalizedModelo });
+    filename = `REMESSA_${prefix}_OP_${operacaoId}_COM_ERRO.REM`;
+  } else {
+    throw new Error(`Escopo inválido: "${escopo}". Escolha entre "validos", "erros" ou "completo".`);
+  }
+
+  return {
+    ...result,
+    escopo: normalizedEscopo,
+    modelo: normalizedModelo,
+    filename
   };
 }
 

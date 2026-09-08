@@ -1,0 +1,170 @@
+{
+  "title": "Movimento falimentar",
+  "url": "https://valor.globo.com/busca/?q=movimento%20falimentar",
+  "date": "2026-09-08T13:23:30.198Z",
+  "items": [
+    {
+      "empresa": "OI S.A.",
+      "cnpj": "76.535.764/0001-43",
+      "endereco": "Rua do Lavradio, 71, Centro, Rio de Janeiro/RJ",
+      "administradorJudicial": "Wald Administração de Falências e Empresas em Recuperação Judicial Ltda. e K2 Consultoria Econômica",
+      "varaComarca": "7ª Vara Empresarial do Rio de Janeiro/RJ",
+      "classe": "FALÊNCIAS DECRETADAS",
+      "tribunal": "VALOR",
+      "tribunalNome": "Valor Econômico",
+      "dataAjuizamento": "2026-09-08T13:23:30.198Z",
+      "dataCaptura": "2026-09-08T13:23:30.207Z",
+      "fonte": "Valor Econômico (valor.globo.com)",
+      "processo": "VALOR-20260908-1",
+      "raw": {
+        "originalText": "- OI S.A. CNPJ: 76.535.764/0001-43 Endereço: Rua do Lavradio, 71, Centro, Rio de Janeiro/RJ Administrador Judicial: Wald Administração de Falências e Empresas em Recuperação Judicial Ltda. e K2 Consultoria Econômica 7ª Vara Empresarial do Rio de Janeiro/RJ Observação: Falência decretada em 25/08/2026, após a convolação da recuperação judicial.",
+        "observacao": "Falência decretada em 25/08/2026, após a convolação da recuperação judicial."
+      }
+    },
+    {
+      "empresa": "GRUPO RICOY",
+      "cnpj": "Diversos CNPJs",
+      "endereco": "São Paulo/SP",
+      "administradorJudicial": "Vivante Gestão e Administração Judicial Ltda.",
+      "varaComarca": "3ª Vara de Falências e Recuperações Judiciais de São Paulo/SP",
+      "classe": "FALÊNCIAS DECRETADAS",
+      "tribunal": "VALOR",
+      "tribunalNome": "Valor Econômico",
+      "dataAjuizamento": "2026-09-08T13:23:30.198Z",
+      "dataCaptura": "2026-09-08T13:23:30.207Z",
+      "fonte": "Valor Econômico (valor.globo.com)",
+      "processo": "VALOR-20260908-2",
+      "raw": {
+        "originalText": "- GRUPO RICOY CNPJ: Diversos CNPJs Endereço: São Paulo/SP Administrador Judicial: Vivante Gestão e Administração Judicial Ltda. 3ª Vara de Falências e Recuperações Judiciais de São Paulo/SP Observação: Falência decretada em 28/08/2026, abrangendo 33 empresas integrantes do grupo, após a rejeição do plano de recuperação judicial.",
+        "observacao": "Falência decretada em 28/08/2026, abrangendo 33 empresas integrantes do grupo, após a rejeição do plano de recuperação judicial."
+      }
+    },
+    {
+      "empresa": "BALBINOS AGROINDUSTRIAL LTDA. / BALBINOS FOODS",
+      "cnpj": "12.052.144/0001-70",
+      "endereco": "Sidrolândia/MS",
+      "administradorJudicial": "Conforme autos do processo",
+      "varaComarca": "Vara Regional de Falências, Recuperações e Cartas Precatórias Cíveis em Geral de Campo Grande/MS",
+      "classe": "FALÊNCIAS DECRETADAS",
+      "tribunal": "VALOR",
+      "tribunalNome": "Valor Econômico",
+      "dataAjuizamento": "2026-09-08T13:23:30.198Z",
+      "dataCaptura": "2026-09-08T13:23:30.207Z",
+      "fonte": "Valor Econômico (valor.globo.com)",
+      "processo": "VALOR-20260908-3",
+      "raw": {
+        "originalText": "- BALBINOS AGROINDUSTRIAL LTDA. / BALBINOS FOODS CNPJ: 12.052.144/0001-70 Endereço: Sidrolândia/MS Administrador Judicial: Conforme autos do processo Vara Regional de Falências, Recuperações e Cartas Precatórias Cíveis em Geral de Campo Grande/MS Observação: Falência decretada em 20/08/2026, após período em recuperação judicial.",
+        "observacao": "Falência decretada em 20/08/2026, após período em recuperação judicial."
+      }
+    },
+    {
+      "empresa": "RENUS INDÚSTRIA DE METAIS E PLÁSTICOS LTDA.",
+      "cnpj": "91.687.129/0001-75",
+      "endereco": "Novo Hamburgo/RS",
+      "administradorJudicial": "Guerreiro Administração Judicial",
+      "varaComarca": "Vara Regional Empresarial da Comarca de Novo Hamburgo/RS",
+      "classe": "FALÊNCIAS DECRETADAS",
+      "tribunal": "VALOR",
+      "tribunalNome": "Valor Econômico",
+      "dataAjuizamento": "2026-09-08T13:23:30.198Z",
+      "dataCaptura": "2026-09-08T13:23:30.207Z",
+      "fonte": "Valor Econômico (valor.globo.com)",
+      "processo": "VALOR-20260908-4",
+      "raw": {
+        "originalText": "- RENUS INDÚSTRIA DE METAIS E PLÁSTICOS LTDA. CNPJ: 91.687.129/0001-75 Endereço: Novo Hamburgo/RS Administrador Judicial: Guerreiro Administração Judicial Vara Regional Empresarial da Comarca de Novo Hamburgo/RS Observação: Falência decretada em 24/06/2026, após a empresa permanecer em recuperação judicial desde 2024.",
+        "observacao": "Falência decretada em 24/06/2026, após a empresa permanecer em recuperação judicial desde 2024."
+      }
+    },
+    {
+      "empresa": "ALVIM & ALMEIDA GRUPO HOSPITALAR LTDA. / SEMIU GESTÃO E ADMINISTRAÇÃO LTDA.",
+      "cnpj": "04.535.903/0001-28",
+      "endereco": "Av. Vicente de Carvalho, 1159, Vila da Penha, Rio de Janeiro/RJ",
+      "administradorJudicial": "Berith Lourenço Marques Advogados Associados e Tatiana Binato de Castro Sociedade Individual de Advocacia",
+      "varaComarca": "5ª Vara Empresarial do Rio de Janeiro/RJ",
+      "classe": "RECUPERAÇÃO JUDICIAL CONVOLADA EM FALÊNCIA",
+      "tribunal": "VALOR",
+      "tribunalNome": "Valor Econômico",
+      "dataAjuizamento": "2026-09-08T13:23:30.198Z",
+      "dataCaptura": "2026-09-08T13:23:30.207Z",
+      "fonte": "Valor Econômico (valor.globo.com)",
+      "processo": "VALOR-20260908-5",
+      "raw": {
+        "originalText": "- ALVIM & ALMEIDA GRUPO HOSPITALAR LTDA. / SEMIU GESTÃO E ADMINISTRAÇÃO LTDA. CNPJ: 04.535.903/0001-28 Endereço: Av. Vicente de Carvalho, 1159, Vila da Penha, Rio de Janeiro/RJ Administrador Judicial: Berith Lourenço Marques Advogados Associados e Tatiana Binato de Castro Sociedade Individual de Advocacia 5ª Vara Empresarial do Rio de Janeiro/RJ Observação: Recuperação judicial convolada em falência.",
+        "observacao": "Recuperação judicial convolada em falência."
+      }
+    },
+    {
+      "empresa": "REFINARIA DE PETRÓLEOS MANGUINHOS S.A. — REFIT",
+      "cnpj": "33.412.081/0001-96",
+      "endereco": "Rio de Janeiro/RJ",
+      "administradorJudicial": "Conforme decisão judicial",
+      "varaComarca": "5ª Vara Empresarial do Rio de Janeiro/RJ",
+      "classe": "RECUPERAÇÃO JUDICIAL CONVOLADA EM FALÊNCIA",
+      "tribunal": "VALOR",
+      "tribunalNome": "Valor Econômico",
+      "dataAjuizamento": "2026-09-08T13:23:30.198Z",
+      "dataCaptura": "2026-09-08T13:23:30.207Z",
+      "fonte": "Valor Econômico (valor.globo.com)",
+      "processo": "VALOR-20260908-6",
+      "raw": {
+        "originalText": "- REFINARIA DE PETRÓLEOS MANGUINHOS S.A. — REFIT CNPJ: 33.412.081/0001-96 Endereço: Rio de Janeiro/RJ Administrador Judicial: Conforme decisão judicial 5ª Vara Empresarial do Rio de Janeiro/RJ Observação: Recuperação judicial convolada em falência em 31/08/2026.",
+        "observacao": "Recuperação judicial convolada em falência em 31/08/2026."
+      }
+    },
+    {
+      "empresa": "GASDIESEL SERVIÇOS LTDA.",
+      "cnpj": "09.008.431/0001-79",
+      "endereco": "Rio de Janeiro/RJ",
+      "administradorJudicial": "Conforme decisão judicial",
+      "varaComarca": "5ª Vara Empresarial do Rio de Janeiro/RJ",
+      "classe": "RECUPERAÇÃO JUDICIAL CONVOLADA EM FALÊNCIA",
+      "tribunal": "VALOR",
+      "tribunalNome": "Valor Econômico",
+      "dataAjuizamento": "2026-09-08T13:23:30.198Z",
+      "dataCaptura": "2026-09-08T13:23:30.207Z",
+      "fonte": "Valor Econômico (valor.globo.com)",
+      "processo": "VALOR-20260908-7",
+      "raw": {
+        "originalText": "- GASDIESEL SERVIÇOS LTDA. CNPJ: 09.008.431/0001-79 Endereço: Rio de Janeiro/RJ Administrador Judicial: Conforme decisão judicial 5ª Vara Empresarial do Rio de Janeiro/RJ Observação: Recuperação judicial convolada em falência em 31/08/2026, juntamente com as demais empresas do Grupo Refit/Manguinhos.",
+        "observacao": "Recuperação judicial convolada em falência em 31/08/2026, juntamente com as demais empresas do Grupo Refit/Manguinhos."
+      }
+    },
+    {
+      "empresa": "MG DISTRIBUIDORA S.A.",
+      "cnpj": "33.461.567/0001-14",
+      "endereco": "Rio de Janeiro/RJ",
+      "administradorJudicial": "Conforme decisão judicial",
+      "varaComarca": "5ª Vara Empresarial do Rio de Janeiro/RJ",
+      "classe": "RECUPERAÇÃO JUDICIAL CONVOLADA EM FALÊNCIA",
+      "tribunal": "VALOR",
+      "tribunalNome": "Valor Econômico",
+      "dataAjuizamento": "2026-09-08T13:23:30.198Z",
+      "dataCaptura": "2026-09-08T13:23:30.207Z",
+      "fonte": "Valor Econômico (valor.globo.com)",
+      "processo": "VALOR-20260908-8",
+      "raw": {
+        "originalText": "- MG DISTRIBUIDORA S.A. CNPJ: 33.461.567/0001-14 Endereço: Rio de Janeiro/RJ Administrador Judicial: Conforme decisão judicial 5ª Vara Empresarial do Rio de Janeiro/RJ Observação: Recuperação judicial convolada em falência em 31/08/2026, juntamente com as demais empresas do Grupo Refit/Manguinhos.",
+        "observacao": "Recuperação judicial convolada em falência em 31/08/2026, juntamente com as demais empresas do Grupo Refit/Manguinhos."
+      }
+    },
+    {
+      "empresa": "MANGUINHOS QUÍMICA S.A.",
+      "cnpj": "46.011.524/0001-89",
+      "endereco": "Rio de Janeiro/RJ",
+      "administradorJudicial": "Conforme decisão judicial",
+      "varaComarca": "5ª Vara Empresarial do Rio de Janeiro/RJ",
+      "classe": "RECUPERAÇÃO JUDICIAL CONVOLADA EM FALÊNCIA",
+      "tribunal": "VALOR",
+      "tribunalNome": "Valor Econômico",
+      "dataAjuizamento": "2026-09-08T13:23:30.198Z",
+      "dataCaptura": "2026-09-08T13:23:30.207Z",
+      "fonte": "Valor Econômico (valor.globo.com)",
+      "processo": "VALOR-20260908-9",
+      "raw": {
+        "originalText": "- MANGUINHOS QUÍMICA S.A. CNPJ: 46.011.524/0001-89 Endereço: Rio de Janeiro/RJ Administrador Judicial: Conforme decisão judicial 5ª Vara Empresarial do Rio de Janeiro/RJ Observação: Recuperação judicial convolada em falência em 31/08/2026, juntamente com a Refinaria de Petróleos Manguinhos, Gasdiesel e MG Distribuidora.",
+        "observacao": "Recuperação judicial convolada em falência em 31/08/2026, juntamente com a Refinaria de Petróleos Manguinhos, Gasdiesel e MG Distribuidora."
+      }
+    }
+  ],
+  "rawText": "FALÊNCIAS DECRETADAS\n\n- OI S.A.\nCNPJ: 76.535.764/0001-43\nEndereço: Rua do Lavradio, 71, Centro, Rio de Janeiro/RJ\nAdministrador Judicial: Wald Administração de Falências e Empresas em Recuperação Judicial Ltda. e K2 Consultoria Econômica\n7ª Vara Empresarial do Rio de Janeiro/RJ\nObservação: Falência decretada em 25/08/2026, após a convolação da recuperação judicial.\n\n- GRUPO RICOY\nCNPJ: Diversos CNPJs\nEndereço: São Paulo/SP\nAdministrador Judicial: Vivante Gestão e Administração Judicial Ltda.\n3ª Vara de Falências e Recuperações Judiciais de São Paulo/SP\nObservação: Falência decretada em 28/08/2026, abrangendo 33 empresas integrantes do grupo, após a rejeição do plano de recuperação judicial.\n\n- BALBINOS AGROINDUSTRIAL LTDA. / BALBINOS FOODS\nCNPJ: 12.052.144/0001-70\nEndereço: Sidrolândia/MS\nAdministrador Judicial: Conforme autos do processo\nVara Regional de Falências, Recuperações e Cartas Precatórias Cíveis em Geral de Campo Grande/MS\nObservação: Falência decretada em 20/08/2026, após período em recuperação judicial.\n\n- RENUS INDÚSTRIA DE METAIS E PLÁSTICOS LTDA.\nCNPJ: 91.687.129/0001-75\nEndereço: Novo Hamburgo/RS\nAdministrador Judicial: Guerreiro Administração Judicial\nVara Regional Empresarial da Comarca de Novo Hamburgo/RS\nObservação: Falência decretada em 24/06/2026, após a empresa permanecer em recuperação judicial desde 2024.\n\nRECUPERAÇÃO JUDICIAL CONVOLADA EM FALÊNCIA\n\n- ALVIM & ALMEIDA GRUPO HOSPITALAR LTDA. / SEMIU GESTÃO E ADMINISTRAÇÃO LTDA.\nCNPJ: 04.535.903/0001-28\nEndereço: Av. Vicente de Carvalho, 1159, Vila da Penha, Rio de Janeiro/RJ\nAdministrador Judicial: Berith Lourenço Marques Advogados Associados e Tatiana Binato de Castro Sociedade Individual de Advocacia\n5ª Vara Empresarial do Rio de Janeiro/RJ\nObservação: Recuperação judicial convolada em falência.\n\n- REFINARIA DE PETRÓLEOS MANGUINHOS S.A. — REFIT\nCNPJ: 33.412.081/0001-96\nEndereço: Rio de Janeiro/RJ\nAdministrador Judicial: Conforme decisão judicial\n5ª Vara Empresarial do Rio de Janeiro/RJ\nObservação: Recuperação judicial convolada em falência em 31/08/2026.\n\n- GASDIESEL SERVIÇOS LTDA.\nCNPJ: 09.008.431/0001-79\nEndereço: Rio de Janeiro/RJ\nAdministrador Judicial: Conforme decisão judicial\n5ª Vara Empresarial do Rio de Janeiro/RJ\nObservação: Recuperação judicial convolada em falência em 31/08/2026, juntamente com as demais empresas do Grupo Refit/Manguinhos.\n\n- MG DISTRIBUIDORA S.A.\nCNPJ: 33.461.567/0001-14\nEndereço: Rio de Janeiro/RJ\nAdministrador Judicial: Conforme decisão judicial\n5ª Vara Empresarial do Rio de Janeiro/RJ\nObservação: Recuperação judicial convolada em falência em 31/08/2026, juntamente com as demais empresas do Grupo Refit/Manguinhos.\n\n- MANGUINHOS QUÍMICA S.A.\nCNPJ: 46.011.524/0001-89\nEndereço: Rio de Janeiro/RJ\nAdministrador Judicial: Conforme decisão judicial\n5ª Vara Empresarial do Rio de Janeiro/RJ\nObservação: Recuperação judicial convolada em falência em 31/08/2026, juntamente com a Refinaria de Petróleos Manguinhos, Gasdiesel e MG Distribuidora."
+}

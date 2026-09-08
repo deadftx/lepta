@@ -5,7 +5,8 @@ import {
   XCircle, Clock, MessageSquare, Send, X, Archive, RotateCcw,
   DollarSign, AlertCircle, RefreshCw, User,
   Eye, HelpCircle, CreditCard, Check, ShieldAlert,
-  Paperclip, Download, Trash2, PauseCircle, PlayCircle, Scale
+  Paperclip, Download, Trash2, PauseCircle, PlayCircle, Scale,
+  Copy, Zap
 } from 'lucide-react';
 import { API_BASE_URL, getAuthHeaders } from '../../../../config/api';
 import { useAuth } from '../../../core/AuthContext';
@@ -71,6 +72,7 @@ export interface PurchaseItemForm {
   valorDisplay: string;
   quantidade: number;
   observacoes?: string;
+  chave_pix?: string;
 }
 
 export interface PurchaseItem {
@@ -89,6 +91,7 @@ export interface PurchaseItem {
   valor: number;
   quantidade: number;
   observacoes?: string;
+  chave_pix?: string;
   created_at?: string;
 }
 
@@ -107,6 +110,7 @@ interface PurchaseRequest {
   valor: number;
   quantidade: number;
   observacoes: string;
+  chave_pix?: string;
   status: 'PENDENTE' | 'REABERTO' | 'AGUARDANDO_RESPOSTA_SOLICITANTE' | 'AGUARDANDO_RESPOSTA_APROVADOR' | 'APROVADO' | 'PAGAMENTO_PAUSADO' | 'NEGADO' | 'PAGO' | 'REVISAO' | 'SOLICITACAO_CONCLUIDA';
   data_pagamento?: string | null;
   datas_parcelas?: string | null;
@@ -151,7 +155,7 @@ export const PurchaseApproval: React.FC = () => {
   const { user } = useAuth();
   const isMaster = user?.role === 'MASTER';
 
-  const [activeTab, setActiveTab] = useState<'review' | 'new' | 'my_requests' | 'archived'>('new');
+  const [activeTab, setActiveTab] = useState<'review' | 'reviewed' | 'new' | 'my_requests' | 'archived'>('new');
   const [isApprover, setIsApprover] = useState<boolean>(false);
   const [loadingRole, setLoadingRole] = useState(true);
 
@@ -160,6 +164,7 @@ export const PurchaseApproval: React.FC = () => {
 
   // Current Item Form State
   const [categoria, setCategoria] = useState<CategoriaSolicitacao>('Insumos');
+  const [chavePix, setChavePix] = useState<string>('');
   const [tipoDestino, setTipoDestino] = useState<TipoDestino>('DEPARTAMENTO');
   const [empresaPagadora, setEmpresaPagadora] = useState<EmpresaPagadora>('INDIFERENTE');
   const [departamentoOuCentro, setDepartamentoOuCentro] = useState<string>('Tecnologia');
@@ -183,6 +188,7 @@ export const PurchaseApproval: React.FC = () => {
 
   // Data States
   const [reviewQueue, setReviewQueue] = useState<PurchaseRequest[]>([]);
+  const [reviewedRequests, setReviewedRequests] = useState<PurchaseRequest[]>([]);
   const [myRequests, setMyRequests] = useState<PurchaseRequest[]>([]);
   const [archivedRequests, setArchivedRequests] = useState<PurchaseRequest[]>([]);
   const [, setLoadingData] = useState(false);
@@ -190,6 +196,10 @@ export const PurchaseApproval: React.FC = () => {
   // Filter & Search
   const [statusFilter, setStatusFilter] = useState<string>('ALL');
   const [searchQuery, setSearchQuery] = useState('');
+  const [reviewedStatusFilter, setReviewedStatusFilter] = useState<string>('ALL');
+  const [reviewedSearchQuery, setReviewedSearchQuery] = useState('');
+  const [myStatusFilter, setMyStatusFilter] = useState<string>('ALL');
+  const [mySearchQuery, setMySearchQuery] = useState('');
 
   // Modal Review State
   const [selectedRequest, setSelectedRequest] = useState<PurchaseRequest | null>(null);
@@ -414,7 +424,18 @@ export const PurchaseApproval: React.FC = () => {
         }
       }
 
-      // Minhas solicitações ativas
+      // Solicitações revisadas (para aprovadores, master ou quem participou de deliberações)
+      try {
+        const resReviewed = await fetch(`${API_BASE_URL}/api/compras/revisadas`, { headers });
+        if (resReviewed.ok) {
+          const dataReviewed = await resReviewed.json();
+          setReviewedRequests(dataReviewed);
+        }
+      } catch (errReviewed) {
+        console.warn('Aviso ao carregar solicitações revisadas:', errReviewed);
+      }
+
+      // Minhas solicitações (acesso vitalício)
       const resMy = await fetch(`${API_BASE_URL}/api/compras/minhas-requisicoes`, { headers });
       if (resMy.ok) {
         const data = await resMy.json();
@@ -561,6 +582,10 @@ export const PurchaseApproval: React.FC = () => {
       if (!silent) setFormError('Selecione uma Categoria obrigatória.');
       return null;
     }
+    if (categoria === 'Reembolso' && !chavePix.trim()) {
+      if (!silent) setFormError('Para solicitações de Reembolso, a Chave PIX para recebimento é obrigatória.');
+      return null;
+    }
     if (!destVal) {
       if (!silent) setFormError(`Informe o ${tipoDestino === 'EMPRESA' ? 'Nome da Empresa' : tipoDestino === 'CLIENTE' ? 'Nome do Cliente' : tipoDestino === 'CENTRO_DE_CUSTO' ? 'Centro de Custo' : 'Departamento'}.`);
       return null;
@@ -601,13 +626,14 @@ export const PurchaseApproval: React.FC = () => {
       departamento_centro_custo: destVal,
       fornecedor_nome: fornecedorNome.trim(),
       fornecedor_contato: fornecedorContato.trim(),
-      forma_pagamento: formaPagamento,
+      forma_pagamento: categoria === 'Reembolso' ? 'PIX' : formaPagamento,
       quantidade_parcelas: Math.max(1, quantidadeParcelas || 1),
       produto_servico: produtoServico.trim(),
       valor: valorNumeric,
       valorDisplay,
       quantidade,
-      observacoes: observacoes.trim()
+      observacoes: observacoes.trim(),
+      chave_pix: chavePix.trim()
     };
   };
 
@@ -660,6 +686,7 @@ export const PurchaseApproval: React.FC = () => {
         },
         body: JSON.stringify({
           empresa_pagadora: empresaPagadora,
+          chave_pix: chavePix.trim(),
           itens: itemsToSubmit.map(it => ({
             categoria: it.categoria,
             tipo_destino: it.tipo_destino,
@@ -667,12 +694,13 @@ export const PurchaseApproval: React.FC = () => {
             departamento_centro_custo: it.departamento_centro_custo,
             fornecedor_nome: it.fornecedor_nome,
             fornecedor_contato: it.fornecedor_contato,
-            forma_pagamento: it.forma_pagamento,
+            forma_pagamento: it.categoria === 'Reembolso' ? 'PIX' : it.forma_pagamento,
             quantidade_parcelas: it.quantidade_parcelas,
             produto_servico: it.produto_servico,
             valor: it.valor,
             quantidade: it.quantidade,
-            observacoes: it.observacoes
+            observacoes: it.observacoes,
+            chave_pix: it.chave_pix || (it.categoria === 'Reembolso' ? chavePix.trim() : '')
           }))
         })
       });
@@ -1216,6 +1244,44 @@ export const PurchaseApproval: React.FC = () => {
     });
   }, [archivedRequests, statusFilter, searchQuery]);
 
+  // Filtros de Solicitações Revisadas (Aprovadores e Master - Vitalício)
+  const filteredReviewed = useMemo(() => {
+    return reviewedRequests.filter(item => {
+      const matchStatus = reviewedStatusFilter === 'ALL' || item.status === reviewedStatusFilter;
+      const q = reviewedSearchQuery.toLowerCase().trim();
+      const matchSearch = !q ||
+        (item.produto_servico && item.produto_servico.toLowerCase().includes(q)) ||
+        (item.fornecedor_nome && item.fornecedor_nome.toLowerCase().includes(q)) ||
+        (item.departamento_centro_custo && item.departamento_centro_custo.toLowerCase().includes(q)) ||
+        (item.solicitante_nome && item.solicitante_nome.toLowerCase().includes(q)) ||
+        (item.empresa_pagadora && item.empresa_pagadora.toLowerCase().includes(q)) ||
+        (item.chave_pix && item.chave_pix.toLowerCase().includes(q)) ||
+        item.id.toLowerCase().includes(q);
+      return matchStatus && matchSearch;
+    });
+  }, [reviewedRequests, reviewedStatusFilter, reviewedSearchQuery]);
+
+  // Filtros de Minhas Solicitações (Solicitante - Acesso Vitalício)
+  const filteredMyRequests = useMemo(() => {
+    return myRequests.filter(item => {
+      const matchStatus = myStatusFilter === 'ALL' ? true :
+        myStatusFilter === 'PENDENTE'
+          ? ['PENDENTE', 'REABERTO', 'AGUARDANDO_RESPOSTA_SOLICITANTE', 'AGUARDANDO_RESPOSTA_APROVADOR', 'AGUARDANDO_JURIDICO', 'REVISAO'].includes(item.status)
+          : item.status === myStatusFilter;
+
+      const q = mySearchQuery.toLowerCase().trim();
+      const matchSearch = !q ||
+        (item.produto_servico && item.produto_servico.toLowerCase().includes(q)) ||
+        (item.fornecedor_nome && item.fornecedor_nome.toLowerCase().includes(q)) ||
+        (item.departamento_centro_custo && item.departamento_centro_custo.toLowerCase().includes(q)) ||
+        (item.solicitante_nome && item.solicitante_nome.toLowerCase().includes(q)) ||
+        (item.empresa_pagadora && item.empresa_pagadora.toLowerCase().includes(q)) ||
+        (item.chave_pix && item.chave_pix.toLowerCase().includes(q)) ||
+        item.id.toLowerCase().includes(q);
+      return matchStatus && matchSearch;
+    });
+  }, [myRequests, myStatusFilter, mySearchQuery]);
+
   // Métricas do Topo
   const metrics = useMemo(() => {
     const list = isApprover || isMaster ? reviewQueue : myRequests;
@@ -1342,6 +1408,18 @@ export const PurchaseApproval: React.FC = () => {
             <ShieldCheck size={18} /> Fila de Aprovação
             {reviewQueue.length > 0 && (
               <span className="pa-tab-counter">{reviewQueue.length}</span>
+            )}
+          </button>
+        )}
+
+        {(isApprover || isMaster || reviewedRequests.length > 0) && (
+          <button
+            className={`pa-tab ${activeTab === 'reviewed' ? 'active' : ''}`}
+            onClick={() => setActiveTab('reviewed')}
+          >
+            <CheckCircle2 size={18} /> Solicitações Revisadas
+            {reviewedRequests.length > 0 && (
+              <span className="pa-tab-counter" style={{ background: '#3b82f6' }}>{reviewedRequests.length}</span>
             )}
           </button>
         )}
@@ -1506,6 +1584,124 @@ export const PurchaseApproval: React.FC = () => {
         </div>
       )}
 
+      {/* TAB: SOLICITAÇÕES REVISADAS (APROVADOR E MASTER - ACESSO VITALÍCIO) */}
+      {(isApprover || isMaster || reviewedRequests.length > 0) && activeTab === 'reviewed' && (
+        <div className="pa-table-card">
+          <div className="pa-table-header">
+            <h2>
+              <CheckCircle2 size={18} color="#3b82f6" /> Solicitações Revisadas ({filteredReviewed.length})
+            </h2>
+
+            <div className="pa-table-controls">
+              <select
+                className="pa-select"
+                value={reviewedStatusFilter}
+                onChange={e => setReviewedStatusFilter(e.target.value)}
+              >
+                <option value="ALL">Todos os Status</option>
+                <option value="APROVADO">Aprovadas</option>
+                <option value="NEGADO">Negadas</option>
+                <option value="PAGO">Pagas</option>
+                <option value="PAGAMENTO_PAUSADO">Pausadas</option>
+                <option value="REVISAO">Em Revisão</option>
+                <option value="SOLICITACAO_CONCLUIDA">Concluídas</option>
+              </select>
+
+              <input
+                type="text"
+                className="pa-search-input"
+                placeholder="Buscar código, solicitante, fornecedor, PIX..."
+                value={reviewedSearchQuery}
+                onChange={e => setReviewedSearchQuery(e.target.value)}
+              />
+            </div>
+          </div>
+
+          <div className="pa-table-responsive">
+            <table className="pa-table">
+              <thead>
+                <tr>
+                  <th>Código</th>
+                  <th>Solicitante</th>
+                  <th>Fornecedor / Destino</th>
+                  <th>Descrição / Serviço</th>
+                  <th>Pagamento</th>
+                  <th>Empresa</th>
+                  <th>Valor Total</th>
+                  <th>Decidido em</th>
+                  <th>Status</th>
+                  <th>Ações</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredReviewed.length === 0 ? (
+                  <tr>
+                    <td colSpan={10} className="pa-empty">
+                      Nenhuma solicitação revisada encontrada com os filtros selecionados.
+                    </td>
+                  </tr>
+                ) : (
+                  filteredReviewed.map(item => (
+                    <tr key={item.id}>
+                      <td data-label="Código">
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          <span className="pa-code-badge">{item.id}</span>
+                          {(item.total_anexos || 0) > 0 && (
+                            <span className="pa-attachment-count-badge" title={`${item.total_anexos} anexo(s) anexado(s)`}>
+                              <Paperclip size={11} /> {item.total_anexos}
+                            </span>
+                          )}
+                        </div>
+                      </td>
+                      <td data-label="Solicitante">
+                        <div className="pa-solicitante-cell">
+                          <User size={14} color="#94a3b8" />
+                          <strong>{item.solicitante_nome}</strong>
+                        </div>
+                      </td>
+                      <td data-label="Fornecedor / Destino">
+                        <strong>{item.fornecedor_nome || '-'}</strong>
+                        <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>{item.departamento_centro_custo}</div>
+                      </td>
+                      <td data-label="Descrição">{item.produto_servico}</td>
+                      <td data-label="Pagamento">
+                        <span style={{ fontWeight: 600, color: '#60a5fa' }}>{item.forma_pagamento || '-'}</span>
+                        {item.chave_pix && (
+                          <div style={{ fontSize: '0.72rem', color: '#38bdf8' }} title={`Chave PIX: ${item.chave_pix}`}>
+                            ⚡ {item.chave_pix}
+                          </div>
+                        )}
+                      </td>
+                      <td data-label="Empresa">
+                        <span style={{ fontSize: '0.8rem', color: item.empresa_pagadora && item.empresa_pagadora !== 'INDIFERENTE' ? '#a5b4fc' : '#94a3b8' }}>
+                          {item.empresa_pagadora || 'INDIFERENTE'}
+                        </span>
+                      </td>
+                      <td data-label="Valor Total">
+                        <span className="pa-price-highlight">
+                          {formatBrl(item.valor * (item.quantidade || 1))}
+                        </span>
+                      </td>
+                      <td data-label="Decidido em">{formatDate(item.decidido_em || item.updated_at)}</td>
+                      <td data-label="Status">{renderStatusBadge(item.status, item.arquivado_manualmente)}</td>
+                      <td data-label="Ações">
+                        <button
+                          className="pa-btn-detail"
+                          onClick={() => handleOpenDetails(item.id)}
+                          title="Visualizar Detalhes e Parecer"
+                        >
+                          <Eye size={15} /> Detalhes
+                        </button>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
       {/* TAB 2: NOVA SOLICITAÇÃO FINANCEIRA */}
       {activeTab === 'new' && (
         <div className="pa-form-card">
@@ -1548,7 +1744,13 @@ export const PurchaseApproval: React.FC = () => {
                 <select
                   className="pa-select"
                   value={categoria}
-                  onChange={e => setCategoria(e.target.value as CategoriaSolicitacao)}
+                  onChange={e => {
+                    const newCat = e.target.value as CategoriaSolicitacao;
+                    setCategoria(newCat);
+                    if (newCat === 'Reembolso') {
+                      setFormaPagamento('PIX');
+                    }
+                  }}
                   required
                 >
                   {CATEGORIAS_PADRAO.map(cat => (
@@ -1664,26 +1866,60 @@ export const PurchaseApproval: React.FC = () => {
                 />
               </div>
 
-              {/* Forma de Pagamento (Exclusivo PIX, Boleto e Crédito) */}
+              {/* Forma de Pagamento (Se Reembolso, exclusivo PIX) */}
               <div className="pa-form-group">
                 <label>
                   Forma de Pagamento <span className="pa-required">*</span>
                 </label>
-                <div className="pa-payment-grid">
-                  {(['PIX', 'BOLETO', 'CREDITO'] as const).map(op => (
+                {categoria === 'Reembolso' ? (
+                  <div className="pa-payment-grid">
                     <button
-                      key={op}
                       type="button"
-                      className={`pa-payment-option-btn ${formaPagamento === op ? 'active' : ''}`}
-                      onClick={() => setFormaPagamento(op)}
+                      className="pa-payment-option-btn active"
+                      style={{ background: 'rgba(56, 189, 248, 0.2)', borderColor: '#38bdf8', color: '#38bdf8', cursor: 'default' }}
+                      title="Para solicitações de Reembolso, o pagamento é realizado exclusivamente via PIX"
                     >
-                      {op === 'PIX' && '⚡ PIX'}
-                      {op === 'BOLETO' && '📄 Boleto'}
-                      {op === 'CREDITO' && '💳 Crédito'}
+                      ⚡ PIX (Exclusivo Reembolso)
                     </button>
-                  ))}
-                </div>
+                  </div>
+                ) : (
+                  <div className="pa-payment-grid">
+                    {(['PIX', 'BOLETO', 'CREDITO'] as const).map(op => (
+                      <button
+                        key={op}
+                        type="button"
+                        className={`pa-payment-option-btn ${formaPagamento === op ? 'active' : ''}`}
+                        onClick={() => setFormaPagamento(op)}
+                      >
+                        {op === 'PIX' && '⚡ PIX'}
+                        {op === 'BOLETO' && '📄 Boleto'}
+                        {op === 'CREDITO' && '💳 Crédito'}
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
+
+              {/* Nova linha exclusiva: Chave PIX Obrigatória para Reembolso */}
+              {categoria === 'Reembolso' && (
+                <div className="pa-form-group full-width" style={{ background: 'rgba(56, 189, 248, 0.07)', border: '1px solid rgba(56, 189, 248, 0.35)', borderRadius: '10px', padding: '14px', margin: '4px 0' }}>
+                  <label style={{ color: '#38bdf8', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.92rem' }}>
+                    ⚡ Chave PIX do Solicitante (onde você será pago) <span className="pa-required">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    className="pa-input"
+                    placeholder="Informe a Chave PIX (CPF, E-mail, Celular ou Chave Aleatória) onde o reembolso será depositado..."
+                    value={chavePix}
+                    onChange={e => setChavePix(e.target.value)}
+                    required
+                    style={{ borderColor: 'rgba(56, 189, 248, 0.5)', background: 'rgba(15, 23, 42, 0.7)', color: '#fff', fontSize: '0.95rem', marginTop: '6px' }}
+                  />
+                  <span style={{ fontSize: '0.78rem', color: '#94a3b8', marginTop: '4px', display: 'block' }}>
+                    Campo obrigatório para Reembolso: o financeiro efetuará a transferência diretamente para esta chave PIX.
+                  </span>
+                </div>
+              )}
 
               {/* Quantidade de Parcelas */}
               <div className="pa-form-group">
@@ -1926,13 +2162,35 @@ export const PurchaseApproval: React.FC = () => {
         </div>
       )}
 
-      {/* TAB 3: MINHAS SOLICITAÇÕES ATIVAS */}
+      {/* TAB 3: MINHAS SOLICITAÇÕES (ACESSO VITALÍCIO PARA O SOLICITANTE) */}
       {activeTab === 'my_requests' && (
         <div className="pa-table-card">
           <div className="pa-table-header">
             <h2>
-              <ListOrdered size={18} /> Minhas Solicitações Ativas ({myRequests.length})
+              <ListOrdered size={18} /> Minhas Solicitações ({filteredMyRequests.length})
             </h2>
+
+            <div className="pa-table-controls">
+              <select
+                className="pa-select"
+                value={myStatusFilter}
+                onChange={e => setMyStatusFilter(e.target.value)}
+              >
+                <option value="ALL">Todas as Solicitações</option>
+                <option value="PENDENTE">Em Análise / Pendentes</option>
+                <option value="APROVADO">Aprovadas</option>
+                <option value="PAGO">Pagas</option>
+                <option value="NEGADO">Negadas</option>
+              </select>
+
+              <input
+                type="text"
+                className="pa-search-input"
+                placeholder="Buscar código, fornecedor, centro de custo, PIX..."
+                value={mySearchQuery}
+                onChange={e => setMySearchQuery(e.target.value)}
+              />
+            </div>
           </div>
 
           <div className="pa-table-responsive">
@@ -1952,14 +2210,14 @@ export const PurchaseApproval: React.FC = () => {
                 </tr>
               </thead>
               <tbody>
-                {myRequests.length === 0 ? (
+                {filteredMyRequests.length === 0 ? (
                   <tr>
                     <td colSpan={10} className="pa-empty">
-                      Você não possui solicitações ativas no momento.
+                      Nenhuma solicitação encontrada com os filtros selecionados.
                     </td>
                   </tr>
                 ) : (
-                  myRequests.map(item => (
+                  filteredMyRequests.map(item => (
                     <tr key={item.id}>
                       <td data-label="Código">
                         <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
@@ -1982,6 +2240,11 @@ export const PurchaseApproval: React.FC = () => {
                         <span style={{ fontWeight: 600, color: '#60a5fa' }}>{item.forma_pagamento || '-'}</span>
                         {item.quantidade_parcelas > 1 && (
                           <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>{item.quantidade_parcelas}x</div>
+                        )}
+                        {item.chave_pix && (
+                          <div style={{ fontSize: '0.72rem', color: '#38bdf8' }} title={`Chave PIX: ${item.chave_pix}`}>
+                            ⚡ {item.chave_pix}
+                          </div>
                         )}
                       </td>
                       <td data-label="Empresa">
@@ -2492,6 +2755,50 @@ export const PurchaseApproval: React.FC = () => {
                   )}
                 </div>
 
+                {(selectedRequest.chave_pix || selectedRequest.categoria === 'Reembolso' || selectedRequest.itens?.some(i => i.chave_pix)) && (
+                  <div className="pa-detail-item" style={{
+                    gridColumn: 'span 2',
+                    background: 'rgba(16, 185, 129, 0.08)',
+                    border: '1px solid rgba(16, 185, 129, 0.3)',
+                    padding: '12px 16px',
+                    borderRadius: '8px'
+                  }}>
+                    <span className="pa-detail-label" style={{ color: '#34d399', display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 750 }}>
+                      <Zap size={15} /> Chave PIX para Reembolso (Destinatário)
+                    </span>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', marginTop: '6px', flexWrap: 'wrap' }}>
+                      <span style={{ fontSize: '0.98rem', fontWeight: 700, color: '#f8fafc', letterSpacing: '0.02em', wordBreak: 'break-all' }}>
+                        {selectedRequest.chave_pix || selectedRequest.itens?.find(i => i.chave_pix)?.chave_pix || 'Não informada'}
+                      </span>
+                      {(selectedRequest.chave_pix || selectedRequest.itens?.find(i => i.chave_pix)?.chave_pix) && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const pix = selectedRequest.chave_pix || selectedRequest.itens?.find(i => i.chave_pix)?.chave_pix || '';
+                            navigator.clipboard.writeText(pix);
+                            showToast('Chave PIX copiada para a área de transferência!');
+                          }}
+                          style={{
+                            background: '#10b981',
+                            color: '#0f172a',
+                            border: 'none',
+                            padding: '6px 14px',
+                            borderRadius: '6px',
+                            fontWeight: 700,
+                            fontSize: '0.8rem',
+                            cursor: 'pointer',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '6px'
+                          }}
+                        >
+                          <Copy size={13} /> Copiar Chave PIX
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                )}
+
                 {selectedRequest.aprovador_nome && (
                   <div className="pa-detail-item" style={{ gridColumn: 'span 2', background: '#1e293b', padding: '10px 14px', borderRadius: '8px' }}>
                     <span className="pa-detail-label">
@@ -2555,6 +2862,11 @@ export const PurchaseApproval: React.FC = () => {
                           <span>🏢 Fornecedor: <strong style={{ color: '#cbd5e1' }}>{it.fornecedor_nome || '-'}</strong> ({it.fornecedor_contato || '-'})</span>
                           <span>💳 Pagamento: <strong style={{ color: '#60a5fa' }}>{it.forma_pagamento || '-'}{it.quantidade_parcelas > 1 ? ` (${it.quantidade_parcelas}x)` : ''}</strong></span>
                           <span>🔢 Qtd: <strong style={{ color: '#cbd5e1' }}>{it.quantidade || 1} un</strong> x {formatBrl(it.valor)}</span>
+                          {it.chave_pix && (
+                            <span style={{ color: '#34d399', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                              <Zap size={13} /> PIX: <strong>{it.chave_pix}</strong>
+                            </span>
+                          )}
                         </div>
 
                         {it.observacoes && (

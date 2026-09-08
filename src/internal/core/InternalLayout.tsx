@@ -41,6 +41,9 @@ const InternalLayout = () => {
 
   const isOperationsActive = location.pathname.startsWith('/mesa-operacoes');
   const [isOperationsOpen, setIsOperationsOpen] = useState(false);
+
+  const isBiActive = location.pathname.startsWith('/bi');
+  const [isBiOpen, setIsBiOpen] = useState(location.pathname.startsWith('/bi'));
   
   // Mobile sidebar state
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
@@ -452,10 +455,29 @@ const InternalLayout = () => {
               <LayoutDashboard size={20} /> Dashboards
             </Link>
           )}
-          {hasAccess('4') && (
-            <Link to="/bi" className={navItemClass('/bi')}>
-              <Sliders size={20} /> Business Intelligence
-            </Link>
+          {(hasAccess('4') || hasAccess('4.1')) && (
+            <div className="nav-menu-group">
+              <div 
+                className={`nav-item nav-item-parent ${isBiActive ? 'active' : ''}`}
+                onClick={() => setIsBiOpen(!isBiOpen)}
+                style={{ cursor: 'pointer', justifyContent: 'space-between' }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                  <Sliders size={20} /> Business Intelligence
+                </div>
+                {isBiOpen ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+              </div>
+
+              {isBiOpen && (
+                <div className="nav-submenu" style={{ paddingLeft: '1rem' }}>
+                  {(hasAccess('4.1') || hasAccess('4')) && (
+                    <Link to="/bi/movimento-falimentar" className={navItemClass('/bi/movimento-falimentar')}>
+                      <Scale size={18} /> Movimento Falimentar
+                    </Link>
+                  )}
+                </div>
+              )}
+            </div>
           )}
 
           {user?.role === 'MASTER' && (

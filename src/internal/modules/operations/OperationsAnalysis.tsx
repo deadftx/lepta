@@ -6,7 +6,6 @@ import {
   AlertTriangle,
   CheckCircle2,
   Calendar,
-  Download,
   Building2,
   Phone,
   Mail,
@@ -14,10 +13,11 @@ import {
   UserCheck,
   FileSpreadsheet,
   FileCode,
-  Upload,
   AlertCircle,
   Copy,
-  Check
+  Check,
+  Download,
+  FileText
 } from 'lucide-react';
 import { API_BASE_URL, getAuthHeaders } from '../../../config/api';
 import './OperationsAnalysis.css';
@@ -107,13 +107,15 @@ export const OperationsAnalysis: React.FC = () => {
   const [operationDetail, setOperationDetail] = useState<OperacaoDetail | null>(null);
   const [detailTab, setDetailTab] = useState<'inconsistencias' | 'todos_sacados' | 'titulos'>('inconsistencias');
   const [downloadingXlsx, setDownloadingXlsx] = useState<boolean>(false);
-  const [downloadingTitulosXlsx, setDownloadingTitulosXlsx] = useState<boolean>(false);
   const [downloadingFullXlsx, setDownloadingFullXlsx] = useState<boolean>(false);
   const [downloadingCnab, setDownloadingCnab] = useState<boolean>(false);
   const [downloadingSeparatedCnab, setDownloadingSeparatedCnab] = useState<'validos' | 'erros' | null>(null);
-  const [uploadingCnab, setUploadingCnab] = useState<boolean>(false);
-  const [uploadResultModal, setUploadResultModal] = useState<any>(null);
-  const fileInputRef = React.useRef<HTMLInputElement | null>(null);
+
+  // Modal Consolidado de Exportação CNAB (Válidos / Erros / Completo x Vortex / Bitfin)
+  const [cnabModalOpen, setCnabModalOpen] = useState<boolean>(false);
+  const [cnabEscopo, setCnabEscopo] = useState<'validos' | 'erros' | 'completo'>('completo');
+  const [cnabModelo, setCnabModelo] = useState<'vortex' | 'bitfin'>('vortex');
+  const [downloadingUnifiedCnab, setDownloadingUnifiedCnab] = useState<boolean>(false);
 
   // Modal de Diagnóstico Bruto da API BitFin
   const [diagnoseModalOpen, setDiagnoseModalOpen] = useState<boolean>(false);
@@ -230,36 +232,6 @@ export const OperationsAnalysis: React.FC = () => {
     }
   };
 
-  // Download da planilha Excel de TÍTULOS e SACADOS com erro (para refazer a operação)
-  const handleDownloadTitulosXlsx = async (opId: string) => {
-    setDownloadingTitulosXlsx(true);
-    try {
-      const res = await fetch(`${API_BASE_URL}/api/mesa-operacoes/operacoes/${opId}/exportar-titulos-xlsx?data=${dataFiltro}`, {
-        headers: getAuthHeaders()
-      });
-
-      if (!res.ok) {
-        const errJson = await res.json().catch(() => ({}));
-        throw new Error(errJson.error || 'Erro ao gerar planilha de títulos.');
-      }
-
-      const blob = await res.blob();
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `Titulos_e_Sacados_Com_Erro_Op_${opId}.xlsx`;
-      document.body.appendChild(a);
-      a.click();
-      window.URL.revokeObjectURL(url);
-      document.body.removeChild(a);
-    } catch (err: any) {
-      console.error('Erro ao exportar títulos XLSX:', err);
-      alert(`Erro no download da planilha de títulos: ${err.message}`);
-    } finally {
-      setDownloadingTitulosXlsx(false);
-    }
-  };
-
   // Download da planilha Excel completa da operação (todos os dados, sacados, títulos, CEPs e endereços)
   const handleDownloadFullOperationXlsx = async (opId: string) => {
     setDownloadingFullXlsx(true);
@@ -290,7 +262,47 @@ export const OperationsAnalysis: React.FC = () => {
     }
   };
 
-  // Download do arquivo CNAB 400 Remessa Corrigido com todos os títulos da operação
+  // Download consolidado de Remessa CNAB (Escopo: Válido, Com Erro ou Completo | Modelos: Vortex ou Bitfin)
+  const handleDownloadUnifiedCnab = async () => {
+    if (!operationDetail) return;
+    setDownloadingUnifiedCnab(true);
+    try {
+      const res = await fetch(
+        `${API_BASE_URL}/api/mesa-operacoes/operacoes/${operationDetail.operacaoId}/gerar-cnab?escopo=${cnabEscopo}&modelo=${cnabModelo}&data=${dataFiltro}`,
+        {
+          headers: getAuthHeaders()
+        }
+      );
+
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => ({}));
+        throw new Error(errJson.error || 'Erro ao gerar remessa CNAB.');
+      }
+
+      const disposition = res.headers.get('Content-Disposition');
+      let filename = `REM_${cnabModelo.toUpperCase()}_OP_${operationDetail.operacaoId}_${cnabEscopo.toUpperCase()}.REM`;
+      if (disposition && disposition.includes('filename=')) {
+        const match = disposition.match(/filename=["']?([^"';]+)["']?/i);
+        if (match && match[1]) filename = match[1];
+      }
+
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+      setCnabModalOpen(false);
+    } catch (err: any) {
+      console.error('Erro ao gerar remessa CNAB:', err);
+      alert(`Erro no download da remessa CNAB: ${err.message}`);
+    } finally {
+      setDownloadingUnifiedCnab(false);
+    }
+  };
   const handleDownloadCnab = async (opId: string) => {
     setDownloadingCnab(true);
     try {
@@ -351,67 +363,6 @@ export const OperationsAnalysis: React.FC = () => {
     }
   };
 
-  // Upload e correção do CNAB original enviado pelo cedente (.txt ou .rem)
-  const handleUploadCnab = async (e: React.ChangeEvent<HTMLInputElement>, opId: string) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    setUploadingCnab(true);
-    try {
-      const formData = new FormData();
-      formData.append('file', file);
-      if (operationDetail?.sacadosInconsistentes?.length) {
-        const errCnpjs = operationDetail.sacadosInconsistentes
-          .map((s: any) => String(s.documento || '').replace(/\D/g, ''))
-          .filter(Boolean);
-        formData.append('inconsistentCnpjs', JSON.stringify(errCnpjs));
-      }
-
-      const res = await fetch(`${API_BASE_URL}/api/mesa-operacoes/operacoes/${opId}/corrigir-cnab-upload?format=json`, {
-        method: 'POST',
-        headers: getAuthHeaders(),
-        body: formData
-      });
-
-      if (!res.ok) {
-        const errJson = await res.json().catch(() => ({}));
-        throw new Error(errJson.error || 'Erro ao processar o arquivo CNAB enviado.');
-      }
-
-      const data = await res.json();
-
-      // Download automático do arquivo CNAB corrigido
-      if (data.cnabBase64) {
-        const byteCharacters = atob(data.cnabBase64);
-        const byteNumbers = new Array(byteCharacters.length);
-        for (let i = 0; i < byteCharacters.length; i++) {
-          byteNumbers[i] = byteCharacters.charCodeAt(i);
-        }
-        const byteArray = new Uint8Array(byteNumbers);
-        const blob = new Blob([byteArray], { type: 'text/plain;charset=iso-8859-1' });
-        const url = window.URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = data.filename || `REM_OP_${opId}_CORRIGIDA.REM`;
-        document.body.appendChild(a);
-        a.click();
-        window.URL.revokeObjectURL(url);
-        document.body.removeChild(a);
-      }
-
-      setUploadResultModal(data);
-    } catch (err: any) {
-      console.error('Erro ao processar upload do CNAB:', err);
-      alert(`Erro no upload da remessa: ${err.message}`);
-    } finally {
-      setUploadingCnab(false);
-      if (fileInputRef.current) {
-        fileInputRef.current.value = '';
-      }
-    }
-  };
-
-
   // Filtro de busca textual
   const filteredOperacoes = useMemo(() => {
     if (!searchTerm.trim()) return operacoes;
@@ -429,6 +380,18 @@ export const OperationsAnalysis: React.FC = () => {
   // Totais rápidos
   const totalOperacoes = filteredOperacoes.length;
   const volumeTotal = filteredOperacoes.reduce((acc, o) => acc + o.valorTotal, 0);
+
+  const formatCurrency = (val: number | null | undefined): string => {
+    if (val == null || isNaN(val)) return 'R$\u00A00,00';
+    return `R$\u00A0${val.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  };
+
+  const getCurrencySizeClass = (val: number | null | undefined): string => {
+    if (val == null) return 'val-normal';
+    if (val >= 10_000_000) return 'val-xlarge';
+    if (val >= 1_000_000) return 'val-large';
+    return 'val-normal';
+  };
 
   const getStatusBadgeClass = (status: string) => {
     const s = (status || '').toLowerCase();
@@ -549,7 +512,7 @@ export const OperationsAnalysis: React.FC = () => {
           <div>
             <span className="oa-kpi-label">Volume Total (Nominal)</span>
             <h3 className="oa-kpi-value">
-              R$ {volumeTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              {formatCurrency(volumeTotal)}
             </h3>
           </div>
         </div>
@@ -609,7 +572,7 @@ export const OperationsAnalysis: React.FC = () => {
                     <th>GERENTE</th>
                     <th>UNIDADE (FUNDO)</th>
                     <th style={{ textAlign: 'center' }}>TÍTULOS</th>
-                    <th style={{ textAlign: 'right' }}>VALOR TOTAL (R$)</th>
+                    <th className="oa-th-valor">VALOR TOTAL (R$)</th>
                     <th style={{ textAlign: 'center' }}>STATUS</th>
                     <th style={{ textAlign: 'center' }}>AÇÃO</th>
                   </tr>
@@ -644,8 +607,10 @@ export const OperationsAnalysis: React.FC = () => {
                         <span className="oa-ua-badge">{op.unidadeAdministrativa}</span>
                       </td>
                       <td style={{ textAlign: 'center', fontWeight: 600 }}>{op.titulosCount}</td>
-                      <td style={{ textAlign: 'right', fontWeight: 700, color: '#f8fafc' }}>
-                        R$ {op.valorTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                      <td className="oa-valor-cell">
+                        <span className={`oa-currency-val ${getCurrencySizeClass(op.valorTotal)}`}>
+                          {formatCurrency(op.valorTotal)}
+                        </span>
                       </td>
                       <td style={{ textAlign: 'center' }}>
                         <span className={`oa-status-badge ${getStatusBadgeClass(op.status)}`}>
@@ -697,7 +662,9 @@ export const OperationsAnalysis: React.FC = () => {
                       </span>
                     </div>
                     <div className="oa-m-total-val">
-                      R$ {op.valorTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                      <span className={`oa-currency-val ${getCurrencySizeClass(op.valorTotal)}`}>
+                        {formatCurrency(op.valorTotal)}
+                      </span>
                     </div>
                   </div>
 
@@ -765,20 +732,6 @@ export const OperationsAnalysis: React.FC = () => {
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <button
                   type="button"
-                  onClick={() => handleDownloadFullOperationXlsx(selectedOpId)}
-                  disabled={downloadingFullXlsx || detailLoading}
-                  className="oa-btn-export-full-modal"
-                  title="Exportar operação inteira em Excel (todos os sacados, títulos, CEPs e endereços)"
-                >
-                  {downloadingFullXlsx ? (
-                    <RefreshCw size={13} className="oa-spin" />
-                  ) : (
-                    <FileSpreadsheet size={13} />
-                  )}
-                  <span>{downloadingFullXlsx ? 'Exportando...' : 'Exportar Operação (.xlsx)'}</span>
-                </button>
-                <button
-                  type="button"
                   onClick={() => handleDiagnose(selectedOpId)}
                   title="Investigar chamadas brutas na API BitFin para esta operação"
                   style={{
@@ -842,7 +795,7 @@ export const OperationsAnalysis: React.FC = () => {
                         {/* Valor e Percentual Retido */}
                         <div className="oa-bitfin-alert-impact">
                           <span className="oa-bitfin-alert-amount">
-                            R$ {operationDetail.alertaBitfin.valorAfetado.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            {formatCurrency(operationDetail.alertaBitfin.valorAfetado)}
                           </span>
                           <span className="oa-bitfin-alert-percent">
                             {operationDetail.alertaBitfin.percentualAfetado.toFixed(2).replace('.', ',')}%
@@ -881,27 +834,10 @@ export const OperationsAnalysis: React.FC = () => {
                             <FileSpreadsheet size={16} />
                             {downloadingXlsx ? 'Gerando...' : 'Exportar Sacados (.xlsx)'}
                           </button>
-                          <button
-                            type="button"
-                            className="oa-btn-export-xlsx titulos"
-                            onClick={() => handleDownloadTitulosXlsx(operationDetail.operacaoId)}
-                            disabled={downloadingTitulosXlsx}
-                            title="Exportar cada título dos sacados com erro para refazer a operação no Bitfin"
-                          >
-                            <Download size={16} />
-                            {downloadingTitulosXlsx ? 'Gerando...' : 'Exportar Sacado + Título (.xlsx)'}
-                          </button>
                         </div>
 
-                        {/* Botões de CNAB Corrigido: Importar Arquivo Original do Cedente ou Gerar Direto */}
+                        {/* Botões de CNAB Corrigido */}
                         <div className="oa-cnab-export-section">
-                          <input
-                            type="file"
-                            ref={fileInputRef}
-                            style={{ display: 'none' }}
-                            accept=".txt,.rem"
-                            onChange={e => handleUploadCnab(e, operationDetail.operacaoId)}
-                          />
                           <div className="oa-actions-dual-cnab">
                             <button
                               type="button"
@@ -935,16 +871,6 @@ export const OperationsAnalysis: React.FC = () => {
 
                             <button
                               type="button"
-                              className="oa-btn-upload-cnab"
-                              onClick={() => fileInputRef.current?.click()}
-                              disabled={uploadingCnab}
-                              title="Subir o arquivo CNAB exato enviado pelo cliente (.txt/.rem) e ajustar pontualmente apenas os CEPs incorretos"
-                            >
-                              <Upload size={16} />
-                              {uploadingCnab ? 'Processando e Corrigindo CEPs...' : 'Importar Remessa Cedente e Corrigir CEPs'}
-                            </button>
-                            <button
-                              type="button"
                               className="oa-btn-export-cnab"
                               onClick={() => handleDownloadCnab(operationDetail.operacaoId)}
                               disabled={downloadingCnab}
@@ -954,9 +880,6 @@ export const OperationsAnalysis: React.FC = () => {
                               {downloadingCnab ? 'Gerando Remessa...' : 'Gerar Remessa Completa Corrigida'}
                             </button>
                           </div>
-                          <span className="oa-cnab-desc-hint">
-                            <strong>Importar CNAB Cedente:</strong> Você importa exatamente o mesmo arquivo que o cliente enviou (.txt/.rem). O sistema lê linha a linha, preserva 100% dos dados originais (endereços, cessão Tipo 2, instruções Tipo 3, NF-e Tipo 4) e substitui <strong>estritamente as 8 posições dos CEPs inconsistentes</strong> pelo CEP oficial consultado na Receita Federal via CNPJ.
-                          </span>
                         </div>
                       </div>
                     </div>
@@ -1065,7 +988,7 @@ export const OperationsAnalysis: React.FC = () => {
                                   <th>DIAGNÓSTICO DO ERRO</th>
                                   <th>ENDEREÇO</th>
                                   <th style={{ textAlign: 'center' }}>TÍTULOS</th>
-                                  <th style={{ textAlign: 'right' }}>VALOR RETIDO</th>
+                                  <th className="oa-th-valor">VALOR RETIDO</th>
                                 </tr>
                               </thead>
                               <tbody>
@@ -1101,8 +1024,10 @@ export const OperationsAnalysis: React.FC = () => {
                                       {s.endereco}
                                     </td>
                                     <td style={{ textAlign: 'center', fontWeight: 600 }}>{s.qtdTitulos}</td>
-                                    <td style={{ textAlign: 'right', fontWeight: 700, color: '#f43f5e' }}>
-                                      R$ {s.valorTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                    <td className="oa-valor-cell" style={{ color: '#f43f5e' }}>
+                                      <span className={`oa-currency-val ${getCurrencySizeClass(s.valorTotal)}`}>
+                                        {formatCurrency(s.valorTotal)}
+                                      </span>
                                     </td>
                                   </tr>
                                 ))}
@@ -1119,8 +1044,8 @@ export const OperationsAnalysis: React.FC = () => {
                                     <h4 className="oa-m-sacado-name">{s.nome}</h4>
                                     <span className="oa-m-sacado-doc">CNPJ/CPF: {s.documento || '-'}</span>
                                   </div>
-                                  <span className="oa-m-sacado-val error">
-                                    R$ {s.valorTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                  <span className={`oa-m-sacado-val error oa-currency-val ${getCurrencySizeClass(s.valorTotal)}`}>
+                                    {formatCurrency(s.valorTotal)}
                                   </span>
                                 </div>
 
@@ -1181,7 +1106,7 @@ export const OperationsAnalysis: React.FC = () => {
                               <th>CEP CADASTRADO</th>
                               <th>ENDEREÇO</th>
                               <th style={{ textAlign: 'center' }}>TÍTULOS</th>
-                              <th style={{ textAlign: 'right' }}>VALOR TOTAL</th>
+                              <th className="oa-th-valor">VALOR TOTAL</th>
                             </tr>
                           </thead>
                           <tbody>
@@ -1203,8 +1128,10 @@ export const OperationsAnalysis: React.FC = () => {
                                 <td>{s.cep}</td>
                                 <td className="oa-endereco-cell" title={s.endereco}>{s.endereco}</td>
                                 <td style={{ textAlign: 'center' }}>{s.qtdTitulos}</td>
-                                <td style={{ textAlign: 'right', fontWeight: 600 }}>
-                                  R$ {s.valorTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                <td className="oa-valor-cell">
+                                  <span className={`oa-currency-val ${getCurrencySizeClass(s.valorTotal)}`}>
+                                    {formatCurrency(s.valorTotal)}
+                                  </span>
                                 </td>
                               </tr>
                             ))}
@@ -1238,8 +1165,8 @@ export const OperationsAnalysis: React.FC = () => {
                               </div>
                               <div>
                                 <span className="oa-m-field-lbl">Valor Total:</span>
-                                <span className="oa-m-sacado-val">
-                                  R$ {s.valorTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                <span className={`oa-m-sacado-val oa-currency-val ${getCurrencySizeClass(s.valorTotal)}`}>
+                                  {formatCurrency(s.valorTotal)}
                                 </span>
                               </div>
                             </div>
@@ -1265,7 +1192,7 @@ export const OperationsAnalysis: React.FC = () => {
                               <th>SACADO</th>
                               <th>CNPJ/CPF SACADO</th>
                               <th>VENCIMENTO</th>
-                              <th style={{ textAlign: 'right' }}>VALOR NOMINAL (R$)</th>
+                              <th className="oa-th-valor">VALOR NOMINAL (R$)</th>
                               <th style={{ textAlign: 'center' }}>SITUAÇÃO</th>
                             </tr>
                           </thead>
@@ -1276,8 +1203,10 @@ export const OperationsAnalysis: React.FC = () => {
                                 <td>{t.sacadoNome}</td>
                                 <td><code>{t.sacadoDoc}</code></td>
                                 <td>{t.vencimento ? t.vencimento.substring(0, 10).split('-').reverse().join('/') : '-'}</td>
-                                <td style={{ textAlign: 'right', fontWeight: 600 }}>
-                                  R$ {t.valorNominal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                <td className="oa-valor-cell">
+                                  <span className={`oa-currency-val ${getCurrencySizeClass(t.valorNominal)}`}>
+                                    {formatCurrency(t.valorNominal)}
+                                  </span>
                                 </td>
                                 <td style={{ textAlign: 'center' }}>
                                   <span className="oa-status-badge badge-default">{t.situacao}</span>
@@ -1307,8 +1236,8 @@ export const OperationsAnalysis: React.FC = () => {
                               </div>
                               <div className="oa-m-valor-box">
                                 <span className="oa-m-field-lbl">Valor Nominal:</span>
-                                <span className="oa-m-titulo-valor">
-                                  R$ {t.valorNominal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                <span className={`oa-m-titulo-valor oa-currency-val ${getCurrencySizeClass(t.valorNominal)}`}>
+                                  {formatCurrency(t.valorNominal)}
                                 </span>
                               </div>
                             </div>
@@ -1336,46 +1265,27 @@ export const OperationsAnalysis: React.FC = () => {
                 </button>
               )}
               {operationDetail && operationDetail.sacadosInconsistentes.length > 0 && (
-                <>
-                  <button
-                    type="button"
-                    className="oa-btn secondary"
-                    onClick={() => handleDownloadXlsx(operationDetail.operacaoId)}
-                    disabled={downloadingXlsx}
-                  >
-                    <FileSpreadsheet size={16} />
-                    {downloadingXlsx ? 'Exportando...' : 'Exportar Sacados (.xlsx)'}
-                  </button>
-                  <button
-                    type="button"
-                    className="oa-btn primary"
-                    onClick={() => handleDownloadTitulosXlsx(operationDetail.operacaoId)}
-                    disabled={downloadingTitulosXlsx}
-                  >
-                    <Download size={16} />
-                    {downloadingTitulosXlsx ? 'Exportando...' : 'Exportar Sacado + Título (.xlsx)'}
-                  </button>
-                  <button
-                    type="button"
-                    className="oa-btn cnab"
-                    onClick={() => handleDownloadCnab(operationDetail.operacaoId)}
-                    disabled={downloadingCnab}
-                    title="Baixar Remessa CNAB 400 Corrigida"
-                  >
-                    <FileCode size={16} />
-                    {downloadingCnab ? 'Gerando Remessa...' : 'Gerar Remessa CNAB (.rem)'}
-                  </button>
-                  <button
-                    type="button"
-                    className="oa-btn upload"
-                    onClick={() => fileInputRef.current?.click()}
-                    disabled={uploadingCnab}
-                    title="Importar arquivo CNAB do cedente e corrigir pontualmente os CEPs com erro"
-                  >
-                    <Upload size={16} />
-                    {uploadingCnab ? 'Processando CNAB...' : 'Importar CNAB e Corrigir (.txt / .rem)'}
-                  </button>
-                </>
+                <button
+                  type="button"
+                  className="oa-btn secondary"
+                  onClick={() => handleDownloadXlsx(operationDetail.operacaoId)}
+                  disabled={downloadingXlsx}
+                  title="Exportar sacados com inconsistência cadastral em planilha Excel"
+                >
+                  <FileSpreadsheet size={16} />
+                  {downloadingXlsx ? 'Exportando...' : 'Exportar Sacados (.xlsx)'}
+                </button>
+              )}
+              {operationDetail && (
+                <button
+                  type="button"
+                  className="oa-btn cnab"
+                  onClick={() => setCnabModalOpen(true)}
+                  title="Consolidar e Gerar Remessa CNAB (Válidos, Com Erro ou Completo / Modelos Vortex e Bitfin)"
+                >
+                  <FileCode size={16} />
+                  <span>Gerar Remessa CNAB</span>
+                </button>
               )}
               <button
                 type="button"
@@ -1476,79 +1386,215 @@ export const OperationsAnalysis: React.FC = () => {
         </div>
       )}
 
-      {/* ── MODAL DE RESULTADO DO UPLOAD DO CNAB ── */}
-      {uploadResultModal && (
-        <div className="oa-modal-overlay" style={{ zIndex: 1200 }} onClick={() => setUploadResultModal(null)}>
-          <div className="oa-modal-content glass" style={{ maxWidth: '900px', maxHeight: '88vh' }} onClick={e => e.stopPropagation()}>
+      {/* ── MODAL CONSOLIDADO DE GERAÇÃO CNAB ── */}
+      {cnabModalOpen && operationDetail && (
+        <div className="oa-modal-overlay" style={{ zIndex: 1200 }} onClick={() => setCnabModalOpen(false)}>
+          <div className="oa-modal-content glass oa-cnab-modal" onClick={e => e.stopPropagation()}>
             <div className="oa-modal-header">
               <div className="oa-modal-title-group">
-                <span className="oa-modal-badge" style={{ background: '#0284c7', color: '#fff' }}>CNAB PROCESSADO E AJUSTADO</span>
-                <h2>Remessa CNAB Corrigida a Partir do Arquivo Cedente</h2>
+                <span className="oa-modal-badge cnab">EXPORTAÇÃO DE REMESSA CNAB 400</span>
+                <h2>Gerar Remessa CNAB</h2>
+                <p className="oa-cnab-modal-sub">
+                  Operação #{operationDetail.operacaoId} • {operationDetail.cedente.nome}
+                </p>
               </div>
-              <button className="oa-modal-close-btn" onClick={() => setUploadResultModal(null)}>
+              <button
+                className="oa-modal-close-btn"
+                onClick={() => setCnabModalOpen(false)}
+                title="Fechar"
+              >
                 <X size={20} />
               </button>
             </div>
 
-            <div className="oa-modal-body" style={{ padding: '20px' }}>
-              <div style={{
-                background: 'rgba(16, 185, 129, 0.1)',
-                border: '1px solid rgba(16, 185, 129, 0.3)',
-                borderRadius: '8px',
-                padding: '16px',
-                marginBottom: '20px'
-              }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#34d399', fontWeight: 700, marginBottom: '6px' }}>
-                  <CheckCircle2 size={20} />
-                  <span>Download Concluído: {uploadResultModal.filename}</span>
-                </div>
-                <p style={{ color: '#cbd5e1', fontSize: '13px', margin: 0 }}>
-                  O arquivo foi lido linha a linha preservando 100% dos dados originais do cedente (endereços, cessão, instruções e NF-e). 
-                  Foram verificados <strong>{uploadResultModal.totalTitulos} títulos</strong> ({uploadResultModal.totalLinhas} linhas).
-                  Total de títulos com CEP substituído pelo oficial da Receita Federal: <strong>{uploadResultModal.totalCorrigidos}</strong>.
-                </p>
-              </div>
+            <div className="oa-modal-body oa-cnab-modal-body">
+              {/* SEÇÃO 1: ESCOLHA DO ESCOPO */}
+              <div className="oa-cnab-section">
+                <label className="oa-cnab-section-label">
+                  <span className="oa-cnab-step-num">1</span>
+                  Selecione o Escopo da Remessa
+                </label>
+                <div className="oa-cnab-options-grid">
+                  {/* Opção VÁLIDO */}
+                  <div
+                    className={`oa-cnab-card ${cnabEscopo === 'validos' ? 'active' : ''}`}
+                    onClick={() => setCnabEscopo('validos')}
+                  >
+                    <div className="oa-cnab-card-radio">
+                      <input
+                        type="radio"
+                        name="cnabEscopo"
+                        checked={cnabEscopo === 'validos'}
+                        onChange={() => setCnabEscopo('validos')}
+                      />
+                    </div>
+                    <div className="oa-cnab-card-info">
+                      <div className="oa-cnab-card-header">
+                        <CheckCircle2 size={16} className="text-emerald" />
+                        <strong>CNAB VÁLIDO</strong>
+                      </div>
+                      <p>Apenas títulos cujos sacados têm CEP verificado e regular nos Correios.</p>
+                      <div className="oa-cnab-card-count">
+                        <span className="oa-count-pill valid">
+                          {Math.max(0, operationDetail.totalTitulos - (operationDetail.sacadosInconsistentes || []).reduce((acc, s) => acc + (s.qtdTitulos || 0), 0))} títulos
+                        </span>
+                      </div>
+                    </div>
+                  </div>
 
-              {uploadResultModal.detalhesCorrecoes?.length > 0 && (
-                <div>
-                  <h4 style={{ color: '#f8fafc', fontSize: '14px', marginBottom: '10px' }}>
-                    Relação de Sacados e CEPs Substituídos pelo Oficial do CNPJ ({uploadResultModal.detalhesCorrecoes.length} sacados):
-                  </h4>
-                  <div style={{ maxHeight: '380px', overflowY: 'auto', border: '1px solid #1e293b', borderRadius: '8px' }}>
-                    <table className="oa-table" style={{ fontSize: '12px' }}>
-                      <thead>
-                        <tr>
-                          <th>CNPJ</th>
-                          <th>Razão Social</th>
-                          <th>Endereço Original (Intacto)</th>
-                          <th style={{ textAlign: 'center' }}>CEP Anterior</th>
-                          <th style={{ textAlign: 'center' }}>Novo CEP Oficial</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {uploadResultModal.detalhesCorrecoes.map((item: any, idx: number) => (
-                          <tr key={idx} className="oa-row">
-                            <td><code>{item.doc}</code></td>
-                            <td>{item.nome}</td>
-                            <td>{item.endereco}</td>
-                            <td style={{ textAlign: 'center', color: '#f87171' }}>{item.oldCep}</td>
-                            <td style={{ textAlign: 'center', color: '#4ade80', fontWeight: 700 }}>{item.newCep}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
+                  {/* Opção COM ERRO */}
+                  <div
+                    className={`oa-cnab-card ${cnabEscopo === 'erros' ? 'active' : ''}`}
+                    onClick={() => setCnabEscopo('erros')}
+                  >
+                    <div className="oa-cnab-card-radio">
+                      <input
+                        type="radio"
+                        name="cnabEscopo"
+                        checked={cnabEscopo === 'erros'}
+                        onChange={() => setCnabEscopo('erros')}
+                      />
+                    </div>
+                    <div className="oa-cnab-card-info">
+                      <div className="oa-cnab-card-header">
+                        <AlertTriangle size={16} className="text-amber" />
+                        <strong>CNAB C/ ERRO</strong>
+                      </div>
+                      <p>Apenas títulos de sacados com CEP extinto, divergente ou inexistente.</p>
+                      <div className="oa-cnab-card-count">
+                        <span className="oa-count-pill error">
+                          {(operationDetail.sacadosInconsistentes || []).reduce((acc, s) => acc + (s.qtdTitulos || 0), 0)} títulos
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Opção COMPLETO */}
+                  <div
+                    className={`oa-cnab-card ${cnabEscopo === 'completo' ? 'active' : ''}`}
+                    onClick={() => setCnabEscopo('completo')}
+                  >
+                    <div className="oa-cnab-card-radio">
+                      <input
+                        type="radio"
+                        name="cnabEscopo"
+                        checked={cnabEscopo === 'completo'}
+                        onChange={() => setCnabEscopo('completo')}
+                      />
+                    </div>
+                    <div className="oa-cnab-card-info">
+                      <div className="oa-cnab-card-header">
+                        <Layers size={16} className="text-blue" />
+                        <strong>CNAB COMPLETO</strong>
+                      </div>
+                      <p>Operação inteira consolidada com todos os CEPs corrigidos e validados.</p>
+                      <div className="oa-cnab-card-count">
+                        <span className="oa-count-pill info">
+                          {operationDetail.totalTitulos} títulos
+                        </span>
+                      </div>
+                    </div>
                   </div>
                 </div>
-              )}
+              </div>
+
+              {/* SEÇÃO 2: ESCOLHA DO MODELO / LAYOUT */}
+              <div className="oa-cnab-section">
+                <label className="oa-cnab-section-label">
+                  <span className="oa-cnab-step-num">2</span>
+                  Selecione o Modelo de Layout
+                </label>
+                <div className="oa-cnab-models-grid">
+                  {/* Modelo VORTEX */}
+                  <div
+                    className={`oa-cnab-model-card ${cnabModelo === 'vortex' ? 'active' : ''}`}
+                    onClick={() => setCnabModelo('vortex')}
+                  >
+                    <div className="oa-cnab-model-header">
+                      <input
+                        type="radio"
+                        name="cnabModelo"
+                        checked={cnabModelo === 'vortex'}
+                        onChange={() => setCnabModelo('vortex')}
+                      />
+                      <span className="oa-model-title">Modelo VORTEX</span>
+                      <span className="oa-model-tag vortex">Padrão Vortx DTVM</span>
+                    </div>
+                    <div className="oa-cnab-model-details">
+                      <div className="oa-model-detail-row">
+                        <span>Instituição:</span>
+                        <strong>VORTX DTVM</strong>
+                      </div>
+                      <div className="oa-model-detail-row">
+                        <span>Código Banco:</span>
+                        <strong>999</strong>
+                      </div>
+                      <div className="oa-model-detail-row">
+                        <span>Carteira:</span>
+                        <strong>021 (Vinculada)</strong>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Modelo BITFIN */}
+                  <div
+                    className={`oa-cnab-model-card ${cnabModelo === 'bitfin' ? 'active' : ''}`}
+                    onClick={() => setCnabModelo('bitfin')}
+                  >
+                    <div className="oa-cnab-model-header">
+                      <input
+                        type="radio"
+                        name="cnabModelo"
+                        checked={cnabModelo === 'bitfin'}
+                        onChange={() => setCnabModelo('bitfin')}
+                      />
+                      <span className="oa-model-title">Modelo BITFIN</span>
+                      <span className="oa-model-tag bitfin">Layout V1.00</span>
+                    </div>
+                    <div className="oa-cnab-model-details">
+                      <div className="oa-model-detail-row">
+                        <span>Instituição:</span>
+                        <strong>BITFIN</strong>
+                      </div>
+                      <div className="oa-model-detail-row">
+                        <span>Código Banco:</span>
+                        <strong>999</strong>
+                      </div>
+                      <div className="oa-model-detail-row">
+                        <span>Carteira:</span>
+                        <strong>001 (Simples)</strong>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* RESUMO DO ARQUIVO A SER GERADO */}
+              <div className="oa-cnab-summary-box">
+                <FileText size={16} />
+                <span>
+                  Arquivo gerado: <code>{`REM_${cnabModelo.toUpperCase()}_OP_${operationDetail.operacaoId}_${cnabEscopo === 'validos' ? 'VALIDOS' : cnabEscopo === 'erros' ? 'COM_ERRO' : 'COMPLETO'}.REM`}</code>
+                </span>
+              </div>
             </div>
 
             <div className="oa-modal-footer">
               <button
                 type="button"
-                className="oa-btn primary"
-                onClick={() => setUploadResultModal(null)}
+                className="oa-btn secondary"
+                onClick={() => setCnabModalOpen(false)}
+                disabled={downloadingUnifiedCnab}
               >
-                Concluir e Fechar
+                Cancelar
+              </button>
+              <button
+                type="button"
+                className="oa-btn cnab oa-btn-lg"
+                onClick={handleDownloadUnifiedCnab}
+                disabled={downloadingUnifiedCnab}
+              >
+                {downloadingUnifiedCnab ? <RefreshCw size={16} className="oa-spin" /> : <Download size={16} />}
+                <span>{downloadingUnifiedCnab ? 'Gerando Remessa...' : 'Baixar Arquivo .REM'}</span>
               </button>
             </div>
           </div>
@@ -1559,4 +1605,5 @@ export const OperationsAnalysis: React.FC = () => {
 };
 
 export default OperationsAnalysis;
+
 

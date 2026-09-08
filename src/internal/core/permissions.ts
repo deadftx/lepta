@@ -76,10 +76,17 @@ export const permissionGroups: PermissionGroup[] = [
   },
   { id: '9', name: 'Banco de Dados' },
   { id: '5', name: 'Dashboards' },
-  { id: '4', name: 'Business Intelligence' }
+  {
+    id: '4',
+    name: 'Business Intelligence',
+    children: [
+      { id: '4.1', name: 'Movimento Falimentar' }
+    ]
+  }
 ];
 
 const legacyChildren: Record<string, string[]> = {
+  '4': ['4.1'],
   '7': ['7.1', '7.2', '7.4', '7.5'],
   '8': ['8.1', '8.2', '8.3', '8.4', '8.5', '8.6', '8.7'],
   '10': ['10.1', '10.2'],

@@ -7,7 +7,7 @@ import Login from './pages/Login';
 import Dashboard from './internal/modules/home/Dashboard';
 import Permissions from './internal/modules/administration/access/Permissions';
 import Groups from './internal/modules/administration/access/Groups';
-import BI from './internal/modules/business-intelligence/BI';
+import MovimentoFalimentar from './internal/modules/business-intelligence/MovimentoFalimentar';
 import DashboardsView from './internal/modules/dashboards/DashboardsView';
 import CreateUser from './internal/modules/administration/access/CreateUser';
 import Marketing from './internal/modules/calendar/Marketing';
@@ -116,7 +116,8 @@ function App() {
                 <Route path="/dashboard" element={<Dashboard />} />
                 <Route path="/marketing" element={<AccessRoute permission="6"><Marketing /></AccessRoute>} />
                 <Route path="/dashboards" element={<AccessRoute permission="5"><DashboardsView /></AccessRoute>} />
-                <Route path="/bi" element={<AccessRoute permission="4"><BI /></AccessRoute>} />
+                <Route path="/bi" element={<Navigate to="/bi/movimento-falimentar" replace />} />
+                <Route path="/bi/movimento-falimentar" element={<AccessRoute permission="4.1"><MovimentoFalimentar /></AccessRoute>} />
                 <Route path="/financeiro" element={<AccessRoute permission="7"><FinanceDashboard /></AccessRoute>} />
                 <Route path="/financeiro/extratos" element={<AccessRoute permission="7.1"><Finance /></AccessRoute>} />
                 <Route path="/financeiro/grafeno" element={<AccessRoute permission="7.2"><GrafenoIntegration /></AccessRoute>} />

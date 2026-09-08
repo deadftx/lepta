@@ -467,18 +467,18 @@ export const systemSearchItems: SearchItem[] = [
     badge: 'Menu'
   },
   {
-    id: 'mod-bi',
-    title: 'Business Intelligence (PowerBI)',
-    category: 'Dados & BI',
-    breadcrumb: ['Grupos', 'Business Intelligence'],
-    path: '/bi',
-    permissionId: '4',
-    description: 'Relatórios avançados de BI, análises preditivas e painéis PowerBI embutidos.',
-    explanation: 'Acesse Grupos > Business Intelligence para carregar os painéis analíticos.',
-    tags: ['PowerBI', 'Analytics', 'Relatórios Executivos', 'Dashboards BI'],
-    keywords: ['bi', 'business intelligence', 'powerbi', 'relatorios bi', 'analytics', 'analise profunda'],
-    icon: 'Sliders',
-    badge: 'Menu'
+    id: 'mod-bi-movimento-falimentar',
+    title: 'Movimento Falimentar',
+    category: 'Business Intelligence',
+    breadcrumb: ['Business Intelligence', 'Movimento Falimentar'],
+    path: '/bi/movimento-falimentar',
+    permissionId: '4.1',
+    description: 'Monitoramento de Falências e Recuperações Judiciais via Valor Econômico e DataJud (CNJ).',
+    explanation: 'Acesse Business Intelligence > Movimento Falimentar para visualizar processos e cruzamento de carteira.',
+    tags: ['Falência', 'Recuperação Judicial', 'Valor Econômico', 'DataJud', 'CNJ', 'Movimento Falimentar'],
+    keywords: ['falencia', 'recuperacao judicial', 'movimento falimentar', 'valor economico', 'datajud', 'cnj', 'djen', 'rj'],
+    icon: 'Scale',
+    badge: 'Módulo'
   },
 
   // ==========================================

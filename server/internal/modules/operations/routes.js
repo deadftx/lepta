@@ -11,7 +11,8 @@ import {
   analyzeCnabCeps,
   generateCorrectedCnabFromAnalysis,
   splitCnab400File,
-  splitOperationCnab400
+  splitOperationCnab400,
+  buildUnifiedCnabRemessa
 } from './operationsService.js';
 
 export function registerOperationsRoutes(app, {
@@ -271,6 +272,53 @@ export function registerOperationsRoutes(app, {
     } catch (err) {
       console.error(`Erro ao exportar CNAB 400 da operação ${req.params.id}:`, err);
       return res.status(500).json({ error: `Erro ao gerar remessa CNAB: ${err.message}` });
+    }
+  });
+
+  // 5.1 Construtor Consolidado de Remessa CNAB (Escopos: Valido / Erro / Completo | Modelos: Vortex / Bitfin)
+  app.get('/api/mesa-operacoes/operacoes/:id/gerar-cnab', requireSession, checkAccess, async (req, res) => {
+    try {
+      const token = getToken();
+      if (!token) {
+        return res.status(400).json({ error: 'Token UNLTD_API_TOKEN não configurado no servidor.' });
+      }
+
+      const operacaoId = req.params.id;
+      const { data, escopo = 'completo', modelo = 'vortex' } = req.query;
+
+      const result = await buildUnifiedCnabRemessa({
+        token,
+        operacaoId,
+        date: data,
+        escopo,
+        modelo
+      });
+
+      if (!result.cnabContent) {
+        return res.status(404).json({ error: `Nenhum título encontrado para o escopo "${escopo}".` });
+      }
+
+      const filename = result.filename || `REM_${modelo.toUpperCase()}_OP_${operacaoId}_${escopo.toUpperCase()}.REM`;
+
+      if (req.query.format === 'json') {
+        return res.json({
+          success: true,
+          filename,
+          totalTitulos: result.totalTitulos,
+          totalLinhas: result.totalLinhas,
+          escopo: result.escopo,
+          modelo: result.modelo,
+          cnabBase64: Buffer.from(result.cnabContent, 'latin1').toString('base64')
+        });
+      }
+
+      res.setHeader('Content-Type', 'text/plain; charset=iso-8859-1');
+      res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+      res.setHeader('X-Total-Titulos', String(result.totalTitulos || 0));
+      return res.send(Buffer.from(result.cnabContent, 'latin1'));
+    } catch (err) {
+      console.error(`Erro ao gerar remessa consolidada da operação ${req.params.id}:`, err);
+      return res.status(500).json({ error: `Erro ao gerar CNAB: ${err.message}` });
     }
   });
 

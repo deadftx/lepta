@@ -22,8 +22,9 @@ import { registerMonitorRoutes } from './modules/monitor/routes.js';
 import { registerNplRoutes } from './modules/intelligence/npl/routes.js';
 import { createCommitteeRouter } from './modules/intelligence/committee/routes.js';
 import { createSmartFactorRouter } from './modules/intelligence/smartfactor/routes.js';
-import { recordDatabaseEvent, recordSystemError, recordUserHeartbeat } from './modules/monitor/monitorService.js';
-import { ensureCedentesTableSchema, consolidateCedentesTable, syncAllCedentesFromUnltdApi } from './modules/database/unltdSync.js';
+import { recordDatabaseEvent, recordUserHeartbeat } from './modules/monitor/monitorService.js';
+import { ensureCedentesTableSchema, syncAllCedentesFromUnltdApi } from './modules/database/unltdSync.js';
+import { registerMovimentoFalimentarRoutes } from './modules/movimento-falimentar/routes.js';
 
 const app = express();
 app.disable('x-powered-by');
@@ -475,6 +476,7 @@ function ensureGerentesContasTable() {
 function ensureAccessAreas() {
   const areas = [
     ['4', 'Business Intelligence'],
+    ['4.1', 'Business Intelligence > Movimento Falimentar'],
     ['5', 'Dashboards'],
     ['6', 'Calendário'],
     ['7', 'Financeiro'],
@@ -5192,6 +5194,13 @@ registerOperationsRoutes(app, {
   requireSession,
   checkAccess: requirePermission('14.1', '14.2', '14.3', '14', '10.1'),
   unltdToken: UNLTD_TOKEN
+});
+
+registerMovimentoFalimentarRoutes(app, {
+  db,
+  projectRoot,
+  requireSession,
+  checkAccess: requirePermission('4.1', '4')
 });
 
 registerTickerRoutes(app);

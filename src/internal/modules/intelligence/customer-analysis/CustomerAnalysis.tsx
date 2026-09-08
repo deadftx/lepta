@@ -29,7 +29,9 @@ import {
   Hash,
   FileSpreadsheet,
   Mail,
-  Loader2
+  Loader2,
+  Copy,
+  Check
 } from 'lucide-react';
 import './CustomerAnalysis.css';
 import '../../../core/styles/Operations.css';
@@ -146,6 +148,15 @@ const CustomerAnalysis = () => {
   const [titleValorMax, setTitleValorMax] = useState('');
   const [selectedTitleDetail, setSelectedTitleDetail] = useState<TitleItem | null>(null);
   const [titleQueryTriggered, setTitleQueryTriggered] = useState(false);
+  const [copiedField, setCopiedField] = useState<string | null>(null);
+
+  const handleCopyText = (text: string, fieldKey: string, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    if (!text) return;
+    navigator.clipboard.writeText(text);
+    setCopiedField(fieldKey);
+    setTimeout(() => setCopiedField(null), 2000);
+  };
 
   // Drag-to-scroll horizontal da tabela de títulos
   const tableContainerRef = useRef<HTMLDivElement>(null);
@@ -1912,14 +1923,36 @@ const CustomerAnalysis = () => {
                     </div>
                   )}
                   {selectedTitleDetail.codigoDoLastro && (
-                    <div className="title-detail-field">
-                      <span className="field-label">Código do Lastro</span>
-                      <span className="field-value">{selectedTitleDetail.codigoDoLastro}</span>
+                    <div className="title-detail-field full-width">
+                      <div className="field-label-row">
+                        <span className="field-label">Código do Lastro</span>
+                        <button
+                          type="button"
+                          className="btn-copy-mini"
+                          onClick={(e) => handleCopyText(selectedTitleDetail.codigoDoLastro || '', 'lastro', e)}
+                          title="Copiar código do lastro"
+                        >
+                          {copiedField === 'lastro' ? <Check size={13} style={{ color: '#10b981' }} /> : <Copy size={13} />}
+                          <span>{copiedField === 'lastro' ? 'Copiado!' : 'Copiar'}</span>
+                        </button>
+                      </div>
+                      <span className="field-value monospace">{selectedTitleDetail.codigoDoLastro}</span>
                     </div>
                   )}
                   {selectedTitleDetail.chaveNfe && (
-                    <div className="title-detail-field" style={{ gridColumn: 'span 2' }}>
-                      <span className="field-label">Chave NF-e / Manifesto</span>
+                    <div className="title-detail-field full-width">
+                      <div className="field-label-row">
+                        <span className="field-label">Chave NF-e / Manifesto</span>
+                        <button
+                          type="button"
+                          className="btn-copy-mini"
+                          onClick={(e) => handleCopyText(selectedTitleDetail.chaveNfe || '', 'chaveNfe', e)}
+                          title="Copiar chave NF-e"
+                        >
+                          {copiedField === 'chaveNfe' ? <Check size={13} style={{ color: '#10b981' }} /> : <Copy size={13} />}
+                          <span>{copiedField === 'chaveNfe' ? 'Copiado!' : 'Copiar'}</span>
+                        </button>
+                      </div>
                       <span className="field-value monospace">{selectedTitleDetail.chaveNfe}</span>
                     </div>
                   )}

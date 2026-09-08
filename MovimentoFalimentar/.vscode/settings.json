@@ -1,0 +1,38 @@
+{
+  "cSpell.enabled": false,
+  "cSpell.language": "en,pt,pt-BR",
+  "cSpell.ignorePaths": [
+    "**/*"
+  ],
+  "cSpell.words": [
+    "Ajuizamento",
+    "Atualizacao",
+    "autofalencia",
+    "Basicos",
+    "camara",
+    "cartorio",
+    "cnae",
+    "CNAE",
+    "cnpj",
+    "CNPJ",
+    "codigo",
+    "concluída",
+    "DataJud",
+    "descricao",
+    "Descricao",
+    "DIAGNOSTICO",
+    "falencia",
+    "Fastify",
+    "juizo",
+    "Lepta",
+    "lookback",
+    "ministerio",
+    "Movimento",
+    "municipio",
+    "razao",
+    "setlocal",
+    "situacao",
+    "tribunais",
+    "wordmark"
+  ]
+}
