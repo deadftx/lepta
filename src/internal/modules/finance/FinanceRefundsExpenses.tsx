@@ -116,6 +116,7 @@ export const FinanceRefundsExpenses: React.FC = () => {
 
   // Modal de Detalhes
   const [selectedRequest, setSelectedRequest] = useState<PurchaseRequest | null>(null);
+  const [loadingDetailsId, setLoadingDetailsId] = useState<string | null>(null);
   const [messages, setMessages] = useState<PurchaseMessage[]>([]);
   const [newMessageText, setNewMessageText] = useState('');
   const [attachments, setAttachments] = useState<Attachment[]>([]);
@@ -198,6 +199,7 @@ export const FinanceRefundsExpenses: React.FC = () => {
   const [searchParams] = useSearchParams();
 
   const handleOpenDetails = async (id: string) => {
+    setLoadingDetailsId(id);
     try {
       const res = await fetch(`${API_BASE_URL}/api/compras/requisicoes/${id}`, {
         headers: getAuthHeaders()
@@ -249,9 +251,15 @@ export const FinanceRefundsExpenses: React.FC = () => {
         setIsDivergenceModalOpen(false);
         setPauseReason('');
         fetchAttachments(id);
+      } else {
+        const errJson = await res.json().catch(() => ({}));
+        showToast(errJson.error || 'Não foi possível carregar os detalhes da solicitação.');
       }
     } catch (err) {
       console.error('Erro ao abrir detalhes:', err);
+      showToast('Erro de conexão ao carregar detalhes.');
+    } finally {
+      setLoadingDetailsId(null);
     }
   };
 
@@ -1040,9 +1048,10 @@ export const FinanceRefundsExpenses: React.FC = () => {
                         <button
                           className="pa-btn-detail"
                           onClick={() => handleOpenDetails(item.id)}
+                          disabled={loadingDetailsId === item.id}
                           title="Ver Detalhes e Ações"
                         >
-                          <Eye size={15} /> Detalhes
+                          {loadingDetailsId === item.id ? <RefreshCw size={15} className="pwc-spinner" /> : <Eye size={15} />} Detalhes
                         </button>
                         {isMaster && (
                           <button

@@ -1,0 +1,30 @@
+{
+  "name": "movimento-rj-monitor",
+  "version": "1.2.0",
+  "private": true,
+  "description": "Monitor local de Movimento Falimentar via CNJ DataJud, com histórico SQLite e dashboard web.",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/server.js",
+    "scan": "tsx src/cli.ts",
+    "login:valor": "node scripts/login_valor.js"
+  },
+  "dependencies": {
+    "better-sqlite3": "^12.4.1",
+    "dotenv": "^17.2.1",
+    "fastify": "^5.5.0",
+    "node-cron": "^4.2.1",
+    "puppeteer": "^25.9.0"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/node": "^24.3.0",
+    "tsx": "^4.20.5",
+    "typescript": "^5.9.2"
+  }
+}

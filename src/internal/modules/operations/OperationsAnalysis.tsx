@@ -597,87 +597,158 @@ export const OperationsAnalysis: React.FC = () => {
             <p>Não foram localizadas operações ativas para a data selecionada com os filtros aplicados.</p>
           </div>
         ) : (
-          <div className="oa-table-responsive">
-            <table className="oa-table">
-              <thead>
-                <tr>
-                  <th>Nº OPERAÇÃO</th>
-                  <th>DATA CADASTRO</th>
-                  <th>CEDENTE (CLIENTE)</th>
-                  <th>GERENTE</th>
-                  <th>UNIDADE (FUNDO)</th>
-                  <th style={{ textAlign: 'center' }}>TÍTULOS</th>
-                  <th style={{ textAlign: 'right' }}>VALOR TOTAL (R$)</th>
-                  <th style={{ textAlign: 'center' }}>STATUS</th>
-                  <th style={{ textAlign: 'center' }}>AÇÃO</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredOperacoes.map(op => (
-                  <tr key={op.id} className="oa-row">
-                    <td>
-                      <button
-                        className="oa-op-id-btn"
-                        onClick={() => handleOpenOperation(op.id)}
-                        title="Clique para analisar sacados e inconsistências"
-                      >
-                        #{op.id}
-                      </button>
-                    </td>
-                    <td>{op.dataCadastro ? op.dataCadastro.substring(0, 10).split('-').reverse().join('/') : '-'}</td>
-                    <td>
-                      <div className="oa-cedente-cell">
-                        <span className="oa-cedente-name">{op.cedente.nome}</span>
-                        {op.cedente.documento && (
-                          <span className="oa-cedente-doc">CNPJ: {op.cedente.documento}</span>
-                        )}
-                      </div>
-                    </td>
-                    <td>
-                      <span className="oa-gerente-tag">
-                        <UserCheck size={13} /> {op.gerente || '-'}
-                      </span>
-                    </td>
-                    <td>
-                      <span className="oa-ua-badge">{op.unidadeAdministrativa}</span>
-                    </td>
-                    <td style={{ textAlign: 'center', fontWeight: 600 }}>{op.titulosCount}</td>
-                    <td style={{ textAlign: 'right', fontWeight: 700, color: '#f8fafc' }}>
-                      R$ {op.valorTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-                    </td>
-                    <td style={{ textAlign: 'center' }}>
+          <>
+            {/* ── TABELA PARA DESKTOP ── */}
+            <div className="oa-table-responsive oa-desktop-only">
+              <table className="oa-table">
+                <thead>
+                  <tr>
+                    <th>Nº OPERAÇÃO</th>
+                    <th>DATA CADASTRO</th>
+                    <th>CEDENTE (CLIENTE)</th>
+                    <th>GERENTE</th>
+                    <th>UNIDADE (FUNDO)</th>
+                    <th style={{ textAlign: 'center' }}>TÍTULOS</th>
+                    <th style={{ textAlign: 'right' }}>VALOR TOTAL (R$)</th>
+                    <th style={{ textAlign: 'center' }}>STATUS</th>
+                    <th style={{ textAlign: 'center' }}>AÇÃO</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredOperacoes.map(op => (
+                    <tr key={op.id} className="oa-row">
+                      <td>
+                        <button
+                          className="oa-op-id-btn"
+                          onClick={() => handleOpenOperation(op.id)}
+                          title="Clique para analisar sacados e inconsistências"
+                        >
+                          #{op.id}
+                        </button>
+                      </td>
+                      <td>{op.dataCadastro ? op.dataCadastro.substring(0, 10).split('-').reverse().join('/') : '-'}</td>
+                      <td>
+                        <div className="oa-cedente-cell">
+                          <span className="oa-cedente-name">{op.cedente.nome}</span>
+                          {op.cedente.documento && (
+                            <span className="oa-cedente-doc">CNPJ: {op.cedente.documento}</span>
+                          )}
+                        </div>
+                      </td>
+                      <td>
+                        <span className="oa-gerente-tag">
+                          <UserCheck size={13} /> {op.gerente || '-'}
+                        </span>
+                      </td>
+                      <td>
+                        <span className="oa-ua-badge">{op.unidadeAdministrativa}</span>
+                      </td>
+                      <td style={{ textAlign: 'center', fontWeight: 600 }}>{op.titulosCount}</td>
+                      <td style={{ textAlign: 'right', fontWeight: 700, color: '#f8fafc' }}>
+                        R$ {op.valorTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                      </td>
+                      <td style={{ textAlign: 'center' }}>
+                        <span className={`oa-status-badge ${getStatusBadgeClass(op.status)}`}>
+                          {op.status}
+                        </span>
+                      </td>
+                      <td style={{ textAlign: 'center' }}>
+                        <div className="oa-action-group">
+                          <button
+                            className="oa-action-btn primary"
+                            onClick={() => handleOpenOperation(op.id)}
+                            title="Auditar sacados e inconsistências de endereço"
+                          >
+                            <Search size={14} /> Analisar
+                          </button>
+                          <button
+                            type="button"
+                            className="oa-action-btn-icon"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleDownloadFullOperationXlsx(op.id);
+                            }}
+                            disabled={downloadingFullXlsx}
+                            title="Exportar operação completa em planilha Excel (.xlsx)"
+                          >
+                            <FileSpreadsheet size={14} />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            {/* ── VISUALIZAÇÃO EM CARDS INTUITIVOS PARA MOBILE (SEM ROLAGEM HORIZONTAL) ── */}
+            <div className="oa-mobile-cards-list oa-mobile-only">
+              {filteredOperacoes.map(op => (
+                <div
+                  key={`m-${op.id}`}
+                  className="oa-m-op-card glass"
+                  onClick={() => handleOpenOperation(op.id)}
+                >
+                  <div className="oa-m-card-header">
+                    <div className="oa-m-id-status">
+                      <span className="oa-m-op-id">#{op.id}</span>
                       <span className={`oa-status-badge ${getStatusBadgeClass(op.status)}`}>
                         {op.status}
                       </span>
-                    </td>
-                    <td style={{ textAlign: 'center' }}>
-                      <div className="oa-action-group">
-                        <button
-                          className="oa-action-btn primary"
-                          onClick={() => handleOpenOperation(op.id)}
-                          title="Auditar sacados e inconsistências de endereço"
-                        >
-                          <Search size={14} /> Analisar
-                        </button>
-                        <button
-                          type="button"
-                          className="oa-action-btn-icon"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleDownloadFullOperationXlsx(op.id);
-                          }}
-                          disabled={downloadingFullXlsx}
-                          title="Exportar operação completa em planilha Excel (.xlsx)"
-                        >
-                          <FileSpreadsheet size={14} />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                    </div>
+                    <div className="oa-m-total-val">
+                      R$ {op.valorTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                    </div>
+                  </div>
+
+                  <div className="oa-m-cedente-box">
+                    <span className="oa-m-cedente-name">{op.cedente.nome}</span>
+                    {op.cedente.documento && (
+                      <span className="oa-m-cedente-doc">CNPJ: {op.cedente.documento}</span>
+                    )}
+                  </div>
+
+                  <div className="oa-m-tags-grid">
+                    <div className="oa-m-tag-item">
+                      <span className="oa-m-tag-label">Data Cadastro</span>
+                      <span className="oa-m-tag-val">{op.dataCadastro ? op.dataCadastro.substring(0, 10).split('-').reverse().join('/') : '-'}</span>
+                    </div>
+                    <div className="oa-m-tag-item">
+                      <span className="oa-m-tag-label">Qtd Títulos</span>
+                      <span className="oa-m-tag-val">{op.titulosCount} docs</span>
+                    </div>
+                    <div className="oa-m-tag-item">
+                      <span className="oa-m-tag-label">Gerente</span>
+                      <span className="oa-m-tag-val">{op.gerente || '-'}</span>
+                    </div>
+                    <div className="oa-m-tag-item">
+                      <span className="oa-m-tag-label">Fundo / Unidade</span>
+                      <span className="oa-m-tag-val">{op.unidadeAdministrativa}</span>
+                    </div>
+                  </div>
+
+                  <div className="oa-m-actions-row" onClick={e => e.stopPropagation()}>
+                    <button
+                      type="button"
+                      className="oa-btn primary oa-m-btn-analisar"
+                      onClick={() => handleOpenOperation(op.id)}
+                    >
+                      <Search size={15} /> Analisar Operação
+                    </button>
+                    <button
+                      type="button"
+                      className="oa-m-btn-export"
+                      onClick={() => handleDownloadFullOperationXlsx(op.id)}
+                      disabled={downloadingFullXlsx}
+                      title="Exportar XLSX da Operação"
+                    >
+                      <FileSpreadsheet size={16} />
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </>
         )}
       </div>
 
@@ -983,60 +1054,116 @@ export const OperationsAnalysis: React.FC = () => {
                           <p>Nenhum sacado com erro de endereço para listar.</p>
                         </div>
                       ) : (
-                        <div className="oa-table-responsive">
-                          <table className="oa-table modal-table">
-                            <thead>
-                              <tr>
-                                <th>SACADO (DEVEDOR)</th>
-                                <th>CNPJ / CPF</th>
-                                <th style={{ textAlign: 'center' }}>CEP ATUAL</th>
-                                <th>DIAGNÓSTICO DO ERRO</th>
-                                <th>ENDEREÇO</th>
-                                <th style={{ textAlign: 'center' }}>TÍTULOS</th>
-                                <th style={{ textAlign: 'right' }}>VALOR RETIDO</th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {operationDetail.sacadosInconsistentes.map(s => (
-                                <tr key={s.key} className="oa-row error-row">
-                                  <td>
-                                    <div className="oa-sacado-cell">
-                                      <span className="oa-sacado-nome">{s.nome}</span>
-                                      {s.telefones.length > 0 && (
-                                        <span className="oa-sacado-phone">
-                                          <Phone size={11} /> {s.telefones[0]}
+                        <>
+                          <div className="oa-table-responsive oa-desktop-only">
+                            <table className="oa-table modal-table">
+                              <thead>
+                                <tr>
+                                  <th>SACADO (DEVEDOR)</th>
+                                  <th>CNPJ / CPF</th>
+                                  <th style={{ textAlign: 'center' }}>CEP ATUAL</th>
+                                  <th>DIAGNÓSTICO DO ERRO</th>
+                                  <th>ENDEREÇO</th>
+                                  <th style={{ textAlign: 'center' }}>TÍTULOS</th>
+                                  <th style={{ textAlign: 'right' }}>VALOR RETIDO</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {operationDetail.sacadosInconsistentes.map(s => (
+                                  <tr key={s.key} className="oa-row error-row">
+                                    <td>
+                                      <div className="oa-sacado-cell">
+                                        <span className="oa-sacado-nome">{s.nome}</span>
+                                        {s.telefones.length > 0 && (
+                                          <span className="oa-sacado-phone">
+                                            <Phone size={11} /> {s.telefones[0]}
+                                          </span>
+                                        )}
+                                      </div>
+                                    </td>
+                                    <td><code>{s.documento || '-'}</code></td>
+                                    <td style={{ textAlign: 'center' }}>
+                                      <span className="oa-cep-badge invalid">
+                                        {s.cep}
+                                      </span>
+                                      {s.sugestaoCep && (
+                                        <span className="oa-cep-sugestao" title="Sugestão de correção">
+                                          Sugestão: {s.sugestaoCep}
                                         </span>
                                       )}
-                                    </div>
-                                  </td>
-                                  <td><code>{s.documento || '-'}</code></td>
-                                  <td style={{ textAlign: 'center' }}>
-                                    <span className="oa-cep-badge invalid">
-                                      {s.cep}
-                                    </span>
-                                    {s.sugestaoCep && (
-                                      <span className="oa-cep-sugestao" title="Sugestão de correção">
-                                        Sugestão: {s.sugestaoCep}
+                                    </td>
+                                    <td>
+                                      <span className="oa-error-reason-badge">
+                                        <AlertTriangle size={12} /> {s.errorReason}
                                       </span>
-                                    )}
-                                  </td>
-                                  <td>
-                                    <span className="oa-error-reason-badge">
-                                      <AlertTriangle size={12} /> {s.errorReason}
-                                    </span>
-                                  </td>
-                                  <td className="oa-endereco-cell" title={s.endereco}>
-                                    {s.endereco}
-                                  </td>
-                                  <td style={{ textAlign: 'center', fontWeight: 600 }}>{s.qtdTitulos}</td>
-                                  <td style={{ textAlign: 'right', fontWeight: 700, color: '#f43f5e' }}>
+                                    </td>
+                                    <td className="oa-endereco-cell" title={s.endereco}>
+                                      {s.endereco}
+                                    </td>
+                                    <td style={{ textAlign: 'center', fontWeight: 600 }}>{s.qtdTitulos}</td>
+                                    <td style={{ textAlign: 'right', fontWeight: 700, color: '#f43f5e' }}>
+                                      R$ {s.valorTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+
+                          {/* ── CARDS MOBILE PARA SACADOS COM ERRO ── */}
+                          <div className="oa-mobile-sacados-list oa-mobile-only">
+                            {operationDetail.sacadosInconsistentes.map(s => (
+                              <div key={`m-inc-${s.key}`} className="oa-m-sacado-card glass error">
+                                <div className="oa-m-sacado-head">
+                                  <div className="oa-m-sacado-title-group">
+                                    <h4 className="oa-m-sacado-name">{s.nome}</h4>
+                                    <span className="oa-m-sacado-doc">CNPJ/CPF: {s.documento || '-'}</span>
+                                  </div>
+                                  <span className="oa-m-sacado-val error">
                                     R$ {s.valorTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-                                  </td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        </div>
+                                  </span>
+                                </div>
+
+                                <div className="oa-m-cep-section error">
+                                  <div className="oa-m-cep-line">
+                                    <span className="oa-m-cep-lbl">CEP Cadastrado:</span>
+                                    <span className="oa-cep-badge invalid">{s.cep || 'Inexistente'}</span>
+                                  </div>
+                                  {s.sugestaoCep && (
+                                    <div className="oa-m-sugestao-line">
+                                      <span>Sugestão Correios:</span>
+                                      <strong>{s.sugestaoCep}</strong>
+                                    </div>
+                                  )}
+                                  <div className="oa-m-error-tag">
+                                    <AlertTriangle size={12} /> {s.errorReason}
+                                  </div>
+                                </div>
+
+                                <div className="oa-m-field-box">
+                                  <span className="oa-m-field-lbl">Endereço:</span>
+                                  <span className="oa-m-field-txt">{s.endereco || 'Não informado'}</span>
+                                </div>
+
+                                <div className="oa-m-card-footer-info">
+                                  <span className="oa-m-count-tag">{s.qtdTitulos} título(s)</span>
+                                  <div className="oa-m-contact-btns">
+                                    {s.telefones.length > 0 && (
+                                      <a href={`tel:${s.telefones[0].replace(/\D/g, '')}`} className="oa-m-contact-action tel" title="Ligar">
+                                        <Phone size={12} /> {s.telefones[0]}
+                                      </a>
+                                    )}
+                                    {s.emails.length > 0 && (
+                                      <a href={`mailto:${s.emails[0]}`} className="oa-m-contact-action mail" title="Enviar E-mail">
+                                        <Mail size={12} /> E-mail
+                                      </a>
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </>
                       )}
                     </div>
                   )}
@@ -1044,7 +1171,7 @@ export const OperationsAnalysis: React.FC = () => {
                   {/* ABA 2: TODOS OS SACADOS */}
                   {detailTab === 'todos_sacados' && (
                     <div className="oa-tab-content">
-                      <div className="oa-table-responsive">
+                      <div className="oa-table-responsive oa-desktop-only">
                         <table className="oa-table modal-table">
                           <thead>
                             <tr>
@@ -1084,13 +1211,53 @@ export const OperationsAnalysis: React.FC = () => {
                           </tbody>
                         </table>
                       </div>
+
+                      {/* ── CARDS MOBILE PARA TODOS OS SACADOS ── */}
+                      <div className="oa-mobile-sacados-list oa-mobile-only">
+                        {operationDetail.todosSacados.map(s => (
+                          <div key={`m-all-${s.key}`} className={`oa-m-sacado-card glass ${s.isValido ? 'valid' : 'error'}`}>
+                            <div className="oa-m-sacado-head">
+                              <div className="oa-m-sacado-title-group">
+                                <h4 className="oa-m-sacado-name">{s.nome}</h4>
+                                <span className="oa-m-sacado-doc">CNPJ/CPF: {s.documento || '-'}</span>
+                              </div>
+                              <span className={`oa-cep-status-tag ${s.isValido ? 'valid' : 'invalid'}`}>
+                                {s.isValido ? <CheckCircle2 size={11} /> : <AlertTriangle size={11} />}
+                                {s.isValido ? 'Válido' : 'Inconsistente'}
+                              </span>
+                            </div>
+
+                            <div className="oa-m-info-cols">
+                              <div>
+                                <span className="oa-m-field-lbl">CEP:</span>
+                                <span className="oa-m-field-txt font-mono">{s.cep || '-'}</span>
+                              </div>
+                              <div>
+                                <span className="oa-m-field-lbl">Títulos:</span>
+                                <span className="oa-m-field-txt">{s.qtdTitulos}</span>
+                              </div>
+                              <div>
+                                <span className="oa-m-field-lbl">Valor Total:</span>
+                                <span className="oa-m-sacado-val">
+                                  R$ {s.valorTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                </span>
+                              </div>
+                            </div>
+
+                            <div className="oa-m-field-box">
+                              <span className="oa-m-field-lbl">Endereço:</span>
+                              <span className="oa-m-field-txt">{s.endereco || 'Não informado'}</span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
                     </div>
                   )}
 
                   {/* ABA 3: TÍTULOS DA OPERAÇÃO */}
                   {detailTab === 'titulos' && (
                     <div className="oa-tab-content">
-                      <div className="oa-table-responsive">
+                      <div className="oa-table-responsive oa-desktop-only">
                         <table className="oa-table modal-table">
                           <thead>
                             <tr>
@@ -1119,6 +1286,34 @@ export const OperationsAnalysis: React.FC = () => {
                             ))}
                           </tbody>
                         </table>
+                      </div>
+
+                      {/* ── CARDS MOBILE PARA TÍTULOS ── */}
+                      <div className="oa-mobile-titulos-list oa-mobile-only">
+                        {operationDetail.titulosResumo.map(t => (
+                          <div key={`m-tit-${t.id}`} className="oa-m-titulo-card glass">
+                            <div className="oa-m-titulo-head">
+                              <span className="oa-m-titulo-num">Título #{t.numero}</span>
+                              <span className="oa-status-badge badge-default">{t.situacao}</span>
+                            </div>
+                            <div className="oa-m-titulo-sacado">
+                              <span className="oa-m-sacado-name">{t.sacadoNome}</span>
+                              <span className="oa-m-sacado-doc"><code>{t.sacadoDoc}</code></span>
+                            </div>
+                            <div className="oa-m-titulo-bottom">
+                              <div className="oa-m-venc-box">
+                                <span className="oa-m-field-lbl">Vencimento:</span>
+                                <span className="oa-m-field-txt">{t.vencimento ? t.vencimento.substring(0, 10).split('-').reverse().join('/') : '-'}</span>
+                              </div>
+                              <div className="oa-m-valor-box">
+                                <span className="oa-m-field-lbl">Valor Nominal:</span>
+                                <span className="oa-m-titulo-valor">
+                                  R$ {t.valorNominal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
                       </div>
                     </div>
                   )}

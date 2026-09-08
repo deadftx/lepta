@@ -217,8 +217,8 @@ export function registerPurchaseRoutes(app, {
 
   const FORMAS_PAGAMENTO_VALIDAS = ['PIX', 'BOLETO', 'CREDITO'];
 
-  // Middleware de acesso: permite usuários com permissão 11.1 (Aprovação de Compras), 7.3 (Solicitações Financeiras), 13.1 (Jurídico) ou Master
-  const requireAccess = requirePermission(['11.1', '7.3', '11', '7', '13.1', '13']);
+  // Middleware de acesso: permite usuários com permissão de Compras (11, 11.1), Financeiro (7, 7.1, 7.2, 7.3, 7.4, 7.5), Jurídico (13, 13.1) ou Master
+  const requireAccess = requirePermission(['11.1', '11', '7', '7.1', '7.2', '7.3', '7.4', '7.5', '13.1', '13']);
 
   function getAllGroupsList() {
     try {
@@ -1524,15 +1524,22 @@ export function registerPurchaseRoutes(app, {
       const isApprover = userRole === 'APROVADOR' || req.authUser.role === 'MASTER';
 
       const isLegal = req.authUser.role === 'MASTER' || checkUserPermission(req.authUser, '13') || checkUserPermission(req.authUser, '13.1');
+      const hasFinanceAccess = req.authUser.role === 'MASTER' || 
+        checkUserPermission(req.authUser, '7') || 
+        checkUserPermission(req.authUser, '7.1') || 
+        checkUserPermission(req.authUser, '7.2') || 
+        checkUserPermission(req.authUser, '7.3') || 
+        checkUserPermission(req.authUser, '7.4') || 
+        checkUserPermission(req.authUser, '7.5');
 
-      if (!isOwner && !isApprover && !isLegal) {
+      if (!isOwner && !isApprover && !isLegal && !hasFinanceAccess) {
         return res.status(403).json({ error: 'Sem permissão para comentar nesta solicitação.' });
       }
 
       const msgId = randomUUID();
       const now = new Date().toISOString();
       const autorNome = req.authUser.username || req.authUser.id;
-      const autorRole = isLegal ? 'JURIDICO' : (isApprover ? 'APROVADOR' : 'REQUISITANTE');
+      const autorRole = isLegal ? 'JURIDICO' : (hasFinanceAccess ? 'FINANCEIRO' : (isApprover ? 'APROVADOR' : 'REQUISITANTE'));
 
       // Atualiza o status da requisição quando mensagem for enviada
       let novoStatus = requisicao.status;
