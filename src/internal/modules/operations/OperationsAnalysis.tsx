@@ -108,13 +108,11 @@ export const OperationsAnalysis: React.FC = () => {
   const [detailTab, setDetailTab] = useState<'inconsistencias' | 'todos_sacados' | 'titulos'>('inconsistencias');
   const [downloadingXlsx, setDownloadingXlsx] = useState<boolean>(false);
   const [downloadingFullXlsx, setDownloadingFullXlsx] = useState<boolean>(false);
-  const [downloadingCnab, setDownloadingCnab] = useState<boolean>(false);
-  const [downloadingSeparatedCnab, setDownloadingSeparatedCnab] = useState<'validos' | 'erros' | null>(null);
 
-  // Modal Consolidado de Exportação CNAB (Válidos / Erros / Completo x Vortex / Bitfin)
+  // Modal Consolidado de Exportação CNAB (Com Erro / Completo / Válido x Vortex / Bitfin / Bradesco)
   const [cnabModalOpen, setCnabModalOpen] = useState<boolean>(false);
-  const [cnabEscopo, setCnabEscopo] = useState<'validos' | 'erros' | 'completo'>('completo');
-  const [cnabModelo, setCnabModelo] = useState<'vortex' | 'bitfin'>('vortex');
+  const [cnabEscopo, setCnabEscopo] = useState<'erros' | 'completo' | 'validos' | null>(null);
+  const [cnabModelo, setCnabModelo] = useState<'vortex' | 'bitfin' | 'bradesco' | null>(null);
   const [downloadingUnifiedCnab, setDownloadingUnifiedCnab] = useState<boolean>(false);
 
   // Modal de Diagnóstico Bruto da API BitFin
@@ -206,27 +204,27 @@ export const OperationsAnalysis: React.FC = () => {
   const handleDownloadXlsx = async (opId: string) => {
     setDownloadingXlsx(true);
     try {
-      const res = await fetch(`${API_BASE_URL}/api/mesa-operacoes/operacoes/${opId}/exportar-xlsx?data=${dataFiltro}`, {
+      const res = await fetch(`${API_BASE_URL}/api/mesa-operacoes/operacoes/${opId}/exportar-sacados-xlsx?data=${dataFiltro}`, {
         headers: getAuthHeaders()
       });
 
       if (!res.ok) {
         const errJson = await res.json().catch(() => ({}));
-        throw new Error(errJson.error || 'Erro ao gerar planilha.');
+        throw new Error(errJson.error || 'Erro ao gerar planilha Excel.');
       }
 
       const blob = await res.blob();
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `Sacados_Sem_Endereco_Verificado_Op_${opId}.xlsx`;
+      a.download = `Sacados_Inconsistentes_OP_${opId}.xlsx`;
       document.body.appendChild(a);
       a.click();
       window.URL.revokeObjectURL(url);
       document.body.removeChild(a);
     } catch (err: any) {
       console.error('Erro ao exportar XLSX:', err);
-      alert(`Erro no download da planilha: ${err.message}`);
+      alert(`Erro no download do Excel: ${err.message}`);
     } finally {
       setDownloadingXlsx(false);
     }
@@ -236,7 +234,7 @@ export const OperationsAnalysis: React.FC = () => {
   const handleDownloadFullOperationXlsx = async (opId: string) => {
     setDownloadingFullXlsx(true);
     try {
-      const res = await fetch(`${API_BASE_URL}/api/mesa-operacoes/operacoes/${opId}/exportar-completo-xlsx?data=${dataFiltro}`, {
+      const res = await fetch(`${API_BASE_URL}/api/mesa-operacoes/operacoes/${opId}/exportar-operacao-xlsx?data=${dataFiltro}`, {
         headers: getAuthHeaders()
       });
 
@@ -249,22 +247,22 @@ export const OperationsAnalysis: React.FC = () => {
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `Operacao_${opId}_Completa.xlsx`;
+      a.download = `Operacao_Completa_${opId}.xlsx`;
       document.body.appendChild(a);
       a.click();
       window.URL.revokeObjectURL(url);
       document.body.removeChild(a);
     } catch (err: any) {
       console.error('Erro ao exportar XLSX completo:', err);
-      alert(`Erro no download da planilha completa: ${err.message}`);
+      alert(`Erro no download do Excel completo: ${err.message}`);
     } finally {
       setDownloadingFullXlsx(false);
     }
   };
 
-  // Download consolidado de Remessa CNAB (Escopo: Válido, Com Erro ou Completo | Modelos: Vortex ou Bitfin)
+  // Download consolidado de Remessa CNAB (Escopo: Válido, Com Erro ou Completo | Modelos: Vortex, Bitfin ou Bradesco)
   const handleDownloadUnifiedCnab = async () => {
-    if (!operationDetail) return;
+    if (!operationDetail || !cnabEscopo || !cnabModelo) return;
     setDownloadingUnifiedCnab(true);
     try {
       const res = await fetch(
@@ -279,8 +277,9 @@ export const OperationsAnalysis: React.FC = () => {
         throw new Error(errJson.error || 'Erro ao gerar remessa CNAB.');
       }
 
+      const prefix = cnabModelo === 'bradesco' ? 'BRADESCO' : (cnabModelo === 'bitfin' ? 'BITFIN' : 'VORTX');
       const disposition = res.headers.get('Content-Disposition');
-      let filename = `REM_${cnabModelo.toUpperCase()}_OP_${operationDetail.operacaoId}_${cnabEscopo.toUpperCase()}.REM`;
+      let filename = `REM_${prefix}_OP_${operationDetail.operacaoId}_${cnabEscopo.toUpperCase()}.REM`;
       if (disposition && disposition.includes('filename=')) {
         const match = disposition.match(/filename=["']?([^"';]+)["']?/i);
         if (match && match[1]) filename = match[1];
@@ -301,65 +300,6 @@ export const OperationsAnalysis: React.FC = () => {
       alert(`Erro no download da remessa CNAB: ${err.message}`);
     } finally {
       setDownloadingUnifiedCnab(false);
-    }
-  };
-  const handleDownloadCnab = async (opId: string) => {
-    setDownloadingCnab(true);
-    try {
-      const res = await fetch(`${API_BASE_URL}/api/mesa-operacoes/operacoes/${opId}/exportar-cnab?data=${dataFiltro}`, {
-        headers: getAuthHeaders()
-      });
-
-      if (!res.ok) {
-        const errJson = await res.json().catch(() => ({}));
-        throw new Error(errJson.error || 'Erro ao gerar remessa CNAB 400.');
-      }
-
-      const blob = await res.blob();
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `REM_OP_${opId}_CORRIGIDA.REM`;
-      document.body.appendChild(a);
-      a.click();
-      window.URL.revokeObjectURL(url);
-      document.body.removeChild(a);
-    } catch (err: any) {
-      console.error('Erro ao exportar CNAB 400:', err);
-      alert(`Erro no download da remessa CNAB: ${err.message}`);
-    } finally {
-      setDownloadingCnab(false);
-    }
-  };
-
-  // Download particionado do arquivo CNAB (apenas válidos ou apenas com erro) sem alterar dados
-  const handleDownloadSeparatedCnab = async (opId: string, tipo: 'validos' | 'erros') => {
-    setDownloadingSeparatedCnab(tipo);
-    try {
-      const res = await fetch(`${API_BASE_URL}/api/mesa-operacoes/operacoes/${opId}/exportar-cnab-separado?tipo=${tipo}&data=${dataFiltro}`, {
-        headers: getAuthHeaders()
-      });
-
-      if (!res.ok) {
-        const errJson = await res.json().catch(() => ({}));
-        throw new Error(errJson.error || `Erro ao gerar remessa CNAB de ${tipo}.`);
-      }
-
-      const blob = await res.blob();
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      const suffix = tipo === 'erros' ? 'COM_ERRO_CEP' : 'VALIDOS';
-      a.download = `REM_OP_${opId}_${suffix}.REM`;
-      document.body.appendChild(a);
-      a.click();
-      window.URL.revokeObjectURL(url);
-      document.body.removeChild(a);
-    } catch (err: any) {
-      console.error(`Erro ao exportar CNAB separado (${tipo}):`, err);
-      alert(`Erro no download da remessa CNAB (${tipo}): ${err.message}`);
-    } finally {
-      setDownloadingSeparatedCnab(null);
     }
   };
 
@@ -836,50 +776,21 @@ export const OperationsAnalysis: React.FC = () => {
                           </button>
                         </div>
 
-                        {/* Botões de CNAB Corrigido */}
+                        {/* Botão Unificado de Exportação CNAB */}
                         <div className="oa-cnab-export-section">
-                          <div className="oa-actions-dual-cnab">
-                            <button
-                              type="button"
-                              className="oa-btn-split-cnab validos"
-                              onClick={() => handleDownloadSeparatedCnab(operationDetail.operacaoId, 'validos')}
-                              disabled={downloadingSeparatedCnab !== null}
-                              title="Exportar arquivo CNAB contendo apenas os títulos com CEP válido, sem alterar nada nos dados"
-                            >
-                              {downloadingSeparatedCnab === 'validos' ? (
-                                <RefreshCw size={16} className="oa-spin" />
-                              ) : (
-                                <CheckCircle2 size={16} />
-                              )}
-                              <span>Exportar CNAB Válidos ({operationDetail.totalTitulos - (operationDetail.sacadosInconsistentes.reduce((acc: number, s: any) => acc + (s.qtdTitulos || 0), 0))})</span>
-                            </button>
-
-                            <button
-                              type="button"
-                              className="oa-btn-split-cnab erros"
-                              onClick={() => handleDownloadSeparatedCnab(operationDetail.operacaoId, 'erros')}
-                              disabled={downloadingSeparatedCnab !== null}
-                              title="Exportar arquivo CNAB contendo apenas os títulos com erro de CEP, sem alterar nada nos dados"
-                            >
-                              {downloadingSeparatedCnab === 'erros' ? (
-                                <RefreshCw size={16} className="oa-spin" />
-                              ) : (
-                                <AlertTriangle size={16} />
-                              )}
-                              <span>Exportar CNAB c/ Erro CEP ({operationDetail.sacadosInconsistentes.reduce((acc: number, s: any) => acc + (s.qtdTitulos || 0), 0)})</span>
-                            </button>
-
-                            <button
-                              type="button"
-                              className="oa-btn-export-cnab"
-                              onClick={() => handleDownloadCnab(operationDetail.operacaoId)}
-                              disabled={downloadingCnab}
-                              title="Gerar e baixar arquivo CNAB 400 Remessa completo com todos os títulos e CEPs corrigidos"
-                            >
-                              <FileCode size={16} />
-                              {downloadingCnab ? 'Gerando Remessa...' : 'Gerar Remessa Completa Corrigida'}
-                            </button>
-                          </div>
+                          <button
+                            type="button"
+                            className="oa-btn-export-cnab unified"
+                            onClick={() => {
+                              setCnabEscopo(null);
+                              setCnabModelo(null);
+                              setCnabModalOpen(true);
+                            }}
+                            title="Exportar arquivo CNAB (Com Erro, Completo ou Válido nos padrões Vortex, Bitfin ou Bradesco)"
+                          >
+                            <FileCode size={18} />
+                            <span>EXPORTAR CNAB</span>
+                          </button>
                         </div>
                       </div>
                     </div>
@@ -1412,36 +1323,9 @@ export const OperationsAnalysis: React.FC = () => {
               <div className="oa-cnab-section">
                 <label className="oa-cnab-section-label">
                   <span className="oa-cnab-step-num">1</span>
-                  Selecione o Escopo da Remessa
+                  Selecione o Tipo de Arquivo
                 </label>
                 <div className="oa-cnab-options-grid">
-                  {/* Opção VÁLIDO */}
-                  <div
-                    className={`oa-cnab-card ${cnabEscopo === 'validos' ? 'active' : ''}`}
-                    onClick={() => setCnabEscopo('validos')}
-                  >
-                    <div className="oa-cnab-card-radio">
-                      <input
-                        type="radio"
-                        name="cnabEscopo"
-                        checked={cnabEscopo === 'validos'}
-                        onChange={() => setCnabEscopo('validos')}
-                      />
-                    </div>
-                    <div className="oa-cnab-card-info">
-                      <div className="oa-cnab-card-header">
-                        <CheckCircle2 size={16} className="text-emerald" />
-                        <strong>CNAB VÁLIDO</strong>
-                      </div>
-                      <p>Apenas títulos cujos sacados têm CEP verificado e regular nos Correios.</p>
-                      <div className="oa-cnab-card-count">
-                        <span className="oa-count-pill valid">
-                          {Math.max(0, operationDetail.totalTitulos - (operationDetail.sacadosInconsistentes || []).reduce((acc, s) => acc + (s.qtdTitulos || 0), 0))} títulos
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-
                   {/* Opção COM ERRO */}
                   <div
                     className={`oa-cnab-card ${cnabEscopo === 'erros' ? 'active' : ''}`}
@@ -1458,12 +1342,12 @@ export const OperationsAnalysis: React.FC = () => {
                     <div className="oa-cnab-card-info">
                       <div className="oa-cnab-card-header">
                         <AlertTriangle size={16} className="text-amber" />
-                        <strong>CNAB C/ ERRO</strong>
+                        <strong>Com Erro</strong>
                       </div>
-                      <p>Apenas títulos de sacados com CEP extinto, divergente ou inexistente.</p>
+                      <p>Títulos de sacados com CEP extinto, divergente ou inexistente.</p>
                       <div className="oa-cnab-card-count">
                         <span className="oa-count-pill error">
-                          {(operationDetail.sacadosInconsistentes || []).reduce((acc, s) => acc + (s.qtdTitulos || 0), 0)} títulos
+                          {(operationDetail.sacadosInconsistentes || []).reduce((acc: number, s: any) => acc + (s.qtdTitulos || 0), 0)} títulos
                         </span>
                       </div>
                     </div>
@@ -1485,7 +1369,7 @@ export const OperationsAnalysis: React.FC = () => {
                     <div className="oa-cnab-card-info">
                       <div className="oa-cnab-card-header">
                         <Layers size={16} className="text-blue" />
-                        <strong>CNAB COMPLETO</strong>
+                        <strong>Completo</strong>
                       </div>
                       <p>Operação inteira consolidada com todos os CEPs corrigidos e validados.</p>
                       <div className="oa-cnab-card-count">
@@ -1495,87 +1379,149 @@ export const OperationsAnalysis: React.FC = () => {
                       </div>
                     </div>
                   </div>
-                </div>
-              </div>
 
-              {/* SEÇÃO 2: ESCOLHA DO MODELO / LAYOUT */}
-              <div className="oa-cnab-section">
-                <label className="oa-cnab-section-label">
-                  <span className="oa-cnab-step-num">2</span>
-                  Selecione o Modelo de Layout
-                </label>
-                <div className="oa-cnab-models-grid">
-                  {/* Modelo VORTEX */}
+                  {/* Opção VÁLIDO */}
                   <div
-                    className={`oa-cnab-model-card ${cnabModelo === 'vortex' ? 'active' : ''}`}
-                    onClick={() => setCnabModelo('vortex')}
+                    className={`oa-cnab-card ${cnabEscopo === 'validos' ? 'active' : ''}`}
+                    onClick={() => setCnabEscopo('validos')}
                   >
-                    <div className="oa-cnab-model-header">
+                    <div className="oa-cnab-card-radio">
                       <input
                         type="radio"
-                        name="cnabModelo"
-                        checked={cnabModelo === 'vortex'}
-                        onChange={() => setCnabModelo('vortex')}
+                        name="cnabEscopo"
+                        checked={cnabEscopo === 'validos'}
+                        onChange={() => setCnabEscopo('validos')}
                       />
-                      <span className="oa-model-title">Modelo VORTEX</span>
-                      <span className="oa-model-tag vortex">Padrão Vortx DTVM</span>
                     </div>
-                    <div className="oa-cnab-model-details">
-                      <div className="oa-model-detail-row">
-                        <span>Instituição:</span>
-                        <strong>VORTX DTVM</strong>
+                    <div className="oa-cnab-card-info">
+                      <div className="oa-cnab-card-header">
+                        <CheckCircle2 size={16} className="text-emerald" />
+                        <strong>Válido</strong>
                       </div>
-                      <div className="oa-model-detail-row">
-                        <span>Código Banco:</span>
-                        <strong>999</strong>
-                      </div>
-                      <div className="oa-model-detail-row">
-                        <span>Carteira:</span>
-                        <strong>021 (Vinculada)</strong>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Modelo BITFIN */}
-                  <div
-                    className={`oa-cnab-model-card ${cnabModelo === 'bitfin' ? 'active' : ''}`}
-                    onClick={() => setCnabModelo('bitfin')}
-                  >
-                    <div className="oa-cnab-model-header">
-                      <input
-                        type="radio"
-                        name="cnabModelo"
-                        checked={cnabModelo === 'bitfin'}
-                        onChange={() => setCnabModelo('bitfin')}
-                      />
-                      <span className="oa-model-title">Modelo BITFIN</span>
-                      <span className="oa-model-tag bitfin">Layout V1.00</span>
-                    </div>
-                    <div className="oa-cnab-model-details">
-                      <div className="oa-model-detail-row">
-                        <span>Instituição:</span>
-                        <strong>BITFIN</strong>
-                      </div>
-                      <div className="oa-model-detail-row">
-                        <span>Código Banco:</span>
-                        <strong>999</strong>
-                      </div>
-                      <div className="oa-model-detail-row">
-                        <span>Carteira:</span>
-                        <strong>001 (Simples)</strong>
+                      <p>Apenas títulos cujos sacados têm CEP verificado e regular nos Correios.</p>
+                      <div className="oa-cnab-card-count">
+                        <span className="oa-count-pill valid">
+                          {Math.max(0, operationDetail.totalTitulos - (operationDetail.sacadosInconsistentes || []).reduce((acc: number, s: any) => acc + (s.qtdTitulos || 0), 0))} títulos
+                        </span>
                       </div>
                     </div>
                   </div>
                 </div>
               </div>
+
+              {/* SEÇÃO 2: ESCOLHA DO PADRÃO / MODELO (Aparece ao selecionar o tipo) */}
+              {cnabEscopo && (
+                <div className="oa-cnab-section oa-fade-in">
+                  <label className="oa-cnab-section-label">
+                    <span className="oa-cnab-step-num">2</span>
+                    Selecione o Padrão de Exportação
+                  </label>
+                  <div className="oa-cnab-models-grid">
+                    {/* Padrão VORTEX */}
+                    <div
+                      className={`oa-cnab-model-card ${cnabModelo === 'vortex' ? 'active' : ''}`}
+                      onClick={() => setCnabModelo('vortex')}
+                    >
+                      <div className="oa-cnab-model-header">
+                        <input
+                          type="radio"
+                          name="cnabModelo"
+                          checked={cnabModelo === 'vortex'}
+                          onChange={() => setCnabModelo('vortex')}
+                        />
+                        <span className="oa-model-title">Padrão Vortex</span>
+                        <span className="oa-model-tag vortex">Vortx DTVM</span>
+                      </div>
+                      <div className="oa-cnab-model-details">
+                        <div className="oa-model-detail-row">
+                          <span>Instituição:</span>
+                          <strong>VORTX DTVM</strong>
+                        </div>
+                        <div className="oa-model-detail-row">
+                          <span>Código Banco:</span>
+                          <strong>999</strong>
+                        </div>
+                        <div className="oa-model-detail-row">
+                          <span>Carteira:</span>
+                          <strong>021 (Vinculada)</strong>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Padrão BITFIN */}
+                    <div
+                      className={`oa-cnab-model-card ${cnabModelo === 'bitfin' ? 'active' : ''}`}
+                      onClick={() => setCnabModelo('bitfin')}
+                    >
+                      <div className="oa-cnab-model-header">
+                        <input
+                          type="radio"
+                          name="cnabModelo"
+                          checked={cnabModelo === 'bitfin'}
+                          onChange={() => setCnabModelo('bitfin')}
+                        />
+                        <span className="oa-model-title">Padrão Bitfin</span>
+                        <span className="oa-model-tag bitfin">Layout V1.00</span>
+                      </div>
+                      <div className="oa-cnab-model-details">
+                        <div className="oa-model-detail-row">
+                          <span>Instituição:</span>
+                          <strong>BITFIN</strong>
+                        </div>
+                        <div className="oa-model-detail-row">
+                          <span>Código Banco:</span>
+                          <strong>999</strong>
+                        </div>
+                        <div className="oa-model-detail-row">
+                          <span>Carteira:</span>
+                          <strong>001 (Simples)</strong>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Padrão BRADESCO */}
+                    <div
+                      className={`oa-cnab-model-card ${cnabModelo === 'bradesco' ? 'active' : ''}`}
+                      onClick={() => setCnabModelo('bradesco')}
+                    >
+                      <div className="oa-cnab-model-header">
+                        <input
+                          type="radio"
+                          name="cnabModelo"
+                          checked={cnabModelo === 'bradesco'}
+                          onChange={() => setCnabModelo('bradesco')}
+                        />
+                        <span className="oa-model-title">Padrão Bradesco</span>
+                        <span className="oa-model-tag bradesco">Remessa 400</span>
+                      </div>
+                      <div className="oa-cnab-model-details">
+                        <div className="oa-model-detail-row">
+                          <span>Instituição:</span>
+                          <strong>Banco Bradesco</strong>
+                        </div>
+                        <div className="oa-model-detail-row">
+                          <span>Código Banco:</span>
+                          <strong>237</strong>
+                        </div>
+                        <div className="oa-model-detail-row">
+                          <span>Carteira:</span>
+                          <strong>009 (C/ Registro)</strong>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {/* RESUMO DO ARQUIVO A SER GERADO */}
-              <div className="oa-cnab-summary-box">
-                <FileText size={16} />
-                <span>
-                  Arquivo gerado: <code>{`REM_${cnabModelo.toUpperCase()}_OP_${operationDetail.operacaoId}_${cnabEscopo === 'validos' ? 'VALIDOS' : cnabEscopo === 'erros' ? 'COM_ERRO' : 'COMPLETO'}.REM`}</code>
-                </span>
-              </div>
+              {cnabEscopo && cnabModelo && (
+                <div className="oa-cnab-summary-box oa-fade-in">
+                  <FileText size={16} />
+                  <span>
+                    Arquivo gerado: <code>{`REM_${cnabModelo === 'bradesco' ? 'BRADESCO' : cnabModelo === 'bitfin' ? 'BITFIN' : 'VORTX'}_OP_${operationDetail.operacaoId}_${cnabEscopo === 'validos' ? 'VALIDOS' : cnabEscopo === 'erros' ? 'COM_ERRO' : 'COMPLETO'}.REM`}</code>
+                  </span>
+                </div>
+              )}
             </div>
 
             <div className="oa-modal-footer">
@@ -1591,10 +1537,18 @@ export const OperationsAnalysis: React.FC = () => {
                 type="button"
                 className="oa-btn cnab oa-btn-lg"
                 onClick={handleDownloadUnifiedCnab}
-                disabled={downloadingUnifiedCnab}
+                disabled={!cnabEscopo || !cnabModelo || downloadingUnifiedCnab}
               >
                 {downloadingUnifiedCnab ? <RefreshCw size={16} className="oa-spin" /> : <Download size={16} />}
-                <span>{downloadingUnifiedCnab ? 'Gerando Remessa...' : 'Baixar Arquivo .REM'}</span>
+                <span>
+                  {downloadingUnifiedCnab
+                    ? 'Gerando Remessa...'
+                    : !cnabEscopo
+                    ? 'Selecione o Tipo de Arquivo'
+                    : !cnabModelo
+                    ? 'Selecione o Padrão'
+                    : 'Baixar Arquivo .REM'}
+                </span>
               </button>
             </div>
           </div>

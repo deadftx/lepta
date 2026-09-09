@@ -2444,26 +2444,65 @@ function findMatchingOriginalRemessa(cedenteCnpj) {
 }
 
 /**
- * Aplica as definições do modelo bancário (BitFin vs Vortex) nas linhas CNAB 400:
- * - Header (Tipo 0): Nome da Instituição na posição 80..94 ('BITFIN' vs 'VORTX DTVM')
- * - Detalhe (Tipo 1): Código da Carteira na posição 84..86 ('001' vs '021')
+ * Calcula o DAC (Dígito de Autoconferência) do Nosso Número no Bradesco Módulo 11
+ * Conforme manual 4008.524.0121 (Carteira 2 posições + Nosso Número 11 posições)
+ */
+export function calcDacBradesco(carteira, nossoNumero) {
+  const carteiraStr = String(carteira || '09').padStart(2, '0').slice(-2);
+  const nnStr = String(nossoNumero || '0').replace(/\D/g, '').padStart(11, '0').slice(-11);
+  const base = carteiraStr + nnStr; // 13 dígitos
+  const pesos = [2, 7, 6, 5, 4, 3, 2, 7, 6, 5, 4, 3, 2];
+  let soma = 0;
+  for (let i = base.length - 1, p = 0; i >= 0; i--, p++) {
+    soma += parseInt(base[i], 10) * pesos[p % pesos.length];
+  }
+  const resto = soma % 11;
+  if (resto === 0) return '0';
+  if (resto === 1) return 'P';
+  return String(11 - resto);
+}
+
+/**
+ * Aplica as definições do modelo bancário (BitFin vs Vortex vs Bradesco) nas linhas CNAB 400:
+ * - Vortex: Header (Pos 80..94 = 'VORTX DTVM    ', Cód = 999), Detalhe (Pos 84..86 = '021')
+ * - Bitfin: Header (Pos 80..94 = 'BITFIN        ', Cód = 999), Detalhe (Pos 84..86 = '001')
+ * - Bradesco: Header (Pos 77..79 = '237', Pos 80..94 = 'Bradesco       ', Pos 109..110 = 'MX'), Detalhe (Pos 84..86 = '009')
  */
 export function applyModeloToCnabLines(lines, modelo = 'vortex') {
-  const isBitfin = String(modelo || '').toLowerCase() === 'bitfin';
-  const instNome = isBitfin ? padRight('BITFIN', 15) : padRight('VORTX DTVM', 15);
-  const carteira = isBitfin ? '001' : '021';
+  const mod = String(modelo || 'vortex').toLowerCase();
+  const isBitfin = mod === 'bitfin';
+  const isBradesco = mod === 'bradesco';
 
   return lines.map((line, idx) => {
     if (!line || line.length < 10) return line;
     if (idx === 0 && line[0] === '0') {
       let h = zeroHeaderRemessaSeq(line);
-      // Posições 080..094 (0-indexed 79..94)
-      h = h.substring(0, 79) + instNome + h.substring(94);
+      if (isBradesco) {
+        // Posição 077..079 = 237 (0-indexed 76..79)
+        h = h.substring(0, 76) + '237' + h.substring(79);
+        // Posição 080..094 = 'Bradesco       ' (0-indexed 79..94)
+        h = h.substring(0, 79) + padRight('Bradesco', 15) + h.substring(94);
+        // Posição 109..110 = 'MX' (0-indexed 108..110)
+        h = h.substring(0, 108) + 'MX' + h.substring(110);
+        // Posição 111..117 = '0000001' (0-indexed 110..117)
+        h = h.substring(0, 110) + '0000001' + h.substring(117);
+      } else {
+        const instNome = isBitfin ? padRight('BITFIN', 15) : padRight('VORTX DTVM', 15);
+        // Posições 077..079 = 999 (0-indexed 76..79)
+        h = h.substring(0, 76) + '999' + h.substring(79);
+        // Posições 080..094 (0-indexed 79..94)
+        h = h.substring(0, 79) + instNome + h.substring(94);
+      }
       return ensure400(h);
     }
     if (line[0] === '1') {
+      const carteira = isBradesco ? '009' : (isBitfin ? '001' : '021');
       // Posições 084..086 (0-indexed 83..86)
       let d = line.substring(0, 83) + carteira + line.substring(86);
+      if (isBradesco) {
+        // Posição 063..065 = '000' (código banco débito)
+        d = d.substring(0, 62) + '000' + d.substring(65);
+      }
       return ensure400(d);
     }
     return ensure400(line);
@@ -2626,45 +2665,69 @@ export async function generateCorrectedCnab400({ token, operacaoId, date, modelo
     };
   }
 
-  // 4. ESTRATÉGIA B: Montagem dinâmica completa de 4 registros por título a partir dos dados da operação
+  // 4. ESTRATÉGIA B: Montagem dinâmica completa dos registros por título a partir dos dados da operação
   const lines = [];
   let seq = 1;
 
-  const isBitfin = String(modelo || '').toLowerCase() === 'bitfin';
-  const instNome = isBitfin ? padRight('BITFIN', 15) : padRight('VORTX DTVM', 15);
-  const carteira = isBitfin ? '001' : '021';
+  const mod = String(modelo || 'vortex').toLowerCase();
+  const isBitfin = mod === 'bitfin';
+  const isBradesco = mod === 'bradesco';
 
   const contaOperacional = opInfo?.contaOperacional || titulos[0]?.contaOperacional || {};
   const agencia = padLeftZero(contaOperacional.agencia || opInfo?.agencia || '0001', 4);
   const conta = padLeftZero(contaOperacional.numero || contaOperacional.codigo || opInfo?.conta || '002500', 6);
   const cedenteNome = cleanAscii(cedente.nome || 'CEDENTE').slice(0, 30);
   const dataGravacao = formatCnabDate(new Date());
-  // Remessa zerada (000000000): instrui o Bitfin a desprezar a validação sequencial de arquivos
   const remessaSeq = '000000000';
 
   // HEADER DE ARQUIVO (Tipo 0) - EXATOS 400 BYTES
-  const header = ensure400(
-    '0' +                                      // Pos 001 - Identificação do Registro
-    '1' +                                      // Pos 002 - Identificação da Remessa
-    'REMESSA' +                                // Pos 003..009 - Literal Remessa
-    '01' +                                     // Pos 010..011 - Código do Serviço
-    padRight('COBRANCA', 15) +                 // Pos 012..026 - Literal Serviço
-    agencia +                                  // Pos 027..030 - Agência Mantenedora
-    '00' +                                     // Pos 031..032 - Zeros
-    conta +                                    // Pos 033..038 - Número da Conta Corrente
-    ' '.repeat(8) +                            // Pos 039..046 - Brancos
-    padRight(cedenteNome, 30) +                // Pos 047..076 - Nome da Empresa
-    '999' +                                    // Pos 077..079 - Código da Instituição
-    instNome +                                 // Pos 080..094 - Nome do Banco/Custodiante (BITFIN vs VORTX DTVM)
-    dataGravacao +                             // Pos 095..100 - Data de Gravação (DDMMAA)
-    ' '.repeat(280) +                          // Pos 101..380 - Brancos
-    'V.1.1' +                                  // Pos 381..385 - Versão do Layout
-    remessaSeq +                               // Pos 386..394 - Número da Remessa
-    padLeftZero(seq, 6)                        // Pos 395..400 - Sequencial no Arquivo (000001)
-  );
+  let header;
+  if (isBradesco) {
+    // Layout Bradesco 4008.524.0121 (Tipo 0)
+    const codigoEmpresa = padRight(`0009${padLeftZero(agencia, 5)}${padLeftZero(conta, 7)}0`, 20);
+    header = ensure400(
+      '0' +                                      // 001..001 - Identificação do Registro
+      '1' +                                      // 002..002 - Identificação da Remessa
+      'REMESSA' +                                // 003..009 - Literal Remessa
+      '01' +                                     // 010..011 - Código do Serviço (01 = Cobrança)
+      padRight('COBRANCA', 15) +                 // 012..026 - Literal Serviço
+      codigoEmpresa +                            // 027..046 - Código da Empresa no Bradesco
+      padRight(cedenteNome, 30) +                // 047..076 - Razão Social
+      '237' +                                    // 077..079 - Número do Bradesco na Compensação
+      padRight('Bradesco', 15) +                 // 080..094 - Nome do Banco por Extenso
+      dataGravacao +                             // 095..100 - Data de Gravação (DDMMAA)
+      ' '.repeat(8) +                            // 101..108 - Branco
+      'MX' +                                     // 109..110 - Identificação do Sistema Bradesco
+      '0000001' +                                // 111..117 - Nº Sequencial de Remessa
+      ' '.repeat(277) +                          // 118..394 - Branco
+      padLeftZero(seq, 6)                        // 395..400 - Sequencial do Registro (000001)
+    );
+  } else {
+    // Layout UNLTD (Bitfin / Vortex)
+    const instNome = isBitfin ? padRight('BITFIN', 15) : padRight('VORTX DTVM', 15);
+    header = ensure400(
+      '0' +                                      // Pos 001 - Identificação do Registro
+      '1' +                                      // Pos 002 - Identificação da Remessa
+      'REMESSA' +                                // Pos 003..009 - Literal Remessa
+      '01' +                                     // Pos 010..011 - Código do Serviço
+      padRight('COBRANCA', 15) +                 // Pos 012..026 - Literal Serviço
+      agencia +                                  // Pos 027..030 - Agência Mantenedora
+      '00' +                                     // Pos 031..032 - Zeros
+      conta +                                    // Pos 033..038 - Número da Conta Corrente
+      ' '.repeat(8) +                            // Pos 039..046 - Brancos
+      padRight(cedenteNome, 30) +                // Pos 047..076 - Nome da Empresa
+      '999' +                                    // Pos 077..079 - Código da Instituição
+      instNome +                                 // Pos 080..094 - Nome do Banco/Custodiante (BITFIN vs VORTX DTVM)
+      dataGravacao +                             // Pos 095..100 - Data de Gravação (DDMMAA)
+      ' '.repeat(280) +                          // Pos 101..380 - Brancos
+      'V.1.1' +                                  // Pos 381..385 - Versão do Layout
+      remessaSeq +                               // Pos 386..394 - Número da Remessa
+      padLeftZero(seq, 6)                        // Pos 395..400 - Sequencial no Arquivo (000001)
+    );
+  }
   lines.push(header);
 
-  // BLOCO DE 4 REGISTROS POR TÍTULO (Tipos 1, 2, 3 e 4)
+  // REGISTROS DETALHE POR TÍTULO
   for (const rawT of titulos) {
     const f = extractTituloFields(rawT, sacadosById);
     const docSacado = String(f.documento || '').replace(/\D/g, '');
@@ -2733,97 +2796,157 @@ export async function generateCorrectedCnab400({ token, operacaoId, date, modelo
     const numeroDoc = String(f.numero || f.id || seq).slice(0, 10);
     const seuNumero = String(f.numero || f.id || seq).slice(0, 25);
     const nossoNumero = padLeftZero(rawT.nossoNumero || seq, 12);
-    const sacadorAvalista = padRight(cleanAscii(cedenteNome).slice(0, 16), 16) + '01' + padLeftZero(cedenteDoc, 14) + '  ';
 
-    // REGISTRO DETALHE (TIPO 1)
-    seq++;
-    const detailLine1 = ensure400(
-      '1' +                                    // Pos 001 - Identificação do Registro (1)
-      '01' +                                   // Pos 002..003 - Tipo Inscrição Cedente
-      cedenteDoc +                             // Pos 004..017 - CNPJ Cedente
-      agencia +                                // Pos 018..021 - Agência Mantenedora
-      '00' +                                   // Pos 022..023 - Zeros
-      conta +                                  // Pos 024..029 - Número da Conta Corrente
-      ' '.repeat(8) +                          // Pos 030..037 - Brancos
-      padRight(seuNumero, 25) +                // Pos 038..062 - Identificação do Título na Empresa (Seu Número)
-      nossoNumero +                            // Pos 063..074 - Nosso Número no Cobrador (12 posições)
-      ' '.repeat(8) +                          // Pos 075..082 - Brancos
-      '2' +                                    // Pos 083 - Dígito ou Modalidade Carteira
-      carteira +                               // Pos 084..086 - Código da Carteira (001 Bitfin / 021 Vortx)
-      '00000000' + ' '.repeat(13) +            // Pos 087..107 - Brancos/Controle (8 zeros + 13 espaços)
-      ' ' +                                    // Pos 108 - Código do Rateio de Crédito
-      '01' +                                   // Pos 109..110 - Código da Ocorrência (01 = Entrada de Título)
-      padRight(numeroDoc, 10) +                // Pos 111..120 - Número do Documento
-      dataVenc +                               // Pos 121..126 - Vencimento do Título (DDMMAA)
-      padLeftZero(valorCentavos, 13) +         // Pos 127..139 - Valor Nominal do Título (13 dígitos)
-      '000' +                                  // Pos 140..142 - Código do Banco Recebedor
-      '00000' +                                // Pos 143..147 - Agência Cobradora
-      '01' +                                   // Pos 148..149 - Espécie do Título (01 = Duplicata)
-      ' ' +                                    // Pos 150 - Aceite (em branco)
-      dataEmissao +                            // Pos 151..156 - Data de Emissão do Título (DDMMAA)
-      '0000' +                                 // Pos 157..160 - Primeira e Segunda Instrução
-      '0000000000033' +                        // Pos 161..173 - Juros de 1 Dia
-      '000000' +                               // Pos 174..179 - Data Limite Para Concessão de Desconto
-      '0000000000000' +                        // Pos 180..192 - Valor do Desconto
-      '0000000000000' +                        // Pos 193..205 - Valor do IOF
-      '0000000000000' +                        // Pos 206..218 - Valor do Abatimento
-      '01' +                                   // Pos 219..220 - Tipo de Inscrição do Sacado
-      padLeftZero(docSacado, 14) +             // Pos 221..234 - Número de Inscrição do Sacado
-      padRight(sacadoNome, 40) +               // Pos 235..274 - Nome do Sacado
-      padRight(sacadoLogradouro, 40) +         // Pos 275..314 - Endereço Completo do Sacado (MANTIDO)
-      padRight(sacadoBairro, 12) +             // Pos 315..326 - Bairro do Sacado (MANTIDO)
-      sacadoCep +                              // Pos 327..334 - CEP do Sacado (8 dígitos)
-      padRight(sacadoCidade, 15) +             // Pos 335..349 - Cidade do Sacado (MANTIDO)
-      padRight(sacadoUf || 'SP', 2) +          // Pos 350..351 - Estado (UF) do Sacado (MANTIDO)
-      sacadorAvalista +                        // Pos 352..385 - Sacador/Avalista (Cedente)
-      '000000' +                               // Pos 386..391 - Data de Mora
-      '00' +                                   // Pos 392..393 - Prazo
-      ' ' +                                    // Pos 394 - Brancos
-      padLeftZero(seq, 6)                      // Pos 395..400 - Número Sequencial do Registro
-    );
-    lines.push(detailLine1);
+    if (isBradesco) {
+      // REGISTRO DETALHE PADRÃO BRADESCO REMESSA 400 (TIPO 1)
+      seq++;
+      const carteiraBradesco = '009';
+      const idEmpresaBanco = '0' + carteiraBradesco + padLeftZero(agencia, 5) + padLeftZero(conta, 7) + '0';
+      const nn11 = padLeftZero(nossoNumero, 11);
+      const dacNossoNum = calcDacBradesco('09', nn11);
+      const cep5 = sacadoCep.slice(0, 5);
+      const cepSufixo = sacadoCep.slice(5, 8);
+      const tipoInsc = docSacado.length === 11 ? '01' : '02';
+      const sacadorAvalistaBradesco = padRight((cleanAscii(cedenteNome).slice(0, 40) + ' ' + cedenteDoc).trim(), 60);
 
-    // REGISTRO MENSAGEM DE CESSÃO LEPTA (TIPO 2)
-    seq++;
-    const detailLine2 = ensure400(
-      '2' +                                    // Pos 001 - Identificação do Registro (2)
-      padRight(numeroDoc, 10) +                // Pos 002..011 - Número do Documento
-      padRight('CREDITO CEDIDO AO LEPTA PAGAR APENAS ESTE', 383) + // Pos 012..394 - Mensagem de Cessão
-      padLeftZero(seq, 6)                      // Pos 395..400 - Sequencial
-    );
-    lines.push(detailLine2);
+      const detailLine1 = ensure400(
+        '1' +                                    // 001..001 - Identificação do Registro
+        '00000 000000000000 ' +                  // 002..020 - Débito Automático zerado (19 posições)
+        idEmpresaBanco +                         // 021..037 - Identificação da Empresa Beneficiária (17 posições)
+        padRight(seuNumero, 25) +                // 038..062 - Nº Controle do Participante (25 posições)
+        '000' +                                  // 063..065 - Código do Banco para Débito
+        '0' +                                    // 066..066 - Campo de Multa (0 = sem multa)
+        '0000' +                                 // 067..070 - Percentual de Multa
+        nn11 +                                   // 071..081 - Nosso Número (11 posições)
+        dacNossoNum +                            // 082..082 - DAC do Nosso Número
+        '0000000000' +                           // 083..092 - Desconto Bonificação por dia
+        '2' +                                    // 093..093 - Condição Emissão Papeleta (2 = Cliente emite)
+        'N' +                                    // 094..094 - Ident se emite boleto débito
+        ' '.repeat(10) +                         // 095..104 - Brancos
+        ' ' +                                    // 105..105 - Indicador Rateio Crédito
+        ' ' +                                    // 106..106 - Endereçamento aviso débito
+        '  ' +                                   // 107..108 - Quantidade de Pagamentos
+        '01' +                                   // 109..110 - Identificação da Ocorrência (01 = Entrada de Título)
+        padRight(numeroDoc, 10) +                // 111..120 - Nº do Documento
+        dataVenc +                               // 121..126 - Data Vencimento (DDMMAA)
+        padLeftZero(valorCentavos, 13) +         // 127..139 - Valor do Título (13 dígitos)
+        '000' +                                  // 140..142 - Banco Cobrador
+        '00000' +                                // 143..147 - Agência Depositária
+        '01' +                                   // 148..149 - Espécie do Título (01 = Duplicata Mercantil)
+        'N' +                                    // 150..150 - Aceite (N)
+        dataEmissao +                            // 151..156 - Data de Emissão (DDMMAA)
+        '00' +                                   // 157..158 - 1ª Instrução
+        '00' +                                   // 159..160 - 2ª Instrução
+        '0000000000033' +                        // 161..173 - Valor a ser cobrado por dia de atraso
+        '000000' +                               // 174..179 - Data limite para desconto
+        '0000000000000' +                        // 180..192 - Valor do desconto
+        '0000000000000' +                        // 193..205 - Valor do IOF
+        '0000000000000' +                        // 206..218 - Valor do abatimento
+        tipoInsc +                               // 219..220 - Tipo de Inscrição Pagador (01=CPF, 02=CNPJ)
+        padLeftZero(docSacado, 14) +             // 221..234 - Nº Inscrição do Pagador
+        padRight(sacadoNome, 40) +               // 235..274 - Nome do Pagador
+        padRight(sacadoLogradouro, 40) +         // 275..314 - Endereço Completo do Pagador
+        ' '.repeat(12) +                         // 315..326 - 1ª Mensagem
+        cep5 +                                   // 327..331 - CEP (5 dígitos)
+        cepSufixo +                              // 332..334 - Sufixo CEP (3 dígitos)
+        sacadorAvalistaBradesco +                // 335..394 - Beneficiário Final / Sacador Avalista (60 posições)
+        padLeftZero(seq, 6)                      // 395..400 - Nº Sequencial do Registro
+      );
+      lines.push(detailLine1);
+    } else {
+      // REGISTRO DETALHE UNLTD / BITFIN / VORTEX (TIPO 1)
+      const carteira = isBitfin ? '001' : '021';
+      const sacadorAvalista = padRight(cleanAscii(cedenteNome).slice(0, 16), 16) + '01' + padLeftZero(cedenteDoc, 14) + '  ';
 
-    // REGISTRO INSTRUÇÕES COMPLEMENTARES (TIPO 3)
-    seq++;
-    const detailLine3 = ensure400(
-      '3' +                                    // Pos 001 - Identificação do Registro (3)
-      padRight(numeroDoc, 10) +                // Pos 002..011 - Número do Documento
-      '0000' +                                 // Pos 012..015 - Código de Instrução
-      ' '.repeat(379) +                        // Pos 016..394 - Brancos
-      padLeftZero(seq, 6)                      // Pos 395..400 - Sequencial
-    );
-    lines.push(detailLine3);
+      seq++;
+      const detailLine1 = ensure400(
+        '1' +                                    // Pos 001 - Identificação do Registro (1)
+        '01' +                                   // Pos 002..003 - Tipo Inscrição Cedente
+        cedenteDoc +                             // Pos 004..017 - CNPJ Cedente
+        agencia +                                // Pos 018..021 - Agência Mantenedora
+        '00' +                                   // Pos 022..023 - Zeros
+        conta +                                  // Pos 024..029 - Número da Conta Corrente
+        ' '.repeat(8) +                          // Pos 030..037 - Brancos
+        padRight(seuNumero, 25) +                // Pos 038..062 - Identificação do Título na Empresa (Seu Número)
+        nossoNumero +                            // Pos 063..074 - Nosso Número no Cobrador (12 posições)
+        ' '.repeat(8) +                          // Pos 075..082 - Brancos
+        '2' +                                    // Pos 083 - Dígito ou Modalidade Carteira
+        carteira +                               // Pos 084..086 - Código da Carteira (001 Bitfin / 021 Vortx)
+        '00000000' + ' '.repeat(13) +            // Pos 087..107 - Brancos/Controle (8 zeros + 13 espaços)
+        ' ' +                                    // Pos 108 - Código do Rateio de Crédito
+        '01' +                                   // Pos 109..110 - Código da Ocorrência (01 = Entrada de Título)
+        padRight(numeroDoc, 10) +                // Pos 111..120 - Número do Documento
+        dataVenc +                               // Pos 121..126 - Vencimento do Título (DDMMAA)
+        padLeftZero(valorCentavos, 13) +         // Pos 127..139 - Valor Nominal do Título (13 dígitos)
+        '000' +                                  // Pos 140..142 - Código do Banco Recebedor
+        '00000' +                                // Pos 143..147 - Agência Cobradora
+        '01' +                                   // Pos 148..149 - Espécie do Título (01 = Duplicata)
+        ' ' +                                    // Pos 150 - Aceite (em branco)
+        dataEmissao +                            // Pos 151..156 - Data de Emissão do Título (DDMMAA)
+        '0000' +                                 // Pos 157..160 - Primeira e Segunda Instrução
+        '0000000000033' +                        // Pos 161..173 - Juros de 1 Dia
+        '000000' +                               // Pos 174..179 - Data Limite Para Concessão de Desconto
+        '0000000000000' +                        // Pos 180..192 - Valor do Desconto
+        '0000000000000' +                        // Pos 193..205 - Valor do IOF
+        '0000000000000' +                        // Pos 206..218 - Valor do Abatimento
+        '01' +                                   // Pos 219..220 - Tipo de Inscrição do Sacado
+        padLeftZero(docSacado, 14) +             // Pos 221..234 - Número de Inscrição do Sacado
+        padRight(sacadoNome, 40) +               // Pos 235..274 - Nome do Sacado
+        padRight(sacadoLogradouro, 40) +         // Pos 275..314 - Endereço Completo do Sacado (MANTIDO)
+        padRight(sacadoBairro, 12) +             // Pos 315..326 - Bairro do Sacado (MANTIDO)
+        sacadoCep +                              // Pos 327..334 - CEP do Sacado (8 dígitos)
+        padRight(sacadoCidade, 15) +             // Pos 335..349 - Cidade do Sacado (MANTIDO)
+        padRight(sacadoUf || 'SP', 2) +          // Pos 350..351 - Estado (UF) do Sacado (MANTIDO)
+        sacadorAvalista +                        // Pos 352..385 - Sacador/Avalista (Cedente)
+        '000000' +                               // Pos 386..391 - Data de Mora
+        '00' +                                   // Pos 392..393 - Prazo
+        ' ' +                                    // Pos 394 - Brancos
+        padLeftZero(seq, 6)                      // Pos 395..400 - Número Sequencial do Registro
+      );
+      lines.push(detailLine1);
 
-    // REGISTRO NF-E DADOS FISCAIS (TIPO 4)
-    seq++;
-    const chaveNfe = String(rawT.chaveNfe || rawT.chaveAcesso || rawT.chave || '').trim();
-    const numNf = String(f.numero || '').replace(/\D/g, '').slice(0, 8);
-    const detailLine4 = ensure400(
-      '4' +                                    // Pos 001 - Identificação do Registro (4)
-      padRight(numeroDoc, 10) +                // Pos 002..011 - Número do Documento
-      ' '.repeat(62) +                         // Pos 012..073 - Brancos
-      padRight(chaveNfe, 44) +                 // Pos 074..117 - Chave de Acesso NF-e (44 posições)
-      '0'.repeat(64) +                         // Pos 118..181 - Zeros
-      dataEmissao +                            // Pos 182..187 - Data Emissão NF-e
-      padRight(cleanAscii(cedenteNome), 40) +  // Pos 188..227 - Razão Social Emitente
-      cedenteDoc +                             // Pos 228..241 - CNPJ Emitente
-      '0001' +                                 // Pos 242..245 - Série NF-e
-      padLeftZero(numNf, 8) +                  // Pos 246..253 - Número NF-e
-      '000100000000' +                         // Pos 254..265 - Dados Complementares
-      ' '.repeat(129) +                        // Pos 266..394 - Brancos
-      padLeftZero(seq, 6)                      // Pos 395..400 - Sequencial
-    );
-    lines.push(detailLine4);
+      // REGISTRO MENSAGEM DE CESSÃO LEPTA (TIPO 2)
+      seq++;
+      const detailLine2 = ensure400(
+        '2' +                                    // Pos 001 - Identificação do Registro (2)
+        padRight(numeroDoc, 10) +                // Pos 002..011 - Número do Documento
+        padRight('CREDITO CEDIDO AO LEPTA PAGAR APENAS ESTE', 383) + // Pos 012..394 - Mensagem de Cessão
+        padLeftZero(seq, 6)                      // Pos 395..400 - Sequencial
+      );
+      lines.push(detailLine2);
+
+      // REGISTRO INSTRUÇÕES COMPLEMENTARES (TIPO 3)
+      seq++;
+      const detailLine3 = ensure400(
+        '3' +                                    // Pos 001 - Identificação do Registro (3)
+        padRight(numeroDoc, 10) +                // Pos 002..011 - Número do Documento
+        '0000' +                                 // Pos 012..015 - Código de Instrução
+        ' '.repeat(379) +                        // Pos 016..394 - Brancos
+        padLeftZero(seq, 6)                      // Pos 395..400 - Sequencial
+      );
+      lines.push(detailLine3);
+
+      // REGISTRO NF-E DADOS FISCAIS (TIPO 4)
+      seq++;
+      const chaveNfe = String(rawT.chaveNfe || rawT.chaveAcesso || rawT.chave || '').trim();
+      const numNf = String(f.numero || '').replace(/\D/g, '').slice(0, 8);
+      const detailLine4 = ensure400(
+        '4' +                                    // Pos 001 - Identificação do Registro (4)
+        padRight(numeroDoc, 10) +                // Pos 002..011 - Número do Documento
+        ' '.repeat(62) +                         // Pos 012..073 - Brancos
+        padRight(chaveNfe, 44) +                 // Pos 074..117 - Chave de Acesso NF-e (44 posições)
+        '0'.repeat(64) +                         // Pos 118..181 - Zeros
+        dataEmissao +                            // Pos 182..187 - Data Emissão NF-e
+        padRight(cleanAscii(cedenteNome), 40) +  // Pos 188..227 - Razão Social Emitente
+        cedenteDoc +                             // Pos 228..241 - CNPJ Emitente
+        '0001' +                                 // Pos 242..245 - Série NF-e
+        padLeftZero(numNf, 8) +                  // Pos 246..253 - Número NF-e
+        '000100000000' +                         // Pos 254..265 - Dados Complementares
+        ' '.repeat(129) +                        // Pos 266..394 - Brancos
+        padLeftZero(seq, 6)                      // Pos 395..400 - Sequencial
+      );
+      lines.push(detailLine4);
+    }
   }
 
   // TRAILLER DE ARQUIVO (Tipo 9) - EXATOS 400 BYTES
@@ -3423,6 +3546,7 @@ export async function splitOperationCnab400({ token, operacaoId, date, targetTyp
     return targetType === 'erros' ? isError : !isError;
   });
 
+  const isBradesco = String(modelo || '').toLowerCase() === 'bradesco';
   const isBitfin = String(modelo || '').toLowerCase() === 'bitfin';
   const instNome = isBitfin ? padRight('BITFIN', 15) : padRight('VORTX DTVM', 15);
   const carteira = isBitfin ? '001' : '021';
@@ -3435,28 +3559,52 @@ export async function splitOperationCnab400({ token, operacaoId, date, targetTyp
   const agencia = padLeftZero(contaOperacional.agencia || opInfo?.agencia || '0001', 4);
   const conta = padLeftZero(contaOperacional.numero || contaOperacional.codigo || opInfo?.conta || '002500', 6);
   const cedenteNome = cleanAscii(cedente.nome || 'CEDENTE').slice(0, 30);
+  const cedenteDoc = String(cedente.documento || '').replace(/\D/g, '');
   const dataGravacao = formatCnabDate(new Date());
   const remessaSeq = '000000000';
 
-  lines.push(ensure400(
-    '0' +
-    '1' +
-    'REMESSA' +
-    '01' +
-    padRight('COBRANCA', 15) +
-    agencia +
-    '00' +
-    conta +
-    ' '.repeat(8) +
-    padRight(cedenteNome, 30) +
-    '999' +
-    instNome +
-    dataGravacao +
-    ' '.repeat(280) +
-    'V.1.1' +
-    remessaSeq +
-    padLeftZero(seq++, 6)
-  ));
+  if (isBradesco) {
+    lines.push(ensure400(
+      '0' +
+      '1' +
+      'REMESSA' +
+      '01' +
+      padRight('COBRANCA', 15) +
+      agencia +
+      '00' +
+      conta +
+      ' '.repeat(8) +
+      padRight(cedenteNome, 30) +
+      '237' +
+      padRight('Bradesco', 15) +
+      dataGravacao +
+      ' '.repeat(8) +
+      'MX' +
+      '0000001' +
+      ' '.repeat(277) +
+      padLeftZero(seq++, 6)
+    ));
+  } else {
+    lines.push(ensure400(
+      '0' +
+      '1' +
+      'REMESSA' +
+      '01' +
+      padRight('COBRANCA', 15) +
+      agencia +
+      '00' +
+      conta +
+      ' '.repeat(8) +
+      padRight(cedenteNome, 30) +
+      '999' +
+      instNome +
+      dataGravacao +
+      ' '.repeat(280) +
+      'V.1.1' +
+      remessaSeq +
+      padLeftZero(seq++, 6)
+    ));
+  }
 
   for (const rawT of filteredTitulos) {
     const f = extractTituloFields(rawT, diagnosis.sacadosById);
@@ -3489,16 +3637,70 @@ export async function splitOperationCnab400({ token, operacaoId, date, targetTyp
     const dataEmissao = formatCnabDate(rawT.dataDeEmissao || rawT.emissao || new Date());
     const numeroDoc = padRight(f.numero, 10);
 
-    lines.push(ensure400(
-      '1' + '00' + ' '.repeat(17) + agencia + '00' + conta + ' '.repeat(8) +
-      numeroDoc + nossoNumero + ' '.repeat(10) + '2' + carteira + ' '.repeat(21) +
-      '0' + '00' + '00' + numeroDoc + dataVencimento + valorNominal +
-      '999' + '0000' + '01' + 'N' + dataEmissao + '00' + '00' +
-      padLeftZero(0, 13) + '000000' + padLeftZero(0, 13) + padLeftZero(0, 13) +
-      padLeftZero(0, 13) + tipoInscricao + docFormatado + padRight(nomeSacado, 40) +
-      padRight(endereco, 40) + padRight(bairro, 12) + cepFinal + padRight(cidade, 15) +
-      padRight(uf, 2) + ' '.repeat(40) + ' '.repeat(4) + padLeftZero(seq++, 6)
-    ));
+    if (isBradesco) {
+      const carteiraBradesco = '009';
+      const idEmpresaBanco = '0' + carteiraBradesco + padLeftZero(agencia, 5) + padLeftZero(conta, 7) + '0';
+      const nn11 = padLeftZero(nossoNumero, 11);
+      const dacNossoNum = calcDacBradesco('09', nn11);
+      const cep5 = cepFinal.slice(0, 5);
+      const cepSufixo = cepFinal.slice(5, 8);
+      const sacadorAvalistaBradesco = padRight((cleanAscii(cedenteNome).slice(0, 40) + ' ' + cedenteDoc).trim(), 60);
+
+      lines.push(ensure400(
+        '1' +
+        '00000 000000000000 ' +
+        idEmpresaBanco +
+        padRight(numeroDoc, 25) +
+        '000' +
+        '0' +
+        '0000' +
+        nn11 +
+        dacNossoNum +
+        '0000000000' +
+        '2' +
+        'N' +
+        ' '.repeat(10) +
+        ' ' +
+        ' ' +
+        '  ' +
+        '01' +
+        padRight(numeroDoc, 10) +
+        dataVencimento +
+        valorNominal +
+        '000' +
+        '00000' +
+        '01' +
+        'N' +
+        dataEmissao +
+        '00' +
+        '00' +
+        '0000000000033' +
+        '000000' +
+        '0000000000000' +
+        '0000000000000' +
+        '0000000000000' +
+        tipoInscricao +
+        docFormatado +
+        padRight(nomeSacado, 40) +
+        padRight(endereco, 40) +
+        ' '.repeat(12) +
+        cep5 +
+        cepSufixo +
+        sacadorAvalistaBradesco +
+        padLeftZero(seq++, 6)
+      ));
+    } else {
+      lines.push(ensure400(
+        '1' + '00' + ' '.repeat(17) + agencia + '00' + conta + ' '.repeat(8) +
+        numeroDoc + nossoNumero + ' '.repeat(10) + '2' + carteira + ' '.repeat(21) +
+        '0' + '00' + '00' + numeroDoc + dataVencimento + valorNominal +
+        '999' + '0000' + '01' + 'N' + dataEmissao + '00' + '00' +
+        padLeftZero(0, 13) + '000000' + padLeftZero(0, 13) + padLeftZero(0, 13) +
+        padLeftZero(0, 13) + tipoInscricao + docFormatado + padRight(nomeSacado, 40) +
+        padRight(endereco, 40) + padRight(bairro, 12) + cepFinal + padRight(cidade, 15) +
+        padRight(uf, 2) + ' '.repeat(40) + ' '.repeat(4) + padLeftZero(seq++, 6)
+      ));
+    }
   }
 
   lines.push(ensure400(
@@ -3521,15 +3723,18 @@ export async function splitOperationCnab400({ token, operacaoId, date, targetTyp
  * Construtor Unificado de Remessas CNAB 400 da Operação.
  * Suporta:
  *   - escopo: 'validos' | 'erros' | 'completo'
- *   - modelo: 'vortex' (Vortx DTVM / Carteira 021) | 'bitfin' (BitFin / Carteira 001)
+ *   - modelo: 'vortex' (Vortx DTVM / Carteira 021) | 'bitfin' (BitFin / Carteira 001) | 'bradesco' (Bradesco 400 / Banco 237 / Carteira 009)
  */
 export async function buildUnifiedCnabRemessa({ token, operacaoId, date, escopo = 'completo', modelo = 'vortex' }) {
   const normalizedEscopo = String(escopo || 'completo').toLowerCase();
-  const normalizedModelo = String(modelo || 'vortex').toLowerCase() === 'bitfin' ? 'bitfin' : 'vortex';
+  let normalizedModelo = String(modelo || 'vortex').toLowerCase();
+  if (normalizedModelo !== 'bitfin' && normalizedModelo !== 'bradesco') {
+    normalizedModelo = 'vortex';
+  }
 
   let result;
   let filename;
-  const prefix = normalizedModelo === 'bitfin' ? 'BITFIN' : 'VORTX';
+  const prefix = normalizedModelo === 'bradesco' ? 'BRADESCO' : (normalizedModelo === 'bitfin' ? 'BITFIN' : 'VORTX');
 
   if (normalizedEscopo === 'completo') {
     result = await generateCorrectedCnab400({ token, operacaoId, date, modelo: normalizedModelo });

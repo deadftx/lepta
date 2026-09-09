@@ -740,6 +740,22 @@
   transition: all 0.2s ease;
 }
 
+.oa-btn-export-cnab.unified {
+  padding: 12px 26px;
+  font-size: 0.95rem;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  background: linear-gradient(135deg, #6366f1 0%, #4f46e5 50%, #4338ca 100%);
+  border: 1px solid rgba(165, 180, 252, 0.4);
+  box-shadow: 0 4px 18px rgba(99, 102, 241, 0.4);
+}
+
+.oa-btn-export-cnab.unified:hover:not(:disabled) {
+  transform: translateY(-2px);
+  filter: brightness(1.15);
+  box-shadow: 0 6px 24px rgba(99, 102, 241, 0.55);
+}
+
 .oa-btn-export-cnab:hover:not(:disabled) {
   transform: translateY(-1px);
   filter: brightness(1.12);
@@ -2019,10 +2035,10 @@
   border: 1px solid rgba(56, 189, 248, 0.3);
 }
 
-/* Grids de Modelos (Vortex x Bitfin) */
+/* Grids de Modelos (Vortex x Bitfin x Bradesco) */
 .oa-cnab-models-grid {
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
+  grid-template-columns: repeat(3, 1fr);
   gap: 14px;
 }
 
@@ -2083,6 +2099,12 @@
   border: 1px solid rgba(245, 158, 11, 0.35);
 }
 
+.oa-model-tag.bradesco {
+  background: rgba(239, 68, 68, 0.18);
+  color: #f87171;
+  border: 1px solid rgba(239, 68, 68, 0.35);
+}
+
 .oa-cnab-model-details {
   display: flex;
   flex-direction: column;
@@ -2102,6 +2124,22 @@
 
 .oa-model-detail-row strong {
   color: #e2e8f0;
+}
+
+/* Animação suave para revelação da etapa 2 e do resumo */
+.oa-fade-in {
+  animation: oaFadeInAnim 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes oaFadeInAnim {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 /* Box de Resumo */
@@ -2132,12 +2170,14 @@
   font-weight: 700 !important;
 }
 
-@media (max-width: 768px) {
-  .oa-cnab-options-grid {
+@media (max-width: 900px) {
+  .oa-cnab-models-grid {
     grid-template-columns: 1fr;
   }
+}
 
-  .oa-cnab-models-grid {
+@media (max-width: 768px) {
+  .oa-cnab-options-grid {
     grid-template-columns: 1fr;
   }
 
