@@ -5,35 +5,36 @@ import Footer from './components/Footer';
 import Home from './pages/Home';
 import Login from './pages/Login';
 import Dashboard from './internal/modules/home/Dashboard';
-import Permissions from './internal/modules/administration/access/Permissions';
-import Groups from './internal/modules/administration/access/Groups';
-import MovimentoFalimentar from './internal/modules/business-intelligence/MovimentoFalimentar';
+import Permissions from './internal/modules/administracao/permissoes/Permissions';
+import Groups from './internal/modules/administracao/grupos/Groups';
+import MovimentoFalimentar from './internal/modules/business-intelligence/movimento-falimentar/MovimentoFalimentar';
 import DashboardsView from './internal/modules/dashboards/DashboardsView';
-import CreateUser from './internal/modules/administration/access/CreateUser';
-import Marketing from './internal/modules/calendar/Marketing';
-import Finance from './internal/modules/finance/statement-processing/Finance';
-import FinanceDashboard from './internal/modules/finance/FinanceDashboard';
-import GrafenoIntegration from './internal/modules/finance/grafeno/GrafenoIntegration';
-import FinanceRefundsExpenses from './internal/modules/finance/FinanceRefundsExpenses';
-import FinancePaymentCalendar from './internal/modules/finance/FinancePaymentCalendar';
-import CustomerAnalysis from './internal/modules/intelligence/customer-analysis/CustomerAnalysis';
-import CustomerRegistration from './internal/modules/intelligence/customer-registration/CustomerRegistration';
-import RiskAnalysis from './internal/modules/intelligence/risk-analysis/RiskAnalysis';
+import CreateUser from './internal/modules/administracao/criar-usuario/CreateUser';
+import Marketing from './internal/modules/calendario/Marketing';
+import Finance from './internal/modules/financeiro/processar-extrato/Finance';
+import FinanceDashboard from './internal/modules/financeiro/FinanceDashboard';
+import GrafenoIntegration from './internal/modules/financeiro/grafeno/GrafenoIntegration';
+import FinanceRefundsExpenses from './internal/modules/financeiro/central-pagamentos/FinanceRefundsExpenses';
+import FinancePaymentCalendar from './internal/modules/financeiro/calendario-pagamentos/FinancePaymentCalendar';
+import CustomerAnalysis from './internal/modules/intelligence/analise-clientes/CustomerAnalysis';
+import CustomerRegistration from './internal/modules/intelligence/cadastro-clientes/CustomerRegistration';
+import RiskAnalysis from './internal/modules/intelligence/analise-riscos/RiskAnalysis';
 import NplManagement from './internal/modules/intelligence/npl/NplManagement';
-import CommitteePipeline from './internal/modules/intelligence/committee/CommitteePipeline';
-import { SmartFactorQuery } from './internal/modules/intelligence/smartfactor/SmartFactorQuery';
-import ManagerRegistration from './internal/modules/intelligence/manager-registration/ManagerRegistration';
-import DatabaseManagement from './internal/modules/database/DatabaseManagement';
-import PurchaseApproval from './internal/modules/administrative/purchases/PurchaseApproval';
-import PurchaseWorkflowConfig from './internal/modules/administrative/purchases/PurchaseWorkflowConfig';
-import MeetingRoomBooking from './internal/modules/administrative/meetingRooms/MeetingRoomBooking';
-import EmailConfig from './internal/modules/administration/access/EmailConfig';
-import ConfirmationSystem from './internal/modules/confirmation/ConfirmationSystem';
-import ConfirmationAnalise from './internal/modules/confirmation/ConfirmationAnalise';
-import OverdueAnalysis from './internal/modules/cobranca/OverdueAnalysis';
-import LegalPaymentApproval from './internal/modules/legal/LegalPaymentApproval';
-import OperationsAnalysis from './internal/modules/operations/OperationsAnalysis';
-import ValidateCepsCnab from './internal/modules/operations/ValidateCepsCnab';
+import CommitteePipeline from './internal/modules/intelligence/esteira-comite/CommitteePipeline';
+import { SmartFactorQuery } from './internal/modules/intelligence/consulta-smartfactor/SmartFactorQuery';
+import ManagerRegistration from './internal/modules/intelligence/cadastro-gerentes/ManagerRegistration';
+import DatabaseManagement from './internal/modules/banco-de-dados/DatabaseManagement';
+import PurchaseApproval from './internal/modules/administrativo/solicitacoes-financeiras/PurchaseApproval';
+import PurchaseWorkflowConfig from './internal/modules/administrativo/configuracao-aprovadores/PurchaseWorkflowConfig';
+import MeetingRoomBooking from './internal/modules/administrativo/agendar-sala-reuniao/MeetingRoomBooking';
+import EmailConfig from './internal/modules/administracao/configuracao-email/EmailConfig';
+import ConfirmationSystem from './internal/modules/mesa-operacoes/relatorio-diario/ConfirmationSystem';
+import ConfirmationAnalise from './internal/modules/confirmacao/analise-confirmacao/ConfirmationAnalise';
+import OverdueAnalysis from './internal/modules/cobranca/analise-vencidos/OverdueAnalysis';
+import LegalPaymentApproval from './internal/modules/juridico/aprovacao-pagamentos/LegalPaymentApproval';
+import LegalApproversConfig from './internal/modules/juridico/configuracao-aprovadores-juridicos/LegalApproversConfig';
+import OperationsAnalysis from './internal/modules/mesa-operacoes/analise-operacao/OperationsAnalysis';
+import ValidateCepsCnab from './internal/modules/mesa-operacoes/validar-ceps/ValidateCepsCnab';
 import MonitorDashboard from './internal/modules/monitor/MonitorDashboard';
 import ProtectedRoute from './internal/core/ProtectedRoute';
 import InternalLayout from './internal/core/InternalLayout';
@@ -137,6 +138,7 @@ function App() {
                 <Route path="/confirmacao/analise" element={<AccessRoute permission="10.2"><ConfirmationAnalise /></AccessRoute>} />
                 <Route path="/cobranca/analise-vencidos" element={<AccessRoute permission="12.1"><OverdueAnalysis /></AccessRoute>} />
                 <Route path="/juridico/aprovacao-pagamentos" element={<AccessRoute permission="13.1"><LegalPaymentApproval /></AccessRoute>} />
+                <Route path="/juridico/configuracao-aprovadores" element={<AccessRoute permission="13.2"><LegalApproversConfig /></AccessRoute>} />
                 <Route path="/mesa-operacoes/analise" element={<AccessRoute permission="14.1"><OperationsAnalysis /></AccessRoute>} />
                 <Route path="/mesa-operacoes/validar-ceps" element={<AccessRoute permission="14.2"><ValidateCepsCnab /></AccessRoute>} />
                 <Route path="/mesa-operacoes/relatorio-diario" element={<AccessRoute permission="14.3"><ConfirmationSystem /></AccessRoute>} />

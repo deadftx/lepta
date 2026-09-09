@@ -327,15 +327,15 @@ export const systemSearchItems: SearchItem[] = [
   },
   {
     id: 'adm-workflow',
-    title: 'Configuração da Esteira de Compras',
+    title: 'Configuração de Aprovadores',
     category: 'Administrativo',
-    breadcrumb: ['Grupos', 'Administrativo', 'Configuração de Esteira de Compras'],
+    breadcrumb: ['Grupos', 'Administrativo', 'Configuração de Aprovadores'],
     path: '/administrativo/configuracao-compras',
     permissionId: '11.2',
     description: 'Definição de alçadas, aprovadores por valor e regras de fluxo de aprovação de compras.',
-    explanation: 'Acesse Grupos > Administrativo > Configuração de Esteira de Compras para parametrizar regras.',
+    explanation: 'Acesse Grupos > Administrativo > Configuração de Aprovadores para parametrizar regras.',
     tags: ['Alçadas', 'Aprovadores', 'Limites de Valor', 'Workflow de Compras'],
-    keywords: ['configuracao de compras', 'esteira de compras', 'alcadas', 'aprovadores', 'regras de compras', 'limites de compras', 'workflow', 'hierarquia de aprovacao'],
+    keywords: ['configuracao de aprovadores', 'configuracao de compras', 'esteira de compras', 'alcadas', 'aprovadores', 'regras de compras', 'limites de compras', 'workflow', 'hierarquia de aprovacao'],
     icon: 'SlidersHorizontal',
     badge: 'Submenu'
   },
@@ -500,6 +500,20 @@ export const systemSearchItems: SearchItem[] = [
       'aditivo', 'conformidade', 'compliance', 'parecer', 'advogado', 'validacao juridica'
     ],
     icon: 'Scale',
+    badge: 'Submenu'
+  },
+  {
+    id: 'legal-approvers-config',
+    title: 'Configuração de Aprovadores Jurídicos',
+    category: 'Jurídico',
+    breadcrumb: ['Grupos', 'Jurídico', 'Configuração de Aprovadores Jurídicos'],
+    path: '/juridico/configuracao-aprovadores',
+    permissionId: '13.2',
+    description: 'Definição dos usuários com papel de Aprovador Jurídico para parecer e aprovação de contratos e pagamentos.',
+    explanation: 'Acesse Grupos > Jurídico > Configuração de Aprovadores Jurídicos para definir quem pode aprovar ou rejeitar no Jurídico.',
+    tags: ['Jurídico', 'Aprovadores Jurídicos', 'Alçada Jurídica', 'Configuração Jurídico'],
+    keywords: ['configuracao de aprovadores juridicos', 'aprovador juridico', 'aprovadores juridico', 'parecer juridico', 'advogado aprovador'],
+    icon: 'SlidersHorizontal',
     badge: 'Submenu'
   },
 

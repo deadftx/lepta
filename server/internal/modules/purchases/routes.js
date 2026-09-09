@@ -69,6 +69,13 @@ export function registerPurchaseRoutes(app, {
       updated_by TEXT
     );
 
+    CREATE TABLE IF NOT EXISTS compras_papeis_juridico (
+      user_id TEXT PRIMARY KEY,
+      papel TEXT NOT NULL DEFAULT 'NAO_APROVADOR', -- 'APROVADOR_JURIDICO' ou 'NAO_APROVADOR'
+      updated_at TEXT NOT NULL,
+      updated_by TEXT
+    );
+
     CREATE TABLE IF NOT EXISTS compras_requisicoes (
       id TEXT PRIMARY KEY,
       numero INTEGER,
@@ -317,21 +324,40 @@ export function registerPurchaseRoutes(app, {
     }
   }
 
+  function isUserLegalApprover(userId, userGlobalRole) {
+    if (userGlobalRole === 'MASTER') return true;
+    try {
+      const row = db.prepare(`SELECT papel FROM compras_papeis_juridico WHERE user_id = ?`).get(userId);
+      return row?.papel === 'APROVADOR_JURIDICO';
+    } catch {
+      return false;
+    }
+  }
+
   function getAllLegalApproverUserIds() {
     try {
-      const users = db.prepare(`SELECT id, role, permissions FROM usuarios_lepta`).all();
-      return users.filter(u => {
-        if (u.role === 'MASTER') return true;
-        try {
-          const perms = JSON.parse(u.permissions || '[]');
-          return perms.includes('13.1') || perms.includes('13');
-        } catch {
-          return false;
-        }
-      }).map(u => u.id);
+      const approverSet = new Set();
+      const masters = db.prepare(`SELECT id FROM usuarios_lepta WHERE role = 'MASTER'`).all();
+      masters.forEach(m => approverSet.add(m.id));
+
+      const legalApprovers = db.prepare(`SELECT user_id FROM compras_papeis_juridico WHERE papel = 'APROVADOR_JURIDICO'`).all();
+      legalApprovers.forEach(a => approverSet.add(a.user_id));
+
+      return [...approverSet];
     } catch {
       return [];
     }
+  }
+
+  function isRequestInLegalScope(requisicao, authUserId) {
+    if (!requisicao) return false;
+    return requisicao.requer_juridico === 1 ||
+           requisicao.status === 'AGUARDANDO_JURIDICO' ||
+           requisicao.status === 'NEGADO_JURIDICO' ||
+           requisicao.juridico_status !== 'DISPENSADO' ||
+           (requisicao.juridico_aprovador_id && requisicao.juridico_aprovador_id === authUserId) ||
+           Number(requisicao.valor || 0) >= 2000 ||
+           Boolean(db.prepare(`SELECT 1 FROM compras_mensagens WHERE requisicao_id = ? AND autor_role = 'JURIDICO'`).get(requisicao.id));
   }
 
   function getInteractingApproversForRequest(requisicaoId) {
@@ -528,6 +554,124 @@ export function registerPurchaseRoutes(app, {
     } catch (error) {
       console.error('Erro ao atualizar papel do grupo em compras:', error.message);
       return res.status(500).json({ error: 'Erro ao salvar configuração do grupo.' });
+    }
+  });
+
+  // --- ROTA: MEU PAPEL NO JURÍDICO ---
+  app.get('/api/compras/juridico/meu-papel', requireSession, (req, res) => {
+    try {
+      const isLegalApprover = isUserLegalApprover(req.authUser.id, req.authUser.role);
+      return res.json({
+        isLegalApprover,
+        isMaster: req.authUser.role === 'MASTER'
+      });
+    } catch (error) {
+      console.error('Erro ao consultar papel jurídico:', error.message);
+      return res.status(500).json({ error: 'Erro ao identificar papel jurídico do usuário.' });
+    }
+  });
+
+  // --- ROTA: LISTAR USUÁRIOS COM ACESSO AO JURÍDICO PARA CONFIGURAÇÃO ---
+  app.get('/api/compras/juridico/configuracao/usuarios', requireSession, requirePermission(['13.2', '13']), (req, res) => {
+    try {
+      const users = db.prepare(`
+        SELECT id, username, email, role, permissions, group_id
+        FROM usuarios_lepta
+        ORDER BY role DESC, username ASC
+      `).all();
+
+      const roles = db.prepare(`SELECT user_id, papel, updated_at, updated_by FROM compras_papeis_juridico`).all();
+      const roleMap = new Map(roles.map(r => [r.user_id, r]));
+
+      const allGroups = getAllGroupsList();
+      const groupNameMap = new Map(allGroups.map(g => [String(g.id), g.name || g.id]));
+
+      // Filtra ESTRITAMENTE apenas usuários com acesso ao módulo Jurídico
+      const legalUsers = users.filter(u => {
+        if (u.role === 'MASTER') return true;
+        let perms = [];
+        try { perms = JSON.parse(u.permissions || '[]'); } catch {}
+        if (perms.includes('13') || perms.includes('13.1') || perms.includes('13.2')) return true;
+
+        if (u.group_id) {
+          const grp = allGroups.find(g => String(g.id) === String(u.group_id));
+          if (grp) {
+            let gPerms = [];
+            try { gPerms = Array.isArray(grp.permissions) ? grp.permissions : JSON.parse(grp.permissions || '[]'); } catch {}
+            if (gPerms.includes('13') || gPerms.includes('13.1') || gPerms.includes('13.2')) return true;
+          }
+        }
+        return false;
+      });
+
+      const result = legalUsers.map(u => {
+        const roleInfo = roleMap.get(u.id);
+        const isMaster = u.role === 'MASTER';
+        const effectiveRole = isMaster ? 'APROVADOR_JURIDICO' : (roleInfo?.papel === 'APROVADOR_JURIDICO' ? 'APROVADOR_JURIDICO' : 'NAO_APROVADOR');
+
+        return {
+          id: u.id,
+          username: u.username || u.id,
+          email: u.email || '',
+          globalRole: u.role,
+          groupId: u.group_id || null,
+          groupName: u.group_id ? groupNameMap.get(String(u.group_id)) || null : null,
+          legalRole: effectiveRole,
+          directLegalRole: roleInfo?.papel || 'NAO_APROVADOR',
+          isMaster,
+          updatedAt: roleInfo?.updated_at || null,
+          updatedBy: roleInfo?.updated_by || null
+        };
+      });
+
+      return res.json(result);
+    } catch (error) {
+      console.error('Erro ao listar usuários do jurídico:', error.message);
+      return res.status(500).json({ error: 'Erro ao carregar usuários com acesso ao jurídico.' });
+    }
+  });
+
+  // --- ROTA: ATUALIZAR PAPEL DE APROVADOR JURÍDICO ---
+  app.put('/api/compras/juridico/configuracao/usuarios/:userId', requireSession, requirePermission(['13.2', '13']), (req, res) => {
+    try {
+      const { userId } = req.params;
+      const { papel } = req.body;
+
+      if (!['APROVADOR_JURIDICO', 'NAO_APROVADOR'].includes(papel)) {
+        return res.status(400).json({ error: 'Papel inválido. Escolha "APROVADOR_JURIDICO" ou "NAO_APROVADOR".' });
+      }
+
+      const targetUser = db.prepare(`SELECT id, role, username FROM usuarios_lepta WHERE id = ?`).get(userId);
+      if (!targetUser) {
+        return res.status(404).json({ error: 'Usuário não encontrado.' });
+      }
+
+      if (targetUser.role === 'MASTER') {
+        return res.status(400).json({ error: 'Usuários com perfil MASTER são aprovadores natos e não podem ser alterados.' });
+      }
+
+      const now = new Date().toISOString();
+      const updatedBy = req.authUser.username || req.authUser.id;
+
+      db.prepare(`
+        INSERT INTO compras_papeis_juridico (user_id, papel, updated_at, updated_by)
+        VALUES (?, ?, ?, ?)
+        ON CONFLICT(user_id) DO UPDATE SET
+          papel = excluded.papel,
+          updated_at = excluded.updated_at,
+          updated_by = excluded.updated_by
+      `).run(userId, papel, now, updatedBy);
+
+      return res.json({
+        success: true,
+        userId,
+        papel,
+        updatedAt: now,
+        updatedBy
+      });
+    } catch (error) {
+      console.error('Erro ao atualizar papel jurídico:', error.message);
+      return res.status(500).json({ error: 'Erro ao salvar alteração de aprovador jurídico.' });
     }
   });
 
@@ -860,8 +1004,12 @@ export function registerPurchaseRoutes(app, {
   });
 
   // --- ROTA: FILA DE APROVAÇÃO DO JURÍDICO (SOLICITAÇÕES >= R$ 2.000) ---
-  app.get('/api/compras/juridico/fila', requireSession, requirePermission(['13.1', '13']), (req, res) => {
+  app.get('/api/compras/juridico/fila', requireSession, requirePermission(['13.1', '13', '13.2']), (req, res) => {
     try {
+      if (!isUserLegalApprover(req.authUser.id, req.authUser.role)) {
+        return res.status(403).json({ error: 'Acesso restrito a Aprovadores Jurídicos configurados.' });
+      }
+
       const rows = db.prepare(`
         SELECT r.*,
           (SELECT COUNT(*) FROM compras_mensagens m WHERE m.requisicao_id = r.id) as total_mensagens,
@@ -880,8 +1028,12 @@ export function registerPurchaseRoutes(app, {
   });
 
   // --- ROTA: HISTÓRICO GERAL DO JURÍDICO (SOLICITAÇÕES APROVADAS / REJEITADAS / AVALIADAS PELO JURÍDICO - ACESSO VITALÍCIO) ---
-  app.get('/api/compras/juridico/historico', requireSession, requirePermission(['13.1', '13']), (req, res) => {
+  app.get('/api/compras/juridico/historico', requireSession, requirePermission(['13.1', '13', '13.2']), (req, res) => {
     try {
+      if (!isUserLegalApprover(req.authUser.id, req.authUser.role)) {
+        return res.status(403).json({ error: 'Acesso restrito a Aprovadores Jurídicos configurados.' });
+      }
+
       const rows = db.prepare(`
         SELECT r.*,
           (SELECT COUNT(*) FROM compras_mensagens m WHERE m.requisicao_id = r.id) as total_mensagens,
@@ -904,9 +1056,13 @@ export function registerPurchaseRoutes(app, {
   });
 
   // --- ROTA: APROVAÇÃO PELO JURÍDICO (PERMITE OBSERVAÇÃO/PARECER OPCIONAL E LIBERA PARA APROVADORES GERAIS) ---
-  app.post('/api/compras/requisicoes/:id/juridico-aprovar', requireSession, requirePermission(['13.1', '13']), (req, res) => {
+  app.post('/api/compras/requisicoes/:id/juridico-aprovar', requireSession, requirePermission(['13.1', '13', '13.2']), (req, res) => {
     const { id } = req.params;
     const observacao = String(req.body?.observacoes || req.body?.motivo || '').trim();
+
+    if (!isUserLegalApprover(req.authUser.id, req.authUser.role)) {
+      return res.status(403).json({ error: 'Apenas Aprovadores Jurídicos configurados podem emitir parecer e aprovar no Jurídico.' });
+    }
 
     try {
       const requisicao = db.prepare(`SELECT * FROM compras_requisicoes WHERE id = ?`).get(id);
@@ -983,9 +1139,13 @@ export function registerPurchaseRoutes(app, {
   });
 
   // --- ROTA: REJEIÇÃO PELO JURÍDICO (JUSTIFICATIVA OBRIGATÓRIA E ENCERRA SOLICITAÇÃO) ---
-  app.post('/api/compras/requisicoes/:id/juridico-rejeitar', requireSession, requirePermission(['13.1', '13']), (req, res) => {
+  app.post('/api/compras/requisicoes/:id/juridico-rejeitar', requireSession, requirePermission(['13.1', '13', '13.2']), (req, res) => {
     const { id } = req.params;
     const motivo = String(req.body?.motivo || req.body?.observacoes || '').trim();
+
+    if (!isUserLegalApprover(req.authUser.id, req.authUser.role)) {
+      return res.status(403).json({ error: 'Apenas Aprovadores Jurídicos configurados podem rejeitar solicitações no Jurídico.' });
+    }
 
     if (!motivo) {
       return res.status(400).json({ error: 'A justificativa jurídica / motivo da rejeição é obrigatória.' });
@@ -1098,19 +1258,37 @@ export function registerPurchaseRoutes(app, {
       const requisicao = db.prepare(`SELECT * FROM compras_requisicoes WHERE id = ?`).get(req.params.id);
       if (!requisicao) return res.status(404).json({ error: 'Solicitação não encontrada.' });
 
-      const userRole = getUserRoleInPurchases(req.authUser.id, req.authUser.role);
       const isOwner = requisicao.solicitante_id === req.authUser.id;
-      const isApprover = userRole === 'APROVADOR' || req.authUser.role === 'MASTER';
-      const hasFinanceAccess = req.authUser.role === 'MASTER' || checkUserPermission(req.authUser, '7') || checkUserPermission(req.authUser, '7.3') || checkUserPermission(req.authUser, '7.4') || checkUserPermission(req.authUser, '7.5');
-      const isLegal = req.authUser.role === 'MASTER' || checkUserPermission(req.authUser, '13') || checkUserPermission(req.authUser, '13.1');
+      const isMaster = req.authUser.role === 'MASTER';
+      const userRole = getUserRoleInPurchases(req.authUser.id, req.authUser.role);
+      const isGeneralApprover = isMaster || userRole === 'APROVADOR';
+      const isLegalApprover = isUserLegalApprover(req.authUser.id, req.authUser.role);
+      const hasFinanceAccess = isMaster || 
+        checkUserPermission(req.authUser, '7') || 
+        checkUserPermission(req.authUser, '7.1') || 
+        checkUserPermission(req.authUser, '7.2') || 
+        checkUserPermission(req.authUser, '7.3') || 
+        checkUserPermission(req.authUser, '7.4') || 
+        checkUserPermission(req.authUser, '7.5');
 
       // Acesso vitalício para aprovador que revisou/decidiu
       const isReviewer = requisicao.aprovador_id === req.authUser.id || Boolean(db.prepare(`SELECT 1 FROM compras_mensagens WHERE requisicao_id = ? AND autor_id = ?`).get(req.params.id, req.authUser.id));
 
-      // Acesso vitalício para o Jurídico (se a solicitação passou pela esteira jurídica ou usuário tem papel jurídico)
-      const hasLegalHistory = isLegal || requisicao.requer_juridico === 1 || requisicao.juridico_aprovador_id === req.authUser.id || requisicao.juridico_status !== 'DISPENSADO' || Boolean(db.prepare(`SELECT 1 FROM compras_mensagens WHERE requisicao_id = ? AND autor_role = 'JURIDICO'`).get(req.params.id));
+      // Escopo estrito do Jurídico: a requisição requer validação jurídica ou tem histórico no jurídico
+      const inLegalScope = isRequestInLegalScope(requisicao, req.authUser.id);
 
-      if (!isOwner && !isApprover && !hasFinanceAccess && !isReviewer && !hasLegalHistory) {
+      // Regra de Ouro de Segurança:
+      // 1. O dono da solicitação (isOwner) sempre vê a sua.
+      // 2. Aprovador geral (isGeneralApprover) e Financeiro vêem todas.
+      // 3. Aprovador jurídico (isLegalApprover) SÓ vê suas próprias solicitações + solicitações cabíveis ao jurídico.
+      // 4. Qualquer outro usuário que não seja aprovador NÃO tem acesso a requisições alheias.
+      const canView = isOwner ||
+                      isGeneralApprover ||
+                      hasFinanceAccess ||
+                      isReviewer ||
+                      (isLegalApprover && inLegalScope);
+
+      if (!canView) {
         return res.status(403).json({ error: 'Sem permissão para visualizar esta solicitação.' });
       }
 
@@ -1251,6 +1429,9 @@ export function registerPurchaseRoutes(app, {
       if (!requisicao) return res.status(404).json({ error: 'Solicitação não encontrada.' });
       if (requisicao.status === 'APROVADO') {
         return res.status(400).json({ error: 'Esta solicitação já foi aprovada.' });
+      }
+      if (requisicao.status === 'AGUARDANDO_JURIDICO') {
+        return res.status(400).json({ error: 'Esta solicitação está aguardando aprovação prévia do Jurídico antes de seguir na esteira geral.' });
       }
 
       const observacao = String(req.body?.observacoes || req.body?.motivo || '').trim();
@@ -1580,23 +1761,28 @@ export function registerPurchaseRoutes(app, {
       const isOwner = requisicao.solicitante_id === req.authUser.id;
       const isApprover = userRole === 'APROVADOR' || req.authUser.role === 'MASTER';
 
-      const isLegal = req.authUser.role === 'MASTER' || checkUserPermission(req.authUser, '13') || checkUserPermission(req.authUser, '13.1');
+      const isLegalApprover = isUserLegalApprover(req.authUser.id, req.authUser.role);
+      const inLegalScope = isRequestInLegalScope(requisicao, req.authUser.id);
+      const canLegalAccess = isLegalApprover && inLegalScope;
+
       const hasFinanceAccess = req.authUser.role === 'MASTER' || 
         checkUserPermission(req.authUser, '7') || 
         checkUserPermission(req.authUser, '7.1') || 
         checkUserPermission(req.authUser, '7.2') || 
         checkUserPermission(req.authUser, '7.3') || 
         checkUserPermission(req.authUser, '7.4') || 
-        checkUserPermission(req.authUser, '7.5');
+        checkUserPermission(req.authUser, '7.5') ||
+        checkUserPermission(req.authUser, '11') ||
+        checkUserPermission(req.authUser, '11.1');
 
-      if (!isOwner && !isApprover && !isLegal && !hasFinanceAccess) {
+      if (!isOwner && !isApprover && !canLegalAccess && !hasFinanceAccess) {
         return res.status(403).json({ error: 'Sem permissão para comentar nesta solicitação.' });
       }
 
       const msgId = randomUUID();
       const now = new Date().toISOString();
       const autorNome = req.authUser.username || req.authUser.id;
-      const autorRole = isLegal ? 'JURIDICO' : (hasFinanceAccess ? 'FINANCEIRO' : (isApprover ? 'APROVADOR' : 'REQUISITANTE'));
+      const autorRole = canLegalAccess ? 'JURIDICO' : (isApprover ? 'APROVADOR' : (hasFinanceAccess ? 'FINANCEIRO' : 'REQUISITANTE'));
 
       // Atualiza o status da requisição quando mensagem for enviada
       let novoStatus = requisicao.status;
@@ -2157,10 +2343,12 @@ export function registerPurchaseRoutes(app, {
       const userRole = getUserRoleInPurchases(req.authUser.id, req.authUser.role);
       const isOwner = reqInfo.solicitante_id === req.authUser.id;
       const isApprover = userRole === 'APROVADOR' || req.authUser.role === 'MASTER';
+      const isLegalApprover = isUserLegalApprover(req.authUser.id, req.authUser.role);
+      const inLegalScope = isRequestInLegalScope(reqInfo, req.authUser.id);
+      const canLegalAccess = isLegalApprover && inLegalScope;
       const hasFinanceAccess = req.authUser.role === 'MASTER' || checkUserPermission(req.authUser, '7') || checkUserPermission(req.authUser, '7.3') || checkUserPermission(req.authUser, '7.4') || checkUserPermission(req.authUser, '7.5') || checkUserPermission(req.authUser, '11') || checkUserPermission(req.authUser, '11.1');
-      const isLegal = req.authUser.role === 'MASTER' || checkUserPermission(req.authUser, '13') || checkUserPermission(req.authUser, '13.1');
 
-      if (!isOwner && !isApprover && !hasFinanceAccess && !isLegal) {
+      if (!isOwner && !isApprover && !hasFinanceAccess && !canLegalAccess) {
         for (const file of files) {
           if (fs.existsSync(file.path)) fs.unlinkSync(file.path);
         }
@@ -2235,6 +2423,9 @@ export function registerPurchaseRoutes(app, {
       const userRole = getUserRoleInPurchases(req.authUser.id, req.authUser.role);
       const isOwner = reqInfo.solicitante_id === req.authUser.id;
       const isApprover = userRole === 'APROVADOR' || req.authUser.role === 'MASTER';
+      const isLegalApprover = isUserLegalApprover(req.authUser.id, req.authUser.role);
+      const inLegalScope = isRequestInLegalScope(reqInfo, req.authUser.id);
+      const canLegalAccess = isLegalApprover && inLegalScope;
       const hasFinanceAccess = req.authUser.role === 'MASTER' || 
         checkUserPermission(req.authUser, '7') || 
         checkUserPermission(req.authUser, '7.1') || 
@@ -2243,11 +2434,9 @@ export function registerPurchaseRoutes(app, {
         checkUserPermission(req.authUser, '7.4') || 
         checkUserPermission(req.authUser, '7.5') || 
         checkUserPermission(req.authUser, '11') || 
-        checkUserPermission(req.authUser, '11.1') ||
-        checkUserPermission(req.authUser, '13') ||
-        checkUserPermission(req.authUser, '13.1');
+        checkUserPermission(req.authUser, '11.1');
 
-      if (!isOwner && !isApprover && !hasFinanceAccess) {
+      if (!isOwner && !isApprover && !hasFinanceAccess && !canLegalAccess) {
         return res.status(403).json({ error: 'Sem permissão para visualizar anexos desta solicitação.' });
       }
 
@@ -2275,6 +2464,9 @@ export function registerPurchaseRoutes(app, {
       const userRole = getUserRoleInPurchases(req.authUser.id, req.authUser.role);
       const isOwner = reqInfo.solicitante_id === req.authUser.id;
       const isApprover = userRole === 'APROVADOR' || req.authUser.role === 'MASTER';
+      const isLegalApprover = isUserLegalApprover(req.authUser.id, req.authUser.role);
+      const inLegalScope = isRequestInLegalScope(reqInfo, req.authUser.id);
+      const canLegalAccess = isLegalApprover && inLegalScope;
       const hasFinanceAccess = req.authUser.role === 'MASTER' || 
         checkUserPermission(req.authUser, '7') || 
         checkUserPermission(req.authUser, '7.1') || 
@@ -2283,11 +2475,9 @@ export function registerPurchaseRoutes(app, {
         checkUserPermission(req.authUser, '7.4') || 
         checkUserPermission(req.authUser, '7.5') || 
         checkUserPermission(req.authUser, '11') || 
-        checkUserPermission(req.authUser, '11.1') ||
-        checkUserPermission(req.authUser, '13') ||
-        checkUserPermission(req.authUser, '13.1');
+        checkUserPermission(req.authUser, '11.1');
 
-      if (!isOwner && !isApprover && !hasFinanceAccess) {
+      if (!isOwner && !isApprover && !hasFinanceAccess && !canLegalAccess) {
         return res.status(403).json({ error: 'Sem permissão para baixar este anexo.' });
       }
 
@@ -2325,6 +2515,9 @@ export function registerPurchaseRoutes(app, {
       const userRole = getUserRoleInPurchases(req.authUser.id, req.authUser.role);
       const isOwner = reqInfo.solicitante_id === req.authUser.id;
       const isApprover = userRole === 'APROVADOR' || req.authUser.role === 'MASTER';
+      const isLegalApprover = isUserLegalApprover(req.authUser.id, req.authUser.role);
+      const inLegalScope = isRequestInLegalScope(reqInfo, req.authUser.id);
+      const canLegalAccess = isLegalApprover && inLegalScope;
       const hasFinanceAccess = req.authUser.role === 'MASTER' || 
         checkUserPermission(req.authUser, '7') || 
         checkUserPermission(req.authUser, '7.1') || 
@@ -2335,7 +2528,7 @@ export function registerPurchaseRoutes(app, {
         checkUserPermission(req.authUser, '11') || 
         checkUserPermission(req.authUser, '11.1');
 
-      if (!isOwner && !isApprover && !hasFinanceAccess) {
+      if (!isOwner && !isApprover && !hasFinanceAccess && !canLegalAccess) {
         return res.status(403).json({ error: 'Sem permissão para baixar este anexo.' });
       }
 

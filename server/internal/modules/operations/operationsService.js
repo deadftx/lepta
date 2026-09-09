@@ -1054,7 +1054,7 @@ export async function listOperationsByDate({ token, date, statusFilter }) {
     date: searchDate,
     totalOperacoes: list.length,
     volumeTotal: list.reduce((acc, o) => acc + o.valorTotal, 0),
-    operacoes: list.map(({ titulos, ...opSummary }) => opSummary)
+    operacoes: list.map(({ titulos: _titulos, ...opSummary }) => opSummary)
   };
 }
 

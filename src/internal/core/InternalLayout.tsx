@@ -327,7 +327,7 @@ const InternalLayout = () => {
                   )}
                   {hasAccess('11.2') && (
                     <Link to="/administrativo/configuracao-compras" className={navItemClass('/administrativo/configuracao-compras')}>
-                      <SlidersHorizontal size={18} /> Configuração de Esteira de Compras
+                      <SlidersHorizontal size={18} /> Configuração de Aprovadores
                     </Link>
                   )}
                   {hasAccess('11.3') && (
@@ -387,7 +387,7 @@ const InternalLayout = () => {
               )}
             </div>
           )}
-          {hasAnyPermission(user, ['13.1', '13']) && (
+          {hasAnyPermission(user, ['13.1', '13.2', '13']) && (
             <div className="nav-menu-group">
               <div
                 className={`nav-item nav-item-parent ${isLegalActive ? 'active' : ''}`}
@@ -405,6 +405,11 @@ const InternalLayout = () => {
                   {hasAccess('13.1') && (
                     <Link to="/juridico/aprovacao-pagamentos" className={navItemClass('/juridico/aprovacao-pagamentos')}>
                       <FileCheck size={18} /> Aprovação de Pagamentos
+                    </Link>
+                  )}
+                  {hasAccess('13.2') && (
+                    <Link to="/juridico/configuracao-aprovadores" className={navItemClass('/juridico/configuracao-aprovadores')}>
+                      <SlidersHorizontal size={18} /> Configuração de Aprovadores Jurídicos
                     </Link>
                   )}
                 </div>
