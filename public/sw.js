@@ -9,6 +9,13 @@ self.addEventListener('activate', (event) => {
   event.waitUntil(self.clients.claim());
 });
 
+// Listener de Fetch para conformidade com critérios PWA e instalabilidade (Chrome, Edge, Samsung Internet, Safari)
+self.addEventListener('fetch', (event) => {
+  event.respondWith(
+    fetch(event.request).catch(() => caches.match(event.request))
+  );
+});
+
 // Listener de eventos de Push vindos do servidor via VAPID
 self.addEventListener('push', (event) => {
   let data = {

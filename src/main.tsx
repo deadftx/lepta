@@ -91,6 +91,15 @@ function handleMsalPopupCallback(): boolean {
 }
 
 if (!handleMsalPopupCallback()) {
+  // Registra o Service Worker para habilitar recursos de PWA e instalação de aplicativo
+  if ('serviceWorker' in navigator && typeof window !== 'undefined') {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('/sw.js', { scope: '/' }).catch((err) => {
+        console.warn('Registro do Service Worker PWA:', err);
+      });
+    });
+  }
+
   getMsalInstance().finally(() => {
     createRoot(document.getElementById('root')!).render(
       <StrictMode>
