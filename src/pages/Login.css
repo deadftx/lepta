@@ -1,17 +1,25 @@
 .login-page {
   min-height: 100vh;
   display: flex;
+  flex-direction: column;
   align-items: center;
-  justify-content: center;
-  padding: 20px;
+  justify-content: flex-start;
+  padding: 105px 20px 45px 20px;
+  box-sizing: border-box;
   background: radial-gradient(circle at center, rgba(230, 32, 32, 0.05) 0%, transparent 60%);
+  position: relative;
+  z-index: 1;
 }
 
 .login-container {
   width: 100%;
-  max-width: 420px;
-  padding: 40px;
-  border-radius: 16px;
+  max-width: 440px;
+  padding: 38px 34px;
+  border-radius: 18px;
+  margin: auto 0;
+  box-sizing: border-box;
+  position: relative;
+  z-index: 2;
 }
 
 .login-header {
@@ -314,11 +322,12 @@
 
 @media (max-width: 520px) {
   .login-page {
-    padding: 14px;
+    padding: 95px 14px 24px 14px;
   }
 
   .login-container {
     padding: 1.5rem;
+    margin: auto 0;
   }
 
   .login-header h2 {
