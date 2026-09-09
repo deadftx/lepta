@@ -21,7 +21,8 @@ import {
   Globe,
   Monitor,
   Smartphone,
-  Tablet
+  Tablet,
+  FileSpreadsheet
 } from 'lucide-react';
 import './MonitorDashboard.css';
 
@@ -133,6 +134,7 @@ export const MonitorDashboard: React.FC = () => {
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'online' | 'offline'>('ALL');
   const [moduleFilter, setModuleFilter] = useState<string>('ALL');
   const [dbSearch, setDbSearch] = useState('');
+  const [exportingExcel, setExportingExcel] = useState(false);
 
   const sseRef = useRef<EventSource | null>(null);
 
@@ -264,6 +266,110 @@ export const MonitorDashboard: React.FC = () => {
   });
 
   const uniqueModules = Array.from(new Set(users.map(u => u.currentModule).filter(Boolean)));
+
+  const handleExportUsersExcel = async () => {
+    if (filteredUsers.length === 0) {
+      alert('Nenhum usuário encontrado para exportar com os filtros atuais.');
+      return;
+    }
+
+    setExportingExcel(true);
+    try {
+      const ExcelJS = (await import('exceljs')).default || (await import('exceljs'));
+      const workbook = new ExcelJS.Workbook();
+      workbook.creator = 'Lepta Capital - Monitor';
+      workbook.created = new Date();
+
+      const worksheet = workbook.addWorksheet('Usuários e Presença', {
+        views: [{ showGridLines: true }]
+      });
+
+      worksheet.columns = [
+        { header: 'Usuário', key: 'username', width: 26 },
+        { header: 'E-mail', key: 'email', width: 34 },
+        { header: 'Papel', key: 'role', width: 16 },
+        { header: 'Status de Presença', key: 'status', width: 20 },
+        { header: 'Módulo Atual', key: 'currentModule', width: 26 },
+        { header: 'Sessão Ativa (Tempo Total)', key: 'totalSession', width: 28 },
+        { header: 'Sessão Ativa (Segundos)', key: 'sessionSeconds', width: 24 },
+        { header: 'Início da Sessão', key: 'loginAt', width: 22 },
+        { header: 'Última Ação / Atividade', key: 'lastSeenAt', width: 24 }
+      ];
+
+      // Estilização do cabeçalho corporativo Lepta
+      const headerRow = worksheet.getRow(1);
+      headerRow.height = 28;
+      headerRow.eachCell((cell) => {
+        cell.font = { bold: true, color: { argb: 'FFFFFFFF' }, size: 11 };
+        cell.fill = {
+          type: 'pattern',
+          pattern: 'solid',
+          fgColor: { argb: 'FF0F172A' } // Slate 900
+        };
+        cell.alignment = { vertical: 'middle', horizontal: 'center' };
+        cell.border = {
+          top: { style: 'thin', color: { argb: 'FF334155' } },
+          left: { style: 'thin', color: { argb: 'FF334155' } },
+          bottom: { style: 'medium', color: { argb: 'FF38BDF8' } },
+          right: { style: 'thin', color: { argb: 'FF334155' } }
+        };
+      });
+
+      filteredUsers.forEach((u, index) => {
+        const row = worksheet.addRow({
+          username: u.username || 'Sem nome',
+          email: u.email || '-',
+          role: u.role || 'USER',
+          status: u.status === 'online' ? 'Online' : u.status === 'idle' ? 'Ausente' : 'Offline',
+          currentModule: u.currentModule || '-',
+          totalSession: formatDuration(u.totalSessionSeconds),
+          sessionSeconds: u.totalSessionSeconds || 0,
+          loginAt: u.loginAt ? new Date(u.loginAt).toLocaleString('pt-BR') : '-',
+          lastSeenAt: u.lastSeenAt ? new Date(u.lastSeenAt).toLocaleString('pt-BR') : '-'
+        });
+
+        row.height = 22;
+        const isEven = index % 2 === 0;
+        row.eachCell((cell, colNumber) => {
+          cell.font = { size: 10, color: { argb: 'FF0F172A' } };
+          cell.alignment = {
+            vertical: 'middle',
+            horizontal: [1, 2].includes(colNumber) ? 'left' : [6, 7].includes(colNumber) ? 'right' : 'center'
+          };
+          if (!isEven) {
+            cell.fill = {
+              type: 'pattern',
+              pattern: 'solid',
+              fgColor: { argb: 'FFF8FAFC' } // Slate 50
+            };
+          }
+          cell.border = {
+            top: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+            left: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+            bottom: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+            right: { style: 'thin', color: { argb: 'FFE2E8F0' } }
+          };
+        });
+      });
+
+      const buffer = await workbook.xlsx.writeBuffer();
+      const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      const nowStr = new Date().toISOString().slice(0, 10);
+      a.href = url;
+      a.download = `LEPTA_USUARIOS_PRESENCA_${nowStr}.xlsx`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+    } catch (err) {
+      console.error('Erro ao gerar relatório Excel de usuários:', err);
+      alert('Não foi possível exportar a planilha no momento.');
+    } finally {
+      setExportingExcel(false);
+    }
+  };
 
   return (
     <div className="monitor-container glass-theme">
@@ -657,6 +763,17 @@ export const MonitorDashboard: React.FC = () => {
                     <option key={m} value={m}>{m}</option>
                   ))}
                 </select>
+
+                <button
+                  type="button"
+                  className="btn-export-excel"
+                  onClick={handleExportUsersExcel}
+                  disabled={exportingExcel}
+                  title="Exportar usuários e sessões ativas para Excel (.xlsx)"
+                >
+                  <FileSpreadsheet size={16} />
+                  <span>{exportingExcel ? 'Exportando...' : 'Exportar (.xlsx)'}</span>
+                </button>
               </div>
             </div>
 
