@@ -165,7 +165,7 @@ export const PurchaseApproval: React.FC = () => {
   // Current Item Form State
   const [categoria, setCategoria] = useState<CategoriaSolicitacao>('Insumos');
   const [chavePix, setChavePix] = useState<string>('');
-  const [tipoDestino, setTipoDestino] = useState<TipoDestino>('DEPARTAMENTO');
+  const [tipoDestino, setTipoDestino] = useState<TipoDestino>('CENTRO_DE_CUSTO');
   const [empresaPagadora, setEmpresaPagadora] = useState<EmpresaPagadora>('INDIFERENTE');
   const [departamentoOuCentro, setDepartamentoOuCentro] = useState<string>('Tecnologia');
   const [empresaOuCliente, setEmpresaOuCliente] = useState<string>('');
@@ -732,7 +732,7 @@ export const PurchaseApproval: React.FC = () => {
       setFormAttachments([]);
       setFormAttachmentError('');
       setCategoria('Insumos');
-      setTipoDestino('DEPARTAMENTO');
+      setTipoDestino('CENTRO_DE_CUSTO');
       setEmpresaPagadora('INDIFERENTE');
       setDepartamentoOuCentro('Tecnologia');
       setEmpresaOuCliente('');
@@ -1768,7 +1768,6 @@ export const PurchaseApproval: React.FC = () => {
                 </label>
                 <div className="pa-dest-type-grid">
                   {[
-                    { id: 'DEPARTAMENTO', label: '🏢 Departamento' },
                     { id: 'CENTRO_DE_CUSTO', label: '📊 Centro de Custo' },
                     { id: 'EMPRESA', label: '🏛️ Empresa' },
                     { id: 'CLIENTE', label: '👤 Cliente' }
@@ -1779,7 +1778,7 @@ export const PurchaseApproval: React.FC = () => {
                       className={`pa-dest-type-btn ${tipoDestino === dt.id ? 'active' : ''}`}
                       onClick={() => {
                         setTipoDestino(dt.id as TipoDestino);
-                        if (dt.id === 'DEPARTAMENTO' || dt.id === 'CENTRO_DE_CUSTO') {
+                        if (dt.id === 'CENTRO_DE_CUSTO') {
                           if (!DEPARTAMENTOS_PADRAO.includes(departamentoOuCentro as any)) {
                             setDepartamentoOuCentro('Tecnologia');
                           }
@@ -1986,8 +1985,9 @@ export const PurchaseApproval: React.FC = () => {
               <div className="pa-form-group full-width">
                 <label>Observações Adicionais do Item (Opcional)</label>
                 <textarea
-                  className="pa-textarea"
-                  placeholder="Justificativa da solicitação, links, dados bancários/chave Pix do fornecedor ou detalhes adicionais..."
+                  className="pa-textarea pa-textarea-rich"
+                  rows={4}
+                  placeholder="Justificativa da solicitação, links, dados bancários/chave Pix do fornecedor, quebras de linha, parágrafos e detalhes adicionais..."
                   value={observacoes}
                   onChange={e => setObservacoes(e.target.value)}
                 />
@@ -2007,7 +2007,7 @@ export const PurchaseApproval: React.FC = () => {
                         <span className="pa-code-badge">Item #{idx + 1}</span>
                         <span className="pa-category-badge">{item.categoria}</span>
                         <span style={{ fontSize: '0.8rem', color: '#94a3b8' }}>
-                          📍 {item.tipo_destino === 'EMPRESA' ? 'Empresa' : item.tipo_destino === 'CLIENTE' ? 'Cliente' : item.tipo_destino === 'CENTRO_DE_CUSTO' ? 'Centro de Custo' : 'Departamento'}: <strong style={{ color: '#cbd5e1' }}>{item.departamento_centro_custo}</strong>
+                          📍 {item.tipo_destino === 'EMPRESA' ? 'Empresa' : item.tipo_destino === 'CLIENTE' ? 'Cliente' : 'Centro de Custo'}: <strong style={{ color: '#cbd5e1' }}>{item.departamento_centro_custo}</strong>
                         </span>
                         {item.empresa_pagadora && item.empresa_pagadora !== 'INDIFERENTE' && (
                           <span style={{ fontSize: '0.78rem', color: '#a5b4fc', background: 'rgba(99,102,241,0.15)', padding: '2px 6px', borderRadius: '4px' }}>
@@ -2021,6 +2021,11 @@ export const PurchaseApproval: React.FC = () => {
                       <div style={{ fontSize: '0.8rem', color: '#94a3b8', marginTop: '2px' }}>
                         {item.fornecedor_nome} • {item.forma_pagamento} • {item.quantidade} un x {formatBrl(item.valor)}
                       </div>
+                      {item.observacoes && (
+                        <div style={{ fontSize: '0.8rem', color: '#cbd5e1', background: 'rgba(0,0,0,0.25)', padding: '6px 10px', borderRadius: '6px', marginTop: '6px', whiteSpace: 'pre-wrap', wordBreak: 'break-word', lineHeight: 1.5 }}>
+                          📝 {item.observacoes}
+                        </div>
+                      )}
                     </div>
 
                     <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
@@ -2746,10 +2751,12 @@ export const PurchaseApproval: React.FC = () => {
                       className="pa-textarea"
                       value={editObservacoes}
                       onChange={e => setEditObservacoes(e.target.value)}
-                      style={{ fontSize: '0.85rem', minHeight: '50px', width: '100%', boxSizing: 'border-box' }}
+                      rows={4}
+                      placeholder="Observações, quebras de linha ou detalhes adicionais..."
+                      style={{ fontSize: '0.85rem', minHeight: '80px', width: '100%', boxSizing: 'border-box', whiteSpace: 'pre-wrap', lineHeight: 1.5 }}
                     />
                   ) : (
-                    <span className="pa-detail-val" style={{ fontWeight: 400, color: '#cbd5e1' }}>
+                    <span className="pa-detail-val" style={{ fontWeight: 400, color: '#cbd5e1', whiteSpace: 'pre-wrap', wordBreak: 'break-word', lineHeight: 1.6 }}>
                       {selectedRequest.observacoes || 'Nenhuma observação informada.'}
                     </span>
                   )}
@@ -2846,7 +2853,7 @@ export const PurchaseApproval: React.FC = () => {
                             <span className="pa-code-badge">Item #{it.numero_item || idx + 1}</span>
                             <span className="pa-category-badge">🏷️ {it.categoria || 'Outros'}</span>
                             <span style={{ fontSize: '0.8rem', color: '#94a3b8' }}>
-                              📍 {it.tipo_destino === 'EMPRESA' ? 'Empresa' : it.tipo_destino === 'CLIENTE' ? 'Cliente' : it.tipo_destino === 'CENTRO_DE_CUSTO' ? 'Centro de Custo' : 'Departamento'}: <strong style={{ color: '#cbd5e1' }}>{it.departamento_centro_custo || '-'}</strong>
+                              📍 {it.tipo_destino === 'EMPRESA' ? 'Empresa' : it.tipo_destino === 'CLIENTE' ? 'Cliente' : 'Centro de Custo'}: <strong style={{ color: '#cbd5e1' }}>{it.departamento_centro_custo || '-'}</strong>
                             </span>
                           </div>
                           <div style={{ fontSize: '1rem', fontWeight: 750, color: '#34d399' }}>
@@ -2870,7 +2877,7 @@ export const PurchaseApproval: React.FC = () => {
                         </div>
 
                         {it.observacoes && (
-                          <div style={{ fontSize: '0.8rem', color: '#94a3b8', background: 'rgba(0,0,0,0.2)', padding: '6px 10px', borderRadius: '6px' }}>
+                          <div style={{ fontSize: '0.82rem', color: '#cbd5e1', background: 'rgba(0,0,0,0.25)', padding: '8px 12px', borderRadius: '6px', whiteSpace: 'pre-wrap', wordBreak: 'break-word', lineHeight: 1.5 }}>
                             📝 {it.observacoes}
                           </div>
                         )}

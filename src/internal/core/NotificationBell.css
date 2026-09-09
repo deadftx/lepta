@@ -118,13 +118,49 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 10px;
+  gap: 12px;
+  transition: all 0.25s ease;
+}
+
+.notif-permission-banner.active {
+  background: rgba(6, 78, 59, 0.45);
+  border-bottom: 1px solid rgba(16, 185, 129, 0.3);
 }
 
 .notif-permission-text {
   font-size: 0.78rem;
   color: #c7d2fe;
   line-height: 1.3;
+  flex: 1;
+}
+
+.notif-permission-banner.active .notif-permission-text {
+  color: #d1fae5;
+}
+
+.notif-banner-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 650;
+  font-size: 0.8rem;
+}
+
+.notif-banner-sub {
+  font-size: 0.72rem;
+  opacity: 0.85;
+  margin-top: 2px;
+}
+
+.notif-feedback-text {
+  margin-top: 4px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: #38bdf8;
+}
+
+.notif-banner-actions {
+  flex-shrink: 0;
 }
 
 .notif-enable-btn {
@@ -133,15 +169,54 @@
   border: none;
   font-size: 0.75rem;
   font-weight: 600;
-  padding: 6px 10px;
+  padding: 6px 12px;
   border-radius: 6px;
   cursor: pointer;
   white-space: nowrap;
   transition: background 0.2s;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
 }
 
-.notif-enable-btn:hover {
+.notif-enable-btn:hover:not(:disabled) {
   background: #4338ca;
+}
+
+.notif-enable-btn:disabled {
+  opacity: 0.7;
+  cursor: wait;
+}
+
+.notif-test-btn {
+  background: rgba(16, 185, 129, 0.2);
+  border: 1px solid rgba(16, 185, 129, 0.4);
+  color: #6ee7b7;
+  font-size: 0.72rem;
+  font-weight: 650;
+  padding: 5px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.2s ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.notif-test-btn:hover {
+  background: rgba(16, 185, 129, 0.35);
+  color: #ffffff;
+  border-color: #34d399;
+}
+
+.spin {
+  animation: notif-spin 1s linear infinite;
+}
+
+@keyframes notif-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
 }
 
 .notif-list {
@@ -214,6 +289,21 @@
 .notif-icon.reaberto {
   background: rgba(245, 158, 11, 0.15);
   color: #fbbf24;
+}
+
+.notif-icon.reuniao {
+  background: rgba(14, 165, 233, 0.15);
+  color: #38bdf8;
+}
+
+.notif-icon.financeiro {
+  background: rgba(34, 197, 94, 0.15);
+  color: #4ade80;
+}
+
+.notif-icon.teste {
+  background: rgba(59, 130, 246, 0.15);
+  color: #60a5fa;
 }
 
 .notif-body {

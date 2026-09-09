@@ -1,14 +1,17 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   Bell, CheckCheck, ShoppingCart, MessageSquare, CheckCircle2,
-  XCircle, RotateCcw, Smartphone, Laptop
+  XCircle, RotateCcw, Smartphone, Laptop, Calendar, DollarSign,
+  Send, ShieldCheck, Loader2
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { API_BASE_URL, getAuthHeaders } from '../../config/api';
 import {
   isNotificationSupported,
+  isPushSupported,
   getNotificationPermission,
-  requestNotificationPermission,
+  subscribeDeviceToPush,
+  getCurrentPushSubscription,
   showSystemNotification,
   playNotificationSound
 } from './notificationService';
@@ -30,17 +33,40 @@ export const NotificationBell: React.FC = () => {
   const [notifications, setNotifications] = useState<NotificationData[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [permission, setPermission] = useState<NotificationPermission>('default');
+  const [isPushActive, setIsPushActive] = useState<boolean>(false);
+  const [isActivating, setIsActivating] = useState<boolean>(false);
+  const [statusFeedback, setStatusFeedback] = useState<string | null>(null);
+
   const dropdownRef = useRef<HTMLDivElement>(null);
   const seenIdsRef = useRef<Set<string>>(new Set());
   const isFirstLoadRef = useRef(true);
   const navigate = useNavigate();
 
-  // Verifica permissão nativa
-  useEffect(() => {
+  // Verifica permissão nativa e se o push já está ativo neste navegador
+  const checkPushState = useCallback(async () => {
     if (isNotificationSupported()) {
       setPermission(getNotificationPermission());
     }
+    if (isPushSupported()) {
+      try {
+        const sub = await getCurrentPushSubscription();
+        setIsPushActive(!!sub);
+      } catch {
+        setIsPushActive(false);
+      }
+    }
   }, []);
+
+  useEffect(() => {
+    checkPushState();
+  }, [checkPushState]);
+
+  // Ao abrir o dropdown, re-verifica o estado das notificações no dispositivo
+  useEffect(() => {
+    if (isOpen) {
+      checkPushState();
+    }
+  }, [isOpen, checkPushState]);
 
   // Fechar dropdown ao clicar fora
   useEffect(() => {
@@ -65,11 +91,10 @@ export const NotificationBell: React.FC = () => {
       const items: NotificationData[] = data.notificacoes || [];
       const totalUnread: number = data.totalNaoLidas || 0;
 
-      // Dispara Notificação Nativa no Windows e Celular para novos itens não lidos
+      // Dispara Notificação Nativa local caso o Service Worker não esteja ativo em background
       if (!isFirstLoadRef.current) {
         for (const item of items) {
           if (item.lida === 0 && !seenIdsRef.current.has(item.id)) {
-            // Dispara no Windows / Celular
             showSystemNotification(item.titulo, {
               body: item.mensagem,
               link: item.link,
@@ -77,13 +102,11 @@ export const NotificationBell: React.FC = () => {
                 if (item.link) navigate(item.link);
               }
             });
-            // Efeito sonoro
             playNotificationSound();
           }
         }
       }
 
-      // Atualiza o conjunto de IDs vistos
       items.forEach(it => seenIdsRef.current.add(it.id));
       isFirstLoadRef.current = false;
 
@@ -106,15 +129,44 @@ export const NotificationBell: React.FC = () => {
     return () => clearInterval(interval);
   }, [fetchNotifications]);
 
-  // Solicita permissão do navegador para Windows e Celular
-  const handleEnableNotifications = async () => {
-    const res = await requestNotificationPermission();
-    setPermission(res);
-    if (res === 'granted') {
-      showSystemNotification('🔔 Notificações Ativadas!', {
-        body: 'Você receberá alertas em tempo real sobre compras e mensagens.',
-        link: '/administrativo/compras'
+  // Ativa as notificações Web Push (PC e Mobile)
+  const handleEnablePushNotifications = async () => {
+    setIsActivating(true);
+    setStatusFeedback(null);
+    try {
+      const result = await subscribeDeviceToPush();
+      if (result.success) {
+        setIsPushActive(true);
+        setPermission('granted');
+        setStatusFeedback('✅ Notificações ativadas com sucesso!');
+      } else {
+        setStatusFeedback(`⚠️ ${result.message}`);
+      }
+    } catch (err: any) {
+      setStatusFeedback(`❌ ${err?.message || 'Erro ao ativar notificações.'}`);
+    } finally {
+      setIsActivating(false);
+      setTimeout(() => setStatusFeedback(null), 6000);
+    }
+  };
+
+  // Dispara teste imediato de notificação Web Push
+  const handleSendTestPush = async () => {
+    try {
+      setStatusFeedback('Enviando teste...');
+      const res = await fetch(`${API_BASE_URL}/api/notificacoes/test-push`, {
+        method: 'POST',
+        headers: getAuthHeaders()
       });
+      if (res.ok) {
+        setStatusFeedback('🚀 Notificação de teste disparada! Veja na sua tela.');
+      } else {
+        setStatusFeedback('⚠️ Não foi possível disparar o teste.');
+      }
+    } catch {
+      setStatusFeedback('❌ Erro de conexão ao testar.');
+    } finally {
+      setTimeout(() => setStatusFeedback(null), 5000);
     }
   };
 
@@ -170,16 +222,22 @@ export const NotificationBell: React.FC = () => {
   const getIconForType = (tipo: string) => {
     switch (tipo) {
       case 'COMPRAS_NOVA_REQUISICAO':
-        return <div className="notif-icon compra"><ShoppingCart size={16} /></div>;
+        return <div className="notif-icon compra" title="Nova Solicitação"><ShoppingCart size={16} /></div>;
+      case 'COMPRAS_FINANCEIRO_NOVA':
+        return <div className="notif-icon financeiro" title="Fila Financeira"><DollarSign size={16} /></div>;
       case 'COMPRAS_APROVADO':
-        return <div className="notif-icon aprovado"><CheckCircle2 size={16} /></div>;
+        return <div className="notif-icon aprovado" title="Aprovado"><CheckCircle2 size={16} /></div>;
       case 'COMPRAS_NEGADO':
-        return <div className="notif-icon negado"><XCircle size={16} /></div>;
+        return <div className="notif-icon negado" title="Negado"><XCircle size={16} /></div>;
       case 'COMPRAS_REABERTO':
-        return <div className="notif-icon reaberto"><RotateCcw size={16} /></div>;
+        return <div className="notif-icon reaberto" title="Retornado / Reaberto"><RotateCcw size={16} /></div>;
+      case 'SALA_REUNIAO_10MIN':
+        return <div className="notif-icon reuniao" title="Sala de Reunião"><Calendar size={16} /></div>;
+      case 'TESTE':
+        return <div className="notif-icon teste" title="Teste"><Send size={16} /></div>;
       case 'COMPRAS_MENSAGEM':
       default:
-        return <div className="notif-icon mensagem"><MessageSquare size={16} /></div>;
+        return <div className="notif-icon mensagem" title="Histórico / Mensagem"><MessageSquare size={16} /></div>;
     }
   };
 
@@ -216,22 +274,63 @@ export const NotificationBell: React.FC = () => {
             )}
           </div>
 
-          {/* Banner para Ativar Notificações no Windows e Celular */}
-          {permission !== 'granted' && isNotificationSupported() && (
-            <div className="notif-permission-banner">
+          {/* Banner de Ativação / Status Web Push no Dispositivo */}
+          {isPushSupported() && (
+            <div className={`notif-permission-banner ${isPushActive ? 'active' : ''}`}>
               <div className="notif-permission-text">
-                <div style={{ fontWeight: 600, display: 'flex', alignItems: 'center', gap: 4 }}>
-                  <Smartphone size={13} /> <Laptop size={13} /> Alertas no Windows e Celular
+                <div className="notif-banner-title">
+                  {isPushActive ? (
+                    <>
+                      <ShieldCheck size={14} className="text-success" />
+                      <span>Alertas Ativos no Dispositivo</span>
+                    </>
+                  ) : (
+                    <>
+                      <Smartphone size={13} />
+                      <Laptop size={13} />
+                      <span>Alertas no Windows e Celular</span>
+                    </>
+                  )}
                 </div>
-                Receba avisos imediatos de novas compras e respostas.
+                <div className="notif-banner-sub">
+                  {isPushActive
+                    ? 'Você recebe notificações mesmo com o site fechado.'
+                    : permission === 'denied'
+                    ? 'Notificações bloqueadas no navegador. Clique no ícone ao lado da URL para permitir.'
+                    : 'Receba aprovações, salas de reunião e avisos em tempo real.'}
+                </div>
+                {statusFeedback && (
+                  <div className="notif-feedback-text">{statusFeedback}</div>
+                )}
               </div>
-              <button
-                type="button"
-                className="notif-enable-btn"
-                onClick={handleEnableNotifications}
-              >
-                Ativar
-              </button>
+
+              <div className="notif-banner-actions">
+                {isPushActive ? (
+                  <button
+                    type="button"
+                    className="notif-test-btn"
+                    onClick={handleSendTestPush}
+                    title="Enviar notificação de teste para este dispositivo"
+                  >
+                    <Send size={12} /> Testar
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    className="notif-enable-btn"
+                    onClick={handleEnablePushNotifications}
+                    disabled={isActivating}
+                  >
+                    {isActivating ? (
+                      <>
+                        <Loader2 size={13} className="spin" /> Ativando...
+                      </>
+                    ) : (
+                      'Ativar'
+                    )}
+                  </button>
+                )}
+              </div>
             </div>
           )}
 

@@ -349,6 +349,45 @@ export function registerPurchaseRoutes(app, {
     }
   }
 
+  function getAllFinanceUserIds() {
+    try {
+      const financeSet = new Set();
+      const masters = db.prepare(`SELECT id FROM usuarios_lepta WHERE role = 'MASTER'`).all();
+      masters.forEach(m => financeSet.add(m.id));
+
+      const allUsers = db.prepare(`SELECT id, email, permissions, group_id FROM usuarios_lepta`).all();
+      for (const u of allUsers) {
+        if (u.permissions) {
+          try {
+            const perms = JSON.parse(u.permissions);
+            if (Array.isArray(perms) && perms.some(p => String(p).startsWith('7') || String(p) === '11.1')) {
+              financeSet.add(u.id);
+            }
+          } catch {}
+        }
+      }
+
+      const allGroups = getAllGroupsList();
+      for (const grp of allGroups) {
+        try {
+          const perms = JSON.parse(grp.permissions || '[]');
+          if (Array.isArray(perms) && perms.some(p => String(p).startsWith('7'))) {
+            if (Array.isArray(grp.userIds)) {
+              for (const uid of grp.userIds) {
+                const found = allUsers.find(u => String(u.id) === String(uid) || (u.email && String(u.email).toLowerCase() === String(uid).toLowerCase()));
+                if (found) financeSet.add(found.id);
+              }
+            }
+          }
+        } catch {}
+      }
+
+      return [...financeSet];
+    } catch {
+      return [];
+    }
+  }
+
   function isRequestInLegalScope(requisicao, authUserId) {
     if (!requisicao) return false;
     return requisicao.requer_juridico === 1 ||
@@ -1519,6 +1558,16 @@ export function registerPurchaseRoutes(app, {
           tipo: 'COMPRAS_APROVADO',
           link: '/administrativo/compras'
         });
+
+        // Notifica a equipe do FINANCEIRO (Trigger 5)
+        const financeIds = getAllFinanceUserIds().filter(uid => uid !== req.authUser.id);
+        const totalBrl = formatBrl(requisicao.valor);
+        notifyUsers(db, financeIds, {
+          titulo: `💳 Nova Solicitação Pronta para Pagamento (${requisicao.id})`,
+          mensagem: `A solicitação (${produto_servico} - ${totalBrl}) foi aprovada e está aguardando pagamento na Central Financeira.`,
+          tipo: 'COMPRAS_FINANCEIRO_NOVA',
+          link: '/financeiro/reembolsos-despesas'
+        });
       })();
 
       const atualizado = db.prepare(`SELECT * FROM compras_requisicoes WHERE id = ?`).get(req.params.id);
@@ -1807,28 +1856,28 @@ export function registerPurchaseRoutes(app, {
           WHERE id = ?
         `).run(novoStatus, now, req.params.id);
 
-        // --- DISPARO DE NOTIFICAÇÕES DIRECIONADAS ---
-        if (isApprover) {
-          // Se aprovador mandou mensagem -> notifica o SOLICITANTE
-          if (requisicao.solicitante_id !== req.authUser.id) {
-            createNotification(db, {
-              userId: requisicao.solicitante_id,
-              titulo: `💬 Mensagem do Aprovador (${requisicao.id})`,
-              mensagem: `${autorNome}: "${mensagem}"`,
-              tipo: 'COMPRAS_MENSAGEM',
-              link: '/administrativo/compras'
-            });
-          }
+        // --- DISPARO DE NOTIFICAÇÕES DIRECIONADAS (TRIGGER 1: NOVO HISTÓRICO) ---
+        if (requisicao.solicitante_id !== req.authUser.id) {
+          // Se qualquer usuário (aprovador, jurídico, financeiro, master) postou mensagem -> notifica o SOLICITANTE
+          createNotification(db, {
+            userId: requisicao.solicitante_id,
+            titulo: `💬 Novo Histórico na Solicitação (${requisicao.id})`,
+            mensagem: `${autorNome} (${autorRole}): "${mensagem}"`,
+            tipo: 'COMPRAS_MENSAGEM',
+            link: '/administrativo/compras'
+          });
         } else {
-          // Se o solicitante mandou mensagem -> notifica APENAS os aprovadores que já interagiram nessa requisição
-          let interactingApprovers = getInteractingApproversForRequest(req.params.id).filter(uid => uid !== req.authUser.id);
-          
-          // Se nenhum aprovador interagiu ainda, notifica todos os aprovadores da esteira
-          if (!interactingApprovers.length) {
-            interactingApprovers = getAllApproverUserIds().filter(uid => uid !== req.authUser.id);
+          // Se o solicitante mandou mensagem -> notifica os aprovadores que já interagiram (ou todos)
+          let targetApprovers = getInteractingApproversForRequest(req.params.id).filter(uid => uid !== req.authUser.id);
+          if (!targetApprovers.length) {
+            targetApprovers = getAllApproverUserIds().filter(uid => uid !== req.authUser.id);
+          }
+          if (requisicao.requer_juridico === 1 || requisicao.status === 'AGUARDANDO_JURIDICO') {
+            const legalIds = getAllLegalApproverUserIds().filter(uid => uid !== req.authUser.id);
+            targetApprovers = Array.from(new Set([...targetApprovers, ...legalIds]));
           }
 
-          notifyUsers(db, interactingApprovers, {
+          notifyUsers(db, targetApprovers, {
             titulo: `💬 Resposta do Solicitante (${requisicao.id})`,
             mensagem: `${autorNome}: "${mensagem}"`,
             tipo: 'COMPRAS_MENSAGEM',
@@ -2004,6 +2053,17 @@ export function registerPurchaseRoutes(app, {
           tipo: 'COMPRAS_NOVA_REQUISICAO',
           link: '/administrativo/compras'
         });
+
+        // Notifica o SOLICITANTE
+        if (requisicao.solicitante_id !== req.authUser.id) {
+          createNotification(db, {
+            userId: requisicao.solicitante_id,
+            titulo: `⚠️ Solicitação Devolvida para Revisão (${requisicao.id})`,
+            mensagem: `O Financeiro (${financeName}) devolveu sua solicitação para revisão: "${motivo}"`,
+            tipo: 'COMPRAS_REABERTO',
+            link: '/administrativo/compras'
+          });
+        }
       })();
 
       const atualizado = db.prepare(`SELECT * FROM compras_requisicoes WHERE id = ?`).get(id);

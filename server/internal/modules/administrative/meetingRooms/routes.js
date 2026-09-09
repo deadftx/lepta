@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { createNotification } from '../../notifications/routes.js';
 
 export function registerMeetingRoomRoutes(app, { db, requireSession, requirePermission }) {
   // Inicialização da tabela de salas de reunião
@@ -25,6 +26,11 @@ export function registerMeetingRoomRoutes(app, { db, requireSession, requirePerm
     );
     CREATE INDEX IF NOT EXISTS idx_salas_data_sala ON salas_reuniao_agendamentos(data, sala);
     CREATE INDEX IF NOT EXISTS idx_salas_status ON salas_reuniao_agendamentos(status);
+
+    CREATE TABLE IF NOT EXISTS salas_reuniao_alertas_10min (
+      agendamento_id TEXT PRIMARY KEY,
+      notificado_em TEXT NOT NULL
+    );
   `);
 
   const router = Router();
@@ -301,4 +307,77 @@ export function registerMeetingRoomRoutes(app, { db, requireSession, requirePerm
   });
 
   app.use('/api/administrative/meeting-rooms', router);
+
+  // --- JOB EM SEGUNDO PLANO: ALERTA DE 10 MINUTOS ANTES DA REUNIÃO ---
+  function checkUpcomingMeetingRooms() {
+    try {
+      const now = new Date();
+
+      // Formatação no fuso horário de Brasília (UTC-3)
+      const brasilDateStr = new Intl.DateTimeFormat('en-CA', {
+        timeZone: 'America/Sao_Paulo',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit'
+      }).format(now);
+
+      const brasilTimeParts = new Intl.DateTimeFormat('pt-BR', {
+        timeZone: 'America/Sao_Paulo',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false
+      }).formatToParts(now);
+
+      const curHour = parseInt(brasilTimeParts.find(p => p.type === 'hour')?.value || '0', 10);
+      const curMin = parseInt(brasilTimeParts.find(p => p.type === 'minute')?.value || '0', 10);
+      const currentTotalMinutes = curHour * 60 + curMin;
+
+      // Busca agendamentos de hoje, confirmados e que ainda não receberam o alerta de 10 min
+      const pendingAlerts = db.prepare(`
+        SELECT * FROM salas_reuniao_agendamentos
+        WHERE data = ?
+          AND status = 'CONFIRMADO'
+          AND id NOT IN (SELECT agendamento_id FROM salas_reuniao_alertas_10min)
+      `).all(brasilDateStr);
+
+      for (const ag of pendingAlerts) {
+        if (!ag.horario_inicio) continue;
+        const [hStr, mStr] = ag.horario_inicio.split(':');
+        const startHour = parseInt(hStr, 10);
+        const startMin = parseInt(mStr, 10);
+        if (isNaN(startHour) || isNaN(startMin)) continue;
+
+        const startTotalMinutes = startHour * 60 + startMin;
+        const diffMinutes = startTotalMinutes - currentTotalMinutes;
+
+        // Dispara o alerta quando faltar entre 0 e 10 minutos para o início
+        if (diffMinutes <= 10 && diffMinutes >= 0) {
+          const nowIso = new Date().toISOString();
+
+          // Registra para não duplicar
+          db.prepare(`
+            INSERT OR REPLACE INTO salas_reuniao_alertas_10min (agendamento_id, notificado_em)
+            VALUES (?, ?)
+          `).run(ag.id, nowIso);
+
+          const tempoTexto = diffMinutes <= 1 ? '1 minuto' : `${diffMinutes} minutos`;
+
+          createNotification(db, {
+            userId: ag.solicitante_id,
+            titulo: `⏰ Sala de Reunião em ${tempoTexto}!`,
+            mensagem: `Seu agendamento na "${ag.sala}" (${ag.titulo}) começa às ${ag.horario_inicio}. Prepare a sala.`,
+            tipo: 'SALA_REUNIAO_10MIN',
+            link: '/administrativo/salas-reuniao'
+          });
+        }
+      }
+    } catch (err) {
+      console.warn('Aviso ao verificar alertas de 10 min de salas de reunião:', err.message);
+    }
+  }
+
+  // Executa checagem imediata e repete a cada 30 segundos
+  setTimeout(checkUpcomingMeetingRooms, 2000);
+  setInterval(checkUpcomingMeetingRooms, 30000);
 }
+

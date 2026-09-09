@@ -1,7 +1,9 @@
 .ec-container {
-  padding: 1.5rem;
-  max-width: 1000px;
+  padding: 1.5rem 2rem;
+  max-width: 1280px;
+  width: 100%;
   margin: 0 auto;
+  box-sizing: border-box;
   color: #f1f5f9;
 }
 
@@ -381,8 +383,10 @@
 
 .ec-eventos-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(440px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
   gap: 1.5rem;
+  width: 100%;
+  box-sizing: border-box;
 }
 
 @media (max-width: 992px) {
@@ -402,6 +406,9 @@
   justify-content: space-between;
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.25);
   transition: border-color 0.2s ease, transform 0.2s ease;
+  min-width: 0;
+  width: 100%;
+  box-sizing: border-box;
 }
 
 .ec-evento-card:hover {
@@ -576,13 +583,17 @@
 
 .ec-add-destinatario-panel {
   border-top: 1px solid rgba(255, 255, 255, 0.08);
-  padding-top: 12px;
+  padding-top: 14px;
+  width: 100%;
+  box-sizing: border-box;
 }
 
 .ec-add-group {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 6px;
+  width: 100%;
+  box-sizing: border-box;
 }
 
 .ec-add-label {
@@ -597,50 +608,71 @@
 .ec-add-row {
   display: flex;
   gap: 8px;
+  align-items: center;
+  width: 100%;
+  box-sizing: border-box;
 }
 
 .ec-select {
-  flex: 1;
+  flex: 1 1 auto;
+  min-width: 0;
+  width: 100%;
+  height: 38px;
+  box-sizing: border-box;
   background: rgba(15, 23, 42, 0.85);
   border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 8px;
-  padding: 8px 12px;
+  padding: 0 10px;
   color: #f8fafc;
   font-size: 0.85rem;
   outline: none;
+  cursor: pointer;
+  text-overflow: ellipsis;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
 }
 
 .ec-select:focus {
   border-color: #38bdf8;
+  box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.2);
 }
 
 .ec-input-small {
-  flex: 1;
+  flex: 1 1 auto;
+  min-width: 0;
+  width: 100%;
+  height: 38px;
+  box-sizing: border-box;
   background: rgba(15, 23, 42, 0.85);
   border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 8px;
-  padding: 8px 12px;
+  padding: 0 12px;
   color: #f8fafc;
   font-size: 0.85rem;
   outline: none;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
 }
 
 .ec-input-small:focus {
   border-color: #38bdf8;
+  box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.2);
 }
 
 .ec-btn-add {
+  height: 38px;
+  box-sizing: border-box;
+  flex-shrink: 0;
   background: rgba(56, 189, 248, 0.2);
   border: 1px solid rgba(56, 189, 248, 0.4);
   color: #38bdf8;
-  padding: 8px 14px;
+  padding: 0 14px;
   border-radius: 8px;
   font-size: 0.82rem;
   font-weight: 700;
   cursor: pointer;
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  gap: 4px;
+  justify-content: center;
+  gap: 6px;
   white-space: nowrap;
   transition: all 0.2s ease;
 }
@@ -796,6 +828,25 @@
   background: rgba(245, 158, 11, 0.12);
   border: 1px solid rgba(245, 158, 11, 0.35);
   color: #fde68a;
+}
+
+@media (max-width: 520px) {
+  .ec-container {
+    padding: 1rem 0.75rem;
+  }
+
+  .ec-add-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .ec-btn-add {
+    width: 100%;
+  }
+
+  .ec-evento-card {
+    padding: 1.15rem;
+  }
 }
 
 
