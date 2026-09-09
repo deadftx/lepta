@@ -1861,6 +1861,8 @@
   .oa-m-op-field.error {
     grid-column: span 1;
   }
+}
+
 /* ── MODAL CONSOLIDADO DE GERAÇÃO CNAB (VÁLIDO, ERRO, COMPLETO / VORTEX, BITFIN) ── */
 .oa-cnab-modal {
   max-width: 740px !important;

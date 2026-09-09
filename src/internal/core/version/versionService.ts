@@ -99,8 +99,20 @@ export function applyUpdateAndReload(targetPath: string = '/login') {
     sessionStorage.clear();
   } catch {}
 
-  // Força recarregamento pelo navegador evitando cache de assets
-  window.location.href = targetPath;
+  // Força recarregamento pelo navegador evitando cache de assets antigos
+  const separator = targetPath.includes('?') ? '&' : '?';
+  const targetWithBuster = `${targetPath}${separator}_v=${Date.now()}`;
+
+  try {
+    window.location.replace(targetWithBuster);
+  } catch {
+    window.location.href = targetWithBuster;
+  }
+
+  // Garantia adicional de refresh completo
+  setTimeout(() => {
+    window.location.reload();
+  }, 100);
 }
 
 /**
