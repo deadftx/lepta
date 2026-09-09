@@ -1147,6 +1147,26 @@ export const PurchaseApproval: React.FC = () => {
     }
   };
 
+  const formatRole = (role?: string) => {
+    if (!role) return 'Sistema';
+    const r = role.toUpperCase();
+    if (r === 'APROVADOR') return 'Aprovador';
+    if (r === 'FINANCEIRO') return 'Financeiro';
+    if (r === 'JURIDICO') return 'Jurídico';
+    if (r === 'REQUISITANTE' || r === 'SOLICITANTE') return 'Solicitante';
+    return role;
+  };
+
+  const getBubbleRoleClass = (role?: string) => {
+    if (!role) return 'approver';
+    const r = role.toUpperCase();
+    if (r === 'APROVADOR') return 'approver';
+    if (r === 'FINANCEIRO') return 'finance';
+    if (r === 'JURIDICO') return 'legal';
+    if (r === 'REQUISITANTE' || r === 'SOLICITANTE') return 'requester';
+    return 'approver';
+  };
+
   // Renderizador de Badge de Status
   const renderStatusBadge = (status: string, arquivadoManualmente?: number) => {
     if (arquivadoManualmente === 1) {
@@ -3088,10 +3108,10 @@ export const PurchaseApproval: React.FC = () => {
                     selectedRequest.mensagens.map(msg => (
                       <div
                         key={msg.id}
-                        className={`pa-message-bubble ${msg.autor_role === 'APROVADOR' ? 'approver' : 'requester'}`}
+                        className={`pa-message-bubble ${getBubbleRoleClass(msg.autor_role)}`}
                       >
                         <div className="pa-message-meta">
-                          <strong>{msg.autor_nome} ({msg.autor_role === 'APROVADOR' ? 'Aprovador' : 'Solicitante'})</strong>
+                          <strong>{msg.autor_nome} ({formatRole(msg.autor_role)})</strong>
                           <span>{formatDate(msg.created_at)}</span>
                         </div>
                         <p style={{ margin: 0, fontSize: '0.85rem', whiteSpace: 'pre-wrap' }}>

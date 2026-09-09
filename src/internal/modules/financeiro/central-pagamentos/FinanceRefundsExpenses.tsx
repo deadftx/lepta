@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import {
-  Clock, Send, X, RefreshCw,
+  Clock, Send, X, RefreshCw, MessageSquare,
   Eye, CreditCard, ArrowDownLeft, CheckSquare, RotateCcw, Paperclip, Trash2, Download, CheckCircle2, User, FileSpreadsheet, CalendarCheck,
   PauseCircle, PlayCircle, Save, AlertTriangle
 } from 'lucide-react';
@@ -732,6 +732,26 @@ export const FinanceRefundsExpenses: React.FC = () => {
     } catch {
       return dateStr;
     }
+  };
+
+  const formatRole = (role?: string) => {
+    if (!role) return 'Sistema';
+    const r = role.toUpperCase();
+    if (r === 'APROVADOR') return 'Aprovador';
+    if (r === 'FINANCEIRO') return 'Financeiro';
+    if (r === 'JURIDICO') return 'Jurídico';
+    if (r === 'REQUISITANTE' || r === 'SOLICITANTE') return 'Solicitante';
+    return role;
+  };
+
+  const getBubbleRoleClass = (role?: string) => {
+    if (!role) return 'approver';
+    const r = role.toUpperCase();
+    if (r === 'APROVADOR') return 'approver';
+    if (r === 'FINANCEIRO') return 'finance';
+    if (r === 'JURIDICO') return 'legal';
+    if (r === 'REQUISITANTE' || r === 'SOLICITANTE') return 'requester';
+    return 'approver';
   };
 
   // KPIs
@@ -1718,28 +1738,29 @@ export const FinanceRefundsExpenses: React.FC = () => {
                 </div>
               )}
 
-              {/* HISTÓRICO & CHAT */}
-              <div className="pa-chat-section">
-                <h4 style={{ margin: 0, fontSize: '0.95rem', color: '#f8fafc', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  💬 Linha do Tempo & Mensagens ({messages.length})
-                </h4>
+              {/* HISTÓRICO DE MENSAGENS E COMENTÁRIOS */}
+              <div className="pa-messages-container">
+                <div className="pa-messages-header">
+                  <MessageSquare size={16} color="#3b82f6" />
+                  <span>Histórico de Interações & Mensagens</span>
+                </div>
 
-                <div className="pa-chat-messages" style={{ maxHeight: '240px', overflowY: 'auto' }}>
+                <div className="pa-chat-box">
                   {messages.length === 0 ? (
-                    <div style={{ color: '#94a3b8', fontSize: '0.85rem', fontStyle: 'italic', textAlign: 'center', padding: '1rem' }}>
-                      Nenhuma mensagem ou histórico registrado até o momento.
+                    <div style={{ textAlign: 'center', color: '#64748b', fontSize: '0.85rem', padding: '1rem' }}>
+                      Nenhuma mensagem registrada nesta solicitação.
                     </div>
                   ) : (
                     messages.map(msg => (
                       <div
                         key={msg.id}
-                        className={`pa-chat-bubble ${msg.autor_role.toLowerCase()}`}
+                        className={`pa-message-bubble ${getBubbleRoleClass(msg.autor_role)}`}
                       >
-                        <div className="pa-chat-bubble-header">
-                          <span className="pa-chat-author">{msg.autor_nome} ({msg.autor_role})</span>
-                          <span className="pa-chat-time">{formatDate(msg.created_at)}</span>
+                        <div className="pa-message-meta">
+                          <strong>{msg.autor_nome} ({formatRole(msg.autor_role)})</strong>
+                          <span>{formatDate(msg.created_at)}</span>
                         </div>
-                        <p className="pa-chat-text" style={{ margin: '4px 0 0 0', fontSize: '0.88rem' }}>
+                        <p style={{ margin: 0, fontSize: '0.85rem', whiteSpace: 'pre-wrap' }}>
                           {msg.mensagem}
                         </p>
                       </div>
@@ -1747,16 +1768,16 @@ export const FinanceRefundsExpenses: React.FC = () => {
                   )}
                 </div>
 
+                {/* Input para nova mensagem */}
                 <form onSubmit={handleSendMessage} className="pa-chat-input-row">
                   <input
                     type="text"
-                    className="pa-input"
+                    className="pa-chat-input"
                     placeholder="Adicione um comentário ou responda sobre esta solicitação..."
                     value={newMessageText}
                     onChange={e => setNewMessageText(e.target.value)}
-                    style={{ flex: 1 }}
                   />
-                  <button type="submit" disabled={!newMessageText.trim()} className="pa-submit-btn" style={{ padding: '10px 18px' }}>
+                  <button type="submit" disabled={!newMessageText.trim()} className="pa-chat-send-btn">
                     <Send size={15} /> Enviar
                   </button>
                 </form>

@@ -100,6 +100,26 @@ const formatDate = (isoStr: string) => {
   }
 };
 
+const formatRole = (role?: string) => {
+  if (!role) return 'Sistema';
+  const r = role.toUpperCase();
+  if (r === 'APROVADOR') return 'Aprovador';
+  if (r === 'FINANCEIRO') return 'Financeiro';
+  if (r === 'JURIDICO') return 'Jurídico';
+  if (r === 'REQUISITANTE' || r === 'SOLICITANTE') return 'Solicitante';
+  return role;
+};
+
+const getBubbleRoleClass = (role?: string) => {
+  if (!role) return 'approver';
+  const r = role.toUpperCase();
+  if (r === 'APROVADOR') return 'approver';
+  if (r === 'FINANCEIRO') return 'finance';
+  if (r === 'JURIDICO') return 'legal';
+  if (r === 'REQUISITANTE' || r === 'SOLICITANTE') return 'requester';
+  return 'approver';
+};
+
 const LegalPaymentApproval: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'PENDENTES' | 'APROVADOS' | 'REJEITADOS' | 'TODOS'>('PENDENTES');
   const [searchTerm, setSearchTerm] = useState('');
@@ -1301,81 +1321,59 @@ const LegalPaymentApproval: React.FC = () => {
                 </div>
               </div>
 
-              {/* TIMELINE DE MENSAGENS */}
-              <div style={{
-                background: 'rgba(30, 41, 59, 0.3)',
-                padding: '1rem',
-                borderRadius: '10px',
-                border: '1px solid rgba(255, 255, 255, 0.08)'
-              }}>
-                <h3 style={{ fontSize: '1rem', fontWeight: 'bold', color: '#f8fafc', margin: '0 0 10px 0', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <MessageSquare size={18} color="#94a3b8" />
-                  Histórico e Mensagens
-                </h3>
+              {/* HISTÓRICO DE MENSAGENS E COMENTÁRIOS */}
+              <div className="pa-messages-container">
+                <div className="pa-messages-header">
+                  <MessageSquare size={16} color="#3b82f6" />
+                  <span>Histórico de Interações & Mensagens</span>
+                </div>
 
-                <div style={{ maxHeight: '180px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '10px' }}>
+                <div className="pa-chat-box">
                   {(!selectedReq.mensagens || selectedReq.mensagens.length === 0) ? (
-                    <p style={{ color: '#64748b', fontSize: '0.85rem' }}>Nenhum comentário registrado.</p>
+                    <div style={{ textAlign: 'center', color: '#64748b', fontSize: '0.85rem', padding: '1rem' }}>
+                      Nenhuma mensagem registrada nesta solicitação.
+                    </div>
                   ) : (
                     selectedReq.mensagens.map((msg) => (
                       <div
                         key={msg.id}
-                        style={{
-                          background: msg.autor_role === 'JURIDICO' ? 'rgba(234, 179, 8, 0.1)' : 'rgba(15, 23, 42, 0.6)',
-                          border: msg.autor_role === 'JURIDICO' ? '1px solid rgba(234, 179, 8, 0.3)' : '1px solid rgba(255, 255, 255, 0.05)',
-                          padding: '8px 12px',
-                          borderRadius: '8px'
-                        }}
+                        className={`pa-message-bubble ${getBubbleRoleClass(msg.autor_role)}`}
                       >
-                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '0.75rem', color: '#94a3b8' }}>
-                          <span><strong>{msg.autor_nome}</strong> ({msg.autor_role})</span>
+                        <div className="pa-message-meta">
+                          <strong>{msg.autor_nome} ({formatRole(msg.autor_role)})</strong>
                           <span>{formatDate(msg.created_at)}</span>
                         </div>
-                        <div style={{ color: '#f8fafc', fontSize: '0.85rem', marginTop: '4px' }}>
+                        <p style={{ margin: 0, fontSize: '0.85rem', whiteSpace: 'pre-wrap' }}>
                           {msg.mensagem}
-                        </div>
+                        </p>
                       </div>
                     ))
                   )}
                 </div>
 
-                <div style={{ display: 'flex', gap: '8px' }}>
+                {/* Input para nova mensagem */}
+                <form
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    handleSendMessage();
+                  }}
+                  className="pa-chat-input-row"
+                >
                   <input
                     type="text"
-                    placeholder="Escrever uma observação ou mensagem..."
+                    className="pa-chat-input"
+                    placeholder="Adicione um comentário ou responda sobre esta solicitação..."
                     value={newMessage}
                     onChange={(e) => setNewMessage(e.target.value)}
-                    onKeyDown={(e) => { if (e.key === 'Enter') handleSendMessage(); }}
-                    style={{
-                      flex: 1,
-                      background: 'rgba(15, 23, 42, 0.6)',
-                      border: '1px solid rgba(255, 255, 255, 0.1)',
-                      borderRadius: '8px',
-                      color: '#f8fafc',
-                      padding: '8px 12px',
-                      fontSize: '0.85rem'
-                    }}
                   />
                   <button
-                    onClick={handleSendMessage}
+                    type="submit"
                     disabled={sendingMessage || !newMessage.trim()}
-                    style={{
-                      background: 'rgba(59, 130, 246, 0.2)',
-                      color: '#60a5fa',
-                      border: '1px solid rgba(59, 130, 246, 0.3)',
-                      borderRadius: '8px',
-                      padding: '8px 14px',
-                      cursor: 'pointer',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '6px',
-                      fontWeight: 600
-                    }}
+                    className="pa-chat-send-btn"
                   >
-                    <Send size={14} />
-                    Enviar
+                    <Send size={15} /> Enviar
                   </button>
-                </div>
+                </form>
               </div>
             </div>
 

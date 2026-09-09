@@ -1036,7 +1036,8 @@
 }
 
 /* Chat Messages */
-.pa-messages-container {
+.pa-messages-container,
+.pa-chat-section {
   border-top: 1px solid #1e293b;
   padding-top: 14px;
 }
@@ -1050,14 +1051,16 @@
   align-items: center;
   gap: 6px;
   margin-bottom: 10px;
+  letter-spacing: 0.03em;
 }
 
-.pa-chat-box {
+.pa-chat-box,
+.pa-chat-messages {
   background: #020617;
   border: 1px solid #1e293b;
   border-radius: 12px;
   padding: 14px;
-  max-height: 220px;
+  max-height: 240px;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
@@ -1065,38 +1068,67 @@
   margin-bottom: 10px;
 }
 
-.pa-message-bubble {
+.pa-message-bubble,
+.pa-chat-bubble {
   padding: 10px 14px;
   border-radius: 12px;
-  max-width: 85%;
-}
-
-.pa-message-bubble.approver {
+  width: 100%;
+  box-sizing: border-box;
   background: rgba(59, 130, 246, 0.15);
   border: 1px solid rgba(59, 130, 246, 0.3);
   color: #dbeafe;
-  align-self: flex-start;
+  display: flex;
+  flex-direction: column;
 }
 
-.pa-message-bubble.requester {
+.pa-message-bubble.approver,
+.pa-chat-bubble.approver,
+.pa-chat-bubble.aprovador {
+  background: rgba(59, 130, 246, 0.15);
+  border: 1px solid rgba(59, 130, 246, 0.3);
+  color: #dbeafe;
+}
+
+.pa-message-bubble.requester,
+.pa-chat-bubble.requester,
+.pa-chat-bubble.solicitante,
+.pa-chat-bubble.requisitante {
   background: rgba(30, 41, 59, 0.8);
   border: 1px solid rgba(148, 163, 184, 0.2);
   color: #f1f5f9;
-  align-self: flex-end;
 }
 
-.pa-message-meta {
+.pa-message-bubble.finance,
+.pa-chat-bubble.finance,
+.pa-chat-bubble.financeiro {
+  background: rgba(59, 130, 246, 0.15);
+  border: 1px solid rgba(59, 130, 246, 0.3);
+  color: #dbeafe;
+}
+
+.pa-message-bubble.legal,
+.pa-chat-bubble.legal,
+.pa-chat-bubble.juridico {
+  background: rgba(245, 158, 11, 0.12);
+  border: 1px solid rgba(245, 158, 11, 0.3);
+  color: #fef3c7;
+}
+
+.pa-message-meta,
+.pa-chat-bubble-header {
   font-size: 0.72rem;
   color: #94a3b8;
   margin-bottom: 4px;
   display: flex;
   justify-content: space-between;
+  align-items: center;
   gap: 10px;
 }
 
 .pa-chat-input-row {
   display: flex;
   gap: 8px;
+  align-items: center;
 }
 
 .pa-chat-input {
@@ -1108,6 +1140,12 @@
   color: #f8fafc;
   font-size: 0.88rem;
   outline: none;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.pa-chat-input:focus {
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 1px rgba(59, 130, 246, 0.3);
 }
 
 .pa-chat-send-btn {
@@ -1122,6 +1160,18 @@
   display: flex;
   align-items: center;
   gap: 6px;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+
+.pa-chat-send-btn:hover:not(:disabled) {
+  background: #1d4ed8;
+  box-shadow: 0 4px 12px rgba(37, 99, 235, 0.3);
+}
+
+.pa-chat-send-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .pa-empty {
