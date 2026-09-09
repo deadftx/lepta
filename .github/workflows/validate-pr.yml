@@ -1,0 +1,80 @@
+name: Validate Pull Request (DEV)
+
+on:
+  pull_request:
+    branches:
+      - DEV
+    types: [opened, synchronize, reopened]
+
+concurrency:
+  group: pr-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  validate-pr:
+    name: Validação de PR & Escopo
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint Check
+        run: npm run lint
+
+      - name: Build Check
+        run: npm run build
+
+      - name: Verificar Escopo de Business Intelligence
+        if: github.event.pull_request.user.login != github.repository_owner
+        shell: bash
+        run: |
+          echo "=========================================================="
+          echo "Verificando se o PR altera exclusivamente Business Intelligence..."
+          echo "Autor do PR: ${{ github.event.pull_request.user.login }}"
+          echo "=========================================================="
+
+          # Garante que a branch base DEV está disponível para comparação
+          git fetch origin DEV --depth=100
+
+          # Obtém a lista de arquivos alterados no PR
+          CHANGED_FILES=$(git diff --name-only origin/DEV...HEAD)
+          echo "Arquivos detectados no PR:"
+          echo "$CHANGED_FILES"
+          echo "----------------------------------------------------------"
+
+          HAS_DISALLOWED=0
+          while IFS= read -r file; do
+            [ -z "$file" ] && continue
+            
+            # Escopos permitidos para o módulo de Business Intelligence:
+            # 1. Frontend de Business Intelligence
+            # 2. Backend de Movimento Falimentar (se aplicável)
+            # 3. Documentação de BI
+            if [[ "$file" =~ ^src/internal/modules/business-intelligence/ ]] || \
+               [[ "$file" =~ ^server/internal/modules/movimento-falimentar/ ]]; then
+              echo "  [PERMITIDO] $file"
+            else
+              echo "::error file=$file::[VIOLAÇÃO DE ESCOPO] Arquivo fora do módulo Business Intelligence: $file"
+              HAS_DISALLOWED=1
+            fi
+          done <<< "$CHANGED_FILES"
+
+          if [ $HAS_DISALLOWED -eq 1 ]; then
+            echo ""
+            echo "❌ [FALHA DE ESCOPO] Este colaborador possui permissão apenas para alterações no módulo Business Intelligence."
+            echo "Por favor, reverta as alterações feitas em arquivos de outros módulos para liberar o merge."
+            exit 1
+          fi
+
+          echo "✅ Todos os arquivos alterados pertencem exclusivamente ao escopo de Business Intelligence."
