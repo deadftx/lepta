@@ -2185,6 +2185,7 @@
     flex-direction: column;
     align-items: flex-start;
   }
+}
 
 .oa-modal-overlay.oa-cnab-modal-overlay {
   z-index: 10050 !important;
@@ -2193,5 +2194,6 @@
 .oa-modal-overlay.oa-diagnose-modal-overlay {
   z-index: 10020 !important;
 }
+
 
 
