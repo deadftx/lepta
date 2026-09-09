@@ -39,8 +39,20 @@ function checkUserPermission(user, permission) {
   if (!user) return false;
   if (user.role === 'MASTER') return true;
   try {
-    const perms = JSON.parse(user.permissions || '[]');
-    return perms.includes(String(permission));
+    let perms = [];
+    if (Array.isArray(user.permissions)) {
+      perms = user.permissions;
+    } else if (typeof user.permissions === 'string') {
+      try {
+        const parsed = JSON.parse(user.permissions);
+        perms = Array.isArray(parsed) ? parsed : [parsed];
+      } catch {
+        perms = user.permissions.split(',').map(s => s.trim());
+      }
+    } else if (Array.isArray(user.directPermissions)) {
+      perms = user.directPermissions;
+    }
+    return perms.map(String).includes(String(permission));
   } catch {
     return false;
   }
@@ -1268,7 +1280,15 @@ export function registerPurchaseRoutes(app, {
     try {
       const userRole = getUserRoleInPurchases(req.authUser.id, req.authUser.role);
       const isApprover = userRole === 'APROVADOR' || req.authUser.role === 'MASTER';
-      const hasFinanceAccess = req.authUser.role === 'MASTER' || checkUserPermission(req.authUser, '7') || checkUserPermission(req.authUser, '7.3') || checkUserPermission(req.authUser, '7.4') || checkUserPermission(req.authUser, '7.5');
+      const hasFinanceAccess = req.authUser.role === 'MASTER' || 
+        checkUserPermission(req.authUser, '7') || 
+        checkUserPermission(req.authUser, '7.1') || 
+        checkUserPermission(req.authUser, '7.2') || 
+        checkUserPermission(req.authUser, '7.3') || 
+        checkUserPermission(req.authUser, '7.4') || 
+        checkUserPermission(req.authUser, '7.5') ||
+        checkUserPermission(req.authUser, '11') ||
+        checkUserPermission(req.authUser, '11.1');
 
       if (!isApprover && !hasFinanceAccess) {
         return res.status(403).json({ error: 'Apenas aprovadores ou financeiro têm acesso à fila geral de arquivados.' });
@@ -1310,6 +1330,11 @@ export function registerPurchaseRoutes(app, {
         checkUserPermission(req.authUser, '7.4') || 
         checkUserPermission(req.authUser, '7.5');
 
+      const hasPurchasesAccess = isMaster ||
+        checkUserPermission(req.authUser, '11') ||
+        checkUserPermission(req.authUser, '11.1') ||
+        checkUserPermission(req.authUser, '11.2');
+
       // Acesso vitalício para aprovador que revisou/decidiu
       const isReviewer = requisicao.aprovador_id === req.authUser.id || Boolean(db.prepare(`SELECT 1 FROM compras_mensagens WHERE requisicao_id = ? AND autor_id = ?`).get(req.params.id, req.authUser.id));
 
@@ -1318,12 +1343,14 @@ export function registerPurchaseRoutes(app, {
 
       // Regra de Ouro de Segurança:
       // 1. O dono da solicitação (isOwner) sempre vê a sua.
-      // 2. Aprovador geral (isGeneralApprover) e Financeiro vêem todas.
-      // 3. Aprovador jurídico (isLegalApprover) SÓ vê suas próprias solicitações + solicitações cabíveis ao jurídico.
-      // 4. Qualquer outro usuário que não seja aprovador NÃO tem acesso a requisições alheias.
+      // 2. Aprovador geral (isGeneralApprover) e Financeiro (hasFinanceAccess) vêem todas.
+      // 3. Qualquer usuário com acesso ao módulo Compras (hasPurchasesAccess) vê todas as despesas e reembolsos.
+      // 4. Aprovador que revisou/decidiu (isReviewer).
+      // 5. Aprovador jurídico (isLegalApprover) quando cabível ao jurídico (inLegalScope).
       const canView = isOwner ||
                       isGeneralApprover ||
                       hasFinanceAccess ||
+                      hasPurchasesAccess ||
                       isReviewer ||
                       (isLegalApprover && inLegalScope);
 
