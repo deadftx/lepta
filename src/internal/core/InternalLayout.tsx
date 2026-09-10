@@ -10,6 +10,7 @@ import { UpdateRequiredModal } from './version/UpdateRequiredModal';
 import './styles/Dashboard.css';
 import { hasAnyPermission, hasPermission } from './permissions';
 import { API_BASE_URL, getAuthHeaders } from '../../config/api';
+import { PwaInstallButton } from '../../components/pwa/PwaInstallButton';
 
 const InternalLayout = () => {
   const navigate = useNavigate();
@@ -201,6 +202,7 @@ const InternalLayout = () => {
         </div>
         
         <nav className="internal-nav">
+          <PwaInstallButton />
           <p className="nav-group-title">INTRANET</p>
           <Link to="/dashboard" className={navItemClass('/dashboard')}>
             <Home size={20} /> Home

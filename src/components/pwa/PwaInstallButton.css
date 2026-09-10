@@ -1,0 +1,351 @@
+/* Wrapper do instalador PWA no menu lateral */
+.pwa-install-mobile-wrapper {
+  padding: 0 16px 16px 16px;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+/* Oculta totalmente em telas grandes (Desktop) */
+@media (min-width: 1025px) {
+  .pwa-install-mobile-wrapper {
+    display: none !important;
+  }
+}
+
+/* Oculta automaticamente se já estiver rodando como PWA instalado (standalone) */
+@media all and (display-mode: standalone) {
+  .pwa-install-mobile-wrapper {
+    display: none !important;
+  }
+}
+
+/* Card intuitivo para baixar o aplicativo no mobile */
+.pwa-install-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  background: linear-gradient(135deg, rgba(255, 75, 75, 0.12) 0%, rgba(255, 115, 0, 0.08) 100%);
+  border: 1px solid rgba(255, 90, 60, 0.35);
+  border-radius: 12px;
+  cursor: pointer;
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  box-shadow: 0 4px 16px rgba(255, 75, 75, 0.08);
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.pwa-install-card:hover {
+  background: linear-gradient(135deg, rgba(255, 75, 75, 0.2) 0%, rgba(255, 115, 0, 0.15) 100%);
+  border-color: rgba(255, 115, 0, 0.6);
+  transform: translateY(-1px);
+  box-shadow: 0 6px 20px rgba(255, 75, 75, 0.18);
+}
+
+.pwa-install-card:active {
+  transform: scale(0.98);
+}
+
+/* Ícone do smartphone com badge de download */
+.pwa-install-icon-wrapper {
+  position: relative;
+  width: 38px;
+  height: 38px;
+  background: linear-gradient(135deg, #ff4b4b 0%, #ff8c00 100%);
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #ffffff;
+  flex-shrink: 0;
+  box-shadow: 0 4px 12px rgba(255, 75, 75, 0.35);
+}
+
+.pwa-smartphone-icon {
+  stroke-width: 2.2;
+}
+
+.pwa-install-badge {
+  position: absolute;
+  bottom: -3px;
+  right: -3px;
+  background: #0f1219;
+  border: 1.5px solid #ff7300;
+  border-radius: 50%;
+  width: 17px;
+  height: 17px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #ffaa00;
+}
+
+/* Informações do texto */
+.pwa-install-info {
+  display: flex;
+  flex-direction: column;
+  flex-grow: 1;
+  min-width: 0;
+}
+
+.pwa-install-title-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.pwa-install-title {
+  font-size: 0.88rem;
+  font-weight: 700;
+  color: #ffffff;
+  letter-spacing: -0.2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pwa-platform-tag {
+  font-size: 0.65rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  background: rgba(255, 255, 255, 0.15);
+  color: #ffbe85;
+  padding: 1px 5px;
+  border-radius: 4px;
+  letter-spacing: 0.5px;
+}
+
+.pwa-install-subtitle {
+  font-size: 0.73rem;
+  color: rgba(255, 255, 255, 0.65);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-top: 1px;
+}
+
+/* Indicador de ação na direita */
+.pwa-action-indicator {
+  color: #ff9d42;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 8px;
+  flex-shrink: 0;
+  transition: transform 0.2s ease;
+}
+
+.pwa-install-card:hover .pwa-action-indicator {
+  transform: translateY(2px);
+  color: #ffffff;
+  background: rgba(255, 75, 75, 0.3);
+}
+
+/* =========================================================================
+   MODAL DE INSTRUÇÕES (iOS / Android Guia)
+   ========================================================================= */
+
+.pwa-modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(4, 7, 12, 0.82);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  z-index: 99999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  animation: pwaFadeIn 0.25s ease-out;
+}
+
+.pwa-modal-content {
+  position: relative;
+  background: #0e131d;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 20px;
+  padding: 24px 20px;
+  width: 100%;
+  max-width: 380px;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 75, 75, 0.15);
+  animation: pwaSlideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  color: #e2e8f0;
+}
+
+.pwa-modal-close {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  background: rgba(255, 255, 255, 0.08);
+  border: none;
+  border-radius: 50%;
+  width: 34px;
+  height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #94a3b8;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.pwa-modal-close:hover {
+  background: rgba(255, 255, 255, 0.16);
+  color: #ffffff;
+}
+
+.pwa-modal-header {
+  text-align: center;
+  margin-bottom: 20px;
+}
+
+.pwa-modal-icon-badge {
+  width: 52px;
+  height: 52px;
+  background: linear-gradient(135deg, rgba(255, 75, 75, 0.2) 0%, rgba(255, 140, 0, 0.2) 100%);
+  border: 1px solid rgba(255, 115, 0, 0.4);
+  border-radius: 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #ff7300;
+  margin-bottom: 12px;
+}
+
+.pwa-modal-header h3 {
+  font-size: 1.2rem;
+  font-weight: 700;
+  color: #ffffff;
+  margin: 0 0 6px 0;
+}
+
+.pwa-modal-header p {
+  font-size: 0.82rem;
+  color: #94a3b8;
+  margin: 0;
+  line-height: 1.4;
+}
+
+/* Lista de passos */
+.pwa-steps-list {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin-bottom: 22px;
+}
+
+.pwa-step-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 12px;
+  padding: 12px 14px;
+}
+
+.pwa-step-number {
+  width: 24px;
+  height: 24px;
+  background: #ff4b4b;
+  color: #ffffff;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.8rem;
+  font-weight: 800;
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.pwa-step-body {
+  flex-grow: 1;
+}
+
+.pwa-step-title {
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: #f1f5f9;
+  line-height: 1.35;
+}
+
+.pwa-highlight {
+  color: #ff9d42;
+  font-weight: 700;
+}
+
+.pwa-step-desc {
+  font-size: 0.76rem;
+  color: #94a3b8;
+  margin-top: 3px;
+  line-height: 1.35;
+}
+
+.pwa-step-icon-visual {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: 8px;
+  padding: 5px 10px;
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  font-size: 0.78rem;
+  color: #38bdf8;
+}
+
+.pwa-step-icon-visual.action-highlight {
+  background: rgba(255, 115, 0, 0.12);
+  border-color: rgba(255, 115, 0, 0.35);
+  color: #ffbe85;
+}
+
+.pwa-modal-footer {
+  display: flex;
+  justify-content: center;
+}
+
+.pwa-btn-done {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 12px 16px;
+  font-size: 0.92rem;
+  font-weight: 600;
+  border-radius: 12px;
+  background: linear-gradient(135deg, #ff4b4b 0%, #ff7300 100%);
+  border: none;
+  color: #ffffff;
+  cursor: pointer;
+  box-shadow: 0 4px 14px rgba(255, 75, 75, 0.3);
+  transition: all 0.2s;
+}
+
+.pwa-btn-done:hover {
+  box-shadow: 0 6px 18px rgba(255, 75, 75, 0.45);
+  transform: translateY(-1px);
+}
+
+@keyframes pwaFadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes pwaSlideUp {
+  from {
+    opacity: 0;
+    transform: scale(0.95) translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}

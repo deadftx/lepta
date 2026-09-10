@@ -2,7 +2,7 @@
   "name": "Lepta Capital",
   "short_name": "Lepta",
   "description": "Sistema de Gestão Integrada - Lepta Capital",
-  "start_url": "/",
+  "start_url": "/login",
   "scope": "/",
   "display": "standalone",
   "orientation": "portrait-primary",
