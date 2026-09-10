@@ -1,345 +1,453 @@
+/* =========================================================================
+   LOGIN PAGE - ACESSO EXCLUSIVO MICROSOFT (ENTRA ID)
+   Design Corporativo, Limpo e 100% Responsivo
+   ========================================================================= */
+
 .login-page {
   min-height: 100vh;
+  min-height: 100dvh;
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: flex-start;
-  padding: 105px 20px 45px 20px;
+  justify-content: center;
+  padding: 24px 16px;
+  padding-top: max(24px, env(safe-area-inset-top));
+  padding-bottom: max(24px, env(safe-area-inset-bottom));
   box-sizing: border-box;
-  background: radial-gradient(circle at center, rgba(230, 32, 32, 0.05) 0%, transparent 60%);
+  background: 
+    radial-gradient(circle at 50% 25%, rgba(255, 75, 75, 0.08) 0%, transparent 55%),
+    radial-gradient(circle at 80% 80%, rgba(255, 140, 0, 0.05) 0%, transparent 45%),
+    #090d14;
   position: relative;
-  z-index: 1;
+  overflow-x: hidden;
 }
 
 .login-container {
   width: 100%;
   max-width: 440px;
-  padding: 38px 34px;
-  border-radius: 18px;
-  margin: auto 0;
+  padding: 38px 32px;
+  border-radius: 24px;
   box-sizing: border-box;
   position: relative;
   z-index: 2;
+  background: rgba(14, 19, 29, 0.78);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: 
+    0 24px 60px rgba(0, 0, 0, 0.65),
+    0 0 0 1px rgba(255, 75, 75, 0.12);
+  animation: loginCardFadeIn 0.35s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
+@keyframes loginCardFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(16px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* Logotipo da Marca */
+.login-brand-header {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  margin-bottom: 22px;
+}
+
+.login-logo-img {
+  max-width: 165px;
+  height: auto;
+  filter: drop-shadow(0 4px 12px rgba(255, 75, 75, 0.2));
+  transition: transform 0.25s ease;
+}
+
+.login-logo-img:hover {
+  transform: scale(1.02);
+}
+
+/* Cabeçalho do Card */
 .login-header {
   text-align: center;
-  margin-bottom: 2rem;
+  margin-bottom: 24px;
 }
 
 .login-header h2 {
-  font-size: 2rem;
-  margin-bottom: 0.5rem;
+  font-size: 1.75rem;
+  font-weight: 700;
+  color: #ffffff;
+  margin: 0 0 8px 0;
+  letter-spacing: -0.4px;
 }
 
 .login-header p {
-  color: var(--text-secondary);
+  color: #94a3b8;
+  font-size: 0.88rem;
+  line-height: 1.45;
+  margin: 0;
 }
 
+/* Mensagem de Erro */
 .login-error {
   display: flex;
   align-items: center;
-  gap: 8px;
-  background: rgba(230, 32, 32, 0.15);
-  border: 1px solid var(--accent-red);
-  color: #ffcccc;
-  padding: 12px;
-  border-radius: 8px;
-  margin-bottom: 1.5rem;
-  font-size: 0.9rem;
-}
-
-.input-group {
-  position: relative;
-  margin-bottom: 1rem;
-}
-
-.input-icon {
-  position: absolute;
-  left: 14px;
-  top: 50%;
-  transform: translateY(-50%);
-  color: var(--text-secondary);
-}
-
-.input-field.with-icon {
-  padding-left: 44px;
-}
-
-.login-options {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 1.5rem;
-  font-size: 0.9rem;
-}
-
-.remember-me {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  color: var(--text-secondary);
-}
-
-.forgot-password {
-  appearance: none;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0.35rem 0.55rem;
-  border: 1px solid transparent;
-  border-radius: 7px;
-  background: transparent;
-  color: var(--accent-orange);
-  font: inherit;
+  gap: 10px;
+  background: rgba(239, 68, 68, 0.12);
+  border: 1px solid rgba(239, 68, 68, 0.4);
+  color: #fca5a5;
+  padding: 12px 14px;
+  border-radius: 12px;
+  margin-bottom: 20px;
   font-size: 0.86rem;
-  font-weight: 600;
-  text-decoration: none;
+  line-height: 1.4;
+  animation: loginCardFadeIn 0.2s ease;
+}
+
+.login-error svg {
+  flex-shrink: 0;
+}
+
+/* Seção Principal do Botão Microsoft */
+.sso-primary-section {
+  margin-bottom: 22px;
+  width: 100%;
+}
+
+.btn-microsoft-hero {
+  width: 100%;
+  min-height: 56px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 10px 16px;
+  background: linear-gradient(135deg, #172133 0%, #0d1422 100%);
+  border: 1px solid rgba(56, 189, 248, 0.32);
+  border-radius: 14px;
   cursor: pointer;
-  transition: color 0.2s ease, background 0.2s ease, border-color 0.2s ease;
+  box-shadow: 
+    0 8px 24px rgba(0, 0, 0, 0.4),
+    0 2px 6px rgba(56, 189, 248, 0.12);
+  transition: all 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+  box-sizing: border-box;
+  text-align: left;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
 }
 
-.forgot-password:hover {
-  color: #ff9a3c;
-  border-color: rgba(245, 124, 0, 0.22);
-  background: rgba(245, 124, 0, 0.08);
-}
-
-.forgot-password:focus-visible {
-  outline: 2px solid rgba(245, 124, 0, 0.65);
-  outline-offset: 2px;
-}
-
-.login-submit {
-  width: 100%;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  gap: 8px;
-  padding: 12px;
-  font-size: 1rem;
-}
-
-.security-setup-form {
-  display: flex;
-  flex-direction: column;
-  gap: 0.85rem;
-}
-
-.security-field label {
-  display: block;
-  margin-bottom: 0.4rem;
-  color: #d8dbe2;
-  font-size: 0.84rem;
-  font-weight: 600;
-}
-
-.security-setup-form .input-group,
-.security-setup-form .input-field {
-  margin-bottom: 0;
-}
-
-.security-setup-form .input-field {
-  min-height: 46px;
-  border-radius: 9px;
-  background: rgba(4, 6, 12, 0.42);
-}
-
-.security-hint {
-  display: block;
-  padding: 0.7rem 0.8rem;
-  border: 1px solid rgba(255, 255, 255, 0.07);
-  border-radius: 8px;
-  color: var(--text-secondary);
-  background: rgba(255, 255, 255, 0.025);
-  font-size: 0.79rem;
-  line-height: 1.5;
-}
-
-.security-exit {
-  width: 100%;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.45rem;
-  color: var(--text-secondary);
-}
-
-.security-exit:hover {
-  color: #fff;
-}
-
-/* Microsoft & Windows SSO Styles */
-.sso-section {
-  display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
-  margin-bottom: 1.25rem;
-}
-
-.btn-sso {
-  width: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.75rem;
-  padding: 0.85rem 1.25rem;
-  border-radius: 10px;
-  font-size: 0.95rem;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  outline: none;
-}
-
-.btn-sso-corporate {
-  background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
-  color: #ffffff;
-  border: 1px solid rgba(255, 255, 255, 0.16);
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
-}
-
-.btn-sso-corporate.btn-sso-disabled,
-.btn-sso-corporate:disabled {
-  background: rgba(51, 65, 85, 0.35) !important;
-  color: #94a3b8 !important;
-  border: 1px dashed rgba(148, 163, 184, 0.25) !important;
-  cursor: not-allowed !important;
-  box-shadow: none !important;
-  opacity: 0.65;
-  filter: grayscale(0.9);
-  transform: none !important;
-}
-
-.btn-sso-corporate:hover:not(:disabled) {
-  background: linear-gradient(135deg, #334155 0%, #1e293b 100%);
+.btn-microsoft-hero:hover:not(:disabled) {
+  background: linear-gradient(135deg, #1f2d45 0%, #111a2d 100%);
   border-color: #38bdf8;
-  box-shadow: 0 6px 20px rgba(56, 189, 248, 0.25);
-  transform: translateY(-1px);
+  box-shadow: 
+    0 10px 30px rgba(0, 164, 239, 0.24),
+    0 0 16px rgba(56, 189, 248, 0.2);
+  transform: translateY(-2px);
 }
 
-.sso-divider {
-  display: flex;
-  align-items: center;
-  text-align: center;
-  margin: 1.25rem 0;
-  color: #64748b;
-  font-size: 0.8rem;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
+.btn-microsoft-hero:active:not(:disabled) {
+  transform: scale(0.98);
 }
 
-.sso-divider::before,
-.sso-divider::after {
-  content: '';
-  flex: 1;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+.btn-microsoft-hero:disabled {
+  opacity: 0.7;
+  cursor: wait;
+  filter: grayscale(0.4);
 }
 
-.sso-divider span {
-  padding: 0 0.75rem;
-}
-
-/* Modal Interativo para Celular / Dispositivos Externos */
-.sso-modal-overlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(0, 0, 0, 0.75);
-  backdrop-filter: blur(8px);
+.microsoft-icon-box {
+  width: 40px;
+  height: 40px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 10px;
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 1000;
-  padding: 1rem;
+  flex-shrink: 0;
 }
 
-.sso-modal-content {
-  background: #131722;
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  border-radius: 16px;
-  width: 100%;
-  max-width: 440px;
-  padding: 1.75rem;
-  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.6);
-  animation: modal-fade-in 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+.microsoft-btn-text {
+  display: flex;
+  flex-direction: column;
+  flex-grow: 1;
+  min-width: 0;
 }
 
-@keyframes modal-fade-in {
-  from { opacity: 0; transform: scale(0.96) translateY(8px); }
-  to { opacity: 1; transform: scale(1) translateY(0); }
+.microsoft-btn-text strong {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: #ffffff;
+  letter-spacing: -0.2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.microsoft-btn-text span {
+  font-size: 0.76rem;
+  color: #7dd3fc;
+  font-weight: 500;
+  margin-top: 1px;
+}
+
+.ms-action-icon {
+  color: #38bdf8;
+  flex-shrink: 0;
+  transition: transform 0.2s ease;
+}
+
+.btn-microsoft-hero:hover:not(:disabled) .ms-action-icon {
+  transform: translateX(3px);
+  color: #ffffff;
+}
+
+/* Badge de Confiança / Segurança Corporativa */
+.security-trust-badge {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  padding: 12px 14px;
+  margin-bottom: 20px;
+  box-sizing: border-box;
+}
+
+.shield-icon {
+  color: #38bdf8;
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.trust-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.trust-text strong {
+  font-size: 0.82rem;
+  color: #f1f5f9;
+  font-weight: 600;
+}
+
+.trust-text span {
+  font-size: 0.74rem;
+  color: #94a3b8;
+  line-height: 1.35;
+}
+
+/* Rodapé do Card */
+.login-footer-info {
+  text-align: center;
+  border-top: 1px solid rgba(255, 255, 255, 0.07);
+  padding-top: 16px;
+}
+
+.login-footer-info p {
+  font-size: 0.75rem;
+  color: #64748b;
+  margin: 0;
+  line-height: 1.4;
+}
+
+/* =========================================================================
+   BLOCO DE SESSÃO ATIVA (Usuário já autenticado / App aberto pelo PWA)
+   ========================================================================= */
+
+.login-active-session {
+  display: flex;
+  flex-direction: column;
 }
 
 .active-user-badge {
   display: flex;
   align-items: center;
-  gap: 1rem;
-  padding: 1.1rem;
-  background: rgba(30, 41, 59, 0.55);
-  border: 1px solid rgba(56, 189, 248, 0.25);
-  border-radius: 12px;
-  margin: 1.5rem 0;
+  gap: 14px;
+  padding: 14px 16px;
+  background: rgba(30, 41, 59, 0.6);
+  border: 1px solid rgba(56, 189, 248, 0.28);
+  border-radius: 14px;
+  margin-bottom: 22px;
+  box-sizing: border-box;
 }
 
 .user-avatar-circle {
-  width: 46px;
-  height: 46px;
+  width: 48px;
+  height: 48px;
   border-radius: 12px;
-  background: linear-gradient(135deg, #0284c7 0%, #0369a1 100%);
-  color: #fff;
-  font-weight: 700;
-  font-size: 1.2rem;
+  background: linear-gradient(135deg, #ff4b4b 0%, #ff7300 100%);
+  color: #ffffff;
+  font-weight: 800;
+  font-size: 1.25rem;
   display: flex;
   align-items: center;
   justify-content: center;
-  border: 1px solid rgba(255, 255, 255, 0.2);
+  flex-shrink: 0;
+  box-shadow: 0 4px 12px rgba(255, 75, 75, 0.35);
 }
 
 .user-details {
   display: flex;
   flex-direction: column;
-  gap: 0.2rem;
+  gap: 3px;
+  min-width: 0;
 }
 
 .user-details strong {
-  color: #f8fafc;
+  color: #ffffff;
   font-size: 1.05rem;
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .user-details span {
   color: #94a3b8;
-  font-size: 0.85rem;
+  font-size: 0.82rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .active-session-actions {
   display: flex;
   flex-direction: column;
-  gap: 0.75rem;
+  gap: 10px;
 }
 
-@media (max-width: 520px) {
+.login-submit {
+  width: 100%;
+  min-height: 48px;
+  font-size: 0.95rem;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+  border-radius: 12px;
+  box-shadow: 0 4px 16px rgba(255, 75, 75, 0.35);
+}
+
+/* Spinner */
+.spin {
+  animation: spin 0.9s linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+/* =========================================================================
+   RESPONSIVIDADE (SMARTPHONES E TELAS MENORES)
+   ========================================================================= */
+
+@media (max-width: 480px) {
   .login-page {
-    padding: 95px 14px 24px 14px;
+    padding: 18px 14px;
+    justify-content: center;
   }
 
   .login-container {
-    padding: 1.5rem;
-    margin: auto 0;
+    padding: 26px 18px;
+    border-radius: 20px;
+    max-width: 100%;
+  }
+
+  .login-brand-header {
+    margin-bottom: 16px;
+  }
+
+  .login-logo-img {
+    max-width: 145px;
+  }
+
+  .login-header {
+    margin-bottom: 18px;
   }
 
   .login-header h2 {
-    font-size: 1.7rem;
+    font-size: 1.5rem;
   }
 
-  .login-options {
-    gap: 0.75rem;
-    align-items: center;
+  .login-header p {
+    font-size: 0.82rem;
   }
 
-  .forgot-password {
-    text-align: right;
+  .btn-microsoft-hero {
+    min-height: 54px;
+    padding: 10px 14px;
+    gap: 12px;
+  }
+
+  .microsoft-icon-box {
+    width: 36px;
+    height: 36px;
+  }
+
+  .microsoft-btn-text strong {
+    font-size: 0.9rem;
+  }
+
+  .microsoft-btn-text span {
+    font-size: 0.72rem;
+  }
+
+  .security-trust-badge {
+    padding: 10px 12px;
+    margin-bottom: 16px;
+  }
+
+  .trust-text strong {
+    font-size: 0.78rem;
+  }
+
+  .trust-text span {
+    font-size: 0.7rem;
+  }
+}
+
+/* Telas com altura pequena (ex: celular em landscape ou teclados abertos) */
+@media (max-height: 600px) {
+  .login-page {
+    padding: 12px;
+    justify-content: flex-start;
+  }
+
+  .login-container {
+    padding: 18px 16px;
+    margin: auto 0;
+  }
+
+  .login-brand-header {
+    margin-bottom: 10px;
+  }
+
+  .login-logo-img {
+    max-width: 130px;
+  }
+
+  .login-header {
+    margin-bottom: 12px;
+  }
+
+  .login-header h2 {
+    font-size: 1.35rem;
+    margin-bottom: 4px;
+  }
+
+  .sso-primary-section {
+    margin-bottom: 14px;
+  }
+
+  .security-trust-badge {
+    margin-bottom: 12px;
+  }
+
+  .login-footer-info {
+    padding-top: 10px;
   }
 }

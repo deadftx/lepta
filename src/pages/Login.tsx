@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useLocation, useSearchParams } from 'react-router-dom';
-import { Lock, User, ArrowRight, AlertCircle, CheckCircle2, KeyRound, Mail, ArrowLeft, LogOut, RefreshCw } from 'lucide-react';
+import { ArrowRight, AlertCircle, LogOut, RefreshCw, ShieldCheck } from 'lucide-react';
 import { useAuth } from '../internal/core/AuthContext';
 import { API_BASE_URL } from '../config/api';
 import { authenticateWithMicrosoft } from '../config/msalConfig';
@@ -9,7 +9,7 @@ import { UpdateRequiredModal } from '../internal/core/version/UpdateRequiredModa
 import './Login.css';
 
 const MicrosoftIcon = () => (
-  <svg width="18" height="18" viewBox="0 0 21 21" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <svg width="22" height="22" viewBox="0 0 21 21" fill="none" xmlns="http://www.w3.org/2000/svg">
     <path fill="#F25022" d="M1 1h9v9H1z"/>
     <path fill="#00A4EF" d="M1 11h9v9H1z"/>
     <path fill="#7FBA00" d="M11 1h9v9h-9z"/>
@@ -21,13 +21,9 @@ const Login = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const [searchParams] = useSearchParams();
-  const { login, loginWithMicrosoft, user, isAuthenticated, logout } = useAuth();
+  const { loginWithMicrosoft, user, isAuthenticated, logout } = useAuth();
 
-  // Login form state
-  const [loginId, setLoginId] = useState('');
-  const [password, setPassword] = useState('');
   const [error, setError] = useState('');
-  const [loading, setLoading] = useState(false);
   const [corporateLoading, setCorporateLoading] = useState(false);
 
   // Exibe erro de autenticação SSO capturado na inicialização
@@ -40,22 +36,6 @@ const Login = () => {
       }
     } catch {}
   }, []);
-
-  // Primeiro Acesso state
-  const [isFirstAccessMode, setIsFirstAccessMode] = useState(false);
-  const [firstAccessStep, setFirstAccessStep] = useState<1 | 2>(1);
-  const [firstAccessEmail, setFirstAccessEmail] = useState('');
-  const [firstAccessUser, setFirstAccessUser] = useState<any>(null);
-  const [newPassword, setNewPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
-  const [firstAccessError, setFirstAccessError] = useState('');
-  const [firstAccessSuccess, setFirstAccessSuccess] = useState('');
-  const [firstAccessLoading, setFirstAccessLoading] = useState(false);
-  const [isRecoveryMode, setIsRecoveryMode] = useState(false);
-  const [recoveryQuestion, setRecoveryQuestion] = useState('');
-  const [secretAnswer, setSecretAnswer] = useState('');
-  const [recoveryPassword, setRecoveryPassword] = useState('');
-  const [recoveryError, setRecoveryError] = useState('');
 
   const [continueChecking, setContinueChecking] = useState(false);
   const [showUpdateModal, setShowUpdateModal] = useState(false);
@@ -109,35 +89,18 @@ const Login = () => {
       // Sessão e versão íntegras: navega normalmente ao destino
       navigateToDestination();
     } catch {
-      // Em caso de falha de conexão temporária, tenta navegar para não bloquear o usuário
       navigateToDestination();
     } finally {
       setContinueChecking(false);
     }
   };
 
-  const handleLogin = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError('');
-    setLoading(true);
-
-    const success = await login(loginId, password);
-
-    setLoading(false);
-    if (success) {
-      navigateToDestination();
-    } else {
-      setError('Credenciais incorretas.');
-    }
-  };
-
-  // Autenticação oficial Microsoft (SSO silencioso da máquina ou popup oficial da Microsoft)
+  // Autenticação oficial Microsoft (Entra ID)
   const handleCorporateLogin = async () => {
     setError('');
     setCorporateLoading(true);
 
     try {
-      // 1. Aciona o fluxo oficial do MSAL (SSO automático ou janela segura da Microsoft)
       const msAuth = await authenticateWithMicrosoft();
 
       if (!msAuth) {
@@ -145,7 +108,6 @@ const Login = () => {
         return;
       }
 
-      // 2. Envia o token oficial assinado pela Microsoft para o backend validar e autenticar
       const result = await loginWithMicrosoft({
         idToken: msAuth.idToken,
         email: msAuth.email
@@ -163,166 +125,21 @@ const Login = () => {
       
       const errorMessage = err?.message || '';
       if (errorMessage.includes('user_cancelled')) {
-        // Usuário fechou a janela da Microsoft
         return;
       }
       setError(err?.errorMessage || err?.message || 'Não foi possível conectar com a conta Microsoft.');
     }
   };
 
-  const loadRecoveryQuestion = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setRecoveryError('');
-    const response = await fetch(`${API_BASE_URL}/api/auth/recovery/question`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ loginId })
-    });
-    const result = await response.json();
-    if (!response.ok) return setRecoveryError(result.error || 'Recuperação indisponível.');
-    setRecoveryQuestion(result.question);
-  };
-
-  const resetForgottenPassword = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setRecoveryError('');
-    const response = await fetch(`${API_BASE_URL}/api/auth/recovery/reset`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ loginId, answer: secretAnswer, password: recoveryPassword })
-    });
-    const result = await response.json();
-    if (!response.ok) return setRecoveryError(result.error || 'Não foi possível redefinir a senha.');
-    setPassword(recoveryPassword);
-    setRecoveryPassword('');
-    setSecretAnswer('');
-    setRecoveryQuestion('');
-    setIsRecoveryMode(false);
-    setError('Senha redefinida. Entre com a nova senha.');
-  };
-
-  // Step 1: Check or register email in db.json
-  const handleFirstAccessStep1 = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setFirstAccessError('');
-    const emailToSearch = firstAccessEmail.trim().toLowerCase();
-
-    if (!emailToSearch) {
-      setFirstAccessError('Por favor, informe seu e-mail.');
-      return;
-    }
-
-    try {
-      setFirstAccessLoading(true);
-      const res = await fetch(`${API_BASE_URL}/api/auth/first-access/check`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ loginId: emailToSearch })
-      });
-      const result = await res.json();
-      let target = result.user;
-      if (!res.ok) {
-        setFirstAccessError(result.error || 'Não foi possível validar o primeiro acesso.');
-        return;
-      }
-
-      if (!target) {
-        // Create new user in db.json if not existing
-        const prefix = emailToSearch.split('@')[0] || `user_${Date.now()}`;
-        const newUser = {
-          id: `user_${Date.now()}`,
-          username: prefix,
-          email: emailToSearch,
-          password: '',
-          role: 'USER',
-          permissions: ['7.4']
-        };
-
-        const createRes = await fetch(`${API_BASE_URL}/users`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(newUser)
-        });
-
-        if (createRes.ok) {
-          target = await createRes.json();
-        } else {
-          setFirstAccessError('Erro ao registrar novo usuário no banco.');
-          setFirstAccessLoading(false);
-          return;
-        }
-      }
-
-      setFirstAccessUser(target);
-      setFirstAccessStep(2);
-    } catch (err) {
-      console.error('Erro no primeiro acesso:', err);
-      setFirstAccessError('Erro de conexão com o banco de dados.');
-    } finally {
-      setFirstAccessLoading(false);
-    }
-  };
-
-  // Step 2: Create & confirm password, saving to db.json
-  const handleFirstAccessStep2 = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setFirstAccessError('');
-
-    if (newPassword.length < 10) {
-      setFirstAccessError('A senha deve possuir pelo menos 10 caracteres.');
-      return;
-    }
-
-    if (newPassword !== confirmPassword) {
-      setFirstAccessError('As senhas não coincidem. Digite a mesma senha nos dois campos.');
-      return;
-    }
-
-    try {
-      setFirstAccessLoading(true);
-
-      const res = await fetch(`${API_BASE_URL}/api/auth/first-access/password`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: firstAccessUser.id, password: newPassword })
-      });
-
-      if (res.ok) {
-        setFirstAccessSuccess('Senha criada com sucesso no banco de dados!');
-        setLoginId(firstAccessUser.username || firstAccessUser.email);
-        setPassword(newPassword);
-
-        setTimeout(() => {
-          setIsFirstAccessMode(false);
-          setFirstAccessStep(1);
-          setFirstAccessEmail('');
-          setNewPassword('');
-          setConfirmPassword('');
-          setFirstAccessSuccess('');
-        }, 1800);
-      } else {
-        setFirstAccessError('Erro ao atualizar a senha no banco de dados.');
-      }
-    } catch (err) {
-      console.error('Erro ao salvar senha:', err);
-      setFirstAccessError('Erro de conexão ao salvar no banco.');
-    } finally {
-      setFirstAccessLoading(false);
-    }
-  };
-
-  const resetFirstAccessMode = () => {
-    setIsFirstAccessMode(false);
-    setFirstAccessStep(1);
-    setFirstAccessEmail('');
-    setFirstAccessError('');
-    setFirstAccessSuccess('');
-    setNewPassword('');
-    setConfirmPassword('');
-  };
-
   return (
     <div className="login-page">
       <div className="login-container glass">
-        {isAuthenticated && user && !isRecoveryMode && !isFirstAccessMode ? (
+        {isAuthenticated && user ? (
           <div className="login-active-session">
+            <div className="login-brand-header">
+              <img src="/logo2.png" alt="Lepta Capital" className="login-logo-img" />
+            </div>
+
             <div className="login-header">
               <h2>Sessão <span className="text-gradient">Ativa</span></h2>
               <p>Você já está autenticado no sistema.</p>
@@ -370,34 +187,15 @@ const Login = () => {
               </button>
             </div>
           </div>
-        ) : isRecoveryMode ? (
-          <>
-            <div className="login-header">
-              <h2>Recuperar <span className="text-gradient">Acesso</span></h2>
-              <p>Após três erros na palavra secreta, somente o administrador poderá desbloquear sua conta.</p>
+        ) : (
+          <div className="login-corporate-card">
+            <div className="login-brand-header">
+              <img src="/logo2.png" alt="Lepta Capital" className="login-logo-img" />
             </div>
-            {recoveryError && <div className="login-error"><AlertCircle size={18} /><span>{recoveryError}</span></div>}
-            {!recoveryQuestion ? (
-              <form onSubmit={loadRecoveryQuestion} className="login-form">
-                <div className="input-group"><User className="input-icon" size={18} /><input className="input-field with-icon" value={loginId} onChange={e => setLoginId(e.target.value)} placeholder="E-mail ou usuário" required /></div>
-                <button type="submit" className="btn-primary login-submit">Continuar</button>
-                <button type="button" className="btn-outline" onClick={() => setIsRecoveryMode(false)}>Voltar</button>
-              </form>
-            ) : (
-              <form onSubmit={resetForgottenPassword} className="login-form">
-                <p><strong>{recoveryQuestion}</strong></p>
-                <div className="input-group"><KeyRound className="input-icon" size={18} /><input className="input-field with-icon" value={secretAnswer} onChange={e => setSecretAnswer(e.target.value)} placeholder="Palavra secreta" autoComplete="off" required /></div>
-                <div className="input-group"><Lock className="input-icon" size={18} /><input type="password" className="input-field with-icon" value={recoveryPassword} onChange={e => setRecoveryPassword(e.target.value)} placeholder="Nova senha (mínimo 10 caracteres)" minLength={10} required /></div>
-                <button type="submit" className="btn-primary login-submit">Redefinir senha e desbloquear</button>
-                <button type="button" className="btn-outline" onClick={() => setRecoveryQuestion('')}>Voltar</button>
-              </form>
-            )}
-          </>
-        ) : !isFirstAccessMode ? (
-          <>
+
             <div className="login-header">
-              <h2>Área <span className="text-gradient">Interna</span></h2>
-              <p>Acesse sua conta corporativa para continuar.</p>
+              <h2>Portal <span className="text-gradient">Corporativo</span></h2>
+              <p>Ambiente exclusivo para colaboradores e parceiros Lepta Capital.</p>
             </div>
 
             {error && (
@@ -407,186 +205,46 @@ const Login = () => {
               </div>
             )}
 
-            {/* Botão Oficial de Acesso Microsoft (Entra ID) */}
-            <div className="sso-section">
+            <div className="sso-primary-section">
               <button
                 type="button"
-                className="btn-sso btn-sso-corporate"
+                className="btn-microsoft-hero"
                 onClick={handleCorporateLogin}
                 disabled={corporateLoading}
-                title="Entrar com sua conta corporativa @lepta.com.br"
+                aria-label="Entrar com conta Microsoft Lepta Capital"
               >
-                <MicrosoftIcon />
-                <span>{corporateLoading ? 'Conectando à Microsoft...' : 'Entrar com Conta Corporativa (Lepta)'}</span>
+                <div className="microsoft-icon-box">
+                  <MicrosoftIcon />
+                </div>
+                <div className="microsoft-btn-text">
+                  <strong>
+                    {corporateLoading ? 'Conectando à Microsoft...' : 'Entrar com Conta Microsoft'}
+                  </strong>
+                  <span>@lepta.com.br</span>
+                </div>
+                {corporateLoading ? (
+                  <RefreshCw className="spin ms-action-icon" size={20} />
+                ) : (
+                  <ArrowRight className="ms-action-icon" size={20} />
+                )}
               </button>
             </div>
 
-            <div className="sso-divider">
-              <span>ou acesse com usuário e senha</span>
+            <div className="security-trust-badge">
+              <ShieldCheck size={20} className="shield-icon" />
+              <div className="trust-text">
+                <strong>Autenticação Segura</strong>
+                <span>Protegido por Microsoft Entra ID com verificação em duas etapas (2FA).</span>
+              </div>
             </div>
 
-            <form onSubmit={handleLogin} className="login-form">
-              <div className="input-group">
-                <User className="input-icon" size={18} />
-                <input
-                  type="text"
-                  placeholder="E-mail ou Usuário"
-                  className="input-field with-icon"
-                  value={loginId}
-                  onChange={(e) => setLoginId(e.target.value)}
-                  required
-                />
-              </div>
-
-              <div className="input-group">
-                <Lock className="input-icon" size={18} />
-                <input
-                  type="password"
-                  placeholder="Senha"
-                  className="input-field with-icon"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  required
-                />
-              </div>
-
-              <div className="login-options">
-                <label className="remember-me">
-                  <input type="checkbox" /> Lembrar-me
-                </label>
-                <button type="button" className="forgot-password" onClick={() => setIsRecoveryMode(true)}>Esqueci minha senha</button>
-              </div>
-
-              <button type="submit" className="btn-primary login-submit" disabled={loading || corporateLoading}>
-                {loading ? 'Entrando...' : <>Entrar <ArrowRight size={18} /></>}
-              </button>
-
-              <div style={{ marginTop: '1.25rem', textAlign: 'center', paddingTop: '1rem', borderTop: '1px solid rgba(255, 255, 255, 0.08)' }}>
-                <button
-                  type="button"
-                  onClick={() => setIsFirstAccessMode(true)}
-                  className="btn-outline"
-                  style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem' }}
-                >
-                  <KeyRound size={18} /> Primeiro Acesso?
-                </button>
-              </div>
-            </form>
-          </>
-        ) : (
-          <>
-            <div className="login-header">
-              <h2>Primeiro <span className="text-gradient">Acesso</span></h2>
-              <p>{firstAccessStep === 1 ? 'Informe seu e-mail cadastrado para continuar.' : 'Crie e confirme sua nova senha.'}</p>
+            <div className="login-footer-info">
+              <p>Dúvidas ou dificuldades de acesso? Contate o suporte interno de TI.</p>
             </div>
-
-            {firstAccessError && (
-              <div className="login-error">
-                <AlertCircle size={18} />
-                <span>{firstAccessError}</span>
-              </div>
-            )}
-
-            {firstAccessSuccess && (
-              <div
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '8px',
-                  background: 'rgba(46, 213, 115, 0.15)',
-                  border: '1px solid #2ed573',
-                  color: '#2ed573',
-                  padding: '12px',
-                  borderRadius: '8px',
-                  marginBottom: '1.5rem',
-                  fontSize: '0.9rem'
-                }}
-              >
-                <CheckCircle2 size={18} />
-                <span>{firstAccessSuccess}</span>
-              </div>
-            )}
-
-            {firstAccessStep === 1 ? (
-              <form onSubmit={handleFirstAccessStep1} className="login-form">
-                <div className="input-group">
-                  <Mail className="input-icon" size={18} />
-                  <input
-                    type="email"
-                    placeholder="Seu E-mail"
-                    className="input-field with-icon"
-                    value={firstAccessEmail}
-                    onChange={(e) => setFirstAccessEmail(e.target.value)}
-                    required
-                    autoFocus
-                  />
-                </div>
-
-                <button type="submit" className="btn-primary login-submit" disabled={firstAccessLoading}>
-                  {firstAccessLoading ? 'Verificando...' : <>Continuar <ArrowRight size={18} /></>}
-                </button>
-
-                <div style={{ marginTop: '1.25rem', textAlign: 'center' }}>
-                  <button
-                    type="button"
-                    onClick={resetFirstAccessMode}
-                    className="btn-link"
-                    style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem' }}
-                  >
-                    <ArrowLeft size={16} /> Voltar para o Login
-                  </button>
-                </div>
-              </form>
-            ) : (
-              <form onSubmit={handleFirstAccessStep2} className="login-form">
-                <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '1rem', textAlign: 'center' }}>
-                  E-mail: <strong>{firstAccessEmail}</strong>
-                </p>
-
-                <div className="input-group">
-                  <Lock className="input-icon" size={18} />
-                  <input
-                    type="password"
-                    placeholder="Criar Nova Senha"
-                    className="input-field with-icon"
-                    value={newPassword}
-                    onChange={(e) => setNewPassword(e.target.value)}
-                    required
-                    autoFocus
-                  />
-                </div>
-
-                <div className="input-group">
-                  <Lock className="input-icon" size={18} />
-                  <input
-                    type="password"
-                    placeholder="Confirmar Mesma Senha"
-                    className="input-field with-icon"
-                    value={confirmPassword}
-                    onChange={(e) => setConfirmPassword(e.target.value)}
-                    required
-                  />
-                </div>
-
-                <button type="submit" className="btn-primary login-submit" disabled={firstAccessLoading}>
-                  {firstAccessLoading ? 'Salvando...' : <>Salvar Senha e Entrar <CheckCircle2 size={18} /></>}
-                </button>
-
-                <div style={{ marginTop: '1.25rem', textAlign: 'center' }}>
-                  <button
-                    type="button"
-                    onClick={() => setFirstAccessStep(1)}
-                    className="btn-link"
-                    style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem' }}
-                  >
-                    <ArrowLeft size={16} /> Voltar passo
-                  </button>
-                </div>
-              </form>
-            )}
-          </>
+          </div>
         )}
       </div>
+
       <UpdateRequiredModal
         isOpen={showUpdateModal}
         serverCommit={updateModalServerCommit}
