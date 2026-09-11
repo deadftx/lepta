@@ -2,7 +2,7 @@ import React, { useEffect, useState, useMemo } from 'react';
 import type { User } from '../../../core/AuthContext';
 import {
   Edit, Save, X, Users, UserPlus, Unlock, Trash2,
-  AlertCircle, CheckCircle2, Shield, Info
+  AlertCircle, CheckCircle2, Shield, Info, Crown, ChevronDown, ArrowDownCircle
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { API_BASE_URL, getAuthHeaders } from '../../../../config/api';
@@ -43,6 +43,24 @@ const Permissions: React.FC = () => {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+
+  // Dropdown e promoção a Master
+  const [activeDropdownUserId, setActiveDropdownUserId] = useState<string | null>(null);
+  const [userToMakeMaster, setUserToMakeMaster] = useState<User | null>(null);
+  const [promotingMaster, setPromotingMaster] = useState(false);
+  const [userToDemote, setUserToDemote] = useState<User | null>(null);
+  const [demotingMaster, setDemotingMaster] = useState(false);
+
+  useEffect(() => {
+    const handleOutsideClick = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      if (!target.closest('.config-menu-container')) {
+        setActiveDropdownUserId(null);
+      }
+    };
+    document.addEventListener('mousedown', handleOutsideClick);
+    return () => document.removeEventListener('mousedown', handleOutsideClick);
+  }, []);
 
   const fetchData = async () => {
     try {
@@ -195,6 +213,106 @@ const Permissions: React.FC = () => {
     setTimeout(() => setSuccess(''), 3000);
   };
 
+  const handleExecuteMakeMaster = async () => {
+    if (!userToMakeMaster) return;
+    setPromotingMaster(true);
+    setError('');
+    setSuccess('');
+
+    try {
+      let response = await fetch(`${API_BASE_URL}/api/admin/users/${userToMakeMaster.id}/make-master`, {
+        method: 'POST',
+        headers: getAuthHeaders({ 'Content-Type': 'application/json' })
+      });
+
+      if (!response.ok) {
+        const updatePayload = {
+          ...userToMakeMaster,
+          role: 'MASTER',
+          permissions: allPermissionIds
+        };
+        let putRes = await fetch(`${API_BASE_URL}/api/users/${userToMakeMaster.id}`, {
+          method: 'PUT',
+          headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
+          body: JSON.stringify(updatePayload)
+        });
+        if (!putRes.ok) {
+          putRes = await fetch(`${API_BASE_URL}/users/${userToMakeMaster.id}`, {
+            method: 'PUT',
+            headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
+            body: JSON.stringify(updatePayload)
+          });
+        }
+        if (!putRes.ok) {
+          const errData = await putRes.json().catch(() => ({}));
+          throw new Error(errData.error || 'Não foi possível transformar o usuário em Master.');
+        }
+      }
+
+      window.dispatchEvent(new Event('lepta_permissions_updated'));
+      setSuccess(`Usuário "${userToMakeMaster.username}" transformado em Master com sucesso (acesso total igual ao leptamaster)!`);
+      setUserToMakeMaster(null);
+      if (editingUser?.id === userToMakeMaster.id) {
+        setEditingUser(null);
+      }
+      await fetchData();
+      setTimeout(() => setSuccess(''), 5000);
+    } catch (err: any) {
+      console.error('Erro ao transformar em master:', err);
+      setError(err.message || 'Falha ao transformar usuário em Master.');
+    } finally {
+      setPromotingMaster(false);
+    }
+  };
+
+  const handleExecuteDemoteMaster = async () => {
+    if (!userToDemote) return;
+    setDemotingMaster(true);
+    setError('');
+    setSuccess('');
+
+    try {
+      let response = await fetch(`${API_BASE_URL}/api/admin/users/${userToDemote.id}/demote-master`, {
+        method: 'POST',
+        headers: getAuthHeaders({ 'Content-Type': 'application/json' })
+      });
+
+      if (!response.ok) {
+        const updatePayload = {
+          ...userToDemote,
+          role: 'USER'
+        };
+        let putRes = await fetch(`${API_BASE_URL}/api/users/${userToDemote.id}`, {
+          method: 'PUT',
+          headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
+          body: JSON.stringify(updatePayload)
+        });
+        if (!putRes.ok) {
+          putRes = await fetch(`${API_BASE_URL}/users/${userToDemote.id}`, {
+            method: 'PUT',
+            headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
+            body: JSON.stringify(updatePayload)
+          });
+        }
+        if (!putRes.ok) {
+          const errData = await putRes.json().catch(() => ({}));
+          throw new Error(errData.error || 'Não foi possível rebaixar o usuário.');
+        }
+      }
+
+      window.dispatchEvent(new Event('lepta_permissions_updated'));
+      setSuccess(`Usuário "${userToDemote.username}" rebaixado para usuário comum.`);
+      setUserToDemote(null);
+      await fetchData();
+      setTimeout(() => setSuccess(''), 4000);
+    } catch (err: any) {
+      console.error('Erro ao rebaixar usuário:', err);
+      setError(err.message || 'Falha ao rebaixar usuário.');
+    } finally {
+      setDemotingMaster(false);
+    }
+  };
+
   const filteredUsers = useMemo(() => {
     const q = searchTerm.toLowerCase().trim();
     if (!q) return users;
@@ -338,16 +456,66 @@ const Permissions: React.FC = () => {
                           </div>
                         </td>
                         <td style={{ textAlign: 'right' }}>
-                          <div style={{ display: 'inline-flex', gap: '8px' }}>
+                          <div style={{ display: 'inline-flex', gap: '8px', alignItems: 'center' }}>
                             {(user.accessLocked || user.fullyLocked) && (
                               <button className="btn-icon" onClick={() => handleUnlock(user)} title="Desbloquear usuário">
                                 <Unlock size={16} /> Desbloquear
                               </button>
                             )}
-                            {user.role !== 'MASTER' && (
-                              <button className="btn-icon" onClick={() => handleEditClick(user)}>
-                                <Edit size={16} /> Configurar
-                              </button>
+                            {user.username === 'leptamaster' ? (
+                              <span style={{ fontSize: '0.8rem', color: '#ec4899', fontWeight: 600, padding: '0.4rem 0.6rem' }}>
+                                Principal
+                              </span>
+                            ) : (
+                              <div className="config-menu-container">
+                                <button
+                                  type="button"
+                                  className="btn-icon btn-config-action"
+                                  onClick={() => setActiveDropdownUserId(activeDropdownUserId === user.id ? null : user.id)}
+                                  title="Configurações do usuário"
+                                >
+                                  <Edit size={16} /> Configurar <ChevronDown size={14} />
+                                </button>
+                                {activeDropdownUserId === user.id && (
+                                  <div className="config-dropdown-menu">
+                                    {user.role !== 'MASTER' ? (
+                                      <>
+                                        <button
+                                          type="button"
+                                          className="config-dropdown-item"
+                                          onClick={() => {
+                                            setActiveDropdownUserId(null);
+                                            handleEditClick(user);
+                                          }}
+                                        >
+                                          <Edit size={15} /> Configurar Permissões & Setor
+                                        </button>
+                                        <button
+                                          type="button"
+                                          className="config-dropdown-item master-action"
+                                          onClick={() => {
+                                            setActiveDropdownUserId(null);
+                                            setUserToMakeMaster(user);
+                                          }}
+                                        >
+                                          <Crown size={15} /> Transformar em Master
+                                        </button>
+                                      </>
+                                    ) : (
+                                      <button
+                                        type="button"
+                                        className="config-dropdown-item danger-action"
+                                        onClick={() => {
+                                          setActiveDropdownUserId(null);
+                                          setUserToDemote(user);
+                                        }}
+                                      >
+                                        <ArrowDownCircle size={15} /> Remover Master (Rebaixar)
+                                      </button>
+                                    )}
+                                  </div>
+                                )}
+                              </div>
                             )}
                           </div>
                         </td>
@@ -374,6 +542,26 @@ const Permissions: React.FC = () => {
             </div>
 
             <div className="modal-body" style={{ maxHeight: '72vh', overflowY: 'auto' }}>
+              {/* DESTAQUE TRANSFORMAR EM MASTER */}
+              <div className="master-promo-card">
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <Crown size={22} color="#f472b6" />
+                  <div>
+                    <div style={{ fontWeight: 600, color: '#f8fafc', fontSize: '0.9rem' }}>Perfil Administrador Master</div>
+                    <div style={{ fontSize: '0.8rem', color: '#cbd5e1' }}>
+                      Concede acesso total e irrestrito a todo o LeptaSys, exatamente igual ao usuário <strong>leptamaster</strong>.
+                    </div>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  className="btn-make-master"
+                  onClick={() => setUserToMakeMaster(editingUser)}
+                >
+                  <Crown size={15} /> Transformar em Master
+                </button>
+              </div>
+
               {/* SELETOR DE GRUPO/SETOR */}
               <div style={{
                 background: 'rgba(30, 41, 59, 0.5)',
@@ -437,10 +625,100 @@ const Permissions: React.FC = () => {
               <button className="btn-danger" onClick={handleDeleteUser}>
                 <Trash2 size={16} /> Excluir usuário
               </button>
+              <button
+                type="button"
+                className="btn-make-master-outline"
+                onClick={() => setUserToMakeMaster(editingUser)}
+                title="Transformar este usuário em Master (acesso total igual ao leptamaster)"
+              >
+                <Crown size={15} /> Transformar em Master
+              </button>
               <span className="modal-footer-spacer" />
               <button className="btn-outline" onClick={() => setEditingUser(null)}>Cancelar</button>
               <button className="btn-primary" onClick={handleSavePermissions} disabled={saving}>
                 <Save size={16} /> {saving ? 'Salvando no banco...' : 'Salvar Acessos'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL DE CONFIRMAÇÃO DE TRANSFORMAÇÃO EM MASTER */}
+      {userToMakeMaster && (
+        <div className="modal-overlay">
+          <div className="modal-content glass" style={{ maxWidth: '520px', width: '95%' }}>
+            <div className="modal-header">
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <Crown size={24} color="#f472b6" />
+                <h3 style={{ margin: 0, color: '#f8fafc' }}>Transformar em Master</h3>
+              </div>
+              <button className="icon-btn" onClick={() => setUserToMakeMaster(null)}><X size={20} /></button>
+            </div>
+            <div className="modal-body">
+              <p style={{ color: '#f1f5f9', fontSize: '0.95rem', lineHeight: '1.5' }}>
+                Deseja transformar o usuário <strong style={{ color: '#f472b6' }}>{userToMakeMaster.username}</strong> em <strong>MASTER</strong>?
+              </p>
+              <div style={{
+                background: 'rgba(236, 72, 153, 0.1)',
+                border: '1px solid rgba(236, 72, 153, 0.3)',
+                borderRadius: '8px',
+                padding: '12px 14px',
+                fontSize: '0.85rem',
+                color: '#cbd5e1',
+                lineHeight: '1.5',
+                marginTop: '10px'
+              }}>
+                <strong style={{ color: '#f472b6' }}>Privilégios de Master:</strong><br />
+                • Acesso irrestrito a todos os módulos, rotas, telas e configurações do LeptaSys.<br />
+                • Permissões administrativas idênticas às do usuário <strong>leptamaster</strong>.<br />
+                • Todas as restrições de permissão individual ou de setor serão ignoradas.
+              </div>
+            </div>
+            <div className="modal-footer">
+              <button className="btn-outline" onClick={() => setUserToMakeMaster(null)} disabled={promotingMaster}>
+                Cancelar
+              </button>
+              <button
+                className="btn-make-master"
+                onClick={handleExecuteMakeMaster}
+                disabled={promotingMaster}
+              >
+                <Crown size={16} /> {promotingMaster ? 'Promovendo no banco...' : 'Sim, Transformar em Master'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL DE CONFIRMAÇÃO DE REBAIXAMENTO DE MASTER */}
+      {userToDemote && (
+        <div className="modal-overlay">
+          <div className="modal-content glass" style={{ maxWidth: '500px', width: '95%' }}>
+            <div className="modal-header">
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <ArrowDownCircle size={22} color="#f87171" />
+                <h3 style={{ margin: 0, color: '#f8fafc' }}>Remover Perfil Master</h3>
+              </div>
+              <button className="icon-btn" onClick={() => setUserToDemote(null)}><X size={20} /></button>
+            </div>
+            <div className="modal-body">
+              <p style={{ color: '#f1f5f9', fontSize: '0.95rem' }}>
+                Deseja remover os privilégios de Master do usuário <strong style={{ color: '#f8fafc' }}>{userToDemote.username}</strong>?
+              </p>
+              <p style={{ fontSize: '0.85rem', color: '#94a3b8' }}>
+                O usuário voltará a ter o perfil de usuário comum (USER) e seus acessos dependerão de permissões individuais e do setor.
+              </p>
+            </div>
+            <div className="modal-footer">
+              <button className="btn-outline" onClick={() => setUserToDemote(null)} disabled={demotingMaster}>
+                Cancelar
+              </button>
+              <button
+                className="btn-danger"
+                onClick={handleExecuteDemoteMaster}
+                disabled={demotingMaster}
+              >
+                <ArrowDownCircle size={16} /> {demotingMaster ? 'Rebaixando...' : 'Confirmar Rebaixamento'}
               </button>
             </div>
           </div>

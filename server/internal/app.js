@@ -4956,6 +4956,55 @@ app.put('/api/admin/users/:id/permissions', requireSession, requireMaster, (req,
   }
 });
 
+app.post('/api/admin/users/:id/make-master', requireSession, requireMaster, (req, res) => {
+  try {
+    const target = db.prepare(`SELECT * FROM usuarios_lepta WHERE id = ?`).get(req.params.id);
+    if (!target) return res.status(404).json({ error: 'Usuário não encontrado.' });
+
+    db.prepare(`
+      UPDATE usuarios_lepta
+      SET role = 'MASTER'
+      WHERE id = ?
+    `).run(req.params.id);
+
+    const updated = db.prepare(`SELECT * FROM usuarios_lepta WHERE id = ?`).get(req.params.id);
+    return res.json({
+      success: true,
+      message: `Usuário "${target.username}" transformado em MASTER com sucesso!`,
+      user: sanitizeUser(updated)
+    });
+  } catch (error) {
+    console.error('Erro ao transformar usuário em master:', error.message);
+    return res.status(500).json({ error: 'Não foi possível atualizar o perfil para MASTER no banco de dados.' });
+  }
+});
+
+app.post('/api/admin/users/:id/demote-master', requireSession, requireMaster, (req, res) => {
+  try {
+    const target = db.prepare(`SELECT * FROM usuarios_lepta WHERE id = ?`).get(req.params.id);
+    if (!target) return res.status(404).json({ error: 'Usuário não encontrado.' });
+    if (target.username === 'leptamaster' || target.id === 'master') {
+      return res.status(403).json({ error: 'O usuário raiz leptamaster não pode ser rebaixado.' });
+    }
+
+    db.prepare(`
+      UPDATE usuarios_lepta
+      SET role = 'USER'
+      WHERE id = ?
+    `).run(req.params.id);
+
+    const updated = db.prepare(`SELECT * FROM usuarios_lepta WHERE id = ?`).get(req.params.id);
+    return res.json({
+      success: true,
+      message: `Usuário "${target.username}" rebaixado para usuário comum.`,
+      user: sanitizeUser(updated)
+    });
+  } catch (error) {
+    console.error('Erro ao rebaixar usuário master:', error.message);
+    return res.status(500).json({ error: 'Não foi possível alterar o perfil do usuário.' });
+  }
+});
+
 function isAllowedPowerBiUrl(value) {
   try {
     const url = new URL(String(value || '').trim());

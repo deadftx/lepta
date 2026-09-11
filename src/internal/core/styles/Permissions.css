@@ -234,3 +234,143 @@
     justify-content: center;
   }
 }
+
+/* Config Menu & Dropdown */
+.config-menu-container {
+  position: relative;
+  display: inline-block;
+}
+
+.btn-config-action {
+  gap: 0.35rem;
+}
+
+.config-dropdown-menu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 5px);
+  background: rgba(15, 23, 42, 0.96);
+  backdrop-filter: blur(14px);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 8px;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.6), 0 8px 10px -6px rgba(0, 0, 0, 0.5);
+  min-width: 250px;
+  z-index: 100;
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  animation: fadeInMenu 0.15s ease-out;
+}
+
+@keyframes fadeInMenu {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.config-dropdown-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 12px;
+  border: none;
+  background: transparent;
+  color: #f8fafc;
+  font-size: 0.85rem;
+  border-radius: 6px;
+  cursor: pointer;
+  text-align: left;
+  transition: all 0.15s ease;
+  font-weight: 500;
+}
+
+.config-dropdown-item:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.config-dropdown-item.master-action {
+  color: #f472b6;
+}
+
+.config-dropdown-item.master-action:hover {
+  background: rgba(236, 72, 153, 0.15);
+  color: #fbcfe8;
+}
+
+.config-dropdown-item.danger-action {
+  color: #f87171;
+}
+
+.config-dropdown-item.danger-action:hover {
+  background: rgba(239, 68, 68, 0.15);
+  color: #fca5a5;
+}
+
+/* Master Promotion Card & Buttons */
+.master-promo-card {
+  background: linear-gradient(135deg, rgba(236, 72, 153, 0.12), rgba(168, 85, 247, 0.08));
+  border: 1px solid rgba(244, 114, 182, 0.3);
+  border-radius: 10px;
+  padding: 1rem 1.25rem;
+  margin-bottom: 1.25rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.btn-make-master {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.55rem 1rem;
+  border: 1px solid rgba(244, 114, 182, 0.5);
+  border-radius: 0.5rem;
+  color: #ffffff;
+  background: linear-gradient(135deg, #db2777, #be185d);
+  cursor: pointer;
+  font-size: 0.85rem;
+  font-weight: 600;
+  transition: all 0.2s ease;
+  box-shadow: 0 4px 12px rgba(219, 39, 119, 0.3);
+}
+
+.btn-make-master:hover:not(:disabled) {
+  background: linear-gradient(135deg, #ec4899, #db2777);
+  box-shadow: 0 6px 16px rgba(219, 39, 119, 0.45);
+  transform: translateY(-1px);
+}
+
+.btn-make-master:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.btn-make-master-outline {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.55rem 0.85rem;
+  border: 1px solid rgba(244, 114, 182, 0.4);
+  border-radius: 0.5rem;
+  color: #f472b6;
+  background: rgba(236, 72, 153, 0.08);
+  cursor: pointer;
+  font-size: 0.85rem;
+  font-weight: 600;
+  transition: all 0.2s ease;
+}
+
+.btn-make-master-outline:hover {
+  background: rgba(236, 72, 153, 0.18);
+  color: #fbcfe8;
+}
+
