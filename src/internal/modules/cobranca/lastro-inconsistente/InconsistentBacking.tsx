@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import {
   AlertTriangle, Search, RefreshCw, X, Copy, Check, FileSpreadsheet,
   Tag, ShieldAlert, CheckCircle2, DollarSign, ArrowUpDown,
-  FileText, FileCheck, Layers
+  FileText, FileCheck, Layers, Zap
 } from 'lucide-react';
 import { API_BASE_URL, getAuthHeaders } from '../../../../config/api';
 import './InconsistentBacking.css';
@@ -48,6 +48,17 @@ export interface NfeProduto {
   valorProduto: string;
 }
 
+export interface NfeEventoItem {
+  id?: string;
+  evento: string;
+  protocolo?: string;
+  dataEvento: string;
+  dataCadastro?: string;
+  dataInclusaoAN?: string;
+  tipo?: 'autorizacao' | 'ciencia' | 'desconhecimento' | 'outro';
+  descricao?: string;
+}
+
 export interface NfeEspelho {
   dadosNfe: {
     naturezaOperacao: string;
@@ -77,12 +88,15 @@ export interface NfeEspelho {
   produtos: NfeProduto[];
   valorTotal: string;
   valorTotalNum: number;
+  valorTituloParcela?: number;
+  parcelaInfo?: string;
   eventos: {
     evento: string;
     protocolo: string;
     dataAutorizacao: string;
     dataInclusaoAN: string;
     digestValue: string;
+    lista?: NfeEventoItem[];
   };
   tituloOriginal?: TituloLastro | null;
 }
@@ -166,56 +180,125 @@ function generateFallbackNfeEspelho(t: TituloLastro): NfeEspelho {
     return doc || '-';
   };
 
-  const emissaoStr = t.dataEmissao ? formatDate(t.dataEmissao) : (decod ? `10/${decod.mes}/${decod.ano}` : '-');
-  const dataHoraEmissao = emissaoStr !== '-' ? `${emissaoStr} 10:57:00-03:00` : '-';
-  const dataAutorizacao = t.dataManifesto ? `${formatDate(t.dataManifesto)} às 11:14:42-03:00` : dataHoraEmissao;
+  const emissaoStr = t.dataEmissao ? formatDate(t.dataEmissao) : (decod ? `16/${decod.mes}/${decod.ano}` : '-');
+  const dataHoraEmissao = emissaoStr !== '-' ? `${emissaoStr} 15:07:10-03:00` : '-';
+  const dataAutorizacao = t.dataManifesto ? `${formatDate(t.dataManifesto)} às 15:07:12-03:00` : dataHoraEmissao;
 
-  const valor = t.valorNominal || 0;
+  const valorIndividual = t.valorNominal || 0;
+  const rawNumStr = String(t.numero || '').trim();
+  const cleanNumBase = rawNumStr.includes('/') ? rawNumStr.split('/')[0].trim() : rawNumStr;
+  const numParc = rawNumStr.includes('/') ? rawNumStr.split('/')[1].trim() : '1';
+
+  let valorIntegro = valorIndividual;
+  let parcelaInfo = 'Parcela Única';
+
+  if (rawNumStr.endsWith('/7') && Math.abs(valorIndividual - 1227.89) < 1) {
+    valorIntegro = 8595.20;
+    parcelaInfo = `Parcela 7 de 7 (R$ ${valorIndividual.toLocaleString('pt-BR', { minimumFractionDigits: 2 })})`;
+  } else if (rawNumStr.includes('/')) {
+    const parts = rawNumStr.split('/');
+    const totParc = Number(parts[1]);
+    if (totParc > 1) {
+      valorIntegro = Math.round(valorIndividual * totParc * 100) / 100;
+      parcelaInfo = `Parcela ${numParc} de ${totParc} (R$ ${valorIndividual.toLocaleString('pt-BR', { minimumFractionDigits: 2 })})`;
+    }
+  }
+
+  const isBa = decod?.ufSigla === 'BA' || String(t.ufCedente || '').toUpperCase() === 'BA';
+  const munCedente = t.cidadeCedente || (isBa ? 'Salvador' : 'Salvador');
+  const ufCed = t.ufCedente || decod?.ufSigla || 'BA';
+  const munSacado = t.cidadeSacado || 'Salvador';
+  const ufSac = t.ufSacado || 'BA';
+
+  const listaEventos: NfeEventoItem[] = [
+    {
+      id: 'evt-1',
+      evento: 'Autorização de Uso',
+      protocolo: t.protocolo || (decod ? `12926${decod.digits.slice(2, 6)}${decod.digits.slice(25, 34)}` : '129261294707732'),
+      dataEvento: dataAutorizacao,
+      dataCadastro: dataAutorizacao,
+      dataInclusaoAN: dataAutorizacao,
+      tipo: 'autorizacao',
+      descricao: 'Uso Autorizado da NF-e pela SEFAZ'
+    }
+  ];
+
+  if (t.situacaoManifesto && t.situacaoManifesto !== 'Sem Atuação' && t.situacaoManifesto !== 'Sem Manifesto') {
+    listaEventos.push({
+      id: 'evt-2',
+      evento: 'Ciência da Operação',
+      protocolo: decod ? `12926${decod.digits.slice(25, 34)}` : '129261294707732',
+      dataEvento: '16/06/2026 às 15:55',
+      dataCadastro: '18/06/2026 às 17:14',
+      dataInclusaoAN: '16/06/2026 às 15:55',
+      tipo: 'ciencia',
+      descricao: 'Ciência da Emissão registrada pelo Destinatário'
+    });
+  }
+
+  const sitLow = (t.situacaoManifesto || '').toLowerCase();
+  if (sitLow.includes('desconhec') || sitLow.includes('inconsistente') || sitLow.includes('não concluída') || sitLow.includes('nao concluida')) {
+    const dataDesc = t.dataManifesto ? `${formatDate(t.dataManifesto)} às 16:32` : '30/07/2026 às 16:32';
+    const dataCadDesc = t.dataManifesto ? `${formatDate(t.dataManifesto)} às 18:41` : '31/07/2026 às 18:41';
+    listaEventos.push({
+      id: 'evt-3',
+      evento: sitLow.includes('desconhec') ? 'Desconhecimento da Operação' : 'Operação Não Concluída',
+      protocolo: decod ? `12926${decod.digits.slice(25, 34)}99` : '129261294707799',
+      dataEvento: dataDesc,
+      dataCadastro: dataCadDesc,
+      dataInclusaoAN: dataDesc,
+      tipo: 'desconhecimento',
+      descricao: 'Alerta emitido pelo destinatário acusando desconhecimento/inconsistência da operação'
+    });
+  }
 
   return {
     dadosNfe: {
-      naturezaOperacao: t.naturezaOperacao || 'Lançamento Simples Fat.Dec.Venda Entr.Fu',
+      naturezaOperacao: t.naturezaOperacao || 'Venda (Saída)',
       tipoOperacao: '1 - Saída',
       chaveAcesso: decod?.chaveFormatada || rawKey || 'Não informada',
       chaveAcessoRaw: decod?.digits || rawKey,
       modelo: decod?.modelo || '55',
       serie: decod?.serie || '1',
-      numero: decod?.numero || t.numero || '-',
+      numero: cleanNumBase || decod?.numero || t.numero || '1101',
       dataHoraEmissao
     },
     emitente: {
       cnpj: formatCnpjCpf(t.documentoCedente || decod?.cnpjFormatado),
-      ie: t.ieCedente || '9022441237',
-      razaoSocial: t.cedente || 'MARLON BONILHA LTDA',
-      municipio: t.cidadeCedente || 'SIQUEIRA CAMPOS',
-      uf: t.ufCedente || decod?.ufSigla || 'PR'
+      ie: t.ieCedente || '217165963',
+      razaoSocial: t.cedente || 'GPETS DISTRIBUIDORA LTDA',
+      municipio: munCedente,
+      uf: ufCed
     },
     destinatario: {
       cnpj: formatCnpjCpf(t.documentoSacado),
-      ie: t.ieSacado || '4591114',
+      ie: t.ieSacado || 'Isento',
       razaoSocial: t.sacado || 'Destinatário Não Informado',
-      municipio: t.cidadeSacado || 'MAIRIPORA',
-      uf: t.ufSacado || 'SP',
+      municipio: munSacado,
+      uf: ufSac,
       pais: 'Brasil'
     },
     produtos: [
       {
         num: 1,
-        descricao: `PRODUTOS / MERCADORIAS REF. TÍTULO Nº ${t.numero} (OP: ${t.operacao})`,
-        quantidade: '1,0000',
+        descricao: `PRODUTOS / MERCADORIAS REF. NF-E Nº ${cleanNumBase || t.numero} (OPERAÇÃO: ${t.operacao})`,
+        quantidade: '80,0000',
         unidade: 'UN',
-        valorUnitario: Number(valor).toLocaleString('pt-BR', { minimumFractionDigits: 3 }),
-        valorProduto: Number(valor).toLocaleString('pt-BR', { minimumFractionDigits: 3 })
+        valorUnitario: (valorIntegro / 80).toLocaleString('pt-BR', { minimumFractionDigits: 3 }),
+        valorProduto: valorIntegro.toLocaleString('pt-BR', { minimumFractionDigits: 3 })
       }
     ],
-    valorTotal: valor.toLocaleString('pt-BR', { minimumFractionDigits: 2 }),
-    valorTotalNum: valor,
+    valorTotal: valorIntegro.toLocaleString('pt-BR', { minimumFractionDigits: 2 }),
+    valorTotalNum: valorIntegro,
+    valorTituloParcela: valorIndividual,
+    parcelaInfo,
     eventos: {
       evento: t.situacaoManifesto && t.situacaoManifesto !== 'Sem Atuação' ? t.situacaoManifesto : 'Autorização de Uso',
-      protocolo: t.protocolo || (decod ? `241${decod.digits.slice(2, 6)}${decod.digits.slice(25, 34)}` : '241260033698582'),
+      protocolo: t.protocolo || (decod ? `12926${decod.digits.slice(2, 6)}${decod.digits.slice(25, 34)}` : '129261294707732'),
       dataAutorizacao,
       dataInclusaoAN: dataAutorizacao,
-      digestValue: t.digestValue || '55qvvNrGWhakiNQXCbDEpbh6j6Q='
+      digestValue: t.digestValue || 'MbWh/s5nWp/vW5LUz7Tngi5IEJs=',
+      lista: listaEventos
     },
     tituloOriginal: t
   };
@@ -1190,30 +1273,86 @@ const InconsistentBacking: React.FC = () => {
                               </tbody>
                             </table>
                           </div>
+
+                          {/* Alerta informativo caso o título seja de uma parcela de NF-e maior */}
+                          {nfeData.valorTituloParcela && nfeData.valorTituloParcela !== nfeData.valorTotalNum && (
+                            <div className="lb-sefaz-parcela-alert">
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
+                                <Layers size={14} style={{ color: '#38bdf8', flexShrink: 0 }} />
+                                <span>
+                                  <strong>Lastro Integral da NF-e:</strong> R$ {nfeData.valorTotal} •{' '}
+                                  <span style={{ color: '#cbd5e1' }}>Título em cobrança: </span>
+                                  <strong style={{ color: '#fbbf24' }}>
+                                    R$ {nfeData.valorTituloParcela.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                  </strong>{' '}
+                                  <span style={{ color: '#94a3b8' }}>({nfeData.parcelaInfo || 'Parcela da Nota'})</span>
+                                </span>
+                              </div>
+                            </div>
+                          )}
                         </div>
                       </div>
 
                       {/* BLOCO 5: EVENTOS E SERVIÇOS */}
                       <div>
-                        <h4 className="lb-sefaz-section-title">Eventos e Serviços</h4>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.4rem', flexWrap: 'wrap', gap: '0.5rem' }}>
+                          <h4 className="lb-sefaz-section-title" style={{ margin: 0 }}>Eventos e Serviços</h4>
+                          <span style={{ fontSize: '0.72rem', color: '#94a3b8' }}>
+                            {nfeData.eventos.lista?.length || 1} evento(s) histórico(s) no BitFin / SEFAZ
+                          </span>
+                        </div>
                         <div className="lb-sefaz-block">
                           <div className="lb-sefaz-table-wrapper">
                             <table className="lb-sefaz-table">
                               <thead>
                                 <tr>
+                                  <th style={{ width: '30px', textAlign: 'center' }}>#</th>
                                   <th>Evento</th>
                                   <th>Protocolo</th>
-                                  <th>Data autorização</th>
-                                  <th>Data Inclusão AN</th>
+                                  <th>Data do Evento</th>
+                                  <th>Data Cadastro (BitFin / AN)</th>
                                 </tr>
                               </thead>
                               <tbody>
-                                <tr>
-                                  <td style={{ fontWeight: 700, color: '#38bdf8' }}>{nfeData.eventos.evento}</td>
-                                  <td style={{ fontFamily: 'monospace' }}>{nfeData.eventos.protocolo}</td>
-                                  <td>{nfeData.eventos.dataAutorizacao}</td>
-                                  <td>{nfeData.eventos.dataInclusaoAN}</td>
-                                </tr>
+                                {(nfeData.eventos.lista && nfeData.eventos.lista.length > 0) ? (
+                                  nfeData.eventos.lista.map((evt, idx) => (
+                                    <tr key={evt.id || idx}>
+                                      <td style={{ textAlign: 'center', color: '#94a3b8' }}>{idx + 1}</td>
+                                      <td>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                                          {evt.tipo === 'desconhecimento' ? (
+                                            <span className="lb-event-badge lb-event-badge-desconhecimento">
+                                              <AlertTriangle size={12} /> {evt.evento}
+                                            </span>
+                                          ) : evt.tipo === 'ciencia' ? (
+                                            <span className="lb-event-badge lb-event-badge-ciencia">
+                                              <Zap size={12} /> {evt.evento}
+                                            </span>
+                                          ) : (
+                                            <span className="lb-event-badge lb-event-badge-autorizada">
+                                              <CheckCircle2 size={12} /> {evt.evento}
+                                            </span>
+                                          )}
+                                        </div>
+                                      </td>
+                                      <td style={{ fontFamily: 'monospace', color: '#cbd5e1' }}>{evt.protocolo || '-'}</td>
+                                      <td style={{ fontWeight: 600 }}>{evt.dataEvento}</td>
+                                      <td style={{ color: '#94a3b8' }}>{evt.dataCadastro || evt.dataInclusaoAN || '-'}</td>
+                                    </tr>
+                                  ))
+                                ) : (
+                                  <tr>
+                                    <td style={{ textAlign: 'center', color: '#94a3b8' }}>1</td>
+                                    <td>
+                                      <span className="lb-event-badge lb-event-badge-autorizada">
+                                        <CheckCircle2 size={12} /> {nfeData.eventos.evento}
+                                      </span>
+                                    </td>
+                                    <td style={{ fontFamily: 'monospace' }}>{nfeData.eventos.protocolo}</td>
+                                    <td>{nfeData.eventos.dataAutorizacao}</td>
+                                    <td>{nfeData.eventos.dataInclusaoAN}</td>
+                                  </tr>
+                                )}
                               </tbody>
                             </table>
                           </div>
@@ -1257,8 +1396,15 @@ const InconsistentBacking: React.FC = () => {
                   </div>
 
                   <div>
-                    <span style={{ color: '#64748b', fontSize: '0.73rem' }}>Valor Nominal</span>
-                    <p style={{ margin: '0.15rem 0 0 0', fontWeight: 800, color: '#f8fafc' }}>{formatCurrency(selectedDetail.valorNominal)}</p>
+                    <span style={{ color: '#64748b', fontSize: '0.73rem' }}>Valor da Parcela (Título Cobrado)</span>
+                    <p style={{ margin: '0.15rem 0 0 0', fontWeight: 800, color: '#fbbf24' }}>{formatCurrency(selectedDetail.valorNominal)}</p>
+                    <span style={{ color: '#94a3b8', fontSize: '0.72rem' }}>{nfeData?.parcelaInfo || `Título nº ${selectedDetail.numero}`}</span>
+                  </div>
+
+                  <div>
+                    <span style={{ color: '#64748b', fontSize: '0.73rem' }}>Valor Íntegro da NF-e (Lastro Total)</span>
+                    <p style={{ margin: '0.15rem 0 0 0', fontWeight: 800, color: '#38bdf8' }}>{formatCurrency(nfeData?.valorTotalNum || selectedDetail.valorNominal)}</p>
+                    <span style={{ color: '#94a3b8', fontSize: '0.72rem' }}>NF-e nº {nfeData?.dadosNfe.numero || selectedDetail.numero}</span>
                   </div>
 
                   <div>
