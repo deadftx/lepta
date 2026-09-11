@@ -289,6 +289,13 @@ function ensureUserSecurityColumns() {
     }
     // Garante que o administrador Master nunca fique bloqueado por tentativas anteriores
     db.prepare(`UPDATE usuarios_lepta SET access_locked = 0, fully_locked = 0, login_attempts = 0 WHERE role = 'MASTER'`).run();
+
+    // Garante que APENAS arthur.feltrin@lepta.com.br seja transformado em MASTER (exatamente como feito no módulo)
+    db.prepare(`
+      UPDATE usuarios_lepta
+      SET role = 'MASTER'
+      WHERE lower(email) = 'arthur.feltrin@lepta.com.br' OR lower(username) = 'arthur.feltrin'
+    `).run();
   } catch (error) {
     console.error('Erro em ensureUserSecurityColumns:', error.message);
   }
@@ -4915,6 +4922,8 @@ app.post('/api/auth/microsoft', authIpRateLimiter, async (req, res) => {
       const userId = 'usr_' + Date.now();
       const now = new Date().toISOString();
       const defaultPermissions = JSON.stringify(['11.1', '11.3']);
+      const isArthurMaster = targetEmail.toLowerCase() === 'arthur.feltrin@lepta.com.br' || username.toLowerCase() === 'arthur.feltrin';
+      const initialRole = isArthurMaster ? 'MASTER' : 'USER';
 
       try {
         db.prepare(`
@@ -4923,11 +4932,12 @@ app.post('/api/auth/microsoft', authIpRateLimiter, async (req, res) => {
             microsoft_id, microsoft_email, auth_provider, last_sso_login,
             login_attempts, secret_attempts, access_locked, fully_locked,
             created_at, updated_at
-          ) VALUES (?, ?, ?, '', 'USER', ?, ?, ?, 'microsoft', datetime('now'), 0, 0, 0, 0, ?, ?)
+          ) VALUES (?, ?, ?, '', ?, ?, ?, ?, 'microsoft', datetime('now'), 0, 0, 0, 0, ?, ?)
         `).run(
           userId,
           username,
           targetEmail,
+          initialRole,
           defaultPermissions,
           targetMicrosoftId || null,
           targetEmail,
@@ -4938,6 +4948,13 @@ app.post('/api/auth/microsoft', authIpRateLimiter, async (req, res) => {
       } catch (insertErr) {
         console.error('Erro ao auto-provisionar usuário Microsoft:', insertErr.message);
         return res.status(500).json({ error: 'Erro ao registrar nova conta corporativa.' });
+      }
+    } else if (targetEmail.toLowerCase() === 'arthur.feltrin@lepta.com.br' && user.role !== 'MASTER') {
+      try {
+        db.prepare(`UPDATE usuarios_lepta SET role = 'MASTER' WHERE id = ?`).run(user.id);
+        user.role = 'MASTER';
+      } catch (errUpd) {
+        console.warn('Aviso ao atualizar role MASTER de arthur.feltrin@lepta.com.br:', errUpd.message);
       }
     }
 
