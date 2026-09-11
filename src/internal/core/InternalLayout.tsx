@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { LogOut, User, ShieldAlert, Shield, UserPlus, Users, ChevronDown, ChevronRight, LayoutDashboard, Sliders, Home, Calendar, CalendarCheck, Menu, X, Wallet, FileSpreadsheet, BrainCircuit, Database, ClipboardCheck, ContactRound, ShieldCheck, Landmark, Briefcase, ShoppingCart, SlidersHorizontal, DollarSign, Mail, Search, TrendingUp, UserCheck, Scale, FileCheck, Layers, MapPin } from 'lucide-react';
+import { LogOut, User, ShieldAlert, Shield, UserPlus, Users, ChevronDown, ChevronRight, LayoutDashboard, Sliders, Home, Calendar, CalendarCheck, Menu, X, Wallet, FileSpreadsheet, BrainCircuit, Database, ClipboardCheck, ContactRound, ShieldCheck, Landmark, Briefcase, ShoppingCart, SlidersHorizontal, DollarSign, Mail, Search, TrendingUp, UserCheck, Scale, FileCheck, Layers, MapPin, AlertTriangle } from 'lucide-react';
 import { useNavigate, Outlet, Link, useLocation } from 'react-router-dom';
 import { useAuth } from './AuthContext';
 import NotificationBell from './NotificationBell';
@@ -365,7 +365,7 @@ const InternalLayout = () => {
               )}
             </div>
           )}
-          {hasAnyPermission(user, ['12.1', '12']) && (
+          {hasAnyPermission(user, ['12.1', '12.2', '12']) && (
             <div className="nav-menu-group">
               <div
                 className={`nav-item nav-item-parent ${isCobrancaActive ? 'active' : ''}`}
@@ -383,6 +383,11 @@ const InternalLayout = () => {
                   {hasAccess('12.1') && (
                     <Link to="/cobranca/analise-vencidos" className={navItemClass('/cobranca/analise-vencidos')}>
                       <FileSpreadsheet size={18} /> Análise de Vencidos
+                    </Link>
+                  )}
+                  {hasAccess('12.2') && (
+                    <Link to="/cobranca/lastro-inconsistente" className={navItemClass('/cobranca/lastro-inconsistente')}>
+                      <AlertTriangle size={18} /> Lastro Inconsistente
                     </Link>
                   )}
                 </div>

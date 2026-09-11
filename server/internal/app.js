@@ -4312,6 +4312,35 @@ app.get('/api/cobranca/vencidos', requireSession, requirePermission('12.1', '12'
       }
     };
 
+    // Enriquecer filteredTitles com indicadores de observação persistidas no SQLite
+    try {
+      const obsRows = db.prepare(`
+        SELECT titulo_id, numero_titulo, operacao, COUNT(*) as total_obs, MAX(created_at) as ultima_obs_data
+        FROM cobranca_titulos_observacoes
+        GROUP BY titulo_id, numero_titulo, operacao
+      `).all();
+
+      const obsMap = new Map();
+      for (const r of obsRows) {
+        if (r.titulo_id) obsMap.set(String(r.titulo_id), r);
+        if (r.numero_titulo && r.operacao) {
+          obsMap.set(`${r.numero_titulo}__${r.operacao}`, r);
+        }
+      }
+
+      filteredTitles = filteredTitles.map(t => {
+        const info = obsMap.get(String(t.id)) || obsMap.get(`${t.numero}__${t.operacao}`);
+        return {
+          ...t,
+          totalObservacoes: info ? info.total_obs : 0,
+          hasObservacao: Boolean(info && info.total_obs > 0),
+          ultimaObservacaoData: info ? info.ultima_obs_data : null
+        };
+      });
+    } catch (_obsErr) {
+      // Se a tabela ainda estiver sendo criada ou vazia, não interrompe
+    }
+
     res.setHeader('x-data-source', dataSource);
     res.json({
       titulos: filteredTitles,
@@ -4332,6 +4361,282 @@ app.get('/api/cobranca/vencidos', requireSession, requirePermission('12.1', '12'
   } catch (err) {
     console.error('Erro ao buscar títulos vencidos para cobrança:', err);
     res.status(500).json({ error: 'Erro ao processar análise de vencidos', message: err.message });
+  }
+});
+
+// Endpoint: Consulta Ampla de Lastro de Títulos (qualquer título da base BitFin)
+app.get('/api/cobranca/titulos-lastro', requireSession, requirePermission('12.2', '12'), async (req, res) => {
+  try {
+    const {
+      valor_min,
+      valor_max,
+      data_cadastro_inicio,
+      data_cadastro_fim,
+      data_venc_inicio,
+      data_venc_fim,
+      numero_titulo,
+      cedente,
+      sacado,
+      tipo_lastro,
+      busca
+    } = req.query;
+
+    let dataSource = 'api';
+    let allTitles = [];
+
+    const parseDateToIso = (dStr) => {
+      if (!dStr) return null;
+      const trimmed = String(dStr).trim();
+      if (trimmed.includes('/')) {
+        const parts = trimmed.split('/');
+        if (parts.length === 3) {
+          const d = parts[0].padStart(2, '0');
+          const m = parts[1].padStart(2, '0');
+          const y = parts[2].length === 2 ? `20${parts[2]}` : parts[2];
+          return `${y}-${m}-${d}`;
+        }
+      }
+      if (/^\d{4}-\d{2}-\d{2}/.test(trimmed)) {
+        return trimmed.slice(0, 10);
+      }
+      return null;
+    };
+
+    try {
+      const apiTitulos = await fetchTitulosDaAPI(req);
+      if (Array.isArray(apiTitulos) && apiTitulos.length > 0) {
+        for (const t of apiTitulos) {
+          const clienteNome = t.contaOperacional?.cliente?.entidade?.nome || t.cedente || '';
+          const sacadoNome = t.sacado?.entidade?.nome || t.sacado || 'Não informado';
+          const sacadoDoc = t.sacado?.entidade?.documento || t.documentoSacado || '';
+          const cedenteDoc = t.contaOperacional?.cliente?.entidade?.documento || t.documentoCedente || '';
+
+          const dataCadIso = parseDateToIso(t.dataDeCadastro || t.dataCadastro || t.cadastro || t.dataDeOperacao || t.dataDeEmissao || t.operacao?.data || null);
+          const dataVencIso = parseDateToIso(t.dataDeVencimento || t.dataVencimento || t.vencimento);
+          const dataEmissaoIso = parseDateToIso(t.dataDeEmissao || t.dataEmissao || t.emissao);
+
+          const rawManifesto = String(t.situacaoManifesto || t.manifesto || t.situacao_manifesto || '').trim();
+          const chaveNfe = String(t.chaveNfe || (t.manifesto?.length === 44 ? t.manifesto : '') || '').trim();
+          const codigoDoLastro = String(t.codigoDoLastro || '').trim();
+          const dataManifesto = parseDateToIso(t.dataDoManifesto || t.dataManifesto || null);
+
+          // Classificação inteligente do Lastro
+          let tipoLastroClassificacao = 'Regular';
+          const sitLower = rawManifesto.toLowerCase();
+
+          if (sitLower.includes('inconsistente')) {
+            tipoLastroClassificacao = 'Inconsistente';
+          } else if (sitLower.includes('não concluída') || sitLower.includes('nao concluida')) {
+            tipoLastroClassificacao = 'Operação Não Concluída';
+          } else if (sitLower.includes('desconhecida') || sitLower.includes('desconhecido')) {
+            tipoLastroClassificacao = 'Transação Desconhecida';
+          } else if (!chaveNfe && !codigoDoLastro) {
+            tipoLastroClassificacao = 'Sem Lastro / Sem Chave';
+          } else if (chaveNfe && chaveNfe.length === 44) {
+            tipoLastroClassificacao = 'Com Chave NF-e';
+          } else if (rawManifesto) {
+            tipoLastroClassificacao = rawManifesto;
+          } else {
+            tipoLastroClassificacao = 'Sem Manifesto';
+          }
+
+          allTitles.push({
+            id: String(t.id || t.numero || Math.random()),
+            numero: String(t.numero || t.numeroDoTitulo || t.id || '-'),
+            operacao: String(t.operacao?.numero || t.numeroDaOperacao || t.operacao || '-'),
+            cedente: clienteNome,
+            documentoCedente: cedenteDoc,
+            sacado: sacadoNome,
+            documentoSacado: sacadoDoc,
+            dataCadastro: dataCadIso,
+            dataEmissao: dataEmissaoIso,
+            dataVencimento: dataVencIso,
+            situacao: String(t.situacao || 'Em Aberto').trim(),
+            valorNominal: Number(t.valorNominal) || 0,
+            valorLiquido: Number(t.valorLiquido ?? t.valorNominal) || 0,
+            tipoDocumento: extractTipoDocumento(t),
+            chaveNfe,
+            codigoDoLastro,
+            situacaoManifesto: rawManifesto || 'Sem Atuação',
+            dataManifesto,
+            tipoLastroClassificacao
+          });
+        }
+      }
+    } catch (apiErr) {
+      console.warn('Falha na API UNLTD em titulos-lastro, consultando BASE_SMARTFACTOR:', apiErr.message);
+      dataSource = 'db';
+    }
+
+    // Fallback SQLite BASE_SMARTFACTOR caso vazio
+    if (allTitles.length === 0) {
+      try {
+        const sfRows = db.prepare(`SELECT * FROM BASE_SMARTFACTOR ORDER BY ID DESC LIMIT 5000`).all();
+        if (sfRows.length > 0) {
+          dataSource = 'db';
+          allTitles = sfRows.map(r => {
+            const dataCadIso = parseDateToIso(r.CADASTRO || r.EMISSAO);
+            const dataVencIso = parseDateToIso(r.VENCIMENTO || r.VENCIMENTO_EFETIVO);
+            const dataEmissaoIso = parseDateToIso(r.EMISSAO);
+
+            return {
+              id: String(r.ID || r.NUMERO),
+              numero: String(r.NUMERO || r.ID || '-'),
+              operacao: String(r.OPERACAO || '-'),
+              cedente: r.CLIENTE || 'Cliente Não Informado',
+              documentoCedente: r.DOCUMENTO || '',
+              sacado: r.SACADO || 'Não informado',
+              documentoSacado: r.DOCUMENTO_SACADO || '',
+              dataCadastro: dataCadIso,
+              dataEmissao: dataEmissaoIso,
+              dataVencimento: dataVencIso,
+              situacao: r.SITUACAO || 'Em Aberto',
+              valorNominal: Number(r.VALOR_NOMINAL) || 0,
+              valorLiquido: Number(r.VALOR_LIQUIDO) || 0,
+              tipoDocumento: extractTipoDocumento(r),
+              chaveNfe: '',
+              codigoDoLastro: '',
+              situacaoManifesto: 'Sem Informação',
+              dataManifesto: null,
+              tipoLastroClassificacao: 'Sem Lastro / Sem Chave'
+            };
+          });
+        }
+      } catch (dbErr) {
+        console.warn('Aviso ao consultar BASE_SMARTFACTOR para lastros:', dbErr.message);
+      }
+    }
+
+    // Coleta dos tipos distintos de lastro da base para alimentar o filtro do frontend
+    const tiposLastroSet = new Set();
+    tiposLastroSet.add('Inconsistente');
+    tiposLastroSet.add('Operação Não Concluída');
+    tiposLastroSet.add('Transação Desconhecida');
+    tiposLastroSet.add('Sem Lastro / Sem Chave');
+    tiposLastroSet.add('Com Chave NF-e');
+    tiposLastroSet.add('Regular');
+
+    allTitles.forEach(t => {
+      if (t.tipoLastroClassificacao) tiposLastroSet.add(t.tipoLastroClassificacao);
+      if (t.situacaoManifesto && t.situacaoManifesto !== 'Sem Atuação') {
+        tiposLastroSet.add(t.situacaoManifesto);
+      }
+    });
+
+    // Aplicação dos Filtros
+    let filtered = allTitles;
+
+    // Filtro por Valor Mínimo / Máximo
+    if (valor_min && !isNaN(Number(valor_min))) {
+      const minVal = Number(valor_min);
+      filtered = filtered.filter(t => t.valorNominal >= minVal);
+    }
+    if (valor_max && !isNaN(Number(valor_max))) {
+      const maxVal = Number(valor_max);
+      filtered = filtered.filter(t => t.valorNominal <= maxVal);
+    }
+
+    // Filtro por Data de Cadastro / Operação
+    if (data_cadastro_inicio) {
+      filtered = filtered.filter(t => t.dataCadastro && t.dataCadastro >= data_cadastro_inicio);
+    }
+    if (data_cadastro_fim) {
+      filtered = filtered.filter(t => t.dataCadastro && t.dataCadastro <= data_cadastro_fim);
+    }
+
+    // Filtro por Data de Vencimento
+    if (data_venc_inicio) {
+      filtered = filtered.filter(t => t.dataVencimento && t.dataVencimento >= data_venc_inicio);
+    }
+    if (data_venc_fim) {
+      filtered = filtered.filter(t => t.dataVencimento && t.dataVencimento <= data_venc_fim);
+    }
+
+    // Filtro por Número do Título
+    if (numero_titulo && numero_titulo.trim()) {
+      const numQ = numero_titulo.trim().toLowerCase();
+      filtered = filtered.filter(t => t.numero.toLowerCase().includes(numQ));
+    }
+
+    // Filtro por Cedente (Nome ou CNPJ)
+    if (cedente && cedente.trim()) {
+      const cedQ = normalizeStr(cedente.trim()).toLowerCase();
+      filtered = filtered.filter(t =>
+        normalizeStr(t.cedente).toLowerCase().includes(cedQ) ||
+        (t.documentoCedente && t.documentoCedente.includes(cedente.trim()))
+      );
+    }
+
+    // Filtro por Sacado (Nome ou CNPJ)
+    if (sacado && sacado.trim()) {
+      const sacQ = normalizeStr(sacado.trim()).toLowerCase();
+      filtered = filtered.filter(t =>
+        normalizeStr(t.sacado).toLowerCase().includes(sacQ) ||
+        (t.documentoSacado && t.documentoSacado.includes(sacado.trim()))
+      );
+    }
+
+    // Filtro por Tipo de Lastro
+    if (tipo_lastro && tipo_lastro !== 'TODOS') {
+      const tipoQ = tipo_lastro.trim().toLowerCase();
+      filtered = filtered.filter(t => {
+        const c1 = (t.tipoLastroClassificacao || '').toLowerCase();
+        const c2 = (t.situacaoManifesto || '').toLowerCase();
+        return c1 === tipoQ || c1.includes(tipoQ) || c2.includes(tipoQ);
+      });
+    }
+
+    // Busca rápida geral
+    if (busca && busca.trim()) {
+      const q = normalizeStr(busca.trim()).toLowerCase();
+      filtered = filtered.filter(t =>
+        normalizeStr(t.numero).includes(q) ||
+        normalizeStr(t.operacao).includes(q) ||
+        normalizeStr(t.cedente).includes(q) ||
+        normalizeStr(t.sacado).includes(q) ||
+        normalizeStr(t.documentoCedente).includes(q) ||
+        normalizeStr(t.documentoSacado).includes(q) ||
+        normalizeStr(t.chaveNfe).includes(q) ||
+        normalizeStr(t.codigoDoLastro).includes(q) ||
+        normalizeStr(t.situacaoManifesto).includes(q)
+      );
+    }
+
+    // Cálculo de KPIs dos registros filtrados
+    const totalTitulos = filtered.length;
+    let totalValorNominal = 0;
+    let qtdInconsistentes = 0;
+    let qtdSemLastro = 0;
+    let qtdRegulares = 0;
+
+    for (const t of filtered) {
+      totalValorNominal += t.valorNominal || 0;
+      const classif = t.tipoLastroClassificacao;
+      if (classif === 'Inconsistente' || classif === 'Operação Não Concluída' || classif === 'Transação Desconhecida') {
+        qtdInconsistentes++;
+      } else if (classif === 'Sem Lastro / Sem Chave') {
+        qtdSemLastro++;
+      } else {
+        qtdRegulares++;
+      }
+    }
+
+    res.setHeader('x-data-source', dataSource);
+    res.json({
+      titulos: filtered,
+      totalRegistros: allTitles.length,
+      tiposLastroDisponiveis: Array.from(tiposLastroSet).sort(),
+      kpis: {
+        totalTitulos,
+        totalValorNominal,
+        qtdInconsistentes,
+        qtdSemLastro,
+        qtdRegulares
+      }
+    });
+  } catch (err) {
+    console.error('Erro ao consultar títulos para lastro:', err);
+    res.status(500).json({ error: 'Erro ao consultar lastros de títulos', message: err.message });
   }
 });
 
@@ -4564,6 +4869,97 @@ app.get('/api/cobranca/sacado/:documento/endereco', requireSession, async (req, 
   } catch (err) {
     console.warn(`Aviso ao consultar endereço do sacado ${cleanDoc}:`, err.message);
     return res.json({ nome: '', documento: cleanDoc, endereco: null });
+  }
+});
+
+// =========================================================================
+// MÓDULO COBRANÇA: OBSERVAÇÕES DE TÍTULOS (PERSISTÊNCIA SQLITE)
+// =========================================================================
+function ensureCobrancaObservacoesTableSchema() {
+  try {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS cobranca_titulos_observacoes (
+        id TEXT PRIMARY KEY,
+        titulo_id TEXT NOT NULL,
+        numero_titulo TEXT,
+        operacao TEXT,
+        cedente TEXT,
+        sacado TEXT,
+        usuario TEXT NOT NULL,
+        observacao TEXT NOT NULL,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
+      CREATE INDEX IF NOT EXISTS idx_cobranca_obs_titulo ON cobranca_titulos_observacoes(titulo_id);
+      CREATE INDEX IF NOT EXISTS idx_cobranca_obs_num_op ON cobranca_titulos_observacoes(numero_titulo, operacao);
+    `);
+  } catch (schemaErr) {
+    console.warn('Aviso ao inicializar tabela cobranca_titulos_observacoes:', schemaErr.message);
+  }
+}
+ensureCobrancaObservacoesTableSchema();
+
+app.get('/api/cobranca/titulos/:id/observacoes', requireSession, (req, res) => {
+  try {
+    const { id } = req.params;
+    const { numero, operacao } = req.query;
+
+    let rows = [];
+    if (numero && operacao) {
+      rows = db.prepare(`
+        SELECT * FROM cobranca_titulos_observacoes 
+        WHERE titulo_id = ? OR (numero_titulo = ? AND operacao = ?)
+        ORDER BY created_at DESC
+      `).all(String(id), String(numero), String(operacao));
+    } else {
+      rows = db.prepare(`
+        SELECT * FROM cobranca_titulos_observacoes 
+        WHERE titulo_id = ?
+        ORDER BY created_at DESC
+      `).all(String(id));
+    }
+
+    return res.json({ observacoes: rows });
+  } catch (err) {
+    console.error('Erro ao buscar observações do título:', err.message);
+    return res.status(500).json({ error: 'Erro ao buscar observações', message: err.message });
+  }
+});
+
+app.post('/api/cobranca/titulos/:id/observacoes', requireSession, (req, res) => {
+  try {
+    const { id } = req.params;
+    const { observacao, numero, operacao, cedente, sacado } = req.body || {};
+
+    const texto = String(observacao || '').trim();
+    if (!texto) {
+      return res.status(400).json({ error: 'O texto da observação não pode ser vazio.' });
+    }
+
+    const usuario = req.authUser?.username || req.authUser?.email || req.authSession?.username || 'Usuário';
+    const now = new Date().toISOString();
+    const obsId = `obs_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+
+    db.prepare(`
+      INSERT INTO cobranca_titulos_observacoes (
+        id, titulo_id, numero_titulo, operacao, cedente, sacado, usuario, observacao, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      obsId,
+      String(id),
+      String(numero || ''),
+      String(operacao || ''),
+      String(cedente || ''),
+      String(sacado || ''),
+      usuario,
+      texto,
+      now
+    );
+
+    const created = db.prepare(`SELECT * FROM cobranca_titulos_observacoes WHERE id = ?`).get(obsId);
+    return res.status(201).json({ success: true, observacao: created });
+  } catch (err) {
+    console.error('Erro ao salvar observação do título:', err.message);
+    return res.status(500).json({ error: 'Erro ao salvar observação', message: err.message });
   }
 });
 

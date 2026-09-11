@@ -55,7 +55,8 @@ export const permissionGroups: PermissionGroup[] = [
     id: '12',
     name: 'Cobrança',
     children: [
-      { id: '12.1', name: 'Análise de Vencidos' }
+      { id: '12.1', name: 'Análise de Vencidos' },
+      { id: '12.2', name: 'Lastro Inconsistente' }
     ]
   },
   {
@@ -92,7 +93,7 @@ const legacyChildren: Record<string, string[]> = {
   '8': ['8.1', '8.2', '8.3', '8.4', '8.5', '8.6', '8.7'],
   '10': ['10.1', '10.2'],
   '11': ['11.1', '11.2', '11.3'],
-  '12': ['12.1'],
+  '12': ['12.1', '12.2'],
   '13': ['13.1', '13.2'],
   '14': ['14.1', '14.2', '14.3']
 };

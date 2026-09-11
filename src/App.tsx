@@ -31,6 +31,7 @@ import EmailConfig from './internal/modules/administracao/configuracao-email/Ema
 import ConfirmationSystem from './internal/modules/mesa-operacoes/relatorio-diario/ConfirmationSystem';
 import ConfirmationAnalise from './internal/modules/confirmacao/analise-confirmacao/ConfirmationAnalise';
 import OverdueAnalysis from './internal/modules/cobranca/analise-vencidos/OverdueAnalysis';
+import InconsistentBacking from './internal/modules/cobranca/lastro-inconsistente/InconsistentBacking';
 import LegalPaymentApproval from './internal/modules/juridico/aprovacao-pagamentos/LegalPaymentApproval';
 import LegalApproversConfig from './internal/modules/juridico/configuracao-aprovadores-juridicos/LegalApproversConfig';
 import OperationsAnalysis from './internal/modules/mesa-operacoes/analise-operacao/OperationsAnalysis';
@@ -137,6 +138,7 @@ function App() {
                 <Route path="/confirmacao/sistema" element={<Navigate to="/mesa-operacoes/relatorio-diario" replace />} />
                 <Route path="/confirmacao/analise" element={<AccessRoute permission="10.2"><ConfirmationAnalise /></AccessRoute>} />
                 <Route path="/cobranca/analise-vencidos" element={<AccessRoute permission="12.1"><OverdueAnalysis /></AccessRoute>} />
+                <Route path="/cobranca/lastro-inconsistente" element={<AccessRoute permission="12.2"><InconsistentBacking /></AccessRoute>} />
                 <Route path="/juridico/aprovacao-pagamentos" element={<AccessRoute permission="13.1"><LegalPaymentApproval /></AccessRoute>} />
                 <Route path="/juridico/configuracao-aprovadores" element={<AccessRoute permission="13.2"><LegalApproversConfig /></AccessRoute>} />
                 <Route path="/mesa-operacoes/analise" element={<AccessRoute permission="14.1"><OperationsAnalysis /></AccessRoute>} />

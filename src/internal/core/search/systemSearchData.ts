@@ -434,6 +434,20 @@ export const systemSearchItems: SearchItem[] = [
     icon: 'FileSpreadsheet',
     badge: 'Submenu'
   },
+  {
+    id: 'cob-lastro-inconsistente',
+    title: 'Lastro Inconsistente (Cobrança)',
+    category: 'Cobrança',
+    breadcrumb: ['Grupos', 'Cobrança', 'Lastro Inconsistente'],
+    path: '/cobranca/lastro-inconsistente',
+    permissionId: '12.2',
+    description: 'Consulta ampla de lastro e manifestos de títulos da base (NF-e, inconsistências, CT-e, transações desconhecidas).',
+    explanation: 'Acesse Grupos > Cobrança > Lastro Inconsistente para buscar e auditar o lastro fiscal de qualquer título da base BitFin.',
+    tags: ['Lastro Fiscal', 'Manifesto Destinatário', 'NF-e Inconsistente', 'Chave de Acesso'],
+    keywords: ['lastro', 'inconsistente', 'manifesto', 'nfe', 'chave de acesso', 'danfe', 'cobranca', 'sefaz', 'bitfin', 'cte', 'inconsistencia'],
+    icon: 'AlertTriangle',
+    badge: 'Submenu'
+  },
 
   // ==========================================
   // BANCO DE DADOS / DASHBOARDS / BI

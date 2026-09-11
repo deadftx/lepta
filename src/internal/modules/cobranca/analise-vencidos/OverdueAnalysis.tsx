@@ -1,16 +1,30 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
+import JSZip from 'jszip';
 import {
   FileSpreadsheet, RefreshCw, X,
   Download, AlertTriangle, Clock, Building2, User, FileText,
   ContactRound, TrendingUp, DollarSign, ArrowUpDown, Tag, ShieldAlert,
-  Search, SlidersHorizontal, FileCheck, Landmark, Copy, Check, UploadCloud,
-  MapPin, Phone, Mail, CheckCircle2
+  Search, SlidersHorizontal, FileCheck, Landmark, UploadCloud,
+  MapPin, Phone, Mail, CheckCircle2, MessageSquare, Layers, Archive, Send
 } from 'lucide-react';
 import { API_BASE_URL, getAuthHeaders } from '../../../../config/api';
+import { useAuth } from '../../../core/AuthContext';
 import { gerarCartaAnuenciaBlob, limparCnpj, type CartaAnuenciaData } from './CartaAnuenciaService';
 import './OverdueAnalysis.css';
+
+export interface ObservacaoCobranca {
+  id: string;
+  titulo_id: string;
+  numero_titulo?: string;
+  operacao?: string;
+  cedente?: string;
+  sacado?: string;
+  usuario: string;
+  observacao: string;
+  created_at: string;
+}
 
 export interface TituloVencido {
   id: string;
@@ -47,6 +61,9 @@ export interface TituloVencido {
     uf?: string;
     cep?: string;
   };
+  hasObservacao?: boolean;
+  totalObservacoes?: number;
+  ultimaObservacaoData?: string;
 }
 
 export interface KpisOverdue {
@@ -265,12 +282,26 @@ const OverdueAnalysis = () => {
   // Popover Cedente
   const [popover, setPopover] = useState<{ visible: boolean; x: number; y: number; cedente: string } | null>(null);
 
+  const { user } = useAuth();
+
   // Modal de Detalhes do Título (aberto ao clicar no número do título ou ver)
   const [selectedTitleDetail, setSelectedTitleDetail] = useState<TituloVencido | null>(null);
 
   // Modal Central de Ações do Título
   const [selectedAcoesTitulo, setSelectedAcoesTitulo] = useState<TituloVencido | null>(null);
-  const [acoesActiveTab, setAcoesActiveTab] = useState<'anuencia' | 'lastro' | 'cartorio' | 'detalhes'>('anuencia');
+  const [acoesActiveTab, setAcoesActiveTab] = useState<'observacoes' | 'anuencia' | 'cartorio' | 'detalhes'>('observacoes');
+
+  // Seleção em lote para Cartas de Anuência
+  const [loteMode, setLoteMode] = useState(false);
+  const [selectedTituloIds, setSelectedTituloIds] = useState<Set<string>>(new Set());
+  const [gerandoLoteZip, setGerandoLoteZip] = useState(false);
+  const [loteZipProgress, setLoteZipProgress] = useState<{ current: number; total: number }>({ current: 0, total: 0 });
+
+  // Observações de cobrança
+  const [observacoesList, setObservacoesList] = useState<ObservacaoCobranca[]>([]);
+  const [loadingObservacoes, setLoadingObservacoes] = useState(false);
+  const [novaObservacao, setNovaObservacao] = useState('');
+  const [salvandoObservacao, setSalvandoObservacao] = useState(false);
 
   // Estado do formulário da Carta de Anuência
   const [cartaForm, setCartaForm] = useState<CartaAnuenciaData>({
@@ -295,8 +326,6 @@ const OverdueAnalysis = () => {
   const [uploadingCartorios, setUploadingCartorios] = useState(false);
   const [cartorioUploadMsg, setCartorioUploadMsg] = useState('');
 
-  // Notificação de cópia
-  const [copiedField, setCopiedField] = useState<string | null>(null);
 
   // Exportação Excel
   const [exporting, setExporting] = useState(false);
@@ -440,11 +469,89 @@ const OverdueAnalysis = () => {
     }
   }, []);
 
+  // Carregar histórico de observações de cobrança
+  const carregarObservacoes = useCallback(async (t: TituloVencido) => {
+    setLoadingObservacoes(true);
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/cobranca/titulos/${encodeURIComponent(t.id)}/observacoes?numero_titulo=${encodeURIComponent(t.numero)}&operacao=${encodeURIComponent(t.operacao)}`, {
+        headers: getAuthHeaders()
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setObservacoesList(Array.isArray(data.observacoes) ? data.observacoes : []);
+      }
+    } catch (err) {
+      console.warn('Erro ao carregar observações:', err);
+    } finally {
+      setLoadingObservacoes(false);
+    }
+  }, []);
+
+  // Salvar nova observação de cobrança
+  const handleSalvarObservacao = async () => {
+    if (!selectedAcoesTitulo || !novaObservacao.trim()) return;
+
+    try {
+      setSalvandoObservacao(true);
+      const bodyData = {
+        observacao: novaObservacao.trim(),
+        numero_titulo: selectedAcoesTitulo.numero,
+        operacao: selectedAcoesTitulo.operacao,
+        cedente: selectedAcoesTitulo.cedente,
+        sacado: selectedAcoesTitulo.sacado,
+        usuario: user?.username || user?.email || 'Usuário Lepta'
+      };
+
+      const res = await fetch(`${API_BASE_URL}/api/cobranca/titulos/${encodeURIComponent(selectedAcoesTitulo.id)}/observacoes`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...getAuthHeaders()
+        },
+        body: JSON.stringify(bodyData)
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        if (data && data.observacao) {
+          setObservacoesList(prev => [data.observacao, ...prev]);
+        } else {
+          carregarObservacoes(selectedAcoesTitulo);
+        }
+        setNovaObservacao('');
+
+        // Atualizar lista principal de títulos em memória com a flag hasObservacao
+        setTitulos(prev => prev.map(item => {
+          if (item.id === selectedAcoesTitulo.id || (item.numero === selectedAcoesTitulo.numero && item.operacao === selectedAcoesTitulo.operacao)) {
+            return {
+              ...item,
+              hasObservacao: true,
+              totalObservacoes: (item.totalObservacoes || 0) + 1,
+              ultimaObservacaoData: new Date().toISOString()
+            };
+          }
+          return item;
+        }));
+      } else {
+        const errData = await res.json().catch(() => ({}));
+        alert('Falha ao salvar observação: ' + (errData.error || 'Erro no servidor'));
+      }
+    } catch (err: any) {
+      console.error('Erro ao salvar observação:', err);
+      alert('Erro ao conectar com o servidor para gravar a observação.');
+    } finally {
+      setSalvandoObservacao(false);
+    }
+  };
+
   // Abrir Modal de Ações
-  const handleAbrirAcoes = async (t: TituloVencido, initialTab: 'anuencia' | 'lastro' | 'cartorio' | 'detalhes' = 'anuencia') => {
+  const handleAbrirAcoes = async (t: TituloVencido, initialTab: 'observacoes' | 'anuencia' | 'cartorio' | 'detalhes' = 'observacoes') => {
     setSelectedAcoesTitulo(t);
     setAcoesActiveTab(initialTab);
     setCartorioUploadMsg('');
+    setNovaObservacao('');
+
+    carregarObservacoes(t);
 
     const vencFormatado = t.dataVencimento ? (t.dataVencimento.includes('/') ? t.dataVencimento : formatDate(t.dataVencimento)) : '';
     const hojeIso = new Date().toISOString().slice(0, 10);
@@ -554,13 +661,6 @@ const OverdueAnalysis = () => {
     }
   };
 
-  // Copiar campo para área de transferência
-  const handleCopy = (text: string, field: string) => {
-    if (!text) return;
-    navigator.clipboard.writeText(text);
-    setCopiedField(field);
-    setTimeout(() => setCopiedField(null), 2000);
-  };
 
   // Limpar filtros e resetar busca sob demanda
   const handleClearFilters = () => {
@@ -604,6 +704,103 @@ const OverdueAnalysis = () => {
     } else {
       setSortField(field);
       setSortAsc(false);
+    }
+  };
+
+  // Lógica de Seleção em Lote para Carta de Anuência
+  const handleToggleLoteMode = () => {
+    setLoteMode(prev => {
+      if (prev) {
+        setSelectedTituloIds(new Set());
+      }
+      return !prev;
+    });
+  };
+
+  const handleToggleTituloSelect = (id: string) => {
+    setSelectedTituloIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  };
+
+  const allVisibleSelected = useMemo(() => {
+    if (sortedTitulos.length === 0) return false;
+    return sortedTitulos.every(t => selectedTituloIds.has(t.id));
+  }, [sortedTitulos, selectedTituloIds]);
+
+  const handleSelectAllVisible = () => {
+    if (allVisibleSelected) {
+      setSelectedTituloIds(new Set());
+    } else {
+      setSelectedTituloIds(new Set(sortedTitulos.map(t => t.id)));
+    }
+  };
+
+  const handleExportarLoteZip = async () => {
+    const selecionados = titulos.filter(t => selectedTituloIds.has(t.id));
+    if (selecionados.length === 0) {
+      alert('Selecione pelo menos um título para gerar as cartas de anuência.');
+      return;
+    }
+
+    try {
+      setGerandoLoteZip(true);
+      setLoteZipProgress({ current: 0, total: selecionados.length });
+
+      const zip = new JSZip();
+      const hojeIso = new Date().toISOString().slice(0, 10);
+      let count = 0;
+
+      for (const t of selecionados) {
+        count++;
+        setLoteZipProgress({ current: count, total: selecionados.length });
+
+        const vencFormatado = t.dataVencimento
+          ? (t.dataVencimento.includes('/') ? t.dataVencimento : formatDate(t.dataVencimento))
+          : '';
+
+        const cartaData: CartaAnuenciaData = {
+          numeroTitulo: t.numero || '',
+          tipoDocumento: t.tipoDocumento || 'DM',
+          dataVencimento: vencFormatado,
+          valorNominal: t.valorNominal || 0,
+          nomeSacado: t.sacado || '',
+          cnpjSacado: t.documentoSacado || '',
+          logradouroNumero: t.sacadoEndereco?.logradouro || '',
+          bairro: t.sacadoEndereco?.bairro || '',
+          municipioUf: t.sacadoEndereco?.cidade ? `${t.sacadoEndereco.cidade}/${t.sacadoEndereco.uf || ''}` : '',
+          cep: t.sacadoEndereco?.cep || '',
+          dataCarta: hojeIso
+        };
+
+        const docxBlob = await gerarCartaAnuenciaBlob(cartaData);
+        const cleanCnpj = limparCnpj(t.documentoSacado || 'sacado');
+        const cleanNum = (t.numero || `${count}`).replace(/[^a-zA-Z0-9]/g, '_');
+        const filename = `carta_anuencia_${cleanCnpj}_${cleanNum}.docx`;
+
+        zip.file(filename, docxBlob);
+      }
+
+      const zipBlob = await zip.generateAsync({ type: 'blob' });
+      const url = URL.createObjectURL(zipBlob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `cartas_anuencia_lote_${hojeIso}.zip`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (err: any) {
+      console.error('Erro ao exportar cartas em lote:', err);
+      alert('Ocorreu um erro ao gerar o arquivo ZIP das cartas: ' + (err?.message || 'Erro desconhecido'));
+    } finally {
+      setGerandoLoteZip(false);
     }
   };
 
@@ -1059,6 +1256,20 @@ const OverdueAnalysis = () => {
               <span>Pesquisar Títulos</span>
             </button>
 
+            {/* Botão para ativar seleção de Carta de Anuência em Lote */}
+            <button
+              type="button"
+              className={`ov-btn-lote ${loteMode ? 'active' : ''}`}
+              onClick={() => {
+                handleToggleLoteMode();
+                if (!hasSearched) setHasSearched(true);
+              }}
+              title="Ativar/desativar modo de seleção em lote para gerar cartas de anuência"
+            >
+              <Layers size={14} />
+              <span>{loteMode ? 'Cancelar Seleção' : 'Carta de Anuência em Lote'}</span>
+            </button>
+
             <button type="button" className="ov-btn-clear" onClick={handleClearFilters}>
               <X size={14} />
               <span>Limpar Filtros</span>
@@ -1114,25 +1325,49 @@ const OverdueAnalysis = () => {
             <table className="ov-table">
               <thead>
                 <tr>
-                  <th onClick={() => handleSort('cedente')} style={{ cursor: 'pointer', width: '22%' }}>
+                  {loteMode && (
+                    <th style={{ width: '38px', textAlign: 'center' }}>
+                      <input
+                        type="checkbox"
+                        className="ov-checkbox-custom"
+                        checked={allVisibleSelected}
+                        onChange={handleSelectAllVisible}
+                        title="Marcar / desmarcar todos os títulos visíveis"
+                      />
+                    </th>
+                  )}
+                  <th onClick={() => handleSort('cedente')} style={{ cursor: 'pointer', width: loteMode ? '21%' : '22%' }}>
                     Cedente (Cliente) <ArrowUpDown size={11} />
                   </th>
-                  <th style={{ width: '21%' }}>Sacado</th>
-                  <th style={{ width: '15%' }}>Título / Operação</th>
-                  <th onClick={() => handleSort('dataVencimento')} style={{ cursor: 'pointer', width: '13%' }}>
+                  <th style={{ width: loteMode ? '20%' : '21%' }}>Sacado</th>
+                  <th style={{ width: loteMode ? '16%' : '15%' }}>Título / Operação</th>
+                  <th onClick={() => handleSort('dataVencimento')} style={{ cursor: 'pointer', width: loteMode ? '12%' : '13%' }}>
                     Vencimento / Aging <ArrowUpDown size={11} />
                   </th>
-                  <th style={{ width: '10%' }}>Situação</th>
+                  <th style={{ width: loteMode ? '9%' : '10%' }}>Situação</th>
                   <th onClick={() => handleSort('valorNominal')} style={{ cursor: 'pointer', textAlign: 'right', width: '10%' }}>
                     Valor Nominal <ArrowUpDown size={11} />
                   </th>
-                  <th style={{ width: '9%' }}>Cobrança</th>
+                  <th style={{ width: loteMode ? '8%' : '9%' }}>Cobrança</th>
                   <th style={{ textAlign: 'center', width: '85px' }}>Ações</th>
                 </tr>
               </thead>
               <tbody>
                 {sortedTitulos.map((t) => (
-                  <tr key={t.id}>
+                  <tr key={t.id} className={selectedTituloIds.has(t.id) ? 'row-selected' : ''}>
+                    {/* Checkbox de seleção em lote */}
+                    {loteMode && (
+                      <td style={{ textAlign: 'center' }}>
+                        <input
+                          type="checkbox"
+                          className="ov-checkbox-custom"
+                          checked={selectedTituloIds.has(t.id)}
+                          onChange={() => handleToggleTituloSelect(t.id)}
+                          title="Marcar título para emissão de carta de anuência"
+                        />
+                      </td>
+                    )}
+
                     {/* Cedente com Popover */}
                     <td>
                       <a
@@ -1159,7 +1394,7 @@ const OverdueAnalysis = () => {
                       )}
                     </td>
 
-                    {/* Número do Título Clicável (Requisito 4) + Tipo de Documento */}
+                    {/* Número do Título Clicável (Requisito 4) + Tipo de Documento + Badge de Observações */}
                     <td>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
                         <button
@@ -1174,6 +1409,17 @@ const OverdueAnalysis = () => {
                           <Tag size={9} />
                           {t.tipoDocumento || 'DM'}
                         </span>
+
+                        {t.hasObservacao && (
+                          <span
+                            className="ov-badge-obs"
+                            title={`${t.totalObservacoes || 1} observação(ões) de cobrança registrada(s). Clique para ver histórico.`}
+                            onClick={() => handleAbrirAcoes(t, 'observacoes')}
+                          >
+                            <MessageSquare size={10} />
+                            <span>Obs{t.totalObservacoes && t.totalObservacoes > 1 ? ` (${t.totalObservacoes})` : ''}</span>
+                          </span>
+                        )}
                       </div>
                       <span className="ov-doc-sub">Op: {t.operacao}</span>
                     </td>
@@ -1213,7 +1459,7 @@ const OverdueAnalysis = () => {
                         type="button"
                         className="ov-btn-acoes"
                         onClick={() => handleAbrirAcoes(t)}
-                        title="Abrir menu de ações deste título (Carta de Anuência, Lastro, Cartório)"
+                        title={t.hasObservacao ? `Abrir menu de ações (${t.totalObservacoes || 1} observação(ões) registrada(s))` : 'Abrir menu de ações deste título'}
                       >
                         <SlidersHorizontal size={12} />
                         <span>Ações</span>
@@ -1226,6 +1472,53 @@ const OverdueAnalysis = () => {
           </div>
         )}
       </div>
+
+      {/* BOTÃO FLUTUANTE DE EXPORTAÇÃO EM LOTE (.ZIP) */}
+      {loteMode && selectedTituloIds.size > 0 && createPortal(
+        <div className="ov-floating-dock">
+          <div className="ov-dock-content">
+            <div className="ov-dock-info">
+              <span className="ov-dock-badge">{selectedTituloIds.size}</span>
+              <div className="ov-dock-text">
+                <strong>{selectedTituloIds.size === 1 ? '1 título selecionado' : `${selectedTituloIds.size} títulos selecionados`}</strong>
+                <small>para gerar carta de anuência</small>
+              </div>
+            </div>
+
+            <div className="ov-dock-actions">
+              <button
+                type="button"
+                className="ov-btn-clear-selection"
+                onClick={() => setSelectedTituloIds(new Set())}
+                disabled={gerandoLoteZip}
+              >
+                Desmarcar todos
+              </button>
+
+              <button
+                type="button"
+                className="ov-btn-export-zip"
+                onClick={handleExportarLoteZip}
+                disabled={gerandoLoteZip}
+                title="Baixar arquivo ZIP com todas as cartas de anuência (.docx)"
+              >
+                {gerandoLoteZip ? (
+                  <>
+                    <RefreshCw size={15} className="spin" />
+                    <span>Gerando ZIP ({loteZipProgress.current}/{loteZipProgress.total})...</span>
+                  </>
+                ) : (
+                  <>
+                    <Archive size={15} />
+                    <span>Exportar Cartas (.ZIP)</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
 
       {/* POPOVER MODAL (Requisito 3: Backdrop adicionado para fechar ao clicar em qualquer lugar fora) */}
       {popover && popover.visible && createPortal(
@@ -1372,20 +1665,20 @@ const OverdueAnalysis = () => {
             <div className="ov-modal-tabs">
               <button
                 type="button"
+                className={`ov-modal-tab-btn ${acoesActiveTab === 'observacoes' ? 'active' : ''}`}
+                onClick={() => setAcoesActiveTab('observacoes')}
+              >
+                <MessageSquare size={15} />
+                <span>Observação de Cobrança</span>
+              </button>
+
+              <button
+                type="button"
                 className={`ov-modal-tab-btn ${acoesActiveTab === 'anuencia' ? 'active' : ''}`}
                 onClick={() => setAcoesActiveTab('anuencia')}
               >
                 <FileCheck size={15} />
                 <span>Carta de Anuência</span>
-              </button>
-
-              <button
-                type="button"
-                className={`ov-modal-tab-btn ${acoesActiveTab === 'lastro' ? 'active' : ''}`}
-                onClick={() => setAcoesActiveTab('lastro')}
-              >
-                <AlertTriangle size={15} />
-                <span>Lastro Inconsistente</span>
               </button>
 
               <button
@@ -1409,6 +1702,102 @@ const OverdueAnalysis = () => {
 
             {/* Conteúdo da Aba Ativa */}
             <div className="ov-modal-body">
+              {/* ABA: OBSERVAÇÃO DE COBRANÇA */}
+              {acoesActiveTab === 'observacoes' && (
+                <div className="ov-tab-content">
+                  <div className="ov-obs-banner">
+                    <MessageSquare size={20} style={{ color: '#38bdf8', flexShrink: 0 }} />
+                    <div>
+                      <strong>Observações Operacionais de Cobrança</strong>
+                      <p>
+                        Espaço para registro de notas operacionais, histórico de contatos, acordos ou ocorrências deste título.
+                        Todas as observações são salvas no banco de dados com autor, data e hora.
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Formulário de inserção */}
+                  <div className="ov-obs-form-box">
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <label className="ov-form-label" style={{ margin: 0 }}>Nova Observação</label>
+                      <span style={{ fontSize: '0.72rem', color: '#64748b' }}>Aceita parágrafos e quebras de linha</span>
+                    </div>
+
+                    <textarea
+                      className="ov-textarea-obs"
+                      rows={4}
+                      placeholder="Escreva qualquer observação ou detalhe referente à cobrança deste título..."
+                      value={novaObservacao}
+                      onChange={(e) => setNovaObservacao(e.target.value)}
+                    />
+
+                    <div className="ov-obs-form-footer">
+                      <div className="ov-obs-author-note">
+                        <User size={13} />
+                        <span>Registrando como: <strong>{user?.username || user?.email || 'Usuário Lepta'}</strong></span>
+                      </div>
+
+                      <button
+                        type="button"
+                        className="ov-btn-add-obs"
+                        onClick={handleSalvarObservacao}
+                        disabled={salvandoObservacao || !novaObservacao.trim()}
+                      >
+                        {salvandoObservacao ? (
+                          <>
+                            <RefreshCw size={13} className="spin" />
+                            <span>Gravando...</span>
+                          </>
+                        ) : (
+                          <>
+                            <Send size={13} />
+                            <span>Adicionar Observação</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Histórico registrado */}
+                  <div className="ov-obs-history-wrap">
+                    <div className="ov-obs-history-title">
+                      <span>Histórico Gravado ({observacoesList.length})</span>
+                    </div>
+
+                    {loadingObservacoes ? (
+                      <div style={{ padding: '2rem', textAlign: 'center', color: '#94a3b8' }}>
+                        <RefreshCw size={20} className="spin" style={{ margin: '0 auto 0.5rem auto' }} />
+                        <p style={{ fontSize: '0.82rem' }}>Carregando observações do título...</p>
+                      </div>
+                    ) : observacoesList.length === 0 ? (
+                      <div className="ov-obs-empty">
+                        <MessageSquare size={28} style={{ color: '#475569', margin: '0 auto 0.5rem auto' }} />
+                        <p style={{ fontWeight: 600, color: '#94a3b8', margin: '0 0 0.25rem 0' }}>Nenhuma observação registrada para este título.</p>
+                        <span style={{ fontSize: '0.75rem', color: '#64748b' }}>Escreva no campo acima para salvar a primeira observação no banco de dados.</span>
+                      </div>
+                    ) : (
+                      <div className="ov-obs-timeline">
+                        {observacoesList.map((obs) => (
+                          <div key={obs.id} className="ov-obs-card">
+                            <div className="ov-obs-card-header">
+                              <span className="ov-obs-card-user">
+                                <User size={12} />
+                                {obs.usuario}
+                              </span>
+                              <span className="ov-obs-card-time">
+                                <Clock size={12} />
+                                {new Date(obs.created_at).toLocaleString('pt-BR')}
+                              </span>
+                            </div>
+                            <p className="ov-obs-card-body">{obs.observacao}</p>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
               {/* ABA 1: CARTA DE ANUÊNCIA */}
               {acoesActiveTab === 'anuencia' && (
                 <div className="ov-tab-content">
@@ -1574,91 +1963,7 @@ const OverdueAnalysis = () => {
                 </div>
               )}
 
-              {/* ABA 2: LASTRO INCONSISTENTE */}
-              {acoesActiveTab === 'lastro' && (() => {
-                const situacaoManifesto = (selectedAcoesTitulo.situacaoManifesto || '').toLowerCase();
-                const isInc = situacaoManifesto.includes('inconsistente');
-                const isNaoConc = situacaoManifesto.includes('não concluída') || situacaoManifesto.includes('nao concluida');
-                const isDesc = situacaoManifesto.includes('desconhecida') || situacaoManifesto.includes('desconhecido');
-                const statusTexto = selectedAcoesTitulo.situacaoManifesto || (selectedAcoesTitulo.chaveNfe ? 'Regular / Confirmado' : 'Sem Informação de Lastro');
-
-                return (
-                  <div className="ov-tab-content">
-                    {/* Badge de Status */}
-                    <div className={`ov-lastro-status-card ${isInc ? 'status-red' : isNaoConc ? 'status-orange' : isDesc ? 'status-yellow' : 'status-green'}`}>
-                      <div className="ov-lastro-status-icon">
-                        <AlertTriangle size={24} />
-                      </div>
-                      <div>
-                        <span className="ov-lastro-status-title">Status do Lastro (Manifesto BitFin)</span>
-                        <h4 className="ov-lastro-status-value">{statusTexto}</h4>
-                        <p className="ov-lastro-status-desc">
-                          {isInc && 'Aviso: O lastro deste título foi classificado como Inconsistente pela SEFAZ / Manifesto do Destinatário.'}
-                          {isNaoConc && 'Aviso: Operação Não Concluída declarada pelo destinatário na SEFAZ.'}
-                          {isDesc && 'Atenção: Transação Desconhecida apontada pelo destinatário.'}
-                          {!isInc && !isNaoConc && !isDesc && 'Situação do lastro fiscal regular ou sem restrições impeditivas registradas.'}
-                        </p>
-                      </div>
-                    </div>
-
-                    <div className="ov-lastro-fields">
-                      {/* Código do Lastro */}
-                      <div className="ov-lastro-field-card">
-                        <div className="ov-lastro-field-header">
-                          <span className="ov-lastro-field-label">Código do Lastro</span>
-                          {selectedAcoesTitulo.codigoDoLastro && (
-                            <button
-                              type="button"
-                              className="ov-btn-copy"
-                              onClick={() => handleCopy(selectedAcoesTitulo.codigoDoLastro!, 'lastro')}
-                            >
-                              {copiedField === 'lastro' ? <Check size={12} style={{ color: '#10b981' }} /> : <Copy size={12} />}
-                              <span>{copiedField === 'lastro' ? 'Copiado!' : 'Copiar'}</span>
-                            </button>
-                          )}
-                        </div>
-                        <p className="ov-lastro-field-value">
-                          {selectedAcoesTitulo.codigoDoLastro || 'Não informado'}
-                        </p>
-                      </div>
-
-                      {/* Chave da NF-e */}
-                      <div className="ov-lastro-field-card">
-                        <div className="ov-lastro-field-header">
-                          <span className="ov-lastro-field-label">Chave de Acesso da NF-e</span>
-                          {selectedAcoesTitulo.chaveNfe && (
-                            <button
-                              type="button"
-                              className="ov-btn-copy"
-                              onClick={() => handleCopy(selectedAcoesTitulo.chaveNfe!, 'nfe')}
-                            >
-                              {copiedField === 'nfe' ? <Check size={12} style={{ color: '#10b981' }} /> : <Copy size={12} />}
-                              <span>{copiedField === 'nfe' ? 'Copiado!' : 'Copiar'}</span>
-                            </button>
-                          )}
-                        </div>
-                        <p className="ov-lastro-field-value ov-font-mono">
-                          {selectedAcoesTitulo.chaveNfe || 'Chave da NF-e não vinculada'}
-                        </p>
-                      </div>
-
-                      {/* Data do Manifesto se houver */}
-                      {selectedAcoesTitulo.dataManifesto && (
-                        <div className="ov-lastro-field-card">
-                          <div className="ov-lastro-field-header">
-                            <span className="ov-lastro-field-label">Data do Manifesto / Evento</span>
-                          </div>
-                          <p className="ov-lastro-field-value">
-                            {formatDate(selectedAcoesTitulo.dataManifesto)}
-                          </p>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                );
-              })()}
-
-              {/* ABA 3: INFORMAÇÕES DE CARTÓRIO */}
+              {/* ABA: INFORMAÇÕES DE CARTÓRIO */}
               {acoesActiveTab === 'cartorio' && (
                 <div className="ov-tab-content">
                   <div className="ov-cartorio-header-bar">
