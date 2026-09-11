@@ -25,6 +25,7 @@ import {
   FileSpreadsheet
 } from 'lucide-react';
 import './MonitorDashboard.css';
+import { SsmsWebStudio } from './SsmsWebStudio';
 
 interface VpsMetrics {
   hostname: string;
@@ -134,6 +135,7 @@ export const MonitorDashboard: React.FC = () => {
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'online' | 'offline'>('ALL');
   const [moduleFilter, setModuleFilter] = useState<string>('ALL');
   const [dbSearch, setDbSearch] = useState('');
+  const [dbViewMode, setDbViewMode] = useState<'studio' | 'audit'>('studio');
   const [exportingExcel, setExportingExcel] = useState(false);
 
   const sseRef = useRef<EventSource | null>(null);
@@ -526,7 +528,7 @@ export const MonitorDashboard: React.FC = () => {
           className={`tab-btn ${activeTab === 'db' ? 'active' : ''}`}
           onClick={() => setActiveTab('db')}
         >
-          <Database size={18} /> Feed do Banco (Audit)
+          <Database size={18} /> Banco de Dados (SSMS)
         </button>
         <button
           className={`tab-btn ${activeTab === 'errors' ? 'active' : ''}`}
@@ -865,50 +867,107 @@ export const MonitorDashboard: React.FC = () => {
           </div>
         )}
 
-        {/* ABA 4: FEED DO BANCO DE DADOS */}
+        {/* ABA 4: BANCO DE DADOS (SSMS STUDIO & AUDITORIA) */}
         {activeTab === 'db' && (
-          <div className="tab-pane fade-in">
-            <div className="filter-bar">
-              <div className="search-input-wrapper">
-                <Search size={18} />
-                <input
-                  type="text"
-                  placeholder="Filtrar por tabela ou ação (ex: compras_requisicoes, INSERT)..."
-                  value={dbSearch}
-                  onChange={(e) => setDbSearch(e.target.value)}
-                />
+          <div className="tab-pane fade-in" style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
+            {/* Seletor de Modo da Aba de Banco */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.75rem' }}>
+              <div style={{ display: 'flex', background: 'rgba(30, 41, 59, 0.7)', padding: '0.25rem', borderRadius: '8px', border: '1px solid rgba(51, 65, 85, 0.6)', gap: '0.25rem' }}>
+                <button
+                  type="button"
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.45rem',
+                    padding: '0.4rem 0.9rem',
+                    background: dbViewMode === 'studio' ? '#38bdf8' : 'transparent',
+                    color: dbViewMode === 'studio' ? '#0f172a' : '#94a3b8',
+                    border: 'none',
+                    borderRadius: '6px',
+                    fontSize: '0.8rem',
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    transition: 'all 0.15s ease'
+                  }}
+                  onClick={() => setDbViewMode('studio')}
+                >
+                  <Database size={15} /> SSMS Web Studio (Consultas & Schema)
+                </button>
+                <button
+                  type="button"
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.45rem',
+                    padding: '0.4rem 0.9rem',
+                    background: dbViewMode === 'audit' ? '#38bdf8' : 'transparent',
+                    color: dbViewMode === 'audit' ? '#0f172a' : '#94a3b8',
+                    border: 'none',
+                    borderRadius: '6px',
+                    fontSize: '0.8rem',
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    transition: 'all 0.15s ease'
+                  }}
+                  onClick={() => setDbViewMode('audit')}
+                >
+                  <Radio size={15} /> Feed de Auditoria ao Vivo ({dbEvents.length})
+                </button>
               </div>
-              <span className="live-counter">📡 Total de eventos escutados: {dbEvents.length}</span>
+
+              <div style={{ fontSize: '0.75rem', color: '#64748b' }}>
+                Ambiente: <strong style={{ color: '#38bdf8' }}>SQLite VPS (Homolog)</strong> • Apenas Leituras (SELECT)
+              </div>
             </div>
 
-            <div className="db-events-list glass-panel">
-              {filteredDbEvents.length === 0 ? (
-                <div className="empty-state">
-                  <Database size={32} />
-                  <p>Aguardando operações no banco SQLite... (Ações de INSERT, UPDATE e DELETE aparecerão aqui ao vivo).</p>
-                </div>
-              ) : (
-                filteredDbEvents.map(ev => (
-                  <div key={ev.id} className={`db-event-item ${ev.error ? 'error' : ''}`}>
-                    <div className="action-tag">
-                      <span className={`act-badge ${ev.action.toLowerCase()}`}>{ev.action}</span>
-                      <strong className="table-name">"{ev.table}"</strong>
-                    </div>
-
-                    <div className="event-meta">
-                      <span className="duration">⏱️ {ev.durationMs}ms</span>
-                      <span className="time">{new Date(ev.timestamp).toLocaleTimeString('pt-BR')}</span>
-                    </div>
-
-                    {ev.error && (
-                      <div className="error-detail">
-                        ❌ Erro: {ev.error}
-                      </div>
-                    )}
+            {/* Conteúdo Dinâmico */}
+            {dbViewMode === 'studio' ? (
+              <SsmsWebStudio />
+            ) : (
+              <div>
+                <div className="filter-bar">
+                  <div className="search-input-wrapper">
+                    <Search size={18} />
+                    <input
+                      type="text"
+                      placeholder="Filtrar por tabela ou ação (ex: compras_requisicoes, INSERT)..."
+                      value={dbSearch}
+                      onChange={(e) => setDbSearch(e.target.value)}
+                    />
                   </div>
-                ))
-              )}
-            </div>
+                  <span className="live-counter">📡 Total de eventos escutados: {dbEvents.length}</span>
+                </div>
+
+                <div className="db-events-list glass-panel">
+                  {filteredDbEvents.length === 0 ? (
+                    <div className="empty-state">
+                      <Database size={32} />
+                      <p>Aguardando operações no banco SQLite... (Ações de INSERT, UPDATE e DELETE aparecerão aqui ao vivo).</p>
+                    </div>
+                  ) : (
+                    filteredDbEvents.map(ev => (
+                      <div key={ev.id} className={`db-event-item ${ev.error ? 'error' : ''}`}>
+                        <div className="action-tag">
+                          <span className={`act-badge ${ev.action.toLowerCase()}`}>{ev.action}</span>
+                          <strong className="table-name">"{ev.table}"</strong>
+                        </div>
+
+                        <div className="event-meta">
+                          <span className="duration">⏱️ {ev.durationMs}ms</span>
+                          <span className="time">{new Date(ev.timestamp).toLocaleTimeString('pt-BR')}</span>
+                        </div>
+
+                        {ev.error && (
+                          <div className="error-detail">
+                            ❌ Erro: {ev.error}
+                          </div>
+                        )}
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+            )}
           </div>
         )}
 

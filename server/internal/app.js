@@ -20,6 +20,7 @@ import { registerConfirmationRoutes } from './modules/confirmation/routes.js';
 import { registerOperationsRoutes } from './modules/operations/routes.js';
 import { registerTickerRoutes } from './modules/ticker/routes.js';
 import { registerMonitorRoutes } from './modules/monitor/routes.js';
+import { registerDevSqlRoutes } from './modules/database/devSqlRoutes.js';
 import { registerNplRoutes } from './modules/intelligence/npl/routes.js';
 import { createCommitteeRouter } from './modules/intelligence/committee/routes.js';
 import { createSmartFactorRouter } from './modules/intelligence/smartfactor/routes.js';
@@ -6566,6 +6567,12 @@ registerMovimentoFalimentarRoutes(app, {
 registerTickerRoutes(app);
 
 registerMonitorRoutes(app, {
+  db,
+  requireSession,
+  requireMaster
+});
+
+registerDevSqlRoutes(app, {
   db,
   requireSession,
   requireMaster
