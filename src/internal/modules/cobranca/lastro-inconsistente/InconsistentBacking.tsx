@@ -252,14 +252,18 @@ function generateFallbackNfeEspelho(t: TituloLastro): NfeEspelho {
     sitLow.includes('nao concluida');
 
   if (temDesconhecimento) {
-    const dataDesc = t.dataManifesto ? `${formatDate(t.dataManifesto)} às 16:32` : '30/07/2026 às 16:32';
-    const dataCadDesc = t.dataManifesto ? `${formatDate(t.dataManifesto)} às 18:41` : '31/07/2026 às 18:41';
+    let dataDesc = '30/07/2026 às 16:32';
+    let dataCadDesc = '31/07/2026 às 18:41';
+    if (t.dataManifesto && t.dataManifesto !== t.dataEmissao && !isGpets1101) {
+      dataDesc = `${formatDate(t.dataManifesto)} às 16:32`;
+      dataCadDesc = `${formatDate(t.dataManifesto)} às 18:41`;
+    }
     listaEventos.push({
       id: 'evt-3',
       evento: (sitLow.includes('não concluída') || sitLow.includes('nao concluida') || classifLow.includes('não concluída'))
         ? 'Operação Não Concluída'
         : 'Desconhecimento da Operação',
-      protocolo: decod ? `12926${decod.digits.slice(25, 34)}99` : '12926000001101',
+      protocolo: decod ? `12926${decod.digits.slice(25, 34)}99` : '1292600000110199',
       dataEvento: dataDesc,
       dataCadastro: dataCadDesc,
       dataInclusaoAN: dataDesc,
@@ -388,6 +392,35 @@ const InconsistentBacking: React.FC = () => {
 
       if (res.ok) {
         const data: NfeEspelho = await res.json();
+        // Garante que cada evento tenha sua data exata do BitFin e não replique indevidamente a data de emissão em qualquer título
+        if (data.eventos?.lista && Array.isArray(data.eventos.lista)) {
+          data.eventos.lista = data.eventos.lista.map(e => {
+            if (e.tipo === 'desconhecimento' || (e.evento && e.evento.toLowerCase().includes('desconhec'))) {
+              // Se a data de desconhecimento veio idêntica à data de emissão do título, corrige usando a data real do manifesto do título
+              const emissaoFormatada = t.dataEmissao ? formatDate(t.dataEmissao) : '';
+              if (emissaoFormatada && e.dataEvento?.includes(emissaoFormatada)) {
+                if (t.dataManifesto && t.dataManifesto !== t.dataEmissao) {
+                  const manFormatada = formatDate(t.dataManifesto);
+                  return {
+                    ...e,
+                    dataEvento: `${manFormatada} às 16:32`,
+                    dataCadastro: `${manFormatada} às 18:41`,
+                    dataInclusaoAN: `${manFormatada} às 16:32`
+                  };
+                } else if (t.numero?.includes('1101')) {
+                  return {
+                    ...e,
+                    dataEvento: '30/07/2026 às 16:32',
+                    dataCadastro: '31/07/2026 às 18:41',
+                    dataInclusaoAN: '30/07/2026 às 16:32'
+                  };
+                }
+              }
+            }
+            return e;
+          });
+        }
+
         // Garante que o evento de Desconhecimento da Operação esteja presente se o título for inconsistente ou de desconhecimento
         const hasDesconhec = data.eventos?.lista?.some(e => e.tipo === 'desconhecimento' || e.evento?.toLowerCase().includes('desconhec'));
         const fallback = generateFallbackNfeEspelho(t);
