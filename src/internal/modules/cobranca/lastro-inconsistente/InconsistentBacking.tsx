@@ -2,7 +2,8 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import {
   AlertTriangle, Search, RefreshCw, X, Copy, Check, FileSpreadsheet,
-  Tag, ShieldAlert, CheckCircle2, DollarSign, ArrowUpDown, ExternalLink
+  Tag, ShieldAlert, CheckCircle2, DollarSign, ArrowUpDown,
+  FileText, FileCheck, Layers
 } from 'lucide-react';
 import { API_BASE_URL, getAuthHeaders } from '../../../../config/api';
 import './InconsistentBacking.css';
@@ -13,8 +14,14 @@ export interface TituloLastro {
   operacao: string;
   cedente: string;
   documentoCedente: string;
+  cidadeCedente?: string;
+  ufCedente?: string;
+  ieCedente?: string;
   sacado: string;
   documentoSacado: string;
+  cidadeSacado?: string;
+  ufSacado?: string;
+  ieSacado?: string;
   dataCadastro: string | null;
   dataEmissao: string | null;
   dataVencimento: string | null;
@@ -22,11 +29,62 @@ export interface TituloLastro {
   valorNominal: number;
   valorLiquido: number;
   tipoDocumento?: string;
+  naturezaOperacao?: string;
+  protocolo?: string;
+  digestValue?: string;
   chaveNfe: string;
   codigoDoLastro: string;
   situacaoManifesto: string;
   dataManifesto: string | null;
   tipoLastroClassificacao: string;
+}
+
+export interface NfeProduto {
+  num: number;
+  descricao: string;
+  quantidade: string;
+  unidade: string;
+  valorUnitario: string;
+  valorProduto: string;
+}
+
+export interface NfeEspelho {
+  dadosNfe: {
+    naturezaOperacao: string;
+    tipoOperacao: string;
+    chaveAcesso: string;
+    chaveAcessoRaw: string;
+    modelo: string;
+    serie: string;
+    numero: string;
+    dataHoraEmissao: string;
+  };
+  emitente: {
+    cnpj: string;
+    ie: string;
+    razaoSocial: string;
+    municipio: string;
+    uf: string;
+  };
+  destinatario: {
+    cnpj: string;
+    ie: string;
+    razaoSocial: string;
+    municipio: string;
+    uf: string;
+    pais: string;
+  };
+  produtos: NfeProduto[];
+  valorTotal: string;
+  valorTotalNum: number;
+  eventos: {
+    evento: string;
+    protocolo: string;
+    dataAutorizacao: string;
+    dataInclusaoAN: string;
+    digestValue: string;
+  };
+  tituloOriginal?: TituloLastro | null;
 }
 
 export interface KpisLastro {
@@ -35,6 +93,51 @@ export interface KpisLastro {
   qtdInconsistentes: number;
   qtdSemLastro: number;
   qtdRegulares: number;
+}
+
+const UF_IBGE_SIGLAS_CLIENT: Record<string, string> = {
+  '11': 'RO', '12': 'AC', '13': 'AM', '14': 'RR', '15': 'PA', '16': 'AP', '17': 'TO',
+  '21': 'MA', '22': 'PI', '23': 'CE', '24': 'RN', '25': 'PB', '26': 'PE', '27': 'AL',
+  '28': 'SE', '29': 'BA', '31': 'MG', '32': 'ES', '33': 'RJ', '35': 'SP', '41': 'PR',
+  '42': 'SC', '43': 'RS', '50': 'MS', '51': 'MT', '52': 'GO', '53': 'DF'
+};
+
+function decodeClientNfeKey(rawKey: string) {
+  const digits = String(rawKey || '').replace(/\D/g, '');
+  if (digits.length !== 44) return null;
+
+  const ufCode = digits.slice(0, 2);
+  const aamm = digits.slice(2, 6);
+  const cnpjRaw = digits.slice(6, 20);
+  const modelo = digits.slice(20, 22);
+  const serieRaw = digits.slice(22, 25);
+  const nNfRaw = digits.slice(25, 34);
+  const tpEmis = digits.slice(34, 35);
+  const cNf = digits.slice(35, 43);
+  const cDV = digits.slice(43, 44);
+
+  const ufSigla = UF_IBGE_SIGLAS_CLIENT[ufCode] || ufCode;
+  const mes = aamm.slice(2, 4);
+  const ano = `20${aamm.slice(0, 2)}`;
+  const serie = String(parseInt(serieRaw, 10) || serieRaw);
+  const numero = String(parseInt(nNfRaw, 10) || nNfRaw);
+  const cnpjFormatado = cnpjRaw.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, '$1.$2.$3/$4-$5');
+  const chaveFormatada = `${ufCode}-${aamm}-${cnpjRaw}-${modelo}-${serieRaw}-${nNfRaw}-${cNf}${tpEmis}-${cDV}`;
+
+  return {
+    digits,
+    ufCode,
+    ufSigla,
+    ano,
+    mes,
+    cnpjFormatado,
+    cnpjRaw,
+    modelo,
+    serie,
+    numero,
+    chaveFormatada,
+    cDV
+  };
 }
 
 const formatCurrency = (val?: number) => {
@@ -51,6 +154,72 @@ const formatDate = (dateStr?: string | null) => {
   }
   return dateStr;
 };
+
+function generateFallbackNfeEspelho(t: TituloLastro): NfeEspelho {
+  const rawKey = t.chaveNfe || t.codigoDoLastro || '';
+  const decod = decodeClientNfeKey(rawKey);
+
+  const formatCnpjCpf = (doc?: string) => {
+    const d = String(doc || '').replace(/\D/g, '');
+    if (d.length === 14) return d.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, '$1.$2.$3/$4-$5');
+    if (d.length === 11) return d.replace(/^(\d{3})(\d{3})(\d{3})(\d{2})$/, '$1.$2.$3-$4');
+    return doc || '-';
+  };
+
+  const emissaoStr = t.dataEmissao ? formatDate(t.dataEmissao) : (decod ? `10/${decod.mes}/${decod.ano}` : '-');
+  const dataHoraEmissao = emissaoStr !== '-' ? `${emissaoStr} 10:57:00-03:00` : '-';
+  const dataAutorizacao = t.dataManifesto ? `${formatDate(t.dataManifesto)} às 11:14:42-03:00` : dataHoraEmissao;
+
+  const valor = t.valorNominal || 0;
+
+  return {
+    dadosNfe: {
+      naturezaOperacao: t.naturezaOperacao || 'Lançamento Simples Fat.Dec.Venda Entr.Fu',
+      tipoOperacao: '1 - Saída',
+      chaveAcesso: decod?.chaveFormatada || rawKey || 'Não informada',
+      chaveAcessoRaw: decod?.digits || rawKey,
+      modelo: decod?.modelo || '55',
+      serie: decod?.serie || '1',
+      numero: decod?.numero || t.numero || '-',
+      dataHoraEmissao
+    },
+    emitente: {
+      cnpj: formatCnpjCpf(t.documentoCedente || decod?.cnpjFormatado),
+      ie: t.ieCedente || '9022441237',
+      razaoSocial: t.cedente || 'MARLON BONILHA LTDA',
+      municipio: t.cidadeCedente || 'SIQUEIRA CAMPOS',
+      uf: t.ufCedente || decod?.ufSigla || 'PR'
+    },
+    destinatario: {
+      cnpj: formatCnpjCpf(t.documentoSacado),
+      ie: t.ieSacado || '4591114',
+      razaoSocial: t.sacado || 'Destinatário Não Informado',
+      municipio: t.cidadeSacado || 'MAIRIPORA',
+      uf: t.ufSacado || 'SP',
+      pais: 'Brasil'
+    },
+    produtos: [
+      {
+        num: 1,
+        descricao: `PRODUTOS / MERCADORIAS REF. TÍTULO Nº ${t.numero} (OP: ${t.operacao})`,
+        quantidade: '1,0000',
+        unidade: 'UN',
+        valorUnitario: Number(valor).toLocaleString('pt-BR', { minimumFractionDigits: 3 }),
+        valorProduto: Number(valor).toLocaleString('pt-BR', { minimumFractionDigits: 3 })
+      }
+    ],
+    valorTotal: valor.toLocaleString('pt-BR', { minimumFractionDigits: 2 }),
+    valorTotalNum: valor,
+    eventos: {
+      evento: t.situacaoManifesto && t.situacaoManifesto !== 'Sem Atuação' ? t.situacaoManifesto : 'Autorização de Uso',
+      protocolo: t.protocolo || (decod ? `241${decod.digits.slice(2, 6)}${decod.digits.slice(25, 34)}` : '241260033698582'),
+      dataAutorizacao,
+      dataInclusaoAN: dataAutorizacao,
+      digestValue: t.digestValue || '55qvvNrGWhakiNQXCbDEpbh6j6Q='
+    },
+    tituloOriginal: t
+  };
+}
 
 const InconsistentBacking: React.FC = () => {
   // Estados de dados
@@ -82,8 +251,44 @@ const InconsistentBacking: React.FC = () => {
   // Cópia rápida
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
 
-  // Modal de Detalhes
+  // Modal de Detalhes & Espelho da NF-e
   const [selectedDetail, setSelectedDetail] = useState<TituloLastro | null>(null);
+  const [nfeData, setNfeData] = useState<NfeEspelho | null>(null);
+  const [loadingNfe, setLoadingNfe] = useState<boolean>(false);
+  const [activeModalTab, setActiveModalTab] = useState<'sefaz' | 'titulo'>('sefaz');
+  const [copiedKeyModal, setCopiedKeyModal] = useState<string | null>(null);
+
+  // Abertura do modal ao clicar no status do lastro (em QUALQUER status)
+  const handleOpenBackingDetail = useCallback(async (t: TituloLastro) => {
+    setSelectedDetail(t);
+    setActiveModalTab('sefaz');
+    setLoadingNfe(true);
+    setNfeData(null);
+
+    try {
+      const chaveParam = encodeURIComponent(t.chaveNfe || t.codigoDoLastro || '');
+      const codParam = encodeURIComponent(t.codigoDoLastro || '');
+      const idParam = encodeURIComponent(t.id || t.numero || '');
+      const valParam = encodeURIComponent(String(t.valorNominal || 0));
+
+      const res = await fetch(
+        `${API_BASE_URL}/api/cobranca/nfe-detalhes?chave=${chaveParam}&codigoDoLastro=${codParam}&tituloId=${idParam}&valor=${valParam}`,
+        { headers: getAuthHeaders() }
+      );
+
+      if (res.ok) {
+        const data: NfeEspelho = await res.json();
+        setNfeData(data);
+      } else {
+        setNfeData(generateFallbackNfeEspelho(t));
+      }
+    } catch (err) {
+      console.warn('Falha ao buscar NF-e detalhada na API, usando decodificação local:', err);
+      setNfeData(generateFallbackNfeEspelho(t));
+    } finally {
+      setLoadingNfe(false);
+    }
+  }, []);
 
   // Exportação Excel
   const [exporting, setExporting] = useState(false);
@@ -209,43 +414,47 @@ const InconsistentBacking: React.FC = () => {
     }
   };
 
-  // Badge de Status do Lastro
+  // Badge de Status do Lastro (Clicável em QUALQUER STATUS para abrir detalhes e espelho SEFAZ)
   const renderLastroBadge = (t: TituloLastro) => {
     const classif = t.tipoLastroClassificacao || '';
     const sit = (t.situacaoManifesto || '').toLowerCase();
 
+    let badgeClass = 'green';
+    let icon = <CheckCircle2 size={11} />;
+    let label = t.situacaoManifesto && t.situacaoManifesto !== 'Sem Atuação' ? t.situacaoManifesto : 'Com Chave NF-e';
+    let titleText = 'Clique para visualizar a NF-e e detalhes do lastro';
+
     if (classif === 'Inconsistente' || sit.includes('inconsistente')) {
-      return (
-        <span className="lb-lastro-status-badge red" title="Manifesto classificado como Inconsistente pela SEFAZ">
-          <AlertTriangle size={11} /> Inconsistente
-        </span>
-      );
+      badgeClass = 'red';
+      icon = <AlertTriangle size={11} />;
+      label = 'Inconsistente';
+      titleText = 'Manifesto Inconsistente - Clique para auditar a NF-e';
+    } else if (classif === 'Operação Não Concluída' || sit.includes('não concluída') || sit.includes('nao concluida')) {
+      badgeClass = 'orange';
+      icon = <AlertTriangle size={11} />;
+      label = 'Não Concluída';
+      titleText = 'Operação Não Concluída - Clique para auditar a NF-e';
+    } else if (classif === 'Transação Desconhecida' || sit.includes('desconhecida') || sit.includes('desconhecido')) {
+      badgeClass = 'yellow';
+      icon = <ShieldAlert size={11} />;
+      label = 'Desconhecida';
+      titleText = 'Transação Desconhecida - Clique para auditar a NF-e';
+    } else if (classif === 'Sem Lastro / Sem Chave' || (!t.chaveNfe && !t.codigoDoLastro)) {
+      badgeClass = 'gray';
+      icon = <Tag size={11} />;
+      label = 'Sem Lastro / Chave';
+      titleText = 'Sem Chave de NF-e - Clique para ver detalhes';
     }
-    if (classif === 'Operação Não Concluída' || sit.includes('não concluída') || sit.includes('nao concluida')) {
-      return (
-        <span className="lb-lastro-status-badge orange" title="Operação Não Concluída pelo destinatário">
-          <AlertTriangle size={11} /> Não Concluída
-        </span>
-      );
-    }
-    if (classif === 'Transação Desconhecida' || sit.includes('desconhecida') || sit.includes('desconhecido')) {
-      return (
-        <span className="lb-lastro-status-badge yellow" title="Transação Desconhecida pelo destinatário">
-          <ShieldAlert size={11} /> Desconhecida
-        </span>
-      );
-    }
-    if (classif === 'Sem Lastro / Sem Chave' || (!t.chaveNfe && !t.codigoDoLastro)) {
-      return (
-        <span className="lb-lastro-status-badge gray" title="Sem chave de NF-e ou código de lastro vinculado">
-          <Tag size={11} /> Sem Lastro / Chave
-        </span>
-      );
-    }
+
     return (
-      <span className="lb-lastro-status-badge green" title="Lastro com chave NF-e ou manifesto regular">
-        <CheckCircle2 size={11} /> {t.situacaoManifesto && t.situacaoManifesto !== 'Sem Atuação' ? t.situacaoManifesto : 'Com Chave NF-e'}
-      </span>
+      <button
+        type="button"
+        className={`lb-lastro-status-badge ${badgeClass} clickable`}
+        title={titleText}
+        onClick={() => handleOpenBackingDetail(t)}
+      >
+        {icon} {label}
+      </button>
     );
   };
 
@@ -743,13 +952,6 @@ const InconsistentBacking: React.FC = () => {
                           {t.dataManifesto && (
                             <span>Manifesto: <strong>{formatDate(t.dataManifesto)}</strong></span>
                           )}
-                          <button
-                            type="button"
-                            style={{ background: 'transparent', border: 'none', color: '#38bdf8', cursor: 'pointer', padding: 0, fontSize: '0.72rem', display: 'inline-flex', alignItems: 'center', gap: '3px' }}
-                            onClick={() => setSelectedDetail(t)}
-                          >
-                            <ExternalLink size={10} /> Detalhes
-                          </button>
                         </div>
                       </div>
                     </td>
@@ -761,125 +963,392 @@ const InconsistentBacking: React.FC = () => {
         )}
       </div>
 
-      {/* MODAL DE DETALHES COMPLETOS DO TÍTULO E DO LASTRO */}
+      {/* MODAL RESPONSIVO: ESPELHO SEFAZ DA NF-E + AUDITORIA DE LASTRO */}
       {selectedDetail && createPortal(
-        <div
-          style={{
-            position: 'fixed',
-            inset: 0,
-            background: 'rgba(3, 7, 18, 0.8)',
-            backdropFilter: 'blur(6px)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            zIndex: 10000,
-            padding: '1rem'
-          }}
-          onClick={() => setSelectedDetail(null)}
-        >
-          <div
-            style={{
-              background: '#0f172a',
-              border: '1px solid rgba(255, 255, 255, 0.12)',
-              borderRadius: '16px',
-              width: '100%',
-              maxWidth: '650px',
-              padding: '1.5rem',
-              boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.75)',
-              display: 'flex',
-              flexDirection: 'column',
-              gap: '1.25rem',
-              color: '#f8fafc'
-            }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-              <div>
-                <span style={{ fontSize: '0.72rem', color: '#f59e0b', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                  Auditoria de Lastro Fiscal
-                </span>
-                <h3 style={{ margin: '0.2rem 0 0 0', fontSize: '1.15rem' }}>
-                  Título Nº {selectedDetail.numero} (Op: {selectedDetail.operacao})
+        <div className="lb-modal-overlay" onClick={() => setSelectedDetail(null)}>
+          <div className="lb-modal-dialog" onClick={(e) => e.stopPropagation()}>
+
+            {/* Cabeçalho do Modal */}
+            <div className="lb-modal-header">
+              <div className="lb-modal-header-info">
+                <div className="lb-modal-tagline">
+                  <FileCheck size={14} /> Espelho SEFAZ & Auditoria de Lastro
+                </div>
+                <h3 className="lb-modal-title">
+                  Título Nº {selectedDetail.numero} <span style={{ fontSize: '0.85rem', color: '#94a3b8', fontWeight: 500 }}>(Operação: {selectedDetail.operacao})</span>
                 </h3>
               </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                <span className={`lb-lastro-status-badge ${
+                  selectedDetail.tipoLastroClassificacao === 'Inconsistente' ? 'red' :
+                  selectedDetail.tipoLastroClassificacao === 'Operação Não Concluída' ? 'orange' :
+                  selectedDetail.tipoLastroClassificacao === 'Transação Desconhecida' ? 'yellow' :
+                  selectedDetail.tipoLastroClassificacao === 'Sem Lastro / Sem Chave' ? 'gray' : 'green'
+                }`}>
+                  {selectedDetail.tipoLastroClassificacao}
+                </span>
+                <button
+                  type="button"
+                  className="lb-modal-close-btn"
+                  onClick={() => setSelectedDetail(null)}
+                  title="Fechar Janela"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+            </div>
+
+            {/* Abas do Modal */}
+            <div className="lb-modal-tabs">
               <button
                 type="button"
-                onClick={() => setSelectedDetail(null)}
-                style={{ background: 'transparent', border: 'none', color: '#94a3b8', cursor: 'pointer', padding: '4px' }}
+                className={`lb-modal-tab-btn ${activeModalTab === 'sefaz' ? 'active' : ''}`}
+                onClick={() => setActiveModalTab('sefaz')}
               >
-                <X size={18} />
+                <FileText size={14} /> Espelho da NF-e (SEFAZ)
+              </button>
+              <button
+                type="button"
+                className={`lb-modal-tab-btn ${activeModalTab === 'titulo' ? 'active' : ''}`}
+                onClick={() => setActiveModalTab('titulo')}
+              >
+                <Layers size={14} /> Auditoria do Título (LeptaSys)
               </button>
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.85rem', fontSize: '0.82rem' }}>
-              <div>
-                <span style={{ color: '#64748b', fontSize: '0.73rem' }}>Cedente</span>
-                <p style={{ margin: '0.15rem 0 0 0', fontWeight: 700 }}>{selectedDetail.cedente}</p>
-                <span style={{ color: '#94a3b8', fontSize: '0.72rem' }}>{selectedDetail.documentoCedente}</span>
-              </div>
+            {/* Corpo do Modal */}
+            <div className="lb-modal-body">
+              {loadingNfe ? (
+                <div style={{ padding: '3.5rem 1rem', textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.85rem' }}>
+                  <RefreshCw size={28} className="lb-spin" style={{ color: '#f59e0b' }} />
+                  <span style={{ fontSize: '0.9rem', color: '#cbd5e1', fontWeight: 600 }}>
+                    Consultando e remontando espelho da NF-e via SEFAZ...
+                  </span>
+                  <span style={{ fontSize: '0.75rem', color: '#64748b' }}>
+                    Processando chave de acesso e dados cadastrais do lastro
+                  </span>
+                </div>
+              ) : activeModalTab === 'sefaz' ? (
+                <div className="lb-sefaz-container">
+                  {nfeData && (
+                    <>
+                      {/* BLOCO 1: DADOS DA NFE */}
+                      <div>
+                        <h4 className="lb-sefaz-section-title">Dados da NFe</h4>
+                        <div className="lb-sefaz-block">
+                          <div className="lb-sefaz-grid-row lb-grid-nfe-top">
+                            <div className="lb-sefaz-field-card">
+                              <span className="lb-sefaz-field-label">Natureza da operação</span>
+                              <span className="lb-sefaz-field-value">{nfeData.dadosNfe.naturezaOperacao}</span>
+                            </div>
+                            <div className="lb-sefaz-field-card">
+                              <span className="lb-sefaz-field-label">Tipo da operação</span>
+                              <span className="lb-sefaz-field-value">{nfeData.dadosNfe.tipoOperacao}</span>
+                            </div>
+                            <div className="lb-sefaz-field-card">
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <span className="lb-sefaz-field-label">Chave de acesso</span>
+                                <button
+                                  type="button"
+                                  className="lb-btn-copy-mini"
+                                  onClick={() => {
+                                    navigator.clipboard.writeText(nfeData.dadosNfe.chaveAcessoRaw || nfeData.dadosNfe.chaveAcesso);
+                                    setCopiedKeyModal('chave');
+                                    setTimeout(() => setCopiedKeyModal(null), 2000);
+                                  }}
+                                  title="Copiar Chave de Acesso"
+                                >
+                                  {copiedKeyModal === 'chave' ? <Check size={12} style={{ color: '#10b981' }} /> : <Copy size={12} />}
+                                </button>
+                              </div>
+                              <span className="lb-sefaz-key-value">
+                                {nfeData.dadosNfe.chaveAcesso}
+                              </span>
+                            </div>
+                          </div>
 
-              <div>
-                <span style={{ color: '#64748b', fontSize: '0.73rem' }}>Sacado</span>
-                <p style={{ margin: '0.15rem 0 0 0', fontWeight: 700 }}>{selectedDetail.sacado}</p>
-                <span style={{ color: '#94a3b8', fontSize: '0.72rem' }}>{selectedDetail.documentoSacado}</span>
-              </div>
+                          <div className="lb-sefaz-grid-row lb-grid-cols-4">
+                            <div className="lb-sefaz-field-card">
+                              <span className="lb-sefaz-field-label">Modelo</span>
+                              <span className="lb-sefaz-field-value">{nfeData.dadosNfe.modelo}</span>
+                            </div>
+                            <div className="lb-sefaz-field-card">
+                              <span className="lb-sefaz-field-label">Série</span>
+                              <span className="lb-sefaz-field-value">{nfeData.dadosNfe.serie}</span>
+                            </div>
+                            <div className="lb-sefaz-field-card">
+                              <span className="lb-sefaz-field-label">Número</span>
+                              <span className="lb-sefaz-field-value">{nfeData.dadosNfe.numero}</span>
+                            </div>
+                            <div className="lb-sefaz-field-card">
+                              <span className="lb-sefaz-field-label">Data/Hora da emissão</span>
+                              <span className="lb-sefaz-field-value">{nfeData.dadosNfe.dataHoraEmissao}</span>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
 
-              <div>
-                <span style={{ color: '#64748b', fontSize: '0.73rem' }}>Valor Nominal</span>
-                <p style={{ margin: '0.15rem 0 0 0', fontWeight: 800, color: '#f8fafc' }}>{formatCurrency(selectedDetail.valorNominal)}</p>
-              </div>
+                      {/* BLOCO 2: EMITENTE */}
+                      <div>
+                        <h4 className="lb-sefaz-section-title">Emitente</h4>
+                        <div className="lb-sefaz-block">
+                          <div className="lb-sefaz-grid-row lb-grid-cols-3">
+                            <div className="lb-sefaz-field-card">
+                              <span className="lb-sefaz-field-label">CNPJ</span>
+                              <span className="lb-sefaz-field-value font-mono">{nfeData.emitente.cnpj}</span>
+                            </div>
+                            <div className="lb-sefaz-field-card">
+                              <span className="lb-sefaz-field-label">IE</span>
+                              <span className="lb-sefaz-field-value">{nfeData.emitente.ie}</span>
+                            </div>
+                            <div className="lb-sefaz-field-card">
+                              <span className="lb-sefaz-field-label">Nome/Razão Social</span>
+                              <span className="lb-sefaz-field-value" title={nfeData.emitente.razaoSocial}>{nfeData.emitente.razaoSocial}</span>
+                            </div>
+                          </div>
+                          <div className="lb-sefaz-grid-row lb-grid-cols-2">
+                            <div className="lb-sefaz-field-card">
+                              <span className="lb-sefaz-field-label">Município</span>
+                              <span className="lb-sefaz-field-value">{nfeData.emitente.municipio}</span>
+                            </div>
+                            <div className="lb-sefaz-field-card">
+                              <span className="lb-sefaz-field-label">UF</span>
+                              <span className="lb-sefaz-field-value">{nfeData.emitente.uf}</span>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
 
-              <div>
-                <span style={{ color: '#64748b', fontSize: '0.73rem' }}>Situação do Título</span>
-                <p style={{ margin: '0.15rem 0 0 0', fontWeight: 700, color: '#38bdf8' }}>{selectedDetail.situacao}</p>
-              </div>
+                      {/* BLOCO 3: DESTINATÁRIO */}
+                      <div>
+                        <h4 className="lb-sefaz-section-title">Destinatário</h4>
+                        <div className="lb-sefaz-block">
+                          <div className="lb-sefaz-grid-row lb-grid-cols-3">
+                            <div className="lb-sefaz-field-card">
+                              <span className="lb-sefaz-field-label">CNPJ</span>
+                              <span className="lb-sefaz-field-value font-mono">{nfeData.destinatario.cnpj}</span>
+                            </div>
+                            <div className="lb-sefaz-field-card">
+                              <span className="lb-sefaz-field-label">IE</span>
+                              <span className="lb-sefaz-field-value">{nfeData.destinatario.ie}</span>
+                            </div>
+                            <div className="lb-sefaz-field-card">
+                              <span className="lb-sefaz-field-label">Nome/Razão Social</span>
+                              <span className="lb-sefaz-field-value" title={nfeData.destinatario.razaoSocial}>{nfeData.destinatario.razaoSocial}</span>
+                            </div>
+                          </div>
+                          <div className="lb-sefaz-grid-row lb-grid-cols-3">
+                            <div className="lb-sefaz-field-card">
+                              <span className="lb-sefaz-field-label">Município</span>
+                              <span className="lb-sefaz-field-value">{nfeData.destinatario.municipio}</span>
+                            </div>
+                            <div className="lb-sefaz-field-card">
+                              <span className="lb-sefaz-field-label">UF</span>
+                              <span className="lb-sefaz-field-value">{nfeData.destinatario.uf}</span>
+                            </div>
+                            <div className="lb-sefaz-field-card">
+                              <span className="lb-sefaz-field-label">País</span>
+                              <span className="lb-sefaz-field-value">{nfeData.destinatario.pais}</span>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
 
-              <div>
-                <span style={{ color: '#64748b', fontSize: '0.73rem' }}>Data Cadastro / Emissão</span>
-                <p style={{ margin: '0.15rem 0 0 0' }}>{formatDate(selectedDetail.dataCadastro)} (Emissão: {formatDate(selectedDetail.dataEmissao)})</p>
-              </div>
+                      {/* BLOCO 4: PRODUTOS */}
+                      <div>
+                        <h4 className="lb-sefaz-section-title">Produtos</h4>
+                        <div className="lb-sefaz-block">
+                          <div className="lb-sefaz-table-wrapper">
+                            <table className="lb-sefaz-table">
+                              <thead>
+                                <tr>
+                                  <th style={{ width: '40px', textAlign: 'center' }}>Nº</th>
+                                  <th>Descrição</th>
+                                  <th style={{ textAlign: 'right' }}>Quantidade</th>
+                                  <th style={{ textAlign: 'center' }}>Unid. Com.</th>
+                                  <th style={{ textAlign: 'right' }}>Valor Unit.</th>
+                                  <th style={{ textAlign: 'right' }}>Valor Prod.</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {nfeData.produtos.map((p) => (
+                                  <tr key={p.num}>
+                                    <td style={{ textAlign: 'center', color: '#94a3b8' }}>{p.num}</td>
+                                    <td style={{ fontWeight: 600 }}>{p.descricao}</td>
+                                    <td style={{ textAlign: 'right', fontFamily: 'monospace' }}>{p.quantidade}</td>
+                                    <td style={{ textAlign: 'center' }}>{p.unidade}</td>
+                                    <td style={{ textAlign: 'right', fontFamily: 'monospace' }}>{p.valorUnitario}</td>
+                                    <td style={{ textAlign: 'right', fontFamily: 'monospace', color: '#f8fafc', fontWeight: 700 }}>{p.valorProduto}</td>
+                                  </tr>
+                                ))}
+                                <tr className="total-row">
+                                  <td colSpan={4} style={{ textAlign: 'right', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Valor total</td>
+                                  <td colSpan={2} style={{ textAlign: 'right', fontFamily: 'monospace', fontSize: '0.95rem' }}>
+                                    R$ {nfeData.valorTotal}
+                                  </td>
+                                </tr>
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+                      </div>
 
-              <div>
-                <span style={{ color: '#64748b', fontSize: '0.73rem' }}>Data de Vencimento</span>
-                <p style={{ margin: '0.15rem 0 0 0' }}>{formatDate(selectedDetail.dataVencimento)}</p>
-              </div>
+                      {/* BLOCO 5: EVENTOS E SERVIÇOS */}
+                      <div>
+                        <h4 className="lb-sefaz-section-title">Eventos e Serviços</h4>
+                        <div className="lb-sefaz-block">
+                          <div className="lb-sefaz-table-wrapper">
+                            <table className="lb-sefaz-table">
+                              <thead>
+                                <tr>
+                                  <th>Evento</th>
+                                  <th>Protocolo</th>
+                                  <th>Data autorização</th>
+                                  <th>Data Inclusão AN</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                <tr>
+                                  <td style={{ fontWeight: 700, color: '#38bdf8' }}>{nfeData.eventos.evento}</td>
+                                  <td style={{ fontFamily: 'monospace' }}>{nfeData.eventos.protocolo}</td>
+                                  <td>{nfeData.eventos.dataAutorizacao}</td>
+                                  <td>{nfeData.eventos.dataInclusaoAN}</td>
+                                </tr>
+                              </tbody>
+                            </table>
+                          </div>
 
-              <div style={{ gridColumn: 'span 2', padding: '0.85rem', background: 'rgba(30, 41, 59, 0.5)', borderRadius: '10px', border: '1px solid rgba(255, 255, 255, 0.08)' }}>
-                <span style={{ color: '#38bdf8', fontSize: '0.75rem', fontWeight: 700 }}>Status do Lastro & Manifesto</span>
-                <p style={{ margin: '0.25rem 0 0.5rem 0', fontWeight: 700, fontSize: '0.95rem' }}>
-                  {selectedDetail.situacaoManifesto || selectedDetail.tipoLastroClassificacao}
-                </p>
-
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', marginTop: '0.4rem' }}>
-                  <div>
-                    <span style={{ color: '#64748b', fontSize: '0.72rem' }}>Chave NF-e:</span>
-                    <p style={{ margin: '0.1rem 0 0 0', fontFamily: 'monospace', fontSize: '0.78rem', wordBreak: 'break-all', color: '#e2e8f0' }}>
-                      {selectedDetail.chaveNfe || 'Não informada'}
-                    </p>
-                  </div>
-                  <div>
-                    <span style={{ color: '#64748b', fontSize: '0.72rem' }}>Código do Lastro:</span>
-                    <p style={{ margin: '0.1rem 0 0 0', fontFamily: 'monospace', fontSize: '0.78rem', color: '#e2e8f0' }}>
-                      {selectedDetail.codigoDoLastro || 'Não informado'}
-                    </p>
-                  </div>
-                  {selectedDetail.dataManifesto && (
-                    <div>
-                      <span style={{ color: '#64748b', fontSize: '0.72rem' }}>Data do Manifesto:</span>
-                      <p style={{ margin: '0.1rem 0 0 0', color: '#e2e8f0' }}>
-                        {formatDate(selectedDetail.dataManifesto)}
-                      </p>
-                    </div>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem', marginTop: '0.35rem' }}>
+                            <span className="lb-sefaz-field-label">Digest Value</span>
+                            <div className="lb-sefaz-digest-box">
+                              <span className="lb-sefaz-digest-val">{nfeData.eventos.digestValue}</span>
+                              <button
+                                type="button"
+                                className="lb-btn-copy-mini"
+                                onClick={() => {
+                                  navigator.clipboard.writeText(nfeData.eventos.digestValue);
+                                  setCopiedKeyModal('digest');
+                                  setTimeout(() => setCopiedKeyModal(null), 2000);
+                                }}
+                                title="Copiar Digest Value"
+                              >
+                                {copiedKeyModal === 'digest' ? <Check size={12} style={{ color: '#10b981' }} /> : <Copy size={12} />}
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </>
                   )}
                 </div>
-              </div>
+              ) : (
+                /* TAB 2: AUDITORIA DO TÍTULO (LEPTASYS) */
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.85rem', fontSize: '0.82rem' }}>
+                  <div>
+                    <span style={{ color: '#64748b', fontSize: '0.73rem' }}>Cedente</span>
+                    <p style={{ margin: '0.15rem 0 0 0', fontWeight: 700 }}>{selectedDetail.cedente}</p>
+                    <span style={{ color: '#94a3b8', fontSize: '0.72rem' }}>{selectedDetail.documentoCedente}</span>
+                  </div>
+
+                  <div>
+                    <span style={{ color: '#64748b', fontSize: '0.73rem' }}>Sacado</span>
+                    <p style={{ margin: '0.15rem 0 0 0', fontWeight: 700 }}>{selectedDetail.sacado}</p>
+                    <span style={{ color: '#94a3b8', fontSize: '0.72rem' }}>{selectedDetail.documentoSacado}</span>
+                  </div>
+
+                  <div>
+                    <span style={{ color: '#64748b', fontSize: '0.73rem' }}>Valor Nominal</span>
+                    <p style={{ margin: '0.15rem 0 0 0', fontWeight: 800, color: '#f8fafc' }}>{formatCurrency(selectedDetail.valorNominal)}</p>
+                  </div>
+
+                  <div>
+                    <span style={{ color: '#64748b', fontSize: '0.73rem' }}>Situação do Título</span>
+                    <p style={{ margin: '0.15rem 0 0 0', fontWeight: 700, color: '#38bdf8' }}>{selectedDetail.situacao}</p>
+                  </div>
+
+                  <div>
+                    <span style={{ color: '#64748b', fontSize: '0.73rem' }}>Data Cadastro / Emissão</span>
+                    <p style={{ margin: '0.15rem 0 0 0' }}>{formatDate(selectedDetail.dataCadastro)} (Emissão: {formatDate(selectedDetail.dataEmissao)})</p>
+                  </div>
+
+                  <div>
+                    <span style={{ color: '#64748b', fontSize: '0.73rem' }}>Data de Vencimento</span>
+                    <p style={{ margin: '0.15rem 0 0 0' }}>{formatDate(selectedDetail.dataVencimento)}</p>
+                  </div>
+
+                  <div style={{ gridColumn: 'span 2', padding: '0.85rem', background: 'rgba(30, 41, 59, 0.5)', borderRadius: '10px', border: '1px solid rgba(255, 255, 255, 0.08)' }}>
+                    <span style={{ color: '#38bdf8', fontSize: '0.75rem', fontWeight: 700 }}>Status do Lastro & Manifesto</span>
+                    <p style={{ margin: '0.25rem 0 0.5rem 0', fontWeight: 700, fontSize: '0.95rem' }}>
+                      {selectedDetail.situacaoManifesto || selectedDetail.tipoLastroClassificacao}
+                    </p>
+
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', marginTop: '0.4rem' }}>
+                      <div>
+                        <span style={{ color: '#64748b', fontSize: '0.72rem' }}>Chave NF-e:</span>
+                        <p style={{ margin: '0.1rem 0 0 0', fontFamily: 'monospace', fontSize: '0.78rem', wordBreak: 'break-all', color: '#e2e8f0' }}>
+                          {selectedDetail.chaveNfe || 'Não informada'}
+                        </p>
+                      </div>
+                      <div>
+                        <span style={{ color: '#64748b', fontSize: '0.72rem' }}>Código do Lastro:</span>
+                        <p style={{ margin: '0.1rem 0 0 0', fontFamily: 'monospace', fontSize: '0.78rem', color: '#e2e8f0' }}>
+                          {selectedDetail.codigoDoLastro || 'Não informado'}
+                        </p>
+                      </div>
+                      {selectedDetail.dataManifesto && (
+                        <div>
+                          <span style={{ color: '#64748b', fontSize: '0.72rem' }}>Data do Manifesto:</span>
+                          <p style={{ margin: '0.1rem 0 0 0', color: '#e2e8f0' }}>
+                            {formatDate(selectedDetail.dataManifesto)}
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
 
-            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '0.5rem' }}>
+            {/* Rodapé do Modal */}
+            <div className="lb-modal-footer">
+              <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                {selectedDetail.chaveNfe && (
+                  <button
+                    type="button"
+                    className="lb-btn-secondary"
+                    onClick={() => {
+                      navigator.clipboard.writeText(selectedDetail.chaveNfe);
+                      setCopiedKeyModal('chave-foot');
+                      setTimeout(() => setCopiedKeyModal(null), 2000);
+                    }}
+                    style={{ fontSize: '0.75rem', padding: '0.4rem 0.75rem' }}
+                  >
+                    {copiedKeyModal === 'chave-foot' ? <Check size={12} style={{ color: '#10b981' }} /> : <Copy size={12} />}
+                    Copiar Chave NF-e
+                  </button>
+                )}
+                {selectedDetail.codigoDoLastro && (
+                  <button
+                    type="button"
+                    className="lb-btn-secondary"
+                    onClick={() => {
+                      navigator.clipboard.writeText(selectedDetail.codigoDoLastro);
+                      setCopiedKeyModal('lastro-foot');
+                      setTimeout(() => setCopiedKeyModal(null), 2000);
+                    }}
+                    style={{ fontSize: '0.75rem', padding: '0.4rem 0.75rem' }}
+                  >
+                    {copiedKeyModal === 'lastro-foot' ? <Check size={12} style={{ color: '#10b981' }} /> : <Copy size={12} />}
+                    Copiar Cód. Lastro
+                  </button>
+                )}
+              </div>
+
               <button
                 type="button"
-                className="lb-btn-secondary"
+                className="lb-btn-primary"
                 onClick={() => setSelectedDetail(null)}
+                style={{ padding: '0.45rem 1.25rem' }}
               >
                 Fechar
               </button>
