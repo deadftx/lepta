@@ -120,6 +120,16 @@ const getBubbleRoleClass = (role?: string) => {
   return 'approver';
 };
 
+const isItemPendingLegal = (req?: PurchaseRequest | null): boolean => {
+  if (!req) return false;
+  if (['APROVADO', 'REJEITADO'].includes(req.juridico_status || '')) return false;
+  if (['NEGADO_JURIDICO', 'NEGADO', 'APROVADO', 'PAGO', 'SOLICITACAO_CONCLUIDA'].includes(req.status)) return false;
+  return req.status === 'AGUARDANDO_JURIDICO' || 
+         (req.requer_juridico === 1 && (req.juridico_status === 'PENDENTE' || !req.juridico_status)) ||
+         (req.juridico_status === 'PENDENTE') ||
+         Number(req.valor || 0) >= 2000;
+};
+
 const LegalPaymentApproval: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'PENDENTES' | 'APROVADOS' | 'REJEITADOS' | 'TODOS'>('PENDENTES');
   const [searchTerm, setSearchTerm] = useState('');
@@ -459,7 +469,9 @@ const LegalPaymentApproval: React.FC = () => {
     let list: PurchaseRequest[] = [];
 
     if (activeTab === 'PENDENTES') {
-      list = pendingRequests;
+      const allPending = [...pendingRequests, ...historyRequests].filter(isItemPendingLegal);
+      const unique = Array.from(new Map(allPending.map(item => [item.id, item])).values());
+      list = unique.length > 0 ? unique : pendingRequests;
     } else if (activeTab === 'APROVADOS') {
       list = historyRequests.filter(r => r.juridico_status === 'APROVADO');
     } else if (activeTab === 'REJEITADOS') {
@@ -487,7 +499,11 @@ const LegalPaymentApproval: React.FC = () => {
   }, [activeTab, pendingRequests, historyRequests, searchTerm]);
 
   // Contadores
-  const countPending = pendingRequests.length;
+  const countPending = useMemo(() => {
+    const allPending = [...pendingRequests, ...historyRequests].filter(isItemPendingLegal);
+    const unique = Array.from(new Map(allPending.map(item => [item.id, item])).values());
+    return Math.max(unique.length, pendingRequests.length);
+  }, [pendingRequests, historyRequests]);
   const countApproved = historyRequests.filter(r => r.juridico_status === 'APROVADO').length;
   const countRejected = historyRequests.filter(r => r.juridico_status === 'REJEITADO' || r.status === 'NEGADO_JURIDICO').length;
 
@@ -842,7 +858,7 @@ const LegalPaymentApproval: React.FC = () => {
               </thead>
               <tbody>
                 {filteredList.map((req) => {
-                  const isPending = req.status === 'AGUARDANDO_JURIDICO';
+                  const isPending = isItemPendingLegal(req);
                   const isApproved = req.juridico_status === 'APROVADO';
                   const isRejected = req.juridico_status === 'REJEITADO' || req.status === 'NEGADO_JURIDICO';
 
@@ -1402,7 +1418,7 @@ const LegalPaymentApproval: React.FC = () => {
                 Fechar
               </button>
 
-              {selectedReq.status === 'AGUARDANDO_JURIDICO' && (
+              {isItemPendingLegal(selectedReq) && (
                 (isLegalApprover || isMaster) ? (
                   <div style={{ display: 'flex', gap: '10px' }}>
                     <button

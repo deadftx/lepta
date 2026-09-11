@@ -224,6 +224,18 @@ export function registerPurchaseRoutes(app, {
     if (!itemCols.includes('chave_pix')) {
       db.exec("ALTER TABLE compras_requisicoes_itens ADD COLUMN chave_pix TEXT");
     }
+
+    // Autocorreção: restaura status para AGUARDANDO_JURIDICO de requisições ativas que requerem validação jurídica e tiveram seu status modificado (ex: por mensagens)
+    db.prepare(`
+      UPDATE compras_requisicoes
+      SET status = 'AGUARDANDO_JURIDICO',
+          juridico_status = 'PENDENTE'
+      WHERE arquivado = 0
+        AND (requer_juridico = 1 OR valor >= 2000)
+        AND (juridico_status IS NULL OR juridico_status = 'PENDENTE')
+        AND status NOT IN ('APROVADO', 'NEGADO', 'NEGADO_JURIDICO', 'PAGO', 'SOLICITACAO_CONCLUIDA')
+        AND status != 'AGUARDANDO_JURIDICO'
+    `).run();
   } catch (err) {
     console.warn('Aviso na migração SQLite de compras_requisicoes:', err.message);
   }
@@ -336,11 +348,19 @@ export function registerPurchaseRoutes(app, {
     }
   }
 
-  function isUserLegalApprover(userId, userGlobalRole) {
+  function isUserLegalApprover(userId, userGlobalRole, userObj = null) {
     if (userGlobalRole === 'MASTER') return true;
     try {
       const row = db.prepare(`SELECT papel FROM compras_papeis_juridico WHERE user_id = ?`).get(userId);
-      return row?.papel === 'APROVADOR_JURIDICO';
+      if (row?.papel === 'APROVADOR_JURIDICO') return true;
+      if (row?.papel === 'NAO_APROVADOR') return false;
+
+      // Se não há papel explícito configurado na tabela, verifica se o usuário possui permissão 13.1 ou 13
+      const targetUser = userObj || db.prepare(`SELECT * FROM usuarios_lepta WHERE id = ?`).get(userId);
+      if (targetUser && (checkUserPermission(targetUser, '13.1') || checkUserPermission(targetUser, '13'))) {
+        return true;
+      }
+      return false;
     } catch {
       return false;
     }
@@ -352,8 +372,23 @@ export function registerPurchaseRoutes(app, {
       const masters = db.prepare(`SELECT id FROM usuarios_lepta WHERE role = 'MASTER'`).all();
       masters.forEach(m => approverSet.add(m.id));
 
+      const explicitDenies = new Set(
+        db.prepare(`SELECT user_id FROM compras_papeis_juridico WHERE papel = 'NAO_APROVADOR'`).all().map(r => r.user_id)
+      );
+
       const legalApprovers = db.prepare(`SELECT user_id FROM compras_papeis_juridico WHERE papel = 'APROVADOR_JURIDICO'`).all();
-      legalApprovers.forEach(a => approverSet.add(a.user_id));
+      legalApprovers.forEach(a => {
+        if (!explicitDenies.has(a.user_id)) approverSet.add(a.user_id);
+      });
+
+      // Usuários com permissão 13.1 ou 13 que não estejam explicitamente negados
+      const allUsers = db.prepare(`SELECT id, email, permissions, group_id FROM usuarios_lepta`).all();
+      for (const u of allUsers) {
+        if (explicitDenies.has(u.id)) continue;
+        if (checkUserPermission(u, '13.1') || checkUserPermission(u, '13')) {
+          approverSet.add(u.id);
+        }
+      }
 
       return [...approverSet];
     } catch {
@@ -611,7 +646,7 @@ export function registerPurchaseRoutes(app, {
   // --- ROTA: MEU PAPEL NO JURÍDICO ---
   app.get('/api/compras/juridico/meu-papel', requireSession, (req, res) => {
     try {
-      const isLegalApprover = isUserLegalApprover(req.authUser.id, req.authUser.role);
+      const isLegalApprover = isUserLegalApprover(req.authUser.id, req.authUser.role, req.authUser);
       return res.json({
         isLegalApprover,
         isMaster: req.authUser.role === 'MASTER'
@@ -1002,6 +1037,7 @@ export function registerPurchaseRoutes(app, {
         WHERE r.arquivado = 0 
           AND r.status IN ('PENDENTE', 'REABERTO', 'REVISAO', 'AGUARDANDO_RESPOSTA_APROVADOR', 'AGUARDANDO_RESPOSTA_SOLICITANTE')
           AND r.status != 'AGUARDANDO_JURIDICO'
+          AND NOT ((r.requer_juridico = 1 OR r.valor >= 2000) AND (r.juridico_status = 'PENDENTE' OR r.juridico_status IS NULL))
         ORDER BY 
           CASE 
             WHEN r.status = 'REABERTO' THEN 0
@@ -1057,7 +1093,7 @@ export function registerPurchaseRoutes(app, {
   // --- ROTA: FILA DE APROVAÇÃO DO JURÍDICO (SOLICITAÇÕES >= R$ 2.000) ---
   app.get('/api/compras/juridico/fila', requireSession, requirePermission(['13.1', '13', '13.2']), (req, res) => {
     try {
-      if (!isUserLegalApprover(req.authUser.id, req.authUser.role)) {
+      if (!isUserLegalApprover(req.authUser.id, req.authUser.role, req.authUser)) {
         return res.status(403).json({ error: 'Acesso restrito a Aprovadores Jurídicos configurados.' });
       }
 
@@ -1067,7 +1103,15 @@ export function registerPurchaseRoutes(app, {
           COALESCE((SELECT COUNT(*) FROM compras_requisicoes_itens i WHERE i.requisicao_id = r.id), 1) as total_itens,
           COALESCE((SELECT COUNT(*) FROM compras_anexos a WHERE a.requisicao_id = r.id), 0) as total_anexos
         FROM compras_requisicoes r
-        WHERE r.arquivado = 0 AND r.status = 'AGUARDANDO_JURIDICO'
+        WHERE r.arquivado = 0 
+          AND (
+            r.status = 'AGUARDANDO_JURIDICO'
+            OR (
+              (r.requer_juridico = 1 OR r.valor >= 2000)
+              AND (r.juridico_status = 'PENDENTE' OR r.juridico_status IS NULL)
+              AND r.status NOT IN ('APROVADO', 'NEGADO', 'NEGADO_JURIDICO', 'PAGO', 'SOLICITACAO_CONCLUIDA')
+            )
+          )
         ORDER BY r.created_at DESC
       `).all();
 
@@ -1081,7 +1125,7 @@ export function registerPurchaseRoutes(app, {
   // --- ROTA: HISTÓRICO GERAL DO JURÍDICO (SOLICITAÇÕES APROVADAS / REJEITADAS / AVALIADAS PELO JURÍDICO - ACESSO VITALÍCIO) ---
   app.get('/api/compras/juridico/historico', requireSession, requirePermission(['13.1', '13', '13.2']), (req, res) => {
     try {
-      if (!isUserLegalApprover(req.authUser.id, req.authUser.role)) {
+      if (!isUserLegalApprover(req.authUser.id, req.authUser.role, req.authUser)) {
         return res.status(403).json({ error: 'Acesso restrito a Aprovadores Jurídicos configurados.' });
       }
 
@@ -1111,14 +1155,19 @@ export function registerPurchaseRoutes(app, {
     const { id } = req.params;
     const observacao = String(req.body?.observacoes || req.body?.motivo || '').trim();
 
-    if (!isUserLegalApprover(req.authUser.id, req.authUser.role)) {
+    if (!isUserLegalApprover(req.authUser.id, req.authUser.role, req.authUser)) {
       return res.status(403).json({ error: 'Apenas Aprovadores Jurídicos configurados podem emitir parecer e aprovar no Jurídico.' });
     }
 
     try {
       const requisicao = db.prepare(`SELECT * FROM compras_requisicoes WHERE id = ?`).get(id);
       if (!requisicao) return res.status(404).json({ error: 'Solicitação não encontrada.' });
-      if (requisicao.status !== 'AGUARDANDO_JURIDICO') {
+
+      const isPendingLegal = requisicao.status === 'AGUARDANDO_JURIDICO' ||
+        (requisicao.requer_juridico === 1 && (requisicao.juridico_status === 'PENDENTE' || !requisicao.juridico_status)) ||
+        (requisicao.juridico_status === 'PENDENTE');
+
+      if (!isPendingLegal || requisicao.juridico_status === 'APROVADO' || requisicao.juridico_status === 'REJEITADO' || requisicao.status === 'NEGADO_JURIDICO') {
         return res.status(400).json({ error: 'Esta solicitação não está pendente de aprovação jurídica.' });
       }
 
@@ -1194,7 +1243,7 @@ export function registerPurchaseRoutes(app, {
     const { id } = req.params;
     const motivo = String(req.body?.motivo || req.body?.observacoes || '').trim();
 
-    if (!isUserLegalApprover(req.authUser.id, req.authUser.role)) {
+    if (!isUserLegalApprover(req.authUser.id, req.authUser.role, req.authUser)) {
       return res.status(403).json({ error: 'Apenas Aprovadores Jurídicos configurados podem rejeitar solicitações no Jurídico.' });
     }
 
@@ -1205,7 +1254,12 @@ export function registerPurchaseRoutes(app, {
     try {
       const requisicao = db.prepare(`SELECT * FROM compras_requisicoes WHERE id = ?`).get(id);
       if (!requisicao) return res.status(404).json({ error: 'Solicitação não encontrada.' });
-      if (requisicao.status !== 'AGUARDANDO_JURIDICO') {
+
+      const isPendingLegal = requisicao.status === 'AGUARDANDO_JURIDICO' ||
+        (requisicao.requer_juridico === 1 && (requisicao.juridico_status === 'PENDENTE' || !requisicao.juridico_status)) ||
+        (requisicao.juridico_status === 'PENDENTE');
+
+      if (!isPendingLegal || requisicao.juridico_status === 'REJEITADO' || requisicao.status === 'NEGADO_JURIDICO') {
         return res.status(400).json({ error: 'Esta solicitação não está pendente de aprovação jurídica.' });
       }
 
@@ -1496,7 +1550,7 @@ export function registerPurchaseRoutes(app, {
       if (requisicao.status === 'APROVADO') {
         return res.status(400).json({ error: 'Esta solicitação já foi aprovada.' });
       }
-      if (requisicao.status === 'AGUARDANDO_JURIDICO') {
+      if (requisicao.status === 'AGUARDANDO_JURIDICO' || ((requisicao.requer_juridico === 1 || Number(requisicao.valor || 0) >= 2000) && (requisicao.juridico_status === 'PENDENTE' || !requisicao.juridico_status))) {
         return res.status(400).json({ error: 'Esta solicitação está aguardando aprovação prévia do Jurídico antes de seguir na esteira geral.' });
       }
 
@@ -1837,7 +1891,7 @@ export function registerPurchaseRoutes(app, {
       const isOwner = requisicao.solicitante_id === req.authUser.id;
       const isApprover = userRole === 'APROVADOR' || req.authUser.role === 'MASTER';
 
-      const isLegalApprover = isUserLegalApprover(req.authUser.id, req.authUser.role);
+      const isLegalApprover = isUserLegalApprover(req.authUser.id, req.authUser.role, req.authUser);
       const inLegalScope = isRequestInLegalScope(requisicao, req.authUser.id);
       const canLegalAccess = isLegalApprover && inLegalScope;
 
@@ -1860,13 +1914,22 @@ export function registerPurchaseRoutes(app, {
       const autorNome = req.authUser.username || req.authUser.id;
       const autorRole = canLegalAccess ? 'JURIDICO' : (isApprover ? 'APROVADOR' : (hasFinanceAccess ? 'FINANCEIRO' : 'REQUISITANTE'));
 
-      // Atualiza o status da requisição quando mensagem for enviada
+      // Atualiza o status da requisição quando mensagem for enviada:
+      // Se estiver aguardando parecer jurídico, o status NÃO pode mudar para AGUARDANDO_RESPOSTA_...
+      // Deve permanecer AGUARDANDO_JURIDICO para que nunca saia da fila/esteira jurídica!
       let novoStatus = requisicao.status;
       if (requisicao.arquivado === 0) {
-        if (isApprover) {
-          novoStatus = 'AGUARDANDO_RESPOSTA_SOLICITANTE';
-        } else {
-          novoStatus = 'AGUARDANDO_RESPOSTA_APROVADOR';
+        const isWaitingLegal = requisicao.status === 'AGUARDANDO_JURIDICO' ||
+          ((requisicao.requer_juridico === 1 || Number(requisicao.valor || 0) >= 2000) && (requisicao.juridico_status === 'PENDENTE' || !requisicao.juridico_status));
+
+        if (isWaitingLegal) {
+          novoStatus = 'AGUARDANDO_JURIDICO';
+        } else if (['PENDENTE', 'REABERTO', 'REVISAO', 'AGUARDANDO_RESPOSTA_APROVADOR', 'AGUARDANDO_RESPOSTA_SOLICITANTE'].includes(requisicao.status)) {
+          if (isApprover) {
+            novoStatus = 'AGUARDANDO_RESPOSTA_SOLICITANTE';
+          } else {
+            novoStatus = 'AGUARDANDO_RESPOSTA_APROVADOR';
+          }
         }
       }
 
