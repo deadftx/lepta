@@ -3,6 +3,7 @@ import cors from 'cors';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import multer from 'multer';
 import ExcelJS from 'exceljs';
 import Database from 'better-sqlite3';
 import stringSimilarity from 'string-similarity';
@@ -4058,6 +4059,24 @@ app.get('/api/cobranca/vencidos', requireSession, requirePermission('12.1', '12'
         const modalidadeNome = t.modalidade || t.operacao?.modalidade || t.tipoDeOperacao || '';
         const carteiraNome = t.carteira || t.operacao?.carteira || '';
 
+        const endObj = t.sacado?.entidade?.endereco || t.sacado?.endereco || t.devedor?.entidade?.endereco || t.devedor?.endereco || t.endereco;
+        let sacadoEndereco = null;
+        if (endObj && typeof endObj === 'object') {
+          sacadoEndereco = {
+            logradouro: String(endObj.logradouro || endObj.rua || endObj.endereco || '').trim(),
+            numero: String(endObj.numero || 'S/N').trim(),
+            complemento: String(endObj.complemento || '').trim(),
+            bairro: String(endObj.bairro || '').trim(),
+            cidade: String(endObj.localidade || endObj.cidade || endObj.municipio || '').trim(),
+            estado: String(endObj.uf || endObj.estado || '').trim(),
+            cep: String(endObj.cep || endObj.codigoPostal || '').trim()
+          };
+        }
+
+        const rawManifesto = String(t.situacaoManifesto || t.manifesto || t.situacao_manifesto || '').trim();
+        const dataManifesto = parseDateToIso(t.dataDoManifesto || t.dataManifesto || null);
+        const cartorioBitfin = String(t.cartorio?.nome || t.cartorio || t.protesto?.cartorio || t.protesto || t.ocorrencias?.cartorio || '').trim();
+
         titles.push({
           id: String(t.id || t.numero || Math.random()),
           numero: String(t.numero || t.numeroDoTitulo || t.id || '-'),
@@ -4081,8 +4100,12 @@ app.get('/api/cobranca/vencidos', requireSession, requirePermission('12.1', '12'
           desagio: Number(t.desagio || 0),
           bancoCobrador: t.bancoCobrador?.nome || t.bancoCobrador || '',
           tipoDocumento: tipoDoc,
-          chaveNfe: t.chaveNfe || t.manifesto || '',
-          codigoDoLastro: t.codigoDoLastro || ''
+          chaveNfe: t.chaveNfe || (t.manifesto?.length === 44 ? t.manifesto : ''),
+          codigoDoLastro: t.codigoDoLastro || '',
+          situacaoManifesto: rawManifesto || 'Sem Atuação',
+          dataManifesto,
+          cartorioBitfin,
+          sacadoEndereco
         });
       }
     } catch (apiErr) {
@@ -4146,7 +4169,11 @@ app.get('/api/cobranca/vencidos', requireSession, requirePermission('12.1', '12'
                 bancoCobrador: r.BANCO_COBRADOR || '',
                 tipoDocumento: extractTipoDocumento(r),
                 chaveNfe: '',
-                codigoDoLastro: ''
+                codigoDoLastro: '',
+                situacaoManifesto: 'Sem Atuação',
+                dataManifesto: null,
+                cartorioBitfin: '',
+                sacadoEndereco: null
               };
             })
             .filter(Boolean);
@@ -4298,6 +4325,238 @@ app.get('/api/cobranca/vencidos', requireSession, requirePermission('12.1', '12'
   } catch (err) {
     console.error('Erro ao buscar títulos vencidos para cobrança:', err);
     res.status(500).json({ error: 'Erro ao processar análise de vencidos', message: err.message });
+  }
+});
+
+function ensureCartoriosTableSchema() {
+  try {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS cartorios_sacados (
+        id TEXT PRIMARY KEY,
+        cep TEXT,
+        cidade TEXT,
+        uf TEXT,
+        comarca TEXT,
+        nome_cartorio TEXT,
+        tabeliao TEXT,
+        endereco TEXT,
+        bairro TEXT,
+        telefone TEXT,
+        email TEXT,
+        observacoes TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
+      CREATE INDEX IF NOT EXISTS idx_cartorios_cep ON cartorios_sacados(cep);
+      CREATE INDEX IF NOT EXISTS idx_cartorios_cidade_uf ON cartorios_sacados(cidade, uf);
+    `);
+  } catch (schemaErr) {
+    console.warn('Aviso ao inicializar tabela cartorios_sacados:', schemaErr.message);
+  }
+}
+ensureCartoriosTableSchema();
+
+const cartorioUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 25 * 1024 * 1024 } });
+
+app.get('/api/cobranca/cartorios', requireSession, (req, res) => {
+  try {
+    const { cep, cidade, uf, q } = req.query;
+    ensureCartoriosTableSchema();
+
+    let query = 'SELECT * FROM cartorios_sacados WHERE 1=1';
+    const params = [];
+
+    const cleanCep = String(cep || '').replace(/\D/g, '');
+    if (cleanCep) {
+      query += ' AND (REPLACE(REPLACE(cep, "-", ""), ".", "") = ? OR cep LIKE ?)';
+      params.push(cleanCep, `%${cleanCep}%`);
+    } else if (cidade && uf) {
+      query += ' AND LOWER(cidade) = LOWER(?) AND LOWER(uf) = LOWER(?)';
+      params.push(String(cidade).trim(), String(uf).trim());
+    } else if (q) {
+      query += ' AND (nome_cartorio LIKE ? OR cidade LIKE ? OR comarca LIKE ? OR endereco LIKE ?)';
+      const term = `%${String(q).trim()}%`;
+      params.push(term, term, term, term);
+    }
+
+    query += ' ORDER BY cidade ASC, nome_cartorio ASC LIMIT 50';
+    const rows = db.prepare(query).all(...params);
+    return res.json(rows);
+  } catch (err) {
+    console.error('Erro ao consultar cartorios:', err.message);
+    return res.status(500).json({ error: 'Erro ao consultar cartórios' });
+  }
+});
+
+app.post('/api/cobranca/cartorios', requireSession, (req, res) => {
+  try {
+    ensureCartoriosTableSchema();
+    const data = req.body || {};
+    const id = data.id || `cart_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    const cep = String(data.cep || '').trim();
+    const cidade = String(data.cidade || '').trim();
+    const uf = String(data.uf || '').trim().toUpperCase();
+    const comarca = String(data.comarca || cidade).trim();
+    const nome_cartorio = String(data.nome_cartorio || data.nomeCartorio || '').trim();
+    const tabeliao = String(data.tabeliao || '').trim();
+    const endereco = String(data.endereco || '').trim();
+    const bairro = String(data.bairro || '').trim();
+    const telefone = String(data.telefone || '').trim();
+    const email = String(data.email || '').trim();
+    const observacoes = String(data.observacoes || '').trim();
+
+    if (!nome_cartorio && !endereco) {
+      return res.status(400).json({ error: 'Nome do cartório ou endereço é obrigatório.' });
+    }
+
+    db.prepare(`
+      INSERT OR REPLACE INTO cartorios_sacados (
+        id, cep, cidade, uf, comarca, nome_cartorio, tabeliao, endereco, bairro, telefone, email, observacoes, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+    `).run(id, cep, cidade, uf, comarca, nome_cartorio, tabeliao, endereco, bairro, telefone, email, observacoes);
+
+    const saved = db.prepare('SELECT * FROM cartorios_sacados WHERE id = ?').get(id);
+    return res.status(201).json({ success: true, cartorio: saved });
+  } catch (err) {
+    console.error('Erro ao salvar cartório:', err.message);
+    return res.status(500).json({ error: 'Erro ao salvar cartório' });
+  }
+});
+
+app.post('/api/cobranca/cartorios/upload', requireSession, cartorioUpload.single('file'), async (req, res) => {
+  try {
+    ensureCartoriosTableSchema();
+    let rows = [];
+
+    if (req.file) {
+      const buffer = req.file.buffer;
+      const fileName = (req.file.originalname || '').toLowerCase();
+
+      if (fileName.endsWith('.csv')) {
+        const text = buffer.toString('utf8');
+        const lines = text.split(/\r?\n/).filter(Boolean);
+        if (lines.length > 1) {
+          const headers = lines[0].split(/[;,]/).map(h => h.trim().replace(/^["']|["']$/g, '').toLowerCase());
+          for (let i = 1; i < lines.length; i++) {
+            const cols = lines[i].split(/[;,]/).map(c => c.trim().replace(/^["']|["']$/g, ''));
+            const obj = {};
+            headers.forEach((h, idx) => { obj[h] = cols[idx] || ''; });
+            rows.push(obj);
+          }
+        }
+      } else {
+        const workbook = new ExcelJS.Workbook();
+        await workbook.xlsx.load(buffer);
+        const worksheet = workbook.worksheets[0];
+        if (worksheet) {
+          const headers = [];
+          worksheet.getRow(1).eachCell((cell, colNumber) => {
+            headers[colNumber] = String(cell.value || '').trim().toLowerCase();
+          });
+          worksheet.eachRow((row, rowNumber) => {
+            if (rowNumber > 1) {
+              const obj = {};
+              row.eachCell((cell, colNumber) => {
+                const header = headers[colNumber];
+                if (header) obj[header] = cell.value?.toString() || '';
+              });
+              rows.push(obj);
+            }
+          });
+        }
+      }
+    } else if (Array.isArray(req.body?.rows)) {
+      rows = req.body.rows;
+    }
+
+    if (rows.length === 0) {
+      return res.status(400).json({ error: 'Nenhum registro legível encontrado no arquivo.' });
+    }
+
+    const insertStmt = db.prepare(`
+      INSERT OR REPLACE INTO cartorios_sacados (
+        id, cep, cidade, uf, comarca, nome_cartorio, tabeliao, endereco, bairro, telefone, email, observacoes, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+    `);
+
+    let count = 0;
+    const findVal = (row, candidates) => {
+      for (const k of Object.keys(row)) {
+        const kNorm = k.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+        for (const c of candidates) {
+          if (kNorm === c || kNorm.includes(c)) return String(row[k] || '').trim();
+        }
+      }
+      return '';
+    };
+
+    const runTransaction = db.transaction(() => {
+      for (const row of rows) {
+        const nomeCartorio = findVal(row, ['cartorio', 'nome', 'tabelionato', 'serventia', 'oficio']);
+        const cidade = findVal(row, ['cidade', 'municipio', 'localidade']);
+        const uf = findVal(row, ['uf', 'estado']).slice(0, 2).toUpperCase();
+        const cep = findVal(row, ['cep', 'codigo_postal', 'codigopostal']);
+        const comarca = findVal(row, ['comarca']) || cidade;
+        const endereco = findVal(row, ['endereco', 'logradouro', 'rua']);
+        const bairro = findVal(row, ['bairro', 'distrito']);
+        const telefone = findVal(row, ['telefone', 'fone', 'tel', 'celular']);
+        const email = findVal(row, ['email', 'e-mail']);
+        const tabeliao = findVal(row, ['tabeliao', 'responsavel', 'titular']);
+        const observacoes = findVal(row, ['observacao', 'obs', 'horario']);
+
+        if (!nomeCartorio && !endereco) continue;
+
+        const id = `cart_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+        insertStmt.run(id, cep, cidade, uf, comarca, nomeCartorio, tabeliao, endereco, bairro, telefone, email, observacoes);
+        count++;
+      }
+    });
+
+    runTransaction();
+    return res.json({ success: true, count, message: `${count} cartórios importados com sucesso na base!` });
+  } catch (err) {
+    console.error('Erro ao importar cartórios:', err.message);
+    return res.status(500).json({ error: 'Erro ao processar importação: ' + err.message });
+  }
+});
+
+app.get('/api/cobranca/sacado/:documento/endereco', requireSession, async (req, res) => {
+  const cleanDoc = String(req.params.documento || '').replace(/\D/g, '');
+  if (!cleanDoc) return res.status(400).json({ error: 'Documento inválido.' });
+
+  try {
+    if (UNLTD_TOKEN) {
+      const resp = await fetch(`https://lepta-backend.bit-unltd.com.br/entidades/${cleanDoc}`, {
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `UNLTD-BackEnd ${UNLTD_TOKEN}`
+        }
+      });
+      if (resp.ok) {
+        const payload = await resp.json();
+        const ent = Array.isArray(payload) ? payload[0] : payload;
+        const end = ent?.endereco;
+        if (end) {
+          return res.json({
+            nome: ent.nome || '',
+            documento: cleanDoc,
+            endereco: {
+              logradouro: String(end.logradouro || end.rua || '').trim(),
+              numero: String(end.numero || 'S/N').trim(),
+              complemento: String(end.complemento || '').trim(),
+              bairro: String(end.bairro || '').trim(),
+              cidade: String(end.localidade || end.cidade || '').trim(),
+              estado: String(end.uf || end.estado || '').trim(),
+              cep: String(end.cep || end.codigoPostal || '').trim()
+            }
+          });
+        }
+      }
+    }
+    return res.json({ nome: '', documento: cleanDoc, endereco: null });
+  } catch (err) {
+    console.warn(`Aviso ao consultar endereço do sacado ${cleanDoc}:`, err.message);
+    return res.json({ nome: '', documento: cleanDoc, endereco: null });
   }
 });
 
