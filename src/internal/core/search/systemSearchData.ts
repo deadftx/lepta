@@ -494,6 +494,34 @@ export const systemSearchItems: SearchItem[] = [
     icon: 'Scale',
     badge: 'Módulo'
   },
+  {
+    id: 'mod-bi-associados',
+    title: 'Associados',
+    category: 'Business Intelligence',
+    breadcrumb: ['Business Intelligence', 'Associados'],
+    path: '/bi/associados',
+    permissionId: '4.2',
+    description: 'Painel analítico corporativo de associados, métricas, distribuição por departamento e cargos.',
+    explanation: 'Acesse Business Intelligence > Associados para visualizar indicadores, distribuição de cargos e base de colaboradores.',
+    tags: ['Associados', 'Colaboradores', 'Equipe', 'Cargos', 'Departamentos', 'RH'],
+    keywords: ['associados', 'associado', 'colaboradores', 'funcionarios', 'equipe', 'rh', 'departamento', 'cargos', 'planta', 'pessoas'],
+    icon: 'Users',
+    badge: 'Módulo'
+  },
+  {
+    id: 'mod-bi-mesa-operacao',
+    title: 'Mesa de Operação (BI)',
+    category: 'Business Intelligence',
+    breadcrumb: ['Business Intelligence', 'Mesa de Operação'],
+    path: '/bi/mesa-operacao',
+    permissionId: '4.3',
+    description: 'Wallboard em tempo real da Mesa de Operações com volumes, deságio, ticket médio e monitoramento ao vivo.',
+    explanation: 'Acesse Business Intelligence > Mesa de Operação para acompanhar o painel em tempo real de operações negociadas.',
+    tags: ['Mesa de Operações', 'Wallboard', 'Volumes', 'Deságio', 'Tempo Real', 'FIDC'],
+    keywords: ['mesa de operacao', 'mesa de operacoes', 'wallboard', 'tempo real', 'volume bruto', 'volume liquido', 'desagio', 'fidc', 'ao vivo'],
+    icon: 'Layers',
+    badge: 'Módulo'
+  },
 
   // ==========================================
   // GRUPO JURÍDICO

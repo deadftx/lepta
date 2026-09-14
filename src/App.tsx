@@ -8,6 +8,8 @@ import Dashboard from './internal/modules/home/Dashboard';
 import Permissions from './internal/modules/administracao/permissoes/Permissions';
 import Groups from './internal/modules/administracao/grupos/Groups';
 import MovimentoFalimentar from './internal/modules/business-intelligence/movimento-falimentar/MovimentoFalimentar';
+import AssociadosDashboard from './internal/modules/business-intelligence/associados/AssociadosDashboard';
+import MesaOperacaoDashboard from './internal/modules/business-intelligence/mesa-operacao/MesaOperacaoDashboard';
 import DashboardsView from './internal/modules/dashboards/DashboardsView';
 import CreateUser from './internal/modules/administracao/criar-usuario/CreateUser';
 import Marketing from './internal/modules/calendario/Marketing';
@@ -120,6 +122,8 @@ function App() {
                 <Route path="/dashboards" element={<AccessRoute permission="5"><DashboardsView /></AccessRoute>} />
                 <Route path="/bi" element={<Navigate to="/bi/movimento-falimentar" replace />} />
                 <Route path="/bi/movimento-falimentar" element={<AccessRoute permission="4.1"><MovimentoFalimentar /></AccessRoute>} />
+                <Route path="/bi/associados" element={<AccessRoute permission="4.2"><AssociadosDashboard /></AccessRoute>} />
+                <Route path="/bi/mesa-operacao" element={<AccessRoute permission="4.3"><MesaOperacaoDashboard /></AccessRoute>} />
                 <Route path="/financeiro" element={<AccessRoute permission="7"><FinanceDashboard /></AccessRoute>} />
                 <Route path="/financeiro/extratos" element={<AccessRoute permission="7.1"><Finance /></AccessRoute>} />
                 <Route path="/financeiro/grafeno" element={<AccessRoute permission="7.2"><GrafenoIntegration /></AccessRoute>} />

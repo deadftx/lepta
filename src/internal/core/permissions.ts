@@ -82,13 +82,15 @@ export const permissionGroups: PermissionGroup[] = [
     id: '4',
     name: 'Business Intelligence',
     children: [
-      { id: '4.1', name: 'Movimento Falimentar' }
+      { id: '4.1', name: 'Movimento Falimentar' },
+      { id: '4.2', name: 'Associados' },
+      { id: '4.3', name: 'Mesa de Operação' }
     ]
   }
 ];
 
 const legacyChildren: Record<string, string[]> = {
-  '4': ['4.1'],
+  '4': ['4.1', '4.2', '4.3'],
   '7': ['7.1', '7.2', '7.4', '7.5'],
   '8': ['8.1', '8.2', '8.3', '8.4', '8.5', '8.6', '8.7'],
   '10': ['10.1', '10.2'],
@@ -118,7 +120,8 @@ export const hasPermission = (user: User | null, permissionId: string) => {
   const perms = normalizePermissions(user.permissions);
   if (perms.includes(permissionId)) return true;
   if (permissionId === '8.6' && (perms.includes('8.1') || perms.includes('8'))) return true;
-  // Herança e migração: 14.3 herda acessos de 10.1 / 10 / 14
+  // Herança e migração: 14.3 herda acessos de 10.1 / 10 / 14; 4.3 herda de 14 ou 4
+  if (permissionId === '4.3' && (perms.includes('14') || perms.includes('14.1') || perms.includes('4'))) return true;
   if (permissionId === '14.3' && (perms.includes('10.1') || perms.includes('10') || perms.includes('14'))) return true;
   if (permissionId === '10.1' && (perms.includes('14.3') || perms.includes('14') || perms.includes('10'))) return true;
 
@@ -144,6 +147,7 @@ export const hasPermission = (user: User | null, permissionId: string) => {
             const groupPerms = normalizePermissions(g.permissions || []);
             if (groupPerms.includes(permissionId)) return true;
             if (permissionId === '8.6' && (groupPerms.includes('8.1') || groupPerms.includes('8'))) return true;
+            if (permissionId === '4.3' && (groupPerms.includes('14') || groupPerms.includes('14.1') || groupPerms.includes('4'))) return true;
             if (permissionId === '14.3' && (groupPerms.includes('10.1') || groupPerms.includes('10') || groupPerms.includes('14'))) return true;
             if (permissionId === '10.1' && (groupPerms.includes('14.3') || groupPerms.includes('14') || groupPerms.includes('10'))) return true;
           }

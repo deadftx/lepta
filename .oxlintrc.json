@@ -4,6 +4,15 @@
     "browser": true,
     "node": true
   },
+  "globals": {
+    "Chart": "readonly",
+    "ChartDataLabels": "readonly",
+    "lucide": "readonly"
+  },
+  "ignorePatterns": [
+    "**/dist/**",
+    "**/bundle.js"
+  ],
   "plugins": ["react", "typescript", "oxc"],
   "rules": {
     "no-undef": "error",

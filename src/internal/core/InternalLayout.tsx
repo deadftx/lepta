@@ -467,7 +467,7 @@ const InternalLayout = () => {
               <LayoutDashboard size={20} /> Dashboards
             </Link>
           )}
-          {(hasAccess('4') || hasAccess('4.1')) && (
+          {hasAnyPermission(user, ['4', '4.1', '4.2', '4.3']) && (
             <div className="nav-menu-group">
               <div 
                 className={`nav-item nav-item-parent ${isBiActive ? 'active' : ''}`}
@@ -485,6 +485,16 @@ const InternalLayout = () => {
                   {(hasAccess('4.1') || hasAccess('4')) && (
                     <Link to="/bi/movimento-falimentar" className={navItemClass('/bi/movimento-falimentar')}>
                       <Scale size={18} /> Movimento Falimentar
+                    </Link>
+                  )}
+                  {(hasAccess('4.2') || hasAccess('4')) && (
+                    <Link to="/bi/associados" className={navItemClass('/bi/associados')}>
+                      <Users size={18} /> Associados
+                    </Link>
+                  )}
+                  {(hasAccess('4.3') || hasAccess('4') || hasAccess('14')) && (
+                    <Link to="/bi/mesa-operacao" className={navItemClass('/bi/mesa-operacao')}>
+                      <Layers size={18} /> Mesa de Operação
                     </Link>
                   )}
                 </div>

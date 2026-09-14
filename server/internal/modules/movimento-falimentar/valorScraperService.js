@@ -89,8 +89,8 @@ export function parseValorArticleText(text, publicationDate, articleUrl) {
       } else if (/^(?:[-–•*#\s]*)?(?:Administrador[a]?(?:\s+Judicial)?|AJ):\s*(.*)$/i.test(l)) {
         const m = l.match(/^(?:[-–•*#\s]*)?(?:Administrador[a]?(?:\s+Judicial)?|AJ):\s*(.*)$/i);
         if (m && m[1]) administrador = m[1].trim();
-      } else if (/^(?:[-–•*#\s]*)?(?:Vara(?:\s*[\/\-]\s*Comarca)?|Comarca):\s*(.*)$/i.test(l)) {
-        const m = l.match(/^(?:[-–•*#\s]*)?(?:Vara(?:\s*[\/\-]\s*Comarca)?|Comarca):\s*(.*)$/i);
+      } else if (/^(?:[-–•*#\s]*)?(?:Vara(?:\s*[/-]\s*Comarca)?|Comarca):\s*(.*)$/i.test(l)) {
+        const m = l.match(/^(?:[-–•*#\s]*)?(?:Vara(?:\s*[/-]\s*Comarca)?|Comarca):\s*(.*)$/i);
         if (m && m[1]) varaComarca = m[1].trim();
       } else if (isVaraUnprefixedLine(l)) {
         varaComarca = l.replace(/^[-–•*#\s]+/, '').trim();
@@ -108,7 +108,7 @@ export function parseValorArticleText(text, publicationDate, articleUrl) {
       if (cnpjMatch) cnpj = cnpjMatch[1];
     }
     if (!empresa) {
-      const nameMatch = fullInline.match(/^(?:[-–•*#\s]*)?(?:Empresa|Requerente|Requerida|Devedor[a]?)?\s*([A-Z0-9\s\.\,\-\/\&]{4,60}?)(?:[-–]|CNPJ:|Endere[çc]o:|\d{2}\.\d{3}\.\d{3})/i);
+      const nameMatch = fullInline.match(/^(?:[-–•*#\s]*)?(?:Empresa|Requerente|Requerida|Devedor[a]?)?\s*([A-Z0-9\s.,/&-]{4,60}?)(?:[-–]|CNPJ:|Endere[çc]o:|\d{2}\.\d{3}\.\d{3})/i);
       if (nameMatch && nameMatch[1]) empresa = nameMatch[1].trim();
     }
 

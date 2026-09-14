@@ -27,6 +27,8 @@ import { createSmartFactorRouter } from './modules/intelligence/smartfactor/rout
 import { recordDatabaseEvent, recordUserHeartbeat } from './modules/monitor/monitorService.js';
 import { ensureCedentesTableSchema, syncAllCedentesFromUnltdApi } from './modules/database/unltdSync.js';
 import { registerMovimentoFalimentarRoutes } from './modules/movimento-falimentar/routes.js';
+import { registerAssociadosRoutes } from './modules/associados/routes.js';
+import { ensureAssociadosTableSchema } from './modules/associados/associadosService.js';
 
 const app = express();
 app.disable('x-powered-by');
@@ -175,6 +177,13 @@ db.prepare = function (sql) {
 
   return stmt;
 };
+
+// Garante criação da tabela associados e migração da planilha Controle - Associados - 2026.xlsx
+try {
+  ensureAssociadosTableSchema(db, projectRoot);
+} catch (assocErr) {
+  console.error('Aviso ao inicializar tabela associados:', assocErr.message);
+}
 
 const authSecretPath = path.join(projectRoot, '.auth-secret');
 if (!process.env.AUTH_ENCRYPTION_KEY && !fs.existsSync(authSecretPath)) {
@@ -6642,7 +6651,7 @@ registerConfirmationRoutes(app, {
 
 registerOperationsRoutes(app, {
   requireSession,
-  checkAccess: requirePermission('14.1', '14.2', '14.3', '14', '10.1'),
+  checkAccess: requirePermission('14.1', '14.2', '14.3', '14', '10.1', '4.3', '4'),
   unltdToken: UNLTD_TOKEN
 });
 
@@ -6651,6 +6660,13 @@ registerMovimentoFalimentarRoutes(app, {
   projectRoot,
   requireSession,
   checkAccess: requirePermission('4.1', '4')
+});
+
+registerAssociadosRoutes(app, {
+  db,
+  projectRoot,
+  requireSession,
+  checkAccess: requirePermission('4.2', '4')
 });
 
 registerTickerRoutes(app);

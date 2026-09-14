@@ -1,0 +1,31 @@
+{
+  "name": "mesa-de-operacoes-dashboard",
+  "version": "1.0.0",
+  "description": "Dashboard em tela cheia da Mesa de Operações - Lepta Capital",
+  "main": "dist/server.js",
+  "scripts": {
+    "build:client": "esbuild src/client/dashboard.ts --bundle --outfile=src/public/js/bundle.js --minify --sourcemap",
+    "build:server": "tsc -p tsconfig.server.json",
+    "build": "npm run build:client && npm run build:server",
+    "dev:client": "esbuild src/client/dashboard.ts --bundle --outfile=src/public/js/bundle.js --watch",
+    "dev:server": "tsx watch src/server.ts",
+    "dev": "npm run build:client && tsx watch src/server.ts",
+    "start": "node dist/server.js"
+  },
+  "keywords": ["dashboard", "mesa-de-operacoes", "lepta", "fidc", "bi"],
+  "author": "Lepta Tecnologia",
+  "license": "ISC",
+  "dependencies": {
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.17",
+    "@types/express": "^4.17.21",
+    "@types/node": "^22.13.4",
+    "esbuild": "^0.25.0",
+    "tsx": "^4.19.3",
+    "typescript": "^5.7.3"
+  }
+}

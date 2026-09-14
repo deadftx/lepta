@@ -588,6 +588,298 @@ export function registerOperationsRoutes(app, {
       return res.status(500).json({ error: `Erro ao particionar remessa: ${err.message}` });
     }
   });
+
+  // =========================================================================
+  // MESA DE OPERAÇÕES: WALLBOARD & ANALYTICS EM TEMPO REAL (BUSINESS INTELLIGENCE)
+  // =========================================================================
+  const liveStatsCache = new Map();
+  const LIVE_CACHE_TTL_MS = 15 * 1000;
+
+  function calculatePeriodRange(periodo = 'hoje', customInicio, customFim) {
+    const now = new Date();
+    const formatISOStart = (d) => {
+      const y = d.getFullYear();
+      const m = String(d.getMonth() + 1).padStart(2, '0');
+      const day = String(d.getDate()).padStart(2, '0');
+      return `${y}-${m}-${day}T00:00:00Z`;
+    };
+    const formatISOEnd = (d) => {
+      const y = d.getFullYear();
+      const m = String(d.getMonth() + 1).padStart(2, '0');
+      const day = String(d.getDate()).padStart(2, '0');
+      return `${y}-${m}-${day}T23:59:59Z`;
+    };
+
+    switch (periodo) {
+      case 'hoje':
+        return { inicio: formatISOStart(now), fim: formatISOEnd(now), label: 'Hoje (Ao Vivo)', isDaily: true };
+      case '7d': {
+        const past = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+        return { inicio: formatISOStart(past), fim: formatISOEnd(now), label: 'Últimos 7 Dias', isDaily: false };
+      }
+      case '30d': {
+        const past = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+        return { inicio: formatISOStart(past), fim: formatISOEnd(now), label: 'Últimos 30 Dias', isDaily: false };
+      }
+      case 'mes': {
+        const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+        return { inicio: formatISOStart(startOfMonth), fim: formatISOEnd(now), label: 'Mês Atual', isDaily: false };
+      }
+      case 'ano': {
+        const startOfYear = new Date(now.getFullYear(), 0, 1);
+        return { inicio: formatISOStart(startOfYear), fim: formatISOEnd(now), label: `Ano Atual (${now.getFullYear()})`, isDaily: false };
+      }
+      case 'custom': {
+        if (customInicio && customFim) {
+          return {
+            inicio: customInicio.includes('T') ? customInicio : `${customInicio}T00:00:00Z`,
+            fim: customFim.includes('T') ? customFim : `${customFim}T23:59:59Z`,
+            label: 'Período Personalizado',
+            isDaily: false
+          };
+        }
+        return { inicio: formatISOStart(now), fim: formatISOEnd(now), label: 'Hoje (Ao Vivo)', isDaily: true };
+      }
+      default:
+        return { inicio: formatISOStart(now), fim: formatISOEnd(now), label: 'Hoje (Ao Vivo)', isDaily: true };
+    }
+  }
+
+  async function fetchLiveOps(token, range, tipoDeData = 'Cadastro') {
+    const cacheKey = `live_ops_${tipoDeData}_${range.inicio}_${range.fim}`;
+    const cached = liveStatsCache.get(cacheKey);
+    if (cached && Date.now() - cached.timestamp < LIVE_CACHE_TTL_MS) {
+      return cached.data;
+    }
+
+    const API_BASE = 'https://lepta-backend.bit-unltd.com.br';
+    const res = await fetch(`${API_BASE}/recebiveis/operacoes`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `UNLTD-BackEnd ${token}`
+      },
+      body: JSON.stringify({
+        tipoDeData,
+        dataInicial: range.inicio,
+        dataFinal: range.fim
+      })
+    });
+
+    if (!res.ok) {
+      const err = await res.text();
+      throw new Error(`Erro API BitFin (${res.status}): ${err}`);
+    }
+
+    const data = await res.json();
+    const ops = Array.isArray(data) ? data : [];
+    ops.sort((a, b) => new Date(b.dataDeCadastro || 0).getTime() - new Date(a.dataDeCadastro || 0).getTime());
+
+    liveStatsCache.set(cacheKey, { data: ops, timestamp: Date.now() });
+    return ops;
+  }
+
+  function computeLiveStats(operacoes, periodoLabel, isDaily) {
+    let volumeBruto = 0;
+    let volumeLiquido = 0;
+    let totalTitulos = 0;
+    let efetivadasQtd = 0;
+    let efetivadasVolumeBruto = 0;
+    let efetivadasVolumeLiquido = 0;
+    let pendentesQtd = 0;
+    let pendentesVolumeBruto = 0;
+    let pendentesVolumeLiquido = 0;
+    let comCoobrigacaoQtd = 0;
+    let semCoobrigacaoQtd = 0;
+
+    const porUnidade = {};
+    const porProduto = {};
+    const cedentesMap = new Map();
+    const timelineMap = new Map();
+
+    for (const op of operacoes) {
+      const bruto = Number(op.totalBruto || 0);
+      const liquido = Number(op.totalLiquido || 0);
+      const titulos = Number(op.quantidadeDeTitulos || 0);
+
+      volumeBruto += bruto;
+      volumeLiquido += liquido;
+      totalTitulos += titulos;
+
+      if (op.efetivada) {
+        efetivadasQtd++;
+        efetivadasVolumeBruto += bruto;
+        efetivadasVolumeLiquido += liquido;
+      } else {
+        pendentesQtd++;
+        pendentesVolumeBruto += bruto;
+        pendentesVolumeLiquido += liquido;
+      }
+
+      if (op.coobrigacao) {
+        comCoobrigacaoQtd++;
+      } else {
+        semCoobrigacaoQtd++;
+      }
+
+      const unidade = op.contaOperacional?.unidadeAdministrativa?.alias || op.contaOperacional?.unidadeAdministrativa?.nome || 'Outros';
+      if (!porUnidade[unidade]) porUnidade[unidade] = { qtd: 0, bruto: 0, liquido: 0 };
+      porUnidade[unidade].qtd++;
+      porUnidade[unidade].bruto += bruto;
+      porUnidade[unidade].liquido += liquido;
+
+      const produto = op.contaOperacional?.produto?.descricao || 'Outros';
+      if (!porProduto[produto]) porProduto[produto] = { qtd: 0, bruto: 0, liquido: 0 };
+      porProduto[produto].qtd++;
+      porProduto[produto].bruto += bruto;
+      porProduto[produto].liquido += liquido;
+
+      const clienteNome = op.contaOperacional?.cliente?.entidade?.nome || 'Não identificado';
+      const clienteDoc = op.contaOperacional?.cliente?.entidade?.documento || '';
+      const docKey = clienteDoc || clienteNome;
+      if (!cedentesMap.has(docKey)) {
+        cedentesMap.set(docKey, { nome: clienteNome, documento: clienteDoc, qtd: 0, bruto: 0, liquido: 0 });
+      }
+      const c = cedentesMap.get(docKey);
+      c.qtd++;
+      c.bruto += bruto;
+      c.liquido += liquido;
+
+      const dt = new Date(op.dataDeCadastro);
+      let timeKey;
+      let timeLabel;
+      if (isDaily) {
+        const hour = dt.getHours();
+        timeKey = `${String(hour).padStart(2, '0')}:00`;
+        timeLabel = `${String(hour).padStart(2, '0')}h`;
+      } else {
+        const yyyy = dt.getFullYear();
+        const mm = String(dt.getMonth() + 1).padStart(2, '0');
+        const dd = String(dt.getDate()).padStart(2, '0');
+        timeKey = `${yyyy}-${mm}-${dd}`;
+        timeLabel = `${dd}/${mm}`;
+      }
+
+      if (!timelineMap.has(timeKey)) {
+        timelineMap.set(timeKey, { label: timeLabel, qtd: 0, bruto: 0, liquido: 0 });
+      }
+      const t = timelineMap.get(timeKey);
+      t.qtd++;
+      t.bruto += bruto;
+      t.liquido += liquido;
+    }
+
+    const desagioTotal = Math.max(0, volumeBruto - volumeLiquido);
+    const taxaDesagioMedia = volumeBruto > 0 ? (desagioTotal / volumeBruto) * 100 : 0;
+    const totalOperacoes = operacoes.length;
+    const ticketMedioOperacao = totalOperacoes > 0 ? volumeBruto / totalOperacoes : 0;
+    const ticketMedioTitulo = totalTitulos > 0 ? volumeBruto / totalTitulos : 0;
+    const taxaEfetivacaoQtd = totalOperacoes > 0 ? (efetivadasQtd / totalOperacoes) * 100 : 0;
+    const taxaEfetivacaoVolume = volumeBruto > 0 ? (efetivadasVolumeBruto / volumeBruto) * 100 : 0;
+    const percentualCoobrigacao = totalOperacoes > 0 ? (comCoobrigacaoQtd / totalOperacoes) * 100 : 0;
+
+    const timeline = Array.from(timelineMap.entries())
+      .sort((a, b) => a[0].localeCompare(b[0]))
+      .map(([key, val]) => ({
+        dataOuHora: key,
+        label: val.label,
+        qtd: val.qtd,
+        bruto: Math.round(val.bruto * 100) / 100,
+        liquido: Math.round(val.liquido * 100) / 100
+      }));
+
+    const topCedentes = Array.from(cedentesMap.values())
+      .sort((a, b) => b.bruto - a.bruto)
+      .slice(0, 10);
+
+    return {
+      periodo: periodoLabel,
+      totalOperacoes,
+      totalTitulos,
+      volumeBruto: Math.round(volumeBruto * 100) / 100,
+      volumeLiquido: Math.round(volumeLiquido * 100) / 100,
+      desagioTotal: Math.round(desagioTotal * 100) / 100,
+      taxaDesagioMedia: Math.round(taxaDesagioMedia * 10) / 10,
+      ticketMedioOperacao: Math.round(ticketMedioOperacao * 100) / 100,
+      ticketMedioTitulo: Math.round(ticketMedioTitulo * 100) / 100,
+      efetivadasQtd,
+      efetivadasVolumeBruto: Math.round(efetivadasVolumeBruto * 100) / 100,
+      efetivadasVolumeLiquido: Math.round(efetivadasVolumeLiquido * 100) / 100,
+      pendentesQtd,
+      pendentesVolumeBruto: Math.round(pendentesVolumeBruto * 100) / 100,
+      pendentesVolumeLiquido: Math.round(pendentesVolumeLiquido * 100) / 100,
+      comCoobrigacaoQtd,
+      semCoobrigacaoQtd,
+      taxaEfetivacaoQtd: Math.round(taxaEfetivacaoQtd * 10) / 10,
+      taxaEfetivacaoVolume: Math.round(taxaEfetivacaoVolume * 10) / 10,
+      percentualCoobrigacao: Math.round(percentualCoobrigacao * 10) / 10,
+      porUnidade,
+      porProduto,
+      topCedentes,
+      timeline
+    };
+  }
+
+  // 10. Listagem ao vivo para o Wallboard da Mesa
+  app.get('/api/mesa-operacoes/live-operacoes', requireSession, checkAccess, async (req, res) => {
+    try {
+      const token = getToken();
+      if (!token) return res.status(400).json({ error: 'Token UNLTD_API_TOKEN não configurado.' });
+
+      const { periodo = 'hoje', dataInicial, dataFinal, status = 'todas', unidade = '', tipoDeData = 'Cadastro' } = req.query;
+      const range = calculatePeriodRange(periodo, dataInicial, dataFinal);
+
+      const operacoes = await fetchLiveOps(token, range, tipoDeData);
+
+      let filtradas = operacoes;
+      if (status === 'efetivadas') {
+        filtradas = filtradas.filter(o => o.efetivada);
+      } else if (status === 'pendentes') {
+        filtradas = filtradas.filter(o => !o.efetivada);
+      }
+
+      if (unidade) {
+        filtradas = filtradas.filter(o =>
+          (o.contaOperacional?.unidadeAdministrativa?.alias === unidade) ||
+          (o.contaOperacional?.unidadeAdministrativa?.nome === unidade)
+        );
+      }
+
+      return res.json({
+        success: true,
+        periodoLabel: range.label,
+        range,
+        totalCount: filtradas.length,
+        operacoes: filtradas
+      });
+    } catch (err) {
+      console.error('Erro em /api/mesa-operacoes/live-operacoes:', err);
+      return res.status(500).json({ error: `Erro ao buscar operações ao vivo: ${err.message}` });
+    }
+  });
+
+  // 11. KPIs e Estatísticas consolidadas para o Wallboard
+  app.get('/api/mesa-operacoes/live-stats', requireSession, checkAccess, async (req, res) => {
+    try {
+      const token = getToken();
+      if (!token) return res.status(400).json({ error: 'Token UNLTD_API_TOKEN não configurado.' });
+
+      const { periodo = 'hoje', dataInicial, dataFinal, tipoDeData = 'Cadastro' } = req.query;
+      const range = calculatePeriodRange(periodo, dataInicial, dataFinal);
+
+      const operacoes = await fetchLiveOps(token, range, tipoDeData);
+      const stats = computeLiveStats(operacoes, range.label, range.isDaily);
+
+      return res.json({
+        success: true,
+        stats
+      });
+    } catch (err) {
+      console.error('Erro em /api/mesa-operacoes/live-stats:', err);
+      return res.status(500).json({ error: `Erro ao calcular estatísticas ao vivo: ${err.message}` });
+    }
+  });
 }
+
 
 

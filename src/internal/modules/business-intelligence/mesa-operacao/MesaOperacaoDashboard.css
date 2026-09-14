@@ -1,0 +1,385 @@
+/* ── MESA DE OPERAÇÕES DASHBOARD (BUSINESS INTELLIGENCE) ── */
+.mesa-container {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  background: #07090e;
+  color: #f1f5f9;
+  padding-bottom: 60px;
+  font-family: inherit;
+}
+
+/* ── PROGRESS BAR ── */
+.mesa-progress-bar {
+  width: 100%;
+  height: 3px;
+  background: rgba(255, 255, 255, 0.05);
+  overflow: hidden;
+  position: sticky;
+  top: 0;
+  z-index: 100;
+}
+
+.mesa-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #06b6d4, #10b981, #f59e0b);
+  transition: width 1s linear;
+}
+
+/* ── WALLBOARD HEADER ── */
+.mesa-header {
+  background: linear-gradient(180deg, rgba(15, 23, 42, 0.95) 0%, rgba(7, 9, 14, 0.85) 100%);
+  border-bottom: 1px solid rgba(56, 189, 248, 0.15);
+  padding: 16px 28px;
+}
+
+.mesa-header-inner {
+  max-width: 1680px;
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.mesa-brand {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.mesa-brand-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  background: linear-gradient(135deg, rgba(6, 182, 212, 0.2) 0%, rgba(16, 185, 129, 0.2) 100%);
+  border: 1.5px solid rgba(6, 182, 212, 0.35);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #06b6d4;
+  box-shadow: 0 4px 16px rgba(6, 182, 212, 0.15);
+}
+
+.mesa-title-wrap h1 {
+  margin: 0;
+  font-size: 1.4rem;
+  font-weight: 800;
+  color: #ffffff;
+  letter-spacing: -0.02em;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.mesa-title-wrap p {
+  margin: 2px 0 0 0;
+  font-size: 0.8rem;
+  color: #94a3b8;
+  font-weight: 500;
+}
+
+/* ── PERIOD SWITCHER ── */
+.mesa-period-switcher {
+  display: flex;
+  align-items: center;
+  background: rgba(15, 23, 42, 0.8);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  padding: 4px;
+  border-radius: 12px;
+  gap: 4px;
+}
+
+.mesa-period-btn {
+  background: none;
+  border: none;
+  color: #94a3b8;
+  padding: 7px 16px;
+  border-radius: 8px;
+  font-size: 0.82rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.mesa-period-btn:hover {
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.mesa-period-btn.active {
+  background: linear-gradient(135deg, #0284c7 0%, #0369a1 100%);
+  color: #ffffff;
+  box-shadow: 0 2px 8px rgba(2, 132, 199, 0.3);
+}
+
+.mesa-header-right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.mesa-live-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(16, 185, 129, 0.12);
+  border: 1px solid rgba(16, 185, 129, 0.3);
+  padding: 6px 14px;
+  border-radius: 9999px;
+  font-size: 0.76rem;
+  font-weight: 700;
+  color: #34d399;
+  letter-spacing: 0.04em;
+}
+
+.mesa-live-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #10b981;
+  box-shadow: 0 0 8px #10b981;
+  animation: liveBlink 1.5s infinite;
+}
+
+@keyframes liveBlink {
+  0% { opacity: 0.4; }
+  50% { opacity: 1; }
+  100% { opacity: 0.4; }
+}
+
+.mesa-clock-card {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(30, 41, 59, 0.5);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 6px 12px;
+  border-radius: 10px;
+  font-family: 'JetBrains Mono', monospace, monospace;
+  font-size: 0.8rem;
+  color: #cbd5e1;
+}
+
+.mesa-tool-btn {
+  background: rgba(30, 41, 59, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: #94a3b8;
+  padding: 8px;
+  border-radius: 10px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+}
+
+.mesa-tool-btn:hover {
+  color: #ffffff;
+  background: rgba(51, 65, 85, 0.8);
+}
+
+/* ── MAIN CONTENT ── */
+.mesa-main {
+  max-width: 1680px;
+  width: 100%;
+  margin: 0 auto;
+  padding: 20px 28px;
+  box-sizing: border-box;
+}
+
+/* ── KPI GRID ── */
+.mesa-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 16px;
+  margin-bottom: 22px;
+}
+
+.mesa-kpi-card {
+  background: rgba(15, 23, 42, 0.65);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(12px);
+  border-radius: 16px;
+  padding: 16px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  position: relative;
+  overflow: hidden;
+  transition: transform 0.2s ease, border-color 0.2s ease;
+}
+
+.mesa-kpi-card:hover {
+  transform: translateY(-2px);
+}
+
+.mesa-kpi-card.cyan { border-left: 3px solid #06b6d4; }
+.mesa-kpi-card.emerald { border-left: 3px solid #10b981; }
+.mesa-kpi-card.amber { border-left: 3px solid #f59e0b; }
+.mesa-kpi-card.purple { border-left: 3px solid #a855f7; }
+.mesa-kpi-card.green { border-left: 3px solid #22c55e; }
+.mesa-kpi-card.blue { border-left: 3px solid #3b82f6; }
+
+.mesa-kpi-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.mesa-kpi-label {
+  font-size: 0.74rem;
+  font-weight: 700;
+  color: #94a3b8;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.mesa-kpi-icon-wrap {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.mesa-kpi-icon-wrap.cyan { background: rgba(6, 182, 212, 0.15); color: #06b6d4; }
+.mesa-kpi-icon-wrap.emerald { background: rgba(16, 185, 129, 0.15); color: #10b981; }
+.mesa-kpi-icon-wrap.amber { background: rgba(245, 158, 11, 0.15); color: #f59e0b; }
+.mesa-kpi-icon-wrap.purple { background: rgba(168, 85, 247, 0.15); color: #c084fc; }
+.mesa-kpi-icon-wrap.green { background: rgba(34, 197, 94, 0.15); color: #22c55e; }
+.mesa-kpi-icon-wrap.blue { background: rgba(59, 130, 246, 0.15); color: #3b82f6; }
+
+.mesa-kpi-val {
+  font-size: 1.55rem;
+  font-weight: 800;
+  color: #ffffff;
+  line-height: 1.1;
+}
+
+.mesa-kpi-sub {
+  font-size: 0.75rem;
+  color: #64748b;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* ── CHARTS ROW ── */
+.mesa-charts-grid {
+  display: grid;
+  grid-template-columns: 2fr 1fr 1fr;
+  gap: 18px;
+  margin-bottom: 22px;
+}
+
+@media (max-width: 1300px) {
+  .mesa-charts-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+@media (max-width: 860px) {
+  .mesa-charts-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.mesa-card {
+  background: rgba(15, 23, 42, 0.65);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(12px);
+  border-radius: 16px;
+  padding: 18px 20px;
+}
+
+.mesa-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 14px;
+}
+
+.mesa-card-title {
+  margin: 0;
+  font-size: 0.92rem;
+  font-weight: 700;
+  color: #f1f5f9;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* ── OPERATIONS TABLE ── */
+.mesa-table-card {
+  background: rgba(15, 23, 42, 0.65);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(12px);
+  border-radius: 16px;
+  padding: 18px 20px;
+}
+
+.mesa-table-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 14px;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.mesa-table-wrapper {
+  overflow-x: auto;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.mesa-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.82rem;
+  text-align: left;
+}
+
+.mesa-table th {
+  background: rgba(30, 41, 59, 0.7);
+  color: #94a3b8;
+  font-weight: 700;
+  padding: 10px 12px;
+  text-transform: uppercase;
+  font-size: 0.7rem;
+  letter-spacing: 0.05em;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  white-space: nowrap;
+}
+
+.mesa-table td {
+  padding: 10px 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  color: #cbd5e1;
+  white-space: nowrap;
+}
+
+.mesa-table tbody tr:hover {
+  background: rgba(6, 182, 212, 0.04);
+}
+
+.mesa-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 8px;
+  border-radius: 6px;
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.mesa-badge.success { background: rgba(16, 185, 129, 0.2); color: #34d399; }
+.mesa-badge.warning { background: rgba(245, 158, 11, 0.2); color: #fbbf24; }
+.mesa-badge.danger { background: rgba(239, 68, 68, 0.2); color: #f87171; }
+.mesa-badge.cyan { background: rgba(6, 182, 212, 0.2); color: #22d3ee; }
+.mesa-badge.purple { background: rgba(168, 85, 247, 0.2); color: #c084fc; }
