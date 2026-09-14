@@ -203,7 +203,7 @@ export const MesaOperacaoDashboard: React.FC = () => {
   const [carouselIndex, setCarouselIndex] = useState<number>(0);
   const [isCarouselPaused, setIsCarouselPaused] = useState<boolean>(false);
 
-  const ITEMS_PER_SLIDE = 3;
+  const ITEMS_PER_SLIDE = 6;
   const totalSlides = Math.max(1, Math.ceil(falimentarRows.length / ITEMS_PER_SLIDE));
 
   // 1. Relógio oficial em tempo real
@@ -657,7 +657,7 @@ export const MesaOperacaoDashboard: React.FC = () => {
             </div>
 
             <div className="mesa-chart-content">
-              <ResponsiveContainer width="100%" height={190}>
+              <ResponsiveContainer width="100%" height={235}>
                 <AreaChart
                   data={currentStats.timeline}
                   margin={{ top: 22, right: 20, left: -5, bottom: 0 }}
