@@ -16,7 +16,11 @@ interface TickerData {
   updatedAt?: string;
 }
 
-export const TopHeaderTicker: React.FC = () => {
+interface TopHeaderTickerProps {
+  isExpanded?: boolean;
+}
+
+export const TopHeaderTicker: React.FC<TopHeaderTickerProps> = ({ isExpanded = false }) => {
   const [data, setData] = useState<TickerData>({
     quotes: [
       { key: 'ibov', name: 'Ibovespa', value: '131.250 pts', change: '+0.42%', positive: true },
@@ -164,7 +168,7 @@ export const TopHeaderTicker: React.FC = () => {
   return (
     <div
       ref={containerRef}
-      className={`top-header-ticker-container ${isGrabbing ? 'grabbing' : ''}`}
+      className={`top-header-ticker-container ${isGrabbing ? 'grabbing' : ''} ${isExpanded ? 'expanded' : ''}`}
       title="Cotações de Mercado em Tempo Real • Clique e arraste para rolar"
       onMouseEnter={() => { isHoveredRef.current = true; }}
       onMouseLeave={() => { isHoveredRef.current = false; handleMouseUpOrLeave(); }}

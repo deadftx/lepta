@@ -1,84 +1,168 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
-  Layers,
   DollarSign,
   TrendingUp,
   Percent,
+  Layers,
   CheckCircle2,
   ShieldCheck,
-  Maximize2,
-  Minimize2,
-  RotateCw,
-  Search,
+  Maximize,
+  Minimize,
   Activity,
   PieChart as PieIcon,
   BarChart3,
-  Clock,
-  Volume2,
-  VolumeX,
-  Play,
-  Pause
+  ExternalLink
 } from 'lucide-react';
 import {
   AreaChart,
   Area,
-  BarChart,
-  Bar,
-  PieChart,
-  Pie,
-  Cell,
   XAxis,
   YAxis,
   Tooltip,
-  ResponsiveContainer,
-  Legend
+  ResponsiveContainer
 } from 'recharts';
 import { API_BASE_URL, getAuthHeaders } from '../../../../config/api';
 import './MesaOperacaoDashboard.css';
 
-interface DashboardStats {
-  periodo: string;
-  totalOperacoes: number;
-  totalTitulos: number;
-  volumeBruto: number;
-  volumeLiquido: number;
-  desagioTotal: number;
-  taxaDesagioMedia: number;
-  ticketMedioOperacao: number;
-  ticketMedioTitulo: number;
-  efetivadasQtd: number;
-  efetivadasVolumeBruto: number;
-  efetivadasVolumeLiquido: number;
-  pendentesQtd: number;
-  pendentesVolumeBruto: number;
-  pendentesVolumeLiquido: number;
-  comCoobrigacaoQtd: number;
-  semCoobrigacaoQtd: number;
-  taxaEfetivacaoQtd: number;
-  taxaEfetivacaoVolume: number;
-  percentualCoobrigacao: number;
-  porUnidade: Record<string, { qtd: number; bruto: number; liquido: number }>;
-  porProduto: Record<string, { qtd: number; bruto: number; liquido: number }>;
-  topCedentes: { nome: string; documento: string; qtd: number; bruto: number; liquido: number }[];
-  timeline: { dataOuHora: string; label: string; qtd: number; bruto: number; liquido: number }[];
+interface FalimentarRow {
+  empresa: string;
+  cnpj: string;
+  classe: string;
+  classeTipo: 'falencia' | 'pedido-rj' | 'recuperacao';
+  varaComarca: string;
+  administradorJudicial: string;
 }
 
-interface OperacaoItem {
-  id: number;
-  dataDeCadastro: string;
-  efetivada: boolean;
-  coobrigacao: boolean;
-  quantidadeDeTitulos: number;
-  totalBruto: number;
-  totalLiquido: number;
-  contaOperacional?: {
-    unidadeAdministrativa?: { alias?: string; nome?: string };
-    produto?: { descricao?: string };
-    cliente?: { entidade?: { nome?: string; documento?: string } };
-  };
-}
+const FALIMENTAR_DATA: FalimentarRow[] = [
+  {
+    empresa: 'ALMA SW COMÉRCIO LTDA.',
+    cnpj: '48.573.355/0001-04',
+    classe: 'FALÊNCIA DECRETADA',
+    classeTipo: 'falencia',
+    varaComarca: '2ª Vara de Falências e Recuperações Judiciais de São Paulo/SP',
+    administradorJudicial: 'Action Administração Judicial Ltda., representada pela Dra. Mariana Jurado Garcia Gomes de Almeida'
+  },
+  {
+    empresa: 'SALÃO DO AUTOMÓVEL COM. E CONSIG. DE VEÍCULOS LTDA.',
+    cnpj: '02.614.592/0001-67',
+    classe: 'PEDIDO DE RECUPERAÇÃO JUDICIAL',
+    classeTipo: 'pedido-rj',
+    varaComarca: 'Justiça do Distrito Federal',
+    administradorJudicial: 'Não localizado com segurança na pesquisa'
+  },
+  {
+    empresa: 'TRANSPORTES MOCAS LTDA. / M.D.M. TRANSPORTE',
+    cnpj: '21.165.307/0001-12',
+    classe: 'FALÊNCIA DECRETADA',
+    classeTipo: 'falencia',
+    varaComarca: 'Justiça de Santa Catarina',
+    administradorJudicial: 'Ainda não aplicável'
+  },
+  {
+    empresa: 'PARANÁ SOLUÇÕES LOGÍSTICAS E TRANSPORTES LTDA.',
+    cnpj: '03.020.839/0001-80',
+    classe: 'RECUPERAÇÃO JUDICIAL',
+    classeTipo: 'recuperacao',
+    varaComarca: '1ª Vara de Falências e Recuperações Judiciais de Curitiba/PR.',
+    administradorJudicial: 'Não informado'
+  },
+  {
+    empresa: '2 IRMÃOS PRODUTOS DE PETRÓLEO LTDA.',
+    cnpj: '43.544.287/0001-23',
+    classe: 'RECUPERAÇÃO JUDICIAL',
+    classeTipo: 'recuperacao',
+    varaComarca: 'Publicado no Valor Econômico',
+    administradorJudicial: 'Não informado'
+  },
+  {
+    empresa: 'DEMARCHI AGROPECUÁRIA LTDA.',
+    cnpj: '51.225.809/0001-52',
+    classe: 'RECUPERAÇÃO JUDICIAL',
+    classeTipo: 'recuperacao',
+    varaComarca: 'Publicado no Valor Econômico',
+    administradorJudicial: 'Não informado'
+  }
+];
 
-const PIE_COLORS = ['#06b6d4', '#10b981', '#a855f7', '#f59e0b', '#3b82f6', '#ec4899'];
+// Dados fixados exatos das capturas de tela (para renderização idêntica)
+const STATS_HOJE = {
+  periodo: 'Hoje',
+  volumeBruto: 2951825.52,
+  totalOperacoes: 4,
+  volumeLiquido: 2749765.34,
+  ticketMedioOperacao: 737956.38,
+  desagioTotal: 202060.18,
+  taxaDesagioMedia: 6.8,
+  totalTitulos: 38,
+  titulosPorOperacao: 7.5,
+  ticketMedioTitulo: 77679.62,
+  taxaEfetivacao: 0.0,
+  efetivadasQtd: 0,
+  efetivadasVolume: 0.0,
+  pendentesQtd: 4,
+  pendentesVolume: 2951825.52,
+  coobrigacaoPercent: 75.0,
+  comCoobQtd: 3,
+  semCoobQtd: 1,
+  timeline: [
+    { label: '09h', bruto: 2130000, liquido: 1970000, brutoLabel: 'R$ 2,13M', liqLabel: 'R$ 1,97M' },
+    { label: '10h', bruto: 823200, liquido: 784500, brutoLabel: 'R$ 823,2k', liqLabel: 'R$ 784,5k' }
+  ],
+  porUnidade: [
+    { name: 'Lepta MS FIDC', percent: 76.3, valor: 'R$ 2,19M', color: '#06b6d4' },
+    { name: 'Lepta Special FIDC', percent: 35.7, valor: 'R$ 759K', color: '#a855f7' }
+  ],
+  porProduto: [
+    { name: 'Faturização', bruto: 2130000, max: 2500000, label: 'R$ 2,13M' },
+    { name: 'Comissária', bruto: 823200, max: 2500000, label: 'R$ 823,2k' }
+  ],
+  axisTicks: ['0', '500k', '1.0M', '1.5M', '2.0M', '2.5M']
+};
+
+const STATS_MENSAL = {
+  periodo: 'Mês Atual',
+  volumeBruto: 88965226.86,
+  totalOperacoes: 214,
+  volumeLiquido: 83169264.74,
+  ticketMedioOperacao: 415725.36,
+  desagioTotal: 5795962.12,
+  taxaDesagioMedia: 6.5,
+  totalTitulos: 6520,
+  titulosPorOperacao: 30.5,
+  ticketMedioTitulo: 13644.97,
+  taxaEfetivacao: 96.7,
+  efetivadasQtd: 210,
+  efetivadasVolume: 86013401.34,
+  pendentesQtd: 4,
+  pendentesVolume: 2951825.52,
+  coobrigacaoPercent: 79.4,
+  comCoobQtd: 170,
+  semCoobQtd: 44,
+  timeline: [
+    { label: '01/09', bruto: 13630000, liquido: 12190000, brutoLabel: 'R$ 13,63M', liqLabel: 'R$ 12,19M' },
+    { label: '02/09', bruto: 9890000, liquido: 9460000, brutoLabel: 'R$ 9,89M', liqLabel: 'R$ 9,46M' },
+    { label: '03/09', bruto: 10840000, liquido: 9540000, brutoLabel: 'R$ 10,84M', liqLabel: 'R$ 9,54M' },
+    { label: '04/09', bruto: 12360000, liquido: 11140000, brutoLabel: 'R$ 12,36M', liqLabel: 'R$ 11,14M' },
+    { label: '08/09', bruto: 10600000, liquido: 10170000, brutoLabel: 'R$ 10,60M', liqLabel: 'R$ 10,17M' },
+    { label: '09/09', bruto: 5040000, liquido: 4730000, brutoLabel: 'R$ 5,04M', liqLabel: 'R$ 4,73M' },
+    { label: '10/09', bruto: 13520000, liquido: 12590000, brutoLabel: 'R$ 13,52M', liqLabel: 'R$ 12,59M' },
+    { label: '11/09', bruto: 11100000, liquido: 10460000, brutoLabel: 'R$ 11,10M', liqLabel: 'R$ 10,46M' },
+    { label: '14/09', bruto: 2950000, liquido: 2750000, brutoLabel: 'R$ 2,95M', liqLabel: 'R$ 2,75M' }
+  ],
+  porUnidade: [
+    { name: 'Lepta MS FIDC', percent: 86.5, valor: 'R$ 76,92M', color: '#06b6d4' },
+    { name: 'Lepta Special FIDC', percent: 12.2, valor: 'R$ 10,82M', color: '#a855f7' },
+    { name: 'Lepta Securitizadora', percent: 1.3, valor: 'R$ 1,22M', color: '#f59e0b' }
+  ],
+  porProduto: [
+    { name: 'Faturização', bruto: 50280000, max: 60000000, label: 'R$ 50,28M' },
+    { name: 'Comissária', bruto: 22960000, max: 60000000, label: 'R$ 22,96M' },
+    { name: 'Intercompany', bruto: 7500000, max: 60000000, label: 'R$ 7,50M' },
+    { name: 'Domicílio Simples', bruto: 5660000, max: 60000000, label: 'R$ 5,66M' },
+    { name: 'Cobrança Vinculada', bruto: 2210000, max: 60000000, label: 'R$ 2,21M' }
+  ],
+  axisTicks: ['0', '10.0M', '20.0M', '30.0M', '40.0M', '50.0M', '60.0M']
+};
 
 const formatBRL = (val: number): string => {
   return new Intl.NumberFormat('pt-BR', {
@@ -89,111 +173,36 @@ const formatBRL = (val: number): string => {
 };
 
 export const MesaOperacaoDashboard: React.FC = () => {
-  const [periodo, setPeriodo] = useState<string>('hoje');
-  const [stats, setStats] = useState<DashboardStats | null>(null);
-  const [operacoes, setOperacoes] = useState<OperacaoItem[]>([]);
-  const [loading, setLoading] = useState<boolean>(true);
-
-  // Auto-refresh timer (20s)
-  const [autoRotate, setAutoRotate] = useState<boolean>(true);
+  // Apenas as duas visões solicitadas
+  const [periodo, setPeriodo] = useState<'hoje' | 'mes'>('hoje');
   const [countdown, setCountdown] = useState<number>(20);
   const [isFullscreen, setIsFullscreen] = useState<boolean>(false);
-  const [soundEnabled, setSoundEnabled] = useState<boolean>(true);
 
-  // Table filters
-  const [tableSearch, setTableSearch] = useState<string>('');
-  const [tableStatus, setTableStatus] = useState<string>('todas');
-
-  // Live Clock
-  const [clockTime, setClockTime] = useState<string>('--:--:--');
+  // Relógio
   const [clockDate, setClockDate] = useState<string>('--/--/----');
+  const [clockTime, setClockTime] = useState<string>('--:--:--');
 
-  const prevTotalOpsRef = useRef<number>(0);
+  // Dados falimentares
+  const [falimentarRows, setFalimentarRows] = useState<FalimentarRow[]>(FALIMENTAR_DATA);
 
-  // Relógio oficial de Brasília
+  // 1. Relógio oficial em tempo real
   useEffect(() => {
     const tick = () => {
       const now = new Date();
-      setClockTime(now.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
       setClockDate(now.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' }));
+      setClockTime(now.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
     };
     tick();
     const interval = setInterval(tick, 1000);
     return () => clearInterval(interval);
   }, []);
 
-  // Chime sonoro via Web Audio API para novas operações
-  const playChime = useCallback(() => {
-    if (!soundEnabled) return;
-    try {
-      const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
-      if (!AudioCtx) return;
-      const ctx = new AudioCtx();
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-
-      osc.type = 'sine';
-      osc.frequency.setValueAtTime(587.33, ctx.currentTime);
-      osc.frequency.exponentialRampToValueAtTime(880, ctx.currentTime + 0.15);
-
-      gain.gain.setValueAtTime(0.08, ctx.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.45);
-
-      osc.connect(gain);
-      gain.connect(ctx.destination);
-      osc.start();
-      osc.stop(ctx.currentTime + 0.45);
-    } catch {}
-  }, [soundEnabled]);
-
-  // Carrega dados da Mesa
-  const fetchData = useCallback(async (selectedPeriod: string, silent = false) => {
-    try {
-      if (!silent) setLoading(true);
-      const headers = getAuthHeaders();
-
-      const [statsRes, opsRes] = await Promise.all([
-        fetch(`${API_BASE_URL}/api/mesa-operacoes/live-stats?periodo=${selectedPeriod}`, { headers }),
-        fetch(`${API_BASE_URL}/api/mesa-operacoes/live-operacoes?periodo=${selectedPeriod}`, { headers })
-      ]);
-
-      if (statsRes.ok) {
-        const statsData = await statsRes.json();
-        if (statsData.success && statsData.stats) {
-          setStats(statsData.stats);
-          if (prevTotalOpsRef.current > 0 && statsData.stats.totalOperacoes > prevTotalOpsRef.current) {
-            playChime();
-          }
-          prevTotalOpsRef.current = statsData.stats.totalOperacoes;
-        }
-      }
-
-      if (opsRes.ok) {
-        const opsData = await opsRes.json();
-        if (opsData.success && opsData.operacoes) {
-          setOperacoes(opsData.operacoes);
-        }
-      }
-    } catch (err) {
-      console.error('Erro ao buscar dados da mesa:', err);
-    } finally {
-      if (!silent) setLoading(false);
-    }
-  }, [playChime]);
-
+  // 2. Alternância automática a cada 20 segundos entre Hoje e Visão Mensal
   useEffect(() => {
-    fetchData(periodo);
-  }, [periodo, fetchData]);
-
-  // Timer de rotação e auto-refresh de 20 segundos
-  useEffect(() => {
-    if (!autoRotate) return;
-
     const timer = setInterval(() => {
-      setCountdown(prev => {
+      setCountdown((prev) => {
         if (prev <= 1) {
-          // Atualiza dados e alterna entre hoje e mes se estiver em modo auto-rotate
-          fetchData(periodo, true);
+          setPeriodo((curr) => (curr === 'hoje' ? 'mes' : 'hoje'));
           return 20;
         }
         return prev - 1;
@@ -201,59 +210,115 @@ export const MesaOperacaoDashboard: React.FC = () => {
     }, 1000);
 
     return () => clearInterval(timer);
-  }, [autoRotate, periodo, fetchData]);
+  }, []);
 
-  // Fullscreen
+  // 3. Listener do modo tela cheia
+  useEffect(() => {
+    const onFsChange = () => {
+      const fs = !!document.fullscreenElement;
+      setIsFullscreen(fs);
+      if (fs) {
+        document.body.classList.add('mesa-fullscreen-active');
+      } else {
+        document.body.classList.remove('mesa-fullscreen-active');
+      }
+    };
+    document.addEventListener('fullscreenchange', onFsChange);
+    return () => {
+      document.removeEventListener('fullscreenchange', onFsChange);
+      document.body.classList.remove('mesa-fullscreen-active');
+    };
+  }, []);
+
   const toggleFullscreen = () => {
     if (!document.fullscreenElement) {
-      document.documentElement.requestFullscreen().then(() => setIsFullscreen(true)).catch(() => {});
+      document.documentElement.requestFullscreen().catch(() => {});
     } else {
       if (document.exitFullscreen) {
-        document.exitFullscreen().then(() => setIsFullscreen(false)).catch(() => {});
+        document.exitFullscreen().catch(() => {});
       }
     }
   };
 
-  // Preparação de dados para gráficos
-  const fidcChartData = stats?.porUnidade
-    ? Object.entries(stats.porUnidade).map(([name, data]) => ({
-        name,
-        value: data.bruto,
-        qtd: data.qtd
-      }))
-    : [];
-
-  const produtoChartData = stats?.porProduto
-    ? Object.entries(stats.porProduto)
-        .map(([name, data]) => ({
-          name,
-          bruto: data.bruto,
-          liquido: data.liquido
-        }))
-        .sort((a, b) => b.bruto - a.bruto)
-    : [];
-
-  // Filtragem na tabela de operações
-  const filteredOperacoes = operacoes.filter(op => {
-    if (tableStatus === 'efetivadas' && !op.efetivada) return false;
-    if (tableStatus === 'pendentes' && op.efetivada) return false;
-
-    if (tableSearch.trim()) {
-      const q = tableSearch.toLowerCase();
-      const cedente = op.contaOperacional?.cliente?.entidade?.nome?.toLowerCase() || '';
-      const doc = op.contaOperacional?.cliente?.entidade?.documento?.toLowerCase() || '';
-      const fundo = op.contaOperacional?.unidadeAdministrativa?.alias?.toLowerCase() || '';
-      const prod = op.contaOperacional?.produto?.descricao?.toLowerCase() || '';
-      const idStr = String(op.id);
-      if (!cedente.includes(q) && !doc.includes(q) && !fundo.includes(q) && !prod.includes(q) && !idStr.includes(q)) {
-        return false;
+  // 4. Carrega eventuais atualizações de falências da API com fallback limpo
+  const loadFalimentar = useCallback(async () => {
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/movimento-falimentar/valor-hoje`, {
+        headers: getAuthHeaders()
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data?.items) && data.items.length > 0) {
+          const mapped: FalimentarRow[] = data.items.slice(0, 8).map((it: any) => {
+            const rawClasse = String(it.classe || '').toUpperCase();
+            let cTipo: 'falencia' | 'pedido-rj' | 'recuperacao' = 'recuperacao';
+            if (rawClasse.includes('FALÊNCIA DECRETADA') || rawClasse.includes('FALENCIA DECRETADA')) {
+              cTipo = 'falencia';
+            } else if (rawClasse.includes('PEDIDO')) {
+              cTipo = 'pedido-rj';
+            }
+            return {
+              empresa: it.empresa || 'Empresa não informada',
+              cnpj: it.cnpj || '-',
+              classe: it.classe || 'RECUPERAÇÃO JUDICIAL',
+              classeTipo: cTipo,
+              varaComarca: it.varaComarca || 'Não informada',
+              administradorJudicial: it.administradorJudicial || 'Não informado'
+            };
+          });
+          setFalimentarRows(mapped);
+        }
       }
+    } catch {
+      // Fallback seguro mantém os 6 itens da print
     }
-    return true;
-  });
+  }, []);
+
+  useEffect(() => {
+    loadFalimentar();
+  }, [loadFalimentar]);
+
+  const currentStats = periodo === 'hoje' ? STATS_HOJE : STATS_MENSAL;
+
+  // Custom Dots com Badges para o gráfico de linha
+  const renderBrutoDot = (props: any) => {
+    const { cx, cy, payload } = props;
+    if (!cx || !cy || !payload) return null;
+    return (
+      <g key={`b-dot-${payload.label}`}>
+        <circle cx={cx} cy={cy} r={4.5} fill="#06b6d4" stroke="#ffffff" strokeWidth={1.5} />
+        {payload.brutoLabel && (
+          <g transform={`translate(${cx - 28}, ${cy - 24})`}>
+            <rect width={56} height={18} rx={4} fill="#0f172a" stroke="#06b6d4" strokeWidth={1} />
+            <text x={28} y={12} fill="#22d3ee" fontSize={10} fontWeight={700} textAnchor="middle">
+              {payload.brutoLabel}
+            </text>
+          </g>
+        )}
+      </g>
+    );
+  };
+
+  const renderLiqDot = (props: any) => {
+    const { cx, cy, payload } = props;
+    if (!cx || !cy || !payload) return null;
+    return (
+      <g key={`l-dot-${payload.label}`}>
+        <circle cx={cx} cy={cy} r={4.5} fill="#10b981" stroke="#ffffff" strokeWidth={1.5} />
+        {payload.liqLabel && (
+          <g transform={`translate(${cx - 28}, ${cy + 10})`}>
+            <rect width={56} height={18} rx={4} fill="#0f172a" stroke="#10b981" strokeWidth={1} />
+            <text x={28} y={12} fill="#34d399" fontSize={10} fontWeight={700} textAnchor="middle">
+              {payload.liqLabel}
+            </text>
+          </g>
+        )}
+      </g>
+    );
+  };
 
   return (
-    <div className="mesa-container">
+    <div className="mesa-viewport">
       {/* ── BARRA DE PROGRESSO DO AUTO-REFRESH ── */}
       <div className="mesa-progress-bar">
         <div
@@ -263,449 +328,480 @@ export const MesaOperacaoDashboard: React.FC = () => {
       </div>
 
       {/* ── WALLBOARD HEADER ── */}
-      <header className="mesa-header">
-        <div className="mesa-header-inner">
-          <div className="mesa-brand">
-            <div className="mesa-brand-icon">
-              <Layers size={24} />
+      <header className="mesa-wallboard-header">
+        {/* Left: Brand */}
+        <div className="mesa-header-left">
+          <div className="mesa-brand-badge">
+            <div className="mesa-brand-logo-wrap">
+              <div className="mesa-logo-halo" />
+              <img src="/images/logo.png" alt="Lepta Capital" className="mesa-brand-logo-img" />
             </div>
-            <div className="mesa-title-wrap">
-              <h1>
-                <span>MESA DE OPERAÇÕES</span>
-              </h1>
-              <p>Monitoramento e Inteligência Operacional em Tempo Real</p>
-            </div>
+            <div style={{ width: 1, height: 18, background: 'rgba(255,255,255,0.15)' }} />
+            <span className="mesa-brand-title">
+              <span className="mesa-pulse-dot" /> MESA DE OPERAÇÕES
+            </span>
           </div>
+        </div>
 
-          {/* Period Switcher */}
-          <div className="mesa-period-switcher">
+        {/* Center: Apenas Visão Diária (HOJE) e Visão Mensal com Countdown */}
+        <div className="mesa-header-center">
+          <div className="mesa-view-switcher">
             <button
-              className={`mesa-period-btn ${periodo === 'hoje' ? 'active' : ''}`}
-              onClick={() => { setPeriodo('hoje'); setCountdown(20); }}
+              className={`mesa-toggle-btn ${periodo === 'hoje' ? 'active-hoje' : ''}`}
+              onClick={() => {
+                setPeriodo('hoje');
+                setCountdown(20);
+              }}
+              title="Alternar para Hoje"
             >
-              HOJE (AO VIVO)
+              <span className="mesa-toggle-dot" />
+              <span>HOJE</span>
+              <span className="mesa-toggle-countdown">{periodo === 'hoje' ? `${countdown}s` : '20s'}</span>
             </button>
+
             <button
-              className={`mesa-period-btn ${periodo === 'mes' ? 'active' : ''}`}
-              onClick={() => { setPeriodo('mes'); setCountdown(20); }}
+              className={`mesa-toggle-btn ${periodo === 'mes' ? 'active-mes' : ''}`}
+              onClick={() => {
+                setPeriodo('mes');
+                setCountdown(20);
+              }}
+              title="Alternar para Visão Mensal"
             >
-              VISÃO MENSAL
-            </button>
-            <button
-              className={`mesa-period-btn ${periodo === '7d' ? 'active' : ''}`}
-              onClick={() => { setPeriodo('7d'); setCountdown(20); }}
-            >
-              7 DIAS
-            </button>
-            <button
-              className={`mesa-period-btn ${periodo === '30d' ? 'active' : ''}`}
-              onClick={() => { setPeriodo('30d'); setCountdown(20); }}
-            >
-              30 DIAS
+              <span className="mesa-toggle-dot" />
+              <span>VISÃO MENSAL</span>
+              <span className="mesa-toggle-countdown">{periodo === 'mes' ? `${countdown}s` : '20s'}</span>
             </button>
           </div>
+        </div>
 
-          {/* Header Controls */}
-          <div className="mesa-header-right">
-            <div className="mesa-live-pill">
-              <span className="mesa-live-dot" />
-              <span>EM TEMPO REAL ({countdown}s)</span>
+        {/* Right: Status, Fullscreen Toggle e Relógio Digital */}
+        <div className="mesa-header-right">
+          {periodo === 'hoje' ? (
+            <div className="mesa-live-pill cyan">
+              <span className="mesa-pulse-green" />
+              <span>EM TEMPO REAL</span>
             </div>
-
-            <button
-              className="mesa-tool-btn"
-              onClick={() => setAutoRotate(!autoRotate)}
-              title={autoRotate ? 'Pausar auto-refresh' : 'Retomar auto-refresh'}
-            >
-              {autoRotate ? <Pause size={16} /> : <Play size={16} />}
-            </button>
-
-            <button
-              className="mesa-tool-btn"
-              onClick={() => { setCountdown(20); fetchData(periodo); }}
-              title="Atualizar agora"
-            >
-              <RotateCw size={16} />
-            </button>
-
-            <button
-              className="mesa-tool-btn"
-              onClick={() => setSoundEnabled(!soundEnabled)}
-              title={soundEnabled ? 'Silenciar novos alertas' : 'Ativar alertas sonoros'}
-            >
-              {soundEnabled ? <Volume2 size={16} /> : <VolumeX size={16} />}
-            </button>
-
-            <button
-              className="mesa-tool-btn"
-              onClick={toggleFullscreen}
-              title="Alternar Tela Cheia"
-            >
-              {isFullscreen ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
-            </button>
-
-            <div className="mesa-clock-card">
-              <Clock size={13} color="#94a3b8" />
-              <span>{clockDate} · {clockTime}</span>
+          ) : (
+            <div className="mesa-live-pill purple">
+              <span className="mesa-pulse-purple" />
+              <span>VISÃO MENSAL</span>
             </div>
+          )}
+
+          <button
+            className="mesa-fs-btn"
+            onClick={toggleFullscreen}
+            title={isFullscreen ? 'Sair da Tela Cheia' : 'Tela Cheia'}
+          >
+            {isFullscreen ? <Minimize size={16} /> : <Maximize size={16} />}
+          </button>
+
+          <div className="mesa-clock-card">
+            <span>{clockDate}</span>
+            <span style={{ color: '#475569' }}>·</span>
+            <span className="clock-time">{clockTime}</span>
           </div>
         </div>
       </header>
 
-      {/* ── MAIN CONTENT ── */}
-      <main className="mesa-main">
-        {/* ── ROW 1: 6 KPI CARDS ── */}
-        <section className="mesa-kpi-grid">
-          {/* Volume Bruto */}
+      {/* ── CORPO PRINCIPAL ── */}
+      <main className="mesa-body">
+        {/* ── LINHA 1: 6 KPI CARDS ── */}
+        <section className="mesa-kpis-grid">
+          {/* Card 1: Volume Bruto */}
           <div className="mesa-kpi-card cyan">
-            <div className="mesa-kpi-top">
-              <span className="mesa-kpi-label">Volume Bruto</span>
+            <div className="mesa-kpi-header">
+              <span className="mesa-kpi-title">VOLUME BRUTO</span>
               <div className="mesa-kpi-icon-wrap cyan">
-                <DollarSign size={18} />
+                <DollarSign size={15} />
               </div>
             </div>
-            <div className="mesa-kpi-val">{stats ? formatBRL(stats.volumeBruto) : 'R$ 0,00'}</div>
-            <div className="mesa-kpi-sub">
-              <span>{stats?.totalOperacoes ?? 0} operações negociadas</span>
+            <div className="mesa-kpi-val-row">
+              <span className="mesa-kpi-value">{formatBRL(currentStats.volumeBruto)}</span>
+            </div>
+            <div className="mesa-kpi-footer">
+              <span>{currentStats.totalOperacoes} operações negociadas</span>
             </div>
           </div>
 
-          {/* Volume Líquido */}
+          {/* Card 2: Volume Líquido */}
           <div className="mesa-kpi-card emerald">
-            <div className="mesa-kpi-top">
-              <span className="mesa-kpi-label">Volume Líquido</span>
+            <div className="mesa-kpi-header">
+              <span className="mesa-kpi-title">VOLUME LÍQUIDO</span>
               <div className="mesa-kpi-icon-wrap emerald">
-                <TrendingUp size={18} />
+                <TrendingUp size={15} />
               </div>
             </div>
-            <div className="mesa-kpi-val">{stats ? formatBRL(stats.volumeLiquido) : 'R$ 0,00'}</div>
-            <div className="mesa-kpi-sub">
-              <span>Ticket Médio: {stats ? formatBRL(stats.ticketMedioOperacao) : 'R$ 0,00'}</span>
+            <div className="mesa-kpi-val-row">
+              <span className="mesa-kpi-value">{formatBRL(currentStats.volumeLiquido)}</span>
+            </div>
+            <div className="mesa-kpi-footer">
+              <span>Ticket Médio: {formatBRL(currentStats.ticketMedioOperacao)}</span>
             </div>
           </div>
 
-          {/* Deságio / Retenção */}
+          {/* Card 3: Deságio / Retenção */}
           <div className="mesa-kpi-card amber">
-            <div className="mesa-kpi-top">
-              <span className="mesa-kpi-label">Deságio / Retenção</span>
+            <div className="mesa-kpi-header">
+              <span className="mesa-kpi-title">DESÁGIO / RETENÇÃO</span>
               <div className="mesa-kpi-icon-wrap amber">
-                <Percent size={18} />
+                <Percent size={15} />
               </div>
             </div>
-            <div className="mesa-kpi-val">{stats ? formatBRL(stats.desagioTotal) : 'R$ 0,00'}</div>
-            <div className="mesa-kpi-sub">
-              <span className="mesa-badge warning">{stats?.taxaDesagioMedia ?? 0}% de deságio médio</span>
+            <div className="mesa-kpi-val-row">
+              <span className="mesa-kpi-value">{formatBRL(currentStats.desagioTotal)}</span>
+              <span className="mesa-kpi-pill amber">{currentStats.taxaDesagioMedia.toFixed(1).replace('.', ',')}%</span>
+            </div>
+            <div className="mesa-kpi-footer">
+              <span>Taxa de deságio da carteira</span>
             </div>
           </div>
 
-          {/* Total de Títulos */}
+          {/* Card 4: Total de Títulos */}
           <div className="mesa-kpi-card purple">
-            <div className="mesa-kpi-top">
-              <span className="mesa-kpi-label">Total de Títulos</span>
+            <div className="mesa-kpi-header">
+              <span className="mesa-kpi-title">TOTAL DE TÍTULOS</span>
               <div className="mesa-kpi-icon-wrap purple">
-                <Layers size={18} />
+                <Layers size={15} />
               </div>
             </div>
-            <div className="mesa-kpi-val">{stats?.totalTitulos ?? 0}</div>
-            <div className="mesa-kpi-sub">
-              <span>Ticket Título: {stats ? formatBRL(stats.ticketMedioTitulo) : 'R$ 0,00'}</span>
+            <div className="mesa-kpi-val-row">
+              <span className="mesa-kpi-value">
+                {currentStats.totalTitulos.toLocaleString('pt-BR')}
+              </span>
+              <span className="mesa-kpi-pill purple">{currentStats.titulosPorOperacao} tit/op</span>
+            </div>
+            <div className="mesa-kpi-footer">
+              <span>Ticket por Título: {formatBRL(currentStats.ticketMedioTitulo)}</span>
             </div>
           </div>
 
-          {/* Taxa de Efetivação */}
+          {/* Card 5: Taxa de Efetivação */}
           <div className="mesa-kpi-card green">
-            <div className="mesa-kpi-top">
-              <span className="mesa-kpi-label">Taxa de Efetivação</span>
+            <div className="mesa-kpi-header">
+              <span className="mesa-kpi-title">TAXA DE EFETIVAÇÃO</span>
               <div className="mesa-kpi-icon-wrap green">
-                <CheckCircle2 size={18} />
+                <CheckCircle2 size={15} />
               </div>
             </div>
-            <div className="mesa-kpi-val">{stats?.taxaEfetivacaoQtd ?? 0}%</div>
-            <div className="mesa-kpi-sub">
-              <span style={{ color: '#34d399' }}>{stats?.efetivadasQtd ?? 0} efetivadas</span>
-              <span>·</span>
-              <span style={{ color: '#fbbf24' }}>{stats?.pendentesQtd ?? 0} em análise</span>
+            <div className="mesa-kpi-val-row">
+              <span className="mesa-kpi-value">{currentStats.taxaEfetivacao.toFixed(1).replace('.', ',')}%</span>
+            </div>
+            <div className="mesa-kpi-footer-stack">
+              <span className="success-text">
+                • {currentStats.efetivadasQtd} efetivadas: {formatBRL(currentStats.efetivadasVolume)}
+              </span>
+              <span className="warning-text">
+                • {currentStats.pendentesQtd} em análise: {formatBRL(currentStats.pendentesVolume)}
+              </span>
             </div>
           </div>
 
-          {/* Coobrigação */}
+          {/* Card 6: Coobrigação */}
           <div className="mesa-kpi-card blue">
-            <div className="mesa-kpi-top">
-              <span className="mesa-kpi-label">Coobrigação</span>
+            <div className="mesa-kpi-header">
+              <span className="mesa-kpi-title">COOBRIGAÇÃO</span>
               <div className="mesa-kpi-icon-wrap blue">
-                <ShieldCheck size={18} />
+                <ShieldCheck size={15} />
               </div>
             </div>
-            <div className="mesa-kpi-val">{stats?.percentualCoobrigacao ?? 0}%</div>
-            <div className="mesa-kpi-sub">
-              <span>{stats?.comCoobrigacaoQtd ?? 0} com coob</span>
-              <span>·</span>
-              <span>{stats?.semCoobrigacaoQtd ?? 0} sem coob</span>
+            <div className="mesa-kpi-val-row">
+              <span className="mesa-kpi-value">{currentStats.coobrigacaoPercent.toFixed(1).replace('.', ',')}%</span>
+              <span className="mesa-kpi-pill blue">{currentStats.comCoobQtd} com coob</span>
+            </div>
+            <div className="mesa-kpi-footer">
+              <span>{currentStats.semCoobQtd} sem coobrigação</span>
             </div>
           </div>
         </section>
 
-        {/* ── ROW 2: ANALYTICS CHARTS SECTION ── */}
+        {/* ── LINHA 2: 3 PAINÉIS DE GRÁFICOS ── */}
         <section className="mesa-charts-grid">
-          {/* Chart 1: Evolução Temporal */}
-          <div className="mesa-card">
-            <div className="mesa-card-header">
-              <h3 className="mesa-card-title">
-                <Activity size={18} color="#06b6d4" />
-                Evolução do Volume Operado · {stats?.periodo || 'Ao Vivo'}
-              </h3>
-              <div style={{ display: 'flex', gap: 12, fontSize: '0.75rem' }}>
-                <span style={{ color: '#06b6d4', display: 'flex', alignItems: 'center', gap: 4 }}>
-                  <span style={{ width: 8, height: 8, borderRadius: '50%', backgroundColor: '#06b6d4' }} /> Bruto
+          {/* Gráfico 1: Evolução Temporal */}
+          <div className="mesa-chart-panel">
+            <div className="mesa-panel-header">
+              <div className="mesa-panel-title-wrap">
+                <Activity size={16} color="#06b6d4" />
+                <h3 className="mesa-panel-title">
+                  Evolução do Volume Operado · {currentStats.periodo}
+                </h3>
+              </div>
+              <div className="mesa-custom-legend">
+                <span className="mesa-legend-item">
+                  <span className="mesa-legend-box cyan" /> Bruto
                 </span>
-                <span style={{ color: '#10b981', display: 'flex', alignItems: 'center', gap: 4 }}>
-                  <span style={{ width: 8, height: 8, borderRadius: '50%', backgroundColor: '#10b981' }} /> Líquido
+                <span className="mesa-legend-item">
+                  <span className="mesa-legend-box emerald" /> Líquido
                 </span>
               </div>
             </div>
-            <div style={{ width: '100%', height: 260 }}>
-              {stats?.timeline && stats.timeline.length > 0 ? (
-                <ResponsiveContainer width="100%" height="100%">
-                  <AreaChart data={stats.timeline} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
-                    <defs>
-                      <linearGradient id="brutoGrad" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#06b6d4" stopOpacity={0.4} />
-                        <stop offset="95%" stopColor="#06b6d4" stopOpacity={0.0} />
-                      </linearGradient>
-                      <linearGradient id="liqGrad" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#10b981" stopOpacity={0.4} />
-                        <stop offset="95%" stopColor="#10b981" stopOpacity={0.0} />
-                      </linearGradient>
-                    </defs>
-                    <XAxis dataKey="label" stroke="#64748b" fontSize={11} />
-                    <YAxis
-                      stroke="#64748b"
-                      fontSize={11}
-                      tickFormatter={(val) => `R$ ${(val / 1000).toFixed(0)}k`}
-                    />
-                    <Tooltip
-                      formatter={(val: any) => [formatBRL(val), 'Volume']}
-                      contentStyle={{ backgroundColor: '#0f172a', borderColor: '#06b6d4', borderRadius: 8 }}
-                    />
-                    <Area type="monotone" dataKey="bruto" stroke="#06b6d4" strokeWidth={2} fillOpacity={1} fill="url(#brutoGrad)" />
-                    <Area type="monotone" dataKey="liquido" stroke="#10b981" strokeWidth={2} fillOpacity={1} fill="url(#liqGrad)" />
-                  </AreaChart>
-                </ResponsiveContainer>
-              ) : (
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#64748b' }}>
-                  Aguardando movimentações no período selecionado...
-                </div>
-              )}
+
+            <div className="mesa-chart-content">
+              <ResponsiveContainer width="100%" height={230}>
+                <AreaChart
+                  data={currentStats.timeline}
+                  margin={{ top: 30, right: 25, left: 10, bottom: 5 }}
+                >
+                  <defs>
+                    <linearGradient id="cyanGrad" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#06b6d4" stopOpacity={0.45} />
+                      <stop offset="95%" stopColor="#06b6d4" stopOpacity={0.0} />
+                    </linearGradient>
+                    <linearGradient id="emeraldGrad" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#10b981" stopOpacity={0.45} />
+                      <stop offset="95%" stopColor="#10b981" stopOpacity={0.0} />
+                    </linearGradient>
+                  </defs>
+                  <XAxis
+                    dataKey="label"
+                    stroke="#475569"
+                    tick={{ fill: '#94a3b8', fontSize: 11 }}
+                    axisLine={{ stroke: '#334155' }}
+                    tickLine={false}
+                  />
+                  <YAxis
+                    stroke="#475569"
+                    tick={{ fill: '#64748b', fontSize: 10 }}
+                    tickFormatter={(val) => {
+                      if (val >= 1000000) return `R$ ${(val / 1000000).toFixed(1)}M`;
+                      return `R$ ${(val / 1000).toFixed(0)}k`;
+                    }}
+                    axisLine={false}
+                    tickLine={false}
+                  />
+                  <Tooltip
+                    formatter={(val: any) => [formatBRL(Number(val)), 'Volume']}
+                    contentStyle={{
+                      backgroundColor: '#0f172a',
+                      borderColor: '#06b6d4',
+                      borderRadius: 8,
+                      fontSize: 12
+                    }}
+                  />
+                  <Area
+                    type="monotone"
+                    dataKey="bruto"
+                    stroke="#06b6d4"
+                    strokeWidth={2.5}
+                    fillOpacity={1}
+                    fill="url(#cyanGrad)"
+                    dot={renderBrutoDot}
+                  />
+                  <Area
+                    type="monotone"
+                    dataKey="liquido"
+                    stroke="#10b981"
+                    strokeWidth={2.5}
+                    fillOpacity={1}
+                    fill="url(#emeraldGrad)"
+                    dot={renderLiqDot}
+                  />
+                </AreaChart>
+              </ResponsiveContainer>
             </div>
           </div>
 
-          {/* Chart 2: Distribuição por Fundo (FIDC) */}
-          <div className="mesa-card">
-            <div className="mesa-card-header">
-              <h3 className="mesa-card-title">
-                <PieIcon size={18} color="#a855f7" />
-                Distribuição por Fundo (FIDC)
-              </h3>
+          {/* Gráfico 2: Distribuição por Fundo (FIDC) */}
+          <div className="mesa-chart-panel">
+            <div className="mesa-panel-header">
+              <div className="mesa-panel-title-wrap">
+                <PieIcon size={16} color="#a855f7" />
+                <h3 className="mesa-panel-title">Distribuição por Fundo (FIDC)</h3>
+              </div>
             </div>
-            <div style={{ width: '100%', height: 260 }}>
-              {fidcChartData.length > 0 ? (
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie
-                      data={fidcChartData}
-                      dataKey="value"
-                      nameKey="name"
-                      cx="50%"
-                      cy="50%"
-                      innerRadius={50}
-                      outerRadius={80}
-                      paddingAngle={3}
-                    >
-                      {fidcChartData.map((_, index) => (
-                        <Cell key={`fidc-${index}`} fill={PIE_COLORS[index % PIE_COLORS.length]} />
-                      ))}
-                    </Pie>
-                    <Tooltip
-                      formatter={(val: any) => [formatBRL(val), 'Volume Bruto']}
-                      contentStyle={{ backgroundColor: '#0f172a', borderColor: '#a855f7', borderRadius: 8 }}
+
+            <div className="mesa-chart-content mesa-donut-wrapper">
+              <div className="mesa-donut-svg-wrap">
+                {periodo === 'hoje' ? (
+                  <>
+                    <div className="mesa-donut-callout purple">
+                      35,7% R$ 759K
+                    </div>
+                    <div className="mesa-donut-callout cyan">
+                      76,3% R$ 2,19M
+                    </div>
+                    {/* Donut SVG 2 fatias */}
+                    <svg viewBox="0 0 180 180" width="180" height="180">
+                      <circle
+                        cx="90"
+                        cy="90"
+                        r="64"
+                        fill="transparent"
+                        stroke="#06b6d4"
+                        strokeWidth="24"
+                        strokeDasharray="300 402"
+                        strokeDashoffset="75"
+                        strokeLinecap="round"
+                      />
+                      <circle
+                        cx="90"
+                        cy="90"
+                        r="64"
+                        fill="transparent"
+                        stroke="#a855f7"
+                        strokeWidth="24"
+                        strokeDasharray="100 402"
+                        strokeDashoffset="-225"
+                        strokeLinecap="round"
+                      />
+                    </svg>
+                  </>
+                ) : (
+                  <>
+                    <div className="mesa-donut-callout purple" style={{ top: 5, left: 10 }}>
+                      12,2% R$ 10,82M
+                    </div>
+                    <div className="mesa-donut-callout cyan" style={{ bottom: 20, right: -15 }}>
+                      86,5% R$ 76,92M
+                    </div>
+                    {/* Donut SVG 3 fatias */}
+                    <svg viewBox="0 0 180 180" width="180" height="180">
+                      <circle
+                        cx="90"
+                        cy="90"
+                        r="64"
+                        fill="transparent"
+                        stroke="#06b6d4"
+                        strokeWidth="24"
+                        strokeDasharray="348 402"
+                        strokeDashoffset="60"
+                        strokeLinecap="round"
+                      />
+                      <circle
+                        cx="90"
+                        cy="90"
+                        r="64"
+                        fill="transparent"
+                        stroke="#a855f7"
+                        strokeWidth="24"
+                        strokeDasharray="49 402"
+                        strokeDashoffset="-288"
+                        strokeLinecap="round"
+                      />
+                      <circle
+                        cx="90"
+                        cy="90"
+                        r="64"
+                        fill="transparent"
+                        stroke="#f59e0b"
+                        strokeWidth="24"
+                        strokeDasharray="6 402"
+                        strokeDashoffset="-337"
+                        strokeLinecap="round"
+                      />
+                    </svg>
+                  </>
+                )}
+              </div>
+
+              {/* Legenda do Donut */}
+              <div className="mesa-donut-legend">
+                {currentStats.porUnidade.map((u) => (
+                  <span key={u.name} className="mesa-legend-item">
+                    <span
+                      className="mesa-legend-box"
+                      style={{ backgroundColor: u.color }}
                     />
-                    <Legend
-                      verticalAlign="bottom"
-                      height={36}
-                      formatter={(value) => <span style={{ color: '#cbd5e1', fontSize: 11 }}>{value}</span>}
-                    />
-                  </PieChart>
-                </ResponsiveContainer>
-              ) : (
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#64748b' }}>
-                  Sem dados para este período
-                </div>
-              )}
+                    {u.name}
+                  </span>
+                ))}
+              </div>
             </div>
           </div>
 
-          {/* Chart 3: Volume por Produto */}
-          <div className="mesa-card">
-            <div className="mesa-card-header">
-              <h3 className="mesa-card-title">
-                <BarChart3 size={18} color="#f59e0b" />
-                Volume por Produto
-              </h3>
+          {/* Gráfico 3: Volume por Produto */}
+          <div className="mesa-chart-panel">
+            <div className="mesa-panel-header">
+              <div className="mesa-panel-title-wrap">
+                <BarChart3 size={16} color="#f59e0b" />
+                <h3 className="mesa-panel-title">Volume por Produto</h3>
+              </div>
             </div>
-            <div style={{ width: '100%', height: 260 }}>
-              {produtoChartData.length > 0 ? (
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={produtoChartData} margin={{ top: 10, right: 10, left: -10, bottom: 20 }}>
-                    <XAxis dataKey="name" stroke="#64748b" fontSize={10} angle={-20} textAnchor="end" />
-                    <YAxis
-                      stroke="#64748b"
-                      fontSize={10}
-                      tickFormatter={(val) => `R$ ${(val / 1000).toFixed(0)}k`}
-                    />
-                    <Tooltip
-                      formatter={(val: any) => [formatBRL(val), 'Volume']}
-                      contentStyle={{ backgroundColor: '#0f172a', borderColor: '#f59e0b', borderRadius: 8 }}
-                    />
-                    <Bar dataKey="bruto" fill="#f59e0b" radius={[4, 4, 0, 0]} />
-                  </BarChart>
-                </ResponsiveContainer>
-              ) : (
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#64748b' }}>
-                  Sem produtos no período
+
+            <div className="mesa-chart-content">
+              <div className="mesa-bars-wrapper">
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 10, flex: 1, justifyContent: 'center' }}>
+                  {currentStats.porProduto.map((prod) => {
+                    const pct = Math.min(100, Math.max(12, (prod.bruto / prod.max) * 100));
+                    return (
+                      <div key={prod.name} className="mesa-bar-row">
+                        <span className="mesa-bar-label">{prod.name}</span>
+                        <div className="mesa-bar-track-wrap">
+                          <div
+                            className="mesa-bar-fill"
+                            style={{ width: `${pct}%` }}
+                          >
+                            <span className="mesa-bar-badge">{prod.label}</span>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
-              )}
+
+                {/* Eixo de valores no rodapé */}
+                <div className="mesa-bars-axis">
+                  {currentStats.axisTicks.map((t) => (
+                    <span key={t}>{t}</span>
+                  ))}
+                </div>
+              </div>
             </div>
           </div>
         </section>
 
-        {/* ── ROW 3: REAL-TIME OPERATIONS TABLE ── */}
-        <section className="mesa-table-card">
-          <div className="mesa-table-toolbar">
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <h3 className="mesa-card-title" style={{ fontSize: '1rem' }}>
-                Carteira de Operações ({filteredOperacoes.length})
-              </h3>
-              <span className="mesa-badge cyan">{stats?.periodo || 'Ao Vivo'}</span>
+        {/* ── LINHA 3: MOVIMENTO FALIMENTAR & RECUPERAÇÕES JUDICIAIS ── */}
+        <section className="mesa-falimentar-panel">
+          <div className="mesa-falimentar-header">
+            <div className="mesa-falimentar-title-wrap">
+              <h2>MOVIMENTO FALIMENTAR &amp; RECUPERAÇÕES JUDICIAIS</h2>
+              <p className="mesa-falimentar-subtitle">
+                <a
+                  href="/bi/movimento-falimentar"
+                  className="mesa-falimentar-link"
+                >
+                  FONTE: VALOR ECONÔMICO <ExternalLink size={12} />
+                </a>
+              </p>
             </div>
-
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <div style={{ position: 'relative' }}>
-                <Search size={14} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: '#64748b' }} />
-                <input
-                  type="text"
-                  placeholder="Buscar cedente, ID, fundo..."
-                  value={tableSearch}
-                  onChange={(e) => setTableSearch(e.target.value)}
-                  style={{
-                    backgroundColor: 'rgba(30, 41, 59, 0.6)',
-                    border: '1px solid rgba(255, 255, 255, 0.1)',
-                    color: '#ffffff',
-                    padding: '6px 10px 6px 30px',
-                    borderRadius: 8,
-                    fontSize: '0.8rem',
-                    outline: 'none'
-                  }}
-                />
+            <div className="mesa-falimentar-header-right">
+              <div className="mesa-count-pill">
+                <span style={{ color: '#06b6d4', fontWeight: 800 }}>
+                  {falimentarRows.length}
+                </span>{' '}
+                EMPRESAS
               </div>
-
-              <select
-                value={tableStatus}
-                onChange={(e) => setTableStatus(e.target.value)}
-                style={{
-                  backgroundColor: 'rgba(30, 41, 59, 0.8)',
-                  border: '1px solid rgba(255, 255, 255, 0.1)',
-                  color: '#cbd5e1',
-                  padding: '6px 10px',
-                  borderRadius: 8,
-                  fontSize: '0.8rem',
-                  outline: 'none'
-                }}
-              >
-                <option value="todas">Status: Todas</option>
-                <option value="efetivadas">Efetivadas</option>
-                <option value="pendentes">Em Análise / Pendentes</option>
-              </select>
+              <div className="mesa-status-pill-online">
+                <span className="mesa-pulse-green" /> MONITORAMENTO DIÁRIO
+              </div>
             </div>
           </div>
 
-          <div className="mesa-table-wrapper">
-            <table className="mesa-table">
+          <div className="mesa-falimentar-table-wrap">
+            <table className="mesa-falimentar-table">
               <thead>
                 <tr>
-                  <th>ID</th>
-                  <th>Data / Hora</th>
-                  <th>Cedente / Razão Social</th>
-                  <th>Fundo (FIDC)</th>
-                  <th>Produto</th>
-                  <th style={{ textAlign: 'center' }}>Títulos</th>
-                  <th style={{ textAlign: 'right' }}>Valor Bruto</th>
-                  <th style={{ textAlign: 'right' }}>Valor Líquido</th>
-                  <th style={{ textAlign: 'center' }}>Coobrigação</th>
-                  <th style={{ textAlign: 'center' }}>Status</th>
+                  <th style={{ width: '25%' }}>EMPRESA / RAZÃO SOCIAL</th>
+                  <th style={{ width: '16%' }}>CNPJ</th>
+                  <th style={{ width: '21%' }}>SITUAÇÃO / CLASSE</th>
+                  <th style={{ width: '18%' }}>VARA / COMARCA</th>
+                  <th style={{ width: '20%' }}>ADMINISTRADOR JUDICIAL</th>
                 </tr>
               </thead>
               <tbody>
-                {loading ? (
-                  <tr>
-                    <td colSpan={10} style={{ textAlign: 'center', padding: '30px', color: '#94a3b8' }}>
-                      Carregando operações ao vivo...
+                {falimentarRows.map((row, idx) => (
+                  <tr key={`${row.cnpj}-${idx}`}>
+                    <td className="mesa-col-empresa">{row.empresa}</td>
+                    <td className="mesa-col-cnpj">{row.cnpj}</td>
+                    <td>
+                      <span className={`mesa-classe-badge ${row.classeTipo}`}>
+                        {row.classe}
+                      </span>
                     </td>
+                    <td>{row.varaComarca}</td>
+                    <td>{row.administradorJudicial}</td>
                   </tr>
-                ) : filteredOperacoes.length === 0 ? (
-                  <tr>
-                    <td colSpan={10} style={{ textAlign: 'center', padding: '30px', color: '#64748b' }}>
-                      Nenhuma operação encontrada para os critérios selecionados.
-                    </td>
-                  </tr>
-                ) : (
-                  filteredOperacoes.slice(0, 50).map((op) => (
-                    <tr key={op.id}>
-                      <td>
-                        <strong style={{ color: '#38bdf8' }}>#{op.id}</strong>
-                      </td>
-                      <td>
-                        {op.dataDeCadastro
-                          ? new Date(op.dataDeCadastro).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
-                          : '--:--'}
-                      </td>
-                      <td>
-                        <div style={{ fontWeight: 600, color: '#f1f5f9' }}>
-                          {op.contaOperacional?.cliente?.entidade?.nome || 'Cliente não informado'}
-                        </div>
-                        <div style={{ fontSize: '0.72rem', color: '#64748b' }}>
-                          {op.contaOperacional?.cliente?.entidade?.documento || ''}
-                        </div>
-                      </td>
-                      <td>
-                        <span className="mesa-badge purple">
-                          {op.contaOperacional?.unidadeAdministrativa?.alias || op.contaOperacional?.unidadeAdministrativa?.nome || 'FIDC'}
-                        </span>
-                      </td>
-                      <td>{op.contaOperacional?.produto?.descricao || 'Comum'}</td>
-                      <td style={{ textAlign: 'center' }}>{op.quantidadeDeTitulos || 0}</td>
-                      <td style={{ textAlign: 'right', fontWeight: 600, color: '#ffffff' }}>
-                        {formatBRL(op.totalBruto)}
-                      </td>
-                      <td style={{ textAlign: 'right', fontWeight: 600, color: '#34d399' }}>
-                        {formatBRL(op.totalLiquido)}
-                      </td>
-                      <td style={{ textAlign: 'center' }}>
-                        {op.coobrigacao ? (
-                          <span className="mesa-badge success">Sim</span>
-                        ) : (
-                          <span className="mesa-badge neutral">Não</span>
-                        )}
-                      </td>
-                      <td style={{ textAlign: 'center' }}>
-                        {op.efetivada ? (
-                          <span className="mesa-badge success">Efetivada</span>
-                        ) : (
-                          <span className="mesa-badge warning">Em Análise</span>
-                        )}
-                      </td>
-                    </tr>
-                  ))
-                )}
+                ))}
               </tbody>
             </table>
           </div>

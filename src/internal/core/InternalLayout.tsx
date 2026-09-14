@@ -18,6 +18,24 @@ const InternalLayout = () => {
   const { logout, user } = useAuth();
 
   const [isSearchOpen, setIsSearchOpen] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+
+  useEffect(() => {
+    const handleFsChange = () => {
+      const isFs = !!document.fullscreenElement;
+      setIsFullscreen(isFs);
+      if (isFs) {
+        document.body.classList.add('mesa-fullscreen-active');
+      } else {
+        document.body.classList.remove('mesa-fullscreen-active');
+      }
+    };
+    document.addEventListener('fullscreenchange', handleFsChange);
+    return () => {
+      document.removeEventListener('fullscreenchange', handleFsChange);
+      document.body.classList.remove('mesa-fullscreen-active');
+    };
+  }, []);
 
   const isPermissionsActive = location.pathname.startsWith('/permissions');
   const [isPermissionsOpen, setIsPermissionsOpen] = useState(false);
@@ -183,7 +201,7 @@ const InternalLayout = () => {
         />
       )}
 
-      <aside className={`internal-sidebar glass ${isMobileSidebarOpen ? 'open' : ''}`}>
+      <aside className={`internal-sidebar glass ${isMobileSidebarOpen ? 'open' : ''} ${isFullscreen ? 'fullscreen-hidden' : ''}`}>
         <div className="sidebar-brand">
           <img src="/logo2.png" alt="Lepta Capital" className="sidebar-logo" />
           <button className="mobile-close-btn" onClick={() => setIsMobileSidebarOpen(false)}>
@@ -546,36 +564,40 @@ const InternalLayout = () => {
       </aside>
 
       <main className="internal-content">
-        <header className="internal-header">
-          <div className="header-left">
-            <button className="mobile-menu-btn" onClick={() => setIsMobileSidebarOpen(true)}>
-              <Menu size={24} />
-            </button>
+        <header className={`internal-header ${isFullscreen ? 'fullscreen-mode' : ''}`}>
+          {!isFullscreen && (
+            <div className="header-left">
+              <button className="mobile-menu-btn" onClick={() => setIsMobileSidebarOpen(true)}>
+                <Menu size={24} />
+              </button>
 
-            <button 
-              className="header-search-btn" 
-              onClick={() => {
-                setSearchInitialQuery('');
-                setIsSearchOpen(true);
-              }}
-              title="Buscar módulos, recursos ou termos no sistema (Ctrl + K)"
-            >
-              <div className="header-search-icon-circle">
-                <Search size={15} />
-              </div>
-              <span className="header-search-label">Buscar no sistema...</span>
-              <span className="header-search-shortcut">Ctrl K</span>
-            </button>
-          </div>
+              <button 
+                className="header-search-btn" 
+                onClick={() => {
+                  setSearchInitialQuery('');
+                  setIsSearchOpen(true);
+                }}
+                title="Buscar módulos, recursos ou termos no sistema (Ctrl + K)"
+              >
+                <div className="header-search-icon-circle">
+                  <Search size={15} />
+                </div>
+                <span className="header-search-label">Buscar no sistema...</span>
+                <span className="header-search-shortcut">Ctrl K</span>
+              </button>
+            </div>
+          )}
 
-          <TopHeaderTicker />
+          <TopHeaderTicker isExpanded={isFullscreen} />
 
-          <div className="header-actions">
-            <NotificationBell />
-          </div>
+          {!isFullscreen && (
+            <div className="header-actions">
+              <NotificationBell />
+            </div>
+          )}
         </header>
 
-        <div className="internal-body">
+        <div className={`internal-body ${location.pathname === '/bi/mesa-operacao' ? 'internal-body-flush' : ''}`}>
           <Outlet />
         </div>
       </main>
