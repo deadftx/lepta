@@ -85,6 +85,40 @@
     width: calc(100vw - 21px);
     flex-grow: 1;
     min-width: 0;
+    transition: margin-left 0.28s cubic-bezier(0.16, 1, 0.3, 1), width 0.28s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  /* ── Sidebar Fixada no Desktop (Pinned) ── */
+  .internal-dashboard-page.sidebar-pinned .internal-sidebar {
+    width: 280px !important;
+    background: rgba(11, 15, 23, 0.98) !important;
+    backdrop-filter: blur(24px);
+    -webkit-backdrop-filter: blur(24px);
+    border-right: 1px solid rgba(56, 189, 248, 0.35) !important;
+    box-shadow: 4px 0 24px rgba(0, 0, 0, 0.5) !important;
+    overflow-y: auto !important;
+    cursor: default !important;
+  }
+
+  .internal-dashboard-page.sidebar-pinned .internal-sidebar::after {
+    display: none !important;
+    opacity: 0 !important;
+  }
+
+  .internal-dashboard-page.sidebar-pinned .internal-sidebar > * {
+    opacity: 1 !important;
+    pointer-events: auto !important;
+  }
+
+  .internal-dashboard-page.sidebar-pinned .internal-content {
+    margin-left: 280px !important;
+    width: calc(100vw - 280px) !important;
+  }
+
+  .internal-dashboard-page.sidebar-pinned .internal-sidebar.fullscreen-hidden ~ .internal-content,
+  .internal-dashboard-page.sidebar-pinned .internal-content.fullscreen-content {
+    margin-left: 0 !important;
+    width: 100vw !important;
   }
 }
 
@@ -126,6 +160,106 @@
   margin: 0;
   font-size: 0.8rem;
   color: var(--text-secondary);
+}
+
+/* ── Botão / Toggle para Fixar Sidebar ── */
+.sidebar-pin-container {
+  padding: 10px 20px 14px 20px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.sidebar-pin-btn {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  color: #94a3b8;
+  font-size: 0.8rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  user-select: none;
+  outline: none;
+}
+
+.sidebar-pin-btn:hover {
+  background: rgba(56, 189, 248, 0.07);
+  border-color: rgba(56, 189, 248, 0.28);
+  color: #f1f5f9;
+}
+
+.sidebar-pin-btn.pinned {
+  background: rgba(56, 189, 248, 0.12);
+  border-color: rgba(56, 189, 248, 0.4);
+  color: #38bdf8;
+}
+
+.sidebar-pin-btn-content {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.sidebar-pin-btn-content .pin-active-icon {
+  color: #38bdf8;
+  transform: rotate(45deg);
+  transition: transform 0.2s ease;
+}
+
+.sidebar-pin-btn-content .pin-inactive-icon {
+  color: #64748b;
+  transition: color 0.2s ease;
+}
+
+.sidebar-pin-btn:hover .pin-inactive-icon {
+  color: #94a3b8;
+}
+
+.sidebar-pin-label {
+  font-size: 0.78rem;
+  letter-spacing: 0.2px;
+  font-weight: 600;
+}
+
+.sidebar-pin-switch {
+  width: 32px;
+  height: 18px;
+  background: rgba(255, 255, 255, 0.12);
+  border-radius: 999px;
+  position: relative;
+  transition: background-color 0.2s ease, box-shadow 0.2s ease;
+  flex-shrink: 0;
+}
+
+.sidebar-pin-switch.checked {
+  background: #0284c7;
+  box-shadow: 0 0 8px rgba(56, 189, 248, 0.45);
+}
+
+.sidebar-pin-thumb {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  background: #ffffff;
+  border-radius: 50%;
+  transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+}
+
+.sidebar-pin-switch.checked .sidebar-pin-thumb {
+  transform: translateX(14px);
+}
+
+@media (max-width: 1024px) {
+  .sidebar-pin-container {
+    display: none !important;
+  }
 }
 
 .internal-nav {

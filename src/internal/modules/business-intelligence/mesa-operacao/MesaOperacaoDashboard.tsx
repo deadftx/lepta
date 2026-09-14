@@ -11,7 +11,6 @@ import {
   Activity,
   PieChart as PieIcon,
   BarChart3,
-  ExternalLink,
   ChevronLeft,
   ChevronRight,
   Calendar,
@@ -103,10 +102,18 @@ const STATS_HOJE = {
   titulosPorOperacao: 7.5,
   ticketMedioTitulo: 77679.62,
   taxaEfetivacao: 0.0,
-  efetivadasQtd: 0,
-  efetivadasVolume: 0.0,
+  pagoQtd: 0,
+  pagoVolume: 0.0,
+  emPagamentoQtd: 0,
+  emPagamentoVolume: 0.0,
+  emAssinaturaQtd: 0,
+  emAssinaturaVolume: 0.0,
+  aguardAlcadaQtd: 0,
+  aguardAlcadaVolume: 0.0,
   emAnaliseQtd: 4,
   emAnaliseVolume: 2951825.52,
+  efetivadasQtd: 0,
+  efetivadasVolume: 0.0,
   emAprovacaoQtd: 0,
   emAprovacaoVolume: 0.0,
   pendentesQtd: 4,
@@ -141,10 +148,18 @@ const STATS_MENSAL = {
   titulosPorOperacao: 30.5,
   ticketMedioTitulo: 13644.97,
   taxaEfetivacao: 96.7,
-  efetivadasQtd: 210,
-  efetivadasVolume: 86013401.34,
+  pagoQtd: 210,
+  pagoVolume: 86013401.34,
+  emPagamentoQtd: 0,
+  emPagamentoVolume: 0.0,
+  emAssinaturaQtd: 0,
+  emAssinaturaVolume: 0.0,
+  aguardAlcadaQtd: 0,
+  aguardAlcadaVolume: 0.0,
   emAnaliseQtd: 4,
   emAnaliseVolume: 2951825.52,
+  efetivadasQtd: 210,
+  efetivadasVolume: 86013401.34,
   emAprovacaoQtd: 0,
   emAprovacaoVolume: 0.0,
   pendentesQtd: 4,
@@ -594,7 +609,7 @@ export const MesaOperacaoDashboard: React.FC = () => {
           </div>
 
           {/* Card 5: Taxa de Efetivação */}
-          <div className="mesa-kpi-card green">
+          <div className="mesa-kpi-card green mesa-kpi-card-efetivacao">
             <div className="mesa-kpi-header">
               <span className="mesa-kpi-title">TAXA DE EFETIVAÇÃO</span>
               <div className="mesa-kpi-icon-wrap green">
@@ -604,15 +619,21 @@ export const MesaOperacaoDashboard: React.FC = () => {
             <div className="mesa-kpi-val-row">
               <span className="mesa-kpi-value">{Number(currentStats.taxaEfetivacao || 0).toFixed(1).replace('.', ',')}%</span>
             </div>
-            <div className="mesa-kpi-footer-stack">
-              <span className="success-text">
-                • {currentStats.efetivadasQtd ?? 0} efetivadas: {formatBRL(currentStats.efetivadasVolume ?? currentStats.efetivadasVolumeBruto ?? 0)}
+            <div className="mesa-kpi-status-grid">
+              <span className="status-badge-pago" title={`PAGO: ${currentStats.statusGroups?.pago?.qtd ?? currentStats.pagoQtd ?? currentStats.efetivadasQtd ?? 0} operações`}>
+                • {currentStats.statusGroups?.pago?.qtd ?? currentStats.pagoQtd ?? currentStats.efetivadasQtd ?? 0} Pago: {formatBRL(currentStats.statusGroups?.pago?.volume ?? currentStats.pagoVolume ?? currentStats.efetivadasVolume ?? 0)}
               </span>
-              <span className="warning-text">
-                • {currentStats.emAnaliseQtd ?? currentStats.pendentesQtd ?? 0} em análise: {formatBRL(currentStats.emAnaliseVolume ?? currentStats.pendentesVolume ?? 0)}
+              <span className="status-badge-aguard" title={`AGUARD. ALÇADA: ${currentStats.statusGroups?.aguardAlcada?.qtd ?? currentStats.aguardAlcadaQtd ?? currentStats.emAprovacaoQtd ?? 0} operações`}>
+                • {currentStats.statusGroups?.aguardAlcada?.qtd ?? currentStats.aguardAlcadaQtd ?? currentStats.emAprovacaoQtd ?? 0} Aguard. Alçada: {formatBRL(currentStats.statusGroups?.aguardAlcada?.volume ?? currentStats.aguardAlcadaVolume ?? currentStats.emAprovacaoVolume ?? 0)}
               </span>
-              <span className="info-text">
-                • {currentStats.emAprovacaoQtd ?? 0} em aprovação: {formatBRL(currentStats.emAprovacaoVolume ?? currentStats.emAprovacaoVolumeBruto ?? 0)}
+              <span className="status-badge-pagamento" title={`EM PAGAMENTO: ${currentStats.statusGroups?.emPagamento?.qtd ?? currentStats.emPagamentoQtd ?? 0} operações`}>
+                • {currentStats.statusGroups?.emPagamento?.qtd ?? currentStats.emPagamentoQtd ?? 0} Em Pagamento: {formatBRL(currentStats.statusGroups?.emPagamento?.volume ?? currentStats.emPagamentoVolume ?? 0)}
+              </span>
+              <span className="status-badge-analise" title={`EM ANÁLISE: ${currentStats.statusGroups?.emAnalise?.qtd ?? currentStats.emAnaliseQtd ?? 0} operações`}>
+                • {currentStats.statusGroups?.emAnalise?.qtd ?? currentStats.emAnaliseQtd ?? 0} Em Análise: {formatBRL(currentStats.statusGroups?.emAnalise?.volume ?? currentStats.emAnaliseVolume ?? 0)}
+              </span>
+              <span className="status-badge-assinatura" title={`EM ASSINATURA: ${currentStats.statusGroups?.emAssinatura?.qtd ?? currentStats.emAssinaturaQtd ?? 0} operações`}>
+                • {currentStats.statusGroups?.emAssinatura?.qtd ?? currentStats.emAssinaturaQtd ?? 0} Em Assinatura: {formatBRL(currentStats.statusGroups?.emAssinatura?.volume ?? currentStats.emAssinaturaVolume ?? 0)}
               </span>
             </div>
           </div>
@@ -857,17 +878,6 @@ export const MesaOperacaoDashboard: React.FC = () => {
                   </span>
                 </div>
               </div>
-              <p className="mesa-falimentar-subtitle">
-                <a
-                  href="/bi/movimento-falimentar"
-                  className="mesa-falimentar-link"
-                  title="Acessar módulo de alimentação e gestão de falências"
-                >
-                  FONTE: VALOR ECONÔMICO <ExternalLink size={11} />
-                </a>
-                <span className="mesa-subtitle-sep">·</span>
-                <span className="mesa-falimentar-hint">Alimentação via Portal Valor Econômico</span>
-              </p>
             </div>
 
             <div className="mesa-falimentar-header-right">

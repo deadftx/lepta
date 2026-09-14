@@ -720,17 +720,68 @@ export function registerOperationsRoutes(app, {
     let volumeLiquido = 0;
     let totalTitulos = 0;
 
-    let efetivadasQtd = 0;
-    let efetivadasVolumeBruto = 0;
-    let efetivadasVolumeLiquido = 0;
+    // Status Groups (5 Grupos agregados do Bitfin)
+    // 1. Indefinido -> EM ANÁLISE
+    // 2. Análise, Confirmação, Destinação, Aprovação, Registro -> AGUARD. ALÇADA
+    // 3. Cessão, Formalização -> EM ASSINATURA
+    // 4. Pagamento -> EM PAGAMENTO
+    // 5. Concluído -> PAGO
+    const statusGroups = {
+      pago: { key: 'PAGO', label: 'PAGO', qtd: 0, volumeBruto: 0, volumeLiquido: 0 },
+      emPagamento: { key: 'EM_PAGAMENTO', label: 'EM PAGAMENTO', qtd: 0, volumeBruto: 0, volumeLiquido: 0 },
+      emAssinatura: { key: 'EM_ASSINATURA', label: 'EM ASSINATURA', qtd: 0, volumeBruto: 0, volumeLiquido: 0 },
+      aguardAlcada: { key: 'AGUARD_ALCADA', label: 'AGUARD. ALÇADA', qtd: 0, volumeBruto: 0, volumeLiquido: 0 },
+      emAnalise: { key: 'EM_ANALISE', label: 'EM ANÁLISE', qtd: 0, volumeBruto: 0, volumeLiquido: 0 }
+    };
 
-    let emAprovacaoQtd = 0;
-    let emAprovacaoVolumeBruto = 0;
-    let emAprovacaoVolumeLiquido = 0;
+    function classifyBitfinOperationStatus(op) {
+      if (op.efetivada) return 'pago';
 
-    let emAnaliseQtd = 0;
-    let emAnaliseVolumeBruto = 0;
-    let emAnaliseVolumeLiquido = 0;
+      const raw = String(op.situacao || op.status || op.statusOperacao || op.fase || '').trim().toLowerCase();
+      const norm = raw.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+
+      // 1. Indefinido (ou vazio) -> EM ANÁLISE
+      if (!norm || norm === 'indefinido' || norm.includes('indefinido')) {
+        return 'emAnalise';
+      }
+
+      // 5. Concluído / Liquidado / Pago / Efetivada -> PAGO
+      if (
+        norm.includes('concluid') ||
+        norm.includes('liquid') ||
+        norm.includes('pago') ||
+        norm === 'paga' ||
+        norm === 'efetivada' ||
+        norm === 'efetivado'
+      ) {
+        return 'pago';
+      }
+
+      // 4. Pagamento -> EM PAGAMENTO
+      if (norm.includes('pagamento')) {
+        return 'emPagamento';
+      }
+
+      // 3. Cessão, Formalização -> EM ASSINATURA
+      if (norm.includes('cessao') || norm.includes('formalizacao') || norm.includes('assinatura')) {
+        return 'emAssinatura';
+      }
+
+      // 2. Análise, Confirmação, Destinação, Aprovação, Registro -> AGUARD. ALÇADA
+      if (
+        norm.includes('analise') ||
+        norm.includes('confirmacao') ||
+        norm.includes('destinacao') ||
+        norm.includes('aprovacao') ||
+        norm.includes('registro') ||
+        norm.includes('alcada') ||
+        norm.includes('comite')
+      ) {
+        return 'aguardAlcada';
+      }
+
+      return 'emAnalise';
+    }
 
     let comCoobrigacaoQtd = 0;
     let semCoobrigacaoQtd = 0;
@@ -749,42 +800,10 @@ export function registerOperationsRoutes(app, {
       volumeLiquido += liquido;
       totalTitulos += titulos;
 
-      const statusRaw = String(op.situacao || op.status || op.statusOperacao || op.fase || '').trim().toLowerCase();
-
-      // Regra de Classificação:
-      // 1. 'aprovado (concluido)' / 'efetivada'
-      const isEfetivada = !!op.efetivada ||
-        statusRaw.includes('efetivad') ||
-        statusRaw.includes('liquid') ||
-        statusRaw.includes('concluid') ||
-        statusRaw === 'aprovado' ||
-        statusRaw === 'aprovada';
-
-      // 2. 'em aprovação'
-      const isEmAprovacao = !isEfetivada && (
-        statusRaw.includes('em aprova') ||
-        statusRaw.includes('em aprovação') ||
-        statusRaw.includes('aprova') ||
-        statusRaw.includes('comite') ||
-        statusRaw.includes('comitê')
-      );
-
-      // 3. 'em análise': tudo que for <> de 'em aprovação' e 'aprovado (concluido)'
-      const isEmAnalise = !isEfetivada && !isEmAprovacao;
-
-      if (isEfetivada) {
-        efetivadasQtd++;
-        efetivadasVolumeBruto += bruto;
-        efetivadasVolumeLiquido += liquido;
-      } else if (isEmAprovacao) {
-        emAprovacaoQtd++;
-        emAprovacaoVolumeBruto += bruto;
-        emAprovacaoVolumeLiquido += liquido;
-      } else {
-        emAnaliseQtd++;
-        emAnaliseVolumeBruto += bruto;
-        emAnaliseVolumeLiquido += liquido;
-      }
+      const targetGroup = classifyBitfinOperationStatus(op);
+      statusGroups[targetGroup].qtd++;
+      statusGroups[targetGroup].volumeBruto += bruto;
+      statusGroups[targetGroup].volumeLiquido += liquido;
 
       if (op.coobrigacao) {
         comCoobrigacaoQtd++;
@@ -844,8 +863,8 @@ export function registerOperationsRoutes(app, {
     const totalOperacoes = operacoes.length;
     const ticketMedioOperacao = totalOperacoes > 0 ? volumeBruto / totalOperacoes : 0;
     const ticketMedioTitulo = totalTitulos > 0 ? volumeBruto / totalTitulos : 0;
-    const taxaEfetivacaoQtd = totalOperacoes > 0 ? (efetivadasQtd / totalOperacoes) * 100 : 0;
-    const taxaEfetivacaoVolume = volumeBruto > 0 ? (efetivadasVolumeBruto / volumeBruto) * 100 : 0;
+    const taxaEfetivacaoQtd = totalOperacoes > 0 ? (statusGroups.pago.qtd / totalOperacoes) * 100 : 0;
+    const taxaEfetivacaoVolume = volumeBruto > 0 ? (statusGroups.pago.volumeBruto / volumeBruto) * 100 : 0;
     const percentualCoobrigacao = totalOperacoes > 0 ? (comCoobrigacaoQtd / totalOperacoes) * 100 : 0;
     const titulosPorOperacao = totalOperacoes > 0 ? Math.round((totalTitulos / totalOperacoes) * 10) / 10 : 0;
 
@@ -919,29 +938,83 @@ export function registerOperationsRoutes(app, {
       ticketMedioOperacao: Math.round(ticketMedioOperacao * 100) / 100,
       ticketMedioTitulo: Math.round(ticketMedioTitulo * 100) / 100,
 
-      // Efetivação - 3 Status
+      // Taxa de Efetivação (operações PAGAS)
       taxaEfetivacao: Math.round(taxaEfetivacaoVolume * 10) / 10,
       taxaEfetivacaoQtd: Math.round(taxaEfetivacaoQtd * 10) / 10,
       taxaEfetivacaoVolume: Math.round(taxaEfetivacaoVolume * 10) / 10,
 
-      efetivadasQtd,
-      efetivadasVolume: Math.round(efetivadasVolumeBruto * 100) / 100,
-      efetivadasVolumeBruto: Math.round(efetivadasVolumeBruto * 100) / 100,
-      efetivadasVolumeLiquido: Math.round(efetivadasVolumeLiquido * 100) / 100,
+      // 5 Grupos de Status Agregados do Bitfin
+      statusGroups: {
+        pago: {
+          key: 'PAGO',
+          label: 'PAGO',
+          qtd: statusGroups.pago.qtd,
+          volume: Math.round(statusGroups.pago.volumeBruto * 100) / 100,
+          volumeBruto: Math.round(statusGroups.pago.volumeBruto * 100) / 100,
+          volumeLiquido: Math.round(statusGroups.pago.volumeLiquido * 100) / 100
+        },
+        emPagamento: {
+          key: 'EM_PAGAMENTO',
+          label: 'EM PAGAMENTO',
+          qtd: statusGroups.emPagamento.qtd,
+          volume: Math.round(statusGroups.emPagamento.volumeBruto * 100) / 100,
+          volumeBruto: Math.round(statusGroups.emPagamento.volumeBruto * 100) / 100,
+          volumeLiquido: Math.round(statusGroups.emPagamento.volumeLiquido * 100) / 100
+        },
+        emAssinatura: {
+          key: 'EM_ASSINATURA',
+          label: 'EM ASSINATURA',
+          qtd: statusGroups.emAssinatura.qtd,
+          volume: Math.round(statusGroups.emAssinatura.volumeBruto * 100) / 100,
+          volumeBruto: Math.round(statusGroups.emAssinatura.volumeBruto * 100) / 100,
+          volumeLiquido: Math.round(statusGroups.emAssinatura.volumeLiquido * 100) / 100
+        },
+        aguardAlcada: {
+          key: 'AGUARD_ALCADA',
+          label: 'AGUARD. ALÇADA',
+          qtd: statusGroups.aguardAlcada.qtd,
+          volume: Math.round(statusGroups.aguardAlcada.volumeBruto * 100) / 100,
+          volumeBruto: Math.round(statusGroups.aguardAlcada.volumeBruto * 100) / 100,
+          volumeLiquido: Math.round(statusGroups.aguardAlcada.volumeLiquido * 100) / 100
+        },
+        emAnalise: {
+          key: 'EM_ANALISE',
+          label: 'EM ANÁLISE',
+          qtd: statusGroups.emAnalise.qtd,
+          volume: Math.round(statusGroups.emAnalise.volumeBruto * 100) / 100,
+          volumeBruto: Math.round(statusGroups.emAnalise.volumeBruto * 100) / 100,
+          volumeLiquido: Math.round(statusGroups.emAnalise.volumeLiquido * 100) / 100
+        }
+      },
 
-      emAprovacaoQtd,
-      emAprovacaoVolume: Math.round(emAprovacaoVolumeBruto * 100) / 100,
-      emAprovacaoVolumeBruto: Math.round(emAprovacaoVolumeBruto * 100) / 100,
-      emAprovacaoVolumeLiquido: Math.round(emAprovacaoVolumeLiquido * 100) / 100,
+      // Campos planos para consumo direto
+      pagoQtd: statusGroups.pago.qtd,
+      pagoVolume: Math.round(statusGroups.pago.volumeBruto * 100) / 100,
 
-      emAnaliseQtd,
-      emAnaliseVolume: Math.round(emAnaliseVolumeBruto * 100) / 100,
-      emAnaliseVolumeBruto: Math.round(emAnaliseVolumeBruto * 100) / 100,
-      emAnaliseVolumeLiquido: Math.round(emAnaliseVolumeLiquido * 100) / 100,
+      emPagamentoQtd: statusGroups.emPagamento.qtd,
+      emPagamentoVolume: Math.round(statusGroups.emPagamento.volumeBruto * 100) / 100,
 
-      pendentesQtd: emAnaliseQtd + emAprovacaoQtd,
-      pendentesVolume: Math.round((emAnaliseVolumeBruto + emAprovacaoVolumeBruto) * 100) / 100,
-      pendentesVolumeBruto: Math.round((emAnaliseVolumeBruto + emAprovacaoVolumeBruto) * 100) / 100,
+      emAssinaturaQtd: statusGroups.emAssinatura.qtd,
+      emAssinaturaVolume: Math.round(statusGroups.emAssinatura.volumeBruto * 100) / 100,
+
+      aguardAlcadaQtd: statusGroups.aguardAlcada.qtd,
+      aguardAlcadaVolume: Math.round(statusGroups.aguardAlcada.volumeBruto * 100) / 100,
+
+      emAnaliseQtd: statusGroups.emAnalise.qtd,
+      emAnaliseVolume: Math.round(statusGroups.emAnalise.volumeBruto * 100) / 100,
+
+      // Legado (retrocompatibilidade)
+      efetivadasQtd: statusGroups.pago.qtd,
+      efetivadasVolume: Math.round(statusGroups.pago.volumeBruto * 100) / 100,
+      efetivadasVolumeBruto: Math.round(statusGroups.pago.volumeBruto * 100) / 100,
+      efetivadasVolumeLiquido: Math.round(statusGroups.pago.volumeLiquido * 100) / 100,
+
+      emAprovacaoQtd: statusGroups.aguardAlcada.qtd,
+      emAprovacaoVolume: Math.round(statusGroups.aguardAlcada.volumeBruto * 100) / 100,
+
+      pendentesQtd: totalOperacoes - statusGroups.pago.qtd,
+      pendentesVolume: Math.round((volumeBruto - statusGroups.pago.volumeBruto) * 100) / 100,
+      pendentesVolumeBruto: Math.round((volumeBruto - statusGroups.pago.volumeBruto) * 100) / 100,
 
       comCoobrigacaoQtd,
       semCoobrigacaoQtd,

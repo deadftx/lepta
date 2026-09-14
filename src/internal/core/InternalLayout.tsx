@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { LogOut, User, ShieldAlert, Shield, UserPlus, Users, ChevronDown, ChevronRight, LayoutDashboard, Sliders, Home, Calendar, CalendarCheck, Menu, X, Wallet, FileSpreadsheet, BrainCircuit, Database, ClipboardCheck, ContactRound, ShieldCheck, Landmark, Briefcase, ShoppingCart, SlidersHorizontal, DollarSign, Mail, Search, TrendingUp, UserCheck, Scale, FileCheck, Layers, MapPin, AlertTriangle } from 'lucide-react';
+import { LogOut, User, ShieldAlert, Shield, UserPlus, Users, ChevronDown, ChevronRight, LayoutDashboard, Sliders, Home, Calendar, CalendarCheck, Menu, X, Wallet, FileSpreadsheet, BrainCircuit, Database, ClipboardCheck, ContactRound, ShieldCheck, Landmark, Briefcase, ShoppingCart, SlidersHorizontal, DollarSign, Mail, Search, TrendingUp, UserCheck, Scale, FileCheck, Layers, MapPin, AlertTriangle, Pin, PinOff } from 'lucide-react';
 import { useNavigate, Outlet, Link, useLocation } from 'react-router-dom';
 import { useAuth } from './AuthContext';
 import NotificationBell from './NotificationBell';
@@ -19,6 +19,34 @@ const InternalLayout = () => {
 
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [isSidebarPinned, setIsSidebarPinned] = useState<boolean>(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('lepta_sidebar_pinned') === 'true';
+    }
+    return false;
+  });
+
+  const togglePinSidebar = () => {
+    setIsSidebarPinned(prev => {
+      const next = !prev;
+      localStorage.setItem('lepta_sidebar_pinned', String(next));
+      setTimeout(() => {
+        window.dispatchEvent(new Event('resize'));
+      }, 50);
+      setTimeout(() => {
+        window.dispatchEvent(new Event('resize'));
+      }, 320);
+      return next;
+    });
+  };
+
+  useEffect(() => {
+    if (isSidebarPinned) {
+      setTimeout(() => {
+        window.dispatchEvent(new Event('resize'));
+      }, 100);
+    }
+  }, [isSidebarPinned]);
 
   useEffect(() => {
     const handleFsChange = () => {
@@ -192,7 +220,7 @@ const InternalLayout = () => {
   };
 
   return (
-    <div className="internal-dashboard-page">
+    <div className={`internal-dashboard-page ${isSidebarPinned ? 'sidebar-pinned' : ''}`}>
       {/* Mobile Overlay Background */}
       {isMobileSidebarOpen && (
         <div 
@@ -201,7 +229,7 @@ const InternalLayout = () => {
         />
       )}
 
-      <aside className={`internal-sidebar glass ${isMobileSidebarOpen ? 'open' : ''} ${isFullscreen ? 'fullscreen-hidden' : ''}`}>
+      <aside className={`internal-sidebar glass ${isMobileSidebarOpen ? 'open' : ''} ${isFullscreen ? 'fullscreen-hidden' : ''} ${isSidebarPinned ? 'is-pinned' : ''}`}>
         <div className="sidebar-brand">
           <img src="/logo2.png" alt="Lepta Capital" className="sidebar-logo" />
           <button className="mobile-close-btn" onClick={() => setIsMobileSidebarOpen(false)}>
@@ -217,6 +245,30 @@ const InternalLayout = () => {
             <h4>{user?.username}</h4>
             <p>{user?.email || 'Nenhum email'}</p>
           </div>
+        </div>
+
+        {/* Opção para fixar o menu lateral */}
+        <div className="sidebar-pin-container">
+          <button 
+            type="button"
+            className={`sidebar-pin-btn ${isSidebarPinned ? 'pinned' : ''}`}
+            onClick={togglePinSidebar}
+            title={isSidebarPinned ? "Desafixar menu lateral (modo retrátil)" : "Fixar menu lateral na tela"}
+          >
+            <div className="sidebar-pin-btn-content">
+              {isSidebarPinned ? (
+                <Pin size={15} className="pin-active-icon" />
+              ) : (
+                <PinOff size={15} className="pin-inactive-icon" />
+              )}
+              <span className="sidebar-pin-label">
+                {isSidebarPinned ? 'Menu fixado' : 'Fixar menu lateral'}
+              </span>
+            </div>
+            <div className={`sidebar-pin-switch ${isSidebarPinned ? 'checked' : ''}`}>
+              <div className="sidebar-pin-thumb" />
+            </div>
+          </button>
         </div>
         
         <nav className="internal-nav">
@@ -563,7 +615,7 @@ const InternalLayout = () => {
         </div>
       </aside>
 
-      <main className={`internal-content ${location.pathname === '/bi/mesa-operacao' ? 'internal-content-mesa' : ''}`}>
+      <main className={`internal-content ${location.pathname === '/bi/mesa-operacao' ? 'internal-content-mesa' : ''} ${isFullscreen ? 'fullscreen-content' : ''}`}>
         <header className={`internal-header ${isFullscreen ? 'fullscreen-mode' : ''}`}>
           {!isFullscreen && (
             <div className="header-left">
