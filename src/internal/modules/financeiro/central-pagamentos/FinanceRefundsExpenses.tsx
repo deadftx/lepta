@@ -88,6 +88,7 @@ export interface PurchaseRequest {
   updated_at: string;
   total_anexos?: number;
   total_mensagens?: number;
+  total_itens?: number;
   itens?: PurchaseItem[];
   mensagens?: PurchaseMessage[];
 }
@@ -758,13 +759,13 @@ export const FinanceRefundsExpenses: React.FC = () => {
   const totalApprovedWaitingPayment = useMemo(() => {
     return requests
       .filter(r => r.status === 'APROVADO' || r.status === 'PAGAMENTO_PAUSADO')
-      .reduce((sum, r) => sum + (r.valor * r.quantidade), 0);
+      .reduce((sum, r) => sum + (((r.total_itens && r.total_itens > 1) || (r.itens && r.itens.length > 1)) ? r.valor : (r.valor * (r.quantidade || 1))), 0);
   }, [requests]);
 
   const totalCompletedValue = useMemo(() => {
     return requests
       .filter(r => r.status === 'SOLICITACAO_CONCLUIDA' || r.status === 'PAGO')
-      .reduce((sum, r) => sum + (r.valor * r.quantidade), 0);
+      .reduce((sum, r) => sum + (((r.total_itens && r.total_itens > 1) || (r.itens && r.itens.length > 1)) ? r.valor : (r.valor * (r.quantidade || 1))), 0);
   }, [requests]);
 
   const countWaitingPayment = useMemo(() => {
@@ -1057,7 +1058,7 @@ export const FinanceRefundsExpenses: React.FC = () => {
                     </td>
                     <td data-label="Valor Total">
                       <span className="pa-price-highlight">
-                        {formatBrl(item.valor * item.quantidade)}
+                        {formatBrl(((item.total_itens && item.total_itens > 1) || (item.itens && item.itens.length > 1)) ? item.valor : item.valor * (item.quantidade || 1))}
                       </span>
                     </td>
                     <td data-label="Status">
@@ -1243,7 +1244,7 @@ export const FinanceRefundsExpenses: React.FC = () => {
                 <div className="pa-detail-item">
                   <span className="pa-detail-label">Valor Total</span>
                   <span className="pa-detail-val" style={{ color: '#34d399', fontWeight: 800, fontSize: '1.1rem' }}>
-                    {formatBrl(selectedRequest.valor * selectedRequest.quantidade)}
+                    {formatBrl(((selectedRequest.total_itens && selectedRequest.total_itens > 1) || (selectedRequest.itens && selectedRequest.itens.length > 1)) ? selectedRequest.valor : selectedRequest.valor * (selectedRequest.quantidade || 1))}
                   </span>
                 </div>
 
