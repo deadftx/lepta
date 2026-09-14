@@ -177,6 +177,21 @@ export const AssociadosDashboard: React.FC = () => {
     setSelectedCargo('all');
   };
 
+  const handleSyncData = async () => {
+    try {
+      setLoading(true);
+      await fetch(`${API_BASE_URL}/api/associados/reload`, {
+        method: 'POST',
+        headers: getAuthHeaders()
+      });
+      await Promise.all([fetchFilters(), fetchKpis(), fetchAssociados(1)]);
+    } catch (err) {
+      console.error('Erro ao sincronizar base:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -236,15 +251,15 @@ export const AssociadosDashboard: React.FC = () => {
           <div className="assoc-header-actions">
             <div className="assoc-status-pill">
               <span className="assoc-pulse-dot" />
-              <span>{totalRecords} Associados Cadastrados</span>
+              <span>{totalRecords} Associados no Banco de Dados</span>
             </div>
 
             <button
               className="assoc-btn assoc-btn-secondary"
-              onClick={() => { fetchKpis(); fetchAssociados(currentPage); }}
-              title="Recarregar dados"
+              onClick={handleSyncData}
+              title="Sincronizar dados do banco SQLite"
             >
-              <RotateCw size={16} /> Sincronizar
+              <RotateCw size={16} className={loading ? 'rotating' : ''} /> Sincronizar Banco
             </button>
 
             <button
@@ -479,7 +494,23 @@ export const AssociadosDashboard: React.FC = () => {
                   ) : associados.length === 0 ? (
                     <tr>
                       <td colSpan={8} style={{ textAlign: 'center', padding: '36px', color: '#64748b' }}>
-                        Nenhum associado encontrado com os filtros selecionados.
+                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px' }}>
+                          <span style={{ fontSize: '0.9rem', color: '#94a3b8' }}>
+                            {totalRecords === 0
+                              ? 'Nenhum associado encontrado no banco de dados SQLite.'
+                              : 'Nenhum associado encontrado com os filtros selecionados.'}
+                          </span>
+                          {totalRecords === 0 && (
+                            <button
+                              type="button"
+                              className="assoc-btn assoc-btn-primary"
+                              onClick={handleSyncData}
+                              style={{ padding: '8px 18px', fontSize: '0.85rem' }}
+                            >
+                              <RotateCw size={15} /> Sincronizar Base Oficial 2026 no Banco
+                            </button>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   ) : (

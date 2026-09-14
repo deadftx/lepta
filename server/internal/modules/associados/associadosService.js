@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import * as XLSX from 'xlsx';
+import { ASSOCIADOS_INITIAL_SEED } from './associadosSeed.js';
 
 /**
  * Converte datas do Excel (números seriais ou strings) para o formato DD/MM/AAAA
@@ -97,6 +98,88 @@ export function findExcelSpreadsheet(projectRoot) {
 }
 
 /**
+ * Popula a tabela associados a partir do seed embutido extraído do Excel
+ */
+export function seedAssociadosFromInitialData(db) {
+  const insertStmt = db.prepare(`
+    INSERT INTO associados (
+      id, associado, cpf, cnpj, razao_social, rg, email, email_corporativo,
+      telefone, status, area_setor, cargo_funcao, data_nascimento, data_inicio,
+      tempo_casa, endereco, contato_emergencia, veiculo, tipo_veiculo,
+      dependentes, dependentes_nomes, dependentes_datas_nascimento, url_veiculos,
+      created_at, updated_at
+    ) VALUES (
+      @id, @associado, @cpf, @cnpj, @razao_social, @rg, @email, @email_corporativo,
+      @telefone, @status, @area_setor, @cargo_funcao, @data_nascimento, @data_inicio,
+      @tempo_casa, @endereco, @contato_emergencia, @veiculo, @tipo_veiculo,
+      @dependentes, @dependentes_nomes, @dependentes_datas_nascimento, @url_veiculos,
+      @created_at, @updated_at
+    )
+    ON CONFLICT(id) DO UPDATE SET
+      associado = excluded.associado,
+      cpf = excluded.cpf,
+      cnpj = excluded.cnpj,
+      razao_social = excluded.razao_social,
+      rg = excluded.rg,
+      email = excluded.email,
+      email_corporativo = excluded.email_corporativo,
+      telefone = excluded.telefone,
+      status = excluded.status,
+      area_setor = excluded.area_setor,
+      cargo_funcao = excluded.cargo_funcao,
+      data_nascimento = excluded.data_nascimento,
+      data_inicio = excluded.data_inicio,
+      tempo_casa = excluded.tempo_casa,
+      endereco = excluded.endereco,
+      contato_emergencia = excluded.contato_emergencia,
+      veiculo = excluded.veiculo,
+      tipo_veiculo = excluded.tipo_veiculo,
+      dependentes = excluded.dependentes,
+      dependentes_nomes = excluded.dependentes_nomes,
+      dependentes_datas_nascimento = excluded.dependentes_datas_nascimento,
+      url_veiculos = excluded.url_veiculos,
+      updated_at = excluded.updated_at
+  `);
+
+  const nowIso = new Date().toISOString();
+  let count = 0;
+  db.transaction(() => {
+    for (const item of ASSOCIADOS_INITIAL_SEED) {
+      insertStmt.run({
+        id: item.id,
+        associado: item.associado,
+        cpf: item.cpf || '',
+        cnpj: item.cnpj || '',
+        razao_social: item.razao_social || '',
+        rg: item.rg || '',
+        email: item.email || '',
+        email_corporativo: item.email_corporativo || '',
+        telefone: item.telefone || '',
+        status: item.status || 'Ativo',
+        area_setor: item.area_setor || 'Geral',
+        cargo_funcao: item.cargo_funcao || 'Geral',
+        data_nascimento: item.data_nascimento || '',
+        data_inicio: item.data_inicio || '',
+        tempo_casa: item.tempo_casa || '',
+        endereco: item.endereco || '',
+        contato_emergencia: item.contato_emergencia || '',
+        veiculo: item.veiculo || '',
+        tipo_veiculo: item.tipo_veiculo || '',
+        dependentes: item.dependentes || 'Não',
+        dependentes_nomes: item.dependentes_nomes || '',
+        dependentes_datas_nascimento: item.dependentes_datas_nascimento || '',
+        url_veiculos: item.url_veiculos || '',
+        created_at: nowIso,
+        updated_at: nowIso
+      });
+      count++;
+    }
+  })();
+
+  return count;
+}
+
+/**
  * Cria a tabela e garante migração inicial dos dados para o SQLite
  */
 export function ensureAssociadosTableSchema(db, projectRoot) {
@@ -134,24 +217,30 @@ export function ensureAssociadosTableSchema(db, projectRoot) {
   `);
 
   const countRow = db.prepare('SELECT COUNT(*) as count FROM associados').get();
-  if (countRow && countRow.count > 0) {
+  if (countRow && countRow.count >= 39) {
     return { success: true, count: countRow.count, initialized: false };
   }
 
-  // Se a tabela estiver vazia, importa da planilha
+  // Se a tabela estiver com menos registros do que a base, tenta ler da planilha física
   const spreadsheetPath = findExcelSpreadsheet(projectRoot);
   if (spreadsheetPath) {
     try {
       const imported = importSpreadsheetIntoDb(db, spreadsheetPath);
-      console.log(`✅ [ASSOCIADOS] Tabela associados criada e ${imported} registros migrados com sucesso de: ${spreadsheetPath}`);
+      console.log(`✅ [ASSOCIADOS] Tabela associados populada com ${imported} registros da planilha: ${spreadsheetPath}`);
       return { success: true, count: imported, initialized: true };
     } catch (err) {
-      console.error('❌ [ASSOCIADOS] Erro ao migrar planilha para o banco:', err.message);
-      return { success: false, error: err.message };
+      console.warn('⚠️ [ASSOCIADOS] Falha ao ler planilha física, usando seed oficial embutido:', err.message);
     }
-  } else {
-    console.warn('⚠️ [ASSOCIADOS] Planilha Controle - Associados - 2026.xlsx não localizada no momento da inicialização.');
-    return { success: true, count: 0, initialized: false };
+  }
+
+  // Se a planilha não estiver presente no servidor (comum em dev/homolog pelo .gitignore), popula pelo seed embutido
+  try {
+    const seeded = seedAssociadosFromInitialData(db);
+    console.log(`✅ [ASSOCIADOS] Tabela associados populada com ${seeded} registros do seed oficial 2026.`);
+    return { success: true, count: seeded, initialized: true };
+  } catch (err) {
+    console.error('❌ [ASSOCIADOS] Erro ao aplicar seed de associados:', err.message);
+    return { success: false, error: err.message };
   }
 }
 

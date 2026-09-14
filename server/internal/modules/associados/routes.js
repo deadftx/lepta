@@ -6,7 +6,8 @@ import {
   getAssociadosKpis,
   getAssociadosFilterOptions,
   importSpreadsheetIntoDb,
-  findExcelSpreadsheet
+  findExcelSpreadsheet,
+  seedAssociadosFromInitialData
 } from './associadosService.js';
 
 export function registerAssociadosRoutes(app, {
@@ -110,7 +111,7 @@ export function registerAssociadosRoutes(app, {
       const importedCount = importSpreadsheetIntoDb(db, req.file.path);
       res.json({
         success: true,
-        message: `Planilha processada com sucesso! ${importedCount} registros importados ou atualizados.`,
+        message: `Planilha processada com sucesso! ${importedCount} registros importados ou atualizados no banco de dados.`,
         count: importedCount
       });
     } catch (err) {
@@ -119,22 +120,39 @@ export function registerAssociadosRoutes(app, {
     }
   });
 
-  // 6. Recarga da planilha local do projeto
+  // 6. Recarga ou sincronização da base de associados
   app.post('/api/associados/reload', requireSession, checkAccess, (req, res) => {
     try {
       const spreadsheetPath = findExcelSpreadsheet(projectRoot);
-      if (!spreadsheetPath) {
-        return res.status(404).json({ error: 'Arquivo Controle - Associados - 2026.xlsx não encontrado no servidor.' });
+      let importedCount = 0;
+      if (spreadsheetPath) {
+        importedCount = importSpreadsheetIntoDb(db, spreadsheetPath);
+      } else {
+        importedCount = seedAssociadosFromInitialData(db);
       }
-      const importedCount = importSpreadsheetIntoDb(db, spreadsheetPath);
       res.json({
         success: true,
-        message: `Base sincronizada com a planilha local (${importedCount} registros).`,
+        message: `Base de associados sincronizada com sucesso (${importedCount} registros no banco).`,
         count: importedCount
       });
     } catch (err) {
-      console.error('Erro ao recarregar planilha local de associados:', err);
+      console.error('Erro ao recarregar base de associados:', err);
       res.status(500).json({ error: `Erro ao recarregar: ${err.message}` });
+    }
+  });
+
+  // 7. Seed explícito a partir da base oficial 2026
+  app.post('/api/associados/seed', requireSession, checkAccess, (req, res) => {
+    try {
+      const seeded = seedAssociadosFromInitialData(db);
+      res.json({
+        success: true,
+        message: `Base de dados populada com ${seeded} associados da planilha oficial 2026.`,
+        count: seeded
+      });
+    } catch (err) {
+      console.error('Erro ao executar seed de associados:', err);
+      res.status(500).json({ error: `Erro no seed: ${err.message}` });
     }
   });
 }
