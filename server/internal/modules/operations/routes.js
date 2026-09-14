@@ -601,13 +601,13 @@ export function registerOperationsRoutes(app, {
       const y = d.getFullYear();
       const m = String(d.getMonth() + 1).padStart(2, '0');
       const day = String(d.getDate()).padStart(2, '0');
-      return `${y}-${m}-${day}T00:00:00Z`;
+      return `${y}-${m}-${day}T00:00:00`;
     };
     const formatISOEnd = (d) => {
       const y = d.getFullYear();
       const m = String(d.getMonth() + 1).padStart(2, '0');
       const day = String(d.getDate()).padStart(2, '0');
-      return `${y}-${m}-${day}T23:59:59Z`;
+      return `${y}-${m}-${day}T23:59:59`;
     };
 
     switch (periodo) {
@@ -632,8 +632,8 @@ export function registerOperationsRoutes(app, {
       case 'custom': {
         if (customInicio && customFim) {
           return {
-            inicio: customInicio.includes('T') ? customInicio : `${customInicio}T00:00:00Z`,
-            fim: customFim.includes('T') ? customFim : `${customFim}T23:59:59Z`,
+            inicio: customInicio.includes('T') ? customInicio : `${customInicio}T00:00:00`,
+            fim: customFim.includes('T') ? customFim : `${customFim}T23:59:59`,
             label: 'Período Personalizado',
             isDaily: false
           };
@@ -653,42 +653,85 @@ export function registerOperationsRoutes(app, {
     }
 
     const API_BASE = 'https://lepta-backend.bit-unltd.com.br';
-    const res = await fetch(`${API_BASE}/recebiveis/operacoes`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `UNLTD-BackEnd ${token}`
-      },
-      body: JSON.stringify({
-        tipoDeData,
-        dataInicial: range.inicio,
-        dataFinal: range.fim
-      })
-    });
+    let ops = [];
+    try {
+      const res = await fetch(`${API_BASE}/recebiveis/operacoes`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `UNLTD-BackEnd ${token}`
+        },
+        body: JSON.stringify({
+          tipoDeData,
+          dataInicial: range.inicio,
+          dataFinal: range.fim
+        })
+      });
 
-    if (!res.ok) {
-      const err = await res.text();
-      throw new Error(`Erro API BitFin (${res.status}): ${err}`);
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data)) ops = data;
+      }
+    } catch (err) {
+      console.warn('Erro fetchLiveOps tentativa 1:', err.message);
     }
 
-    const data = await res.json();
-    const ops = Array.isArray(data) ? data : [];
+    // Se veio vazio, tenta alternar com/sem Z no payload
+    if (ops.length === 0) {
+      const altInicio = range.inicio.endsWith('Z') ? range.inicio.slice(0, -1) : `${range.inicio}Z`;
+      const altFim = range.fim.endsWith('Z') ? range.fim.slice(0, -1) : `${range.fim}Z`;
+      try {
+        const res2 = await fetch(`${API_BASE}/recebiveis/operacoes`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `UNLTD-BackEnd ${token}`
+          },
+          body: JSON.stringify({
+            tipoDeData,
+            dataInicial: altInicio,
+            dataFinal: altFim
+          })
+        });
+        if (res2.ok) {
+          const data2 = await res2.json();
+          if (Array.isArray(data2) && data2.length > 0) {
+            ops = data2;
+          }
+        }
+      } catch (_) {}
+    }
+
     ops.sort((a, b) => new Date(b.dataDeCadastro || 0).getTime() - new Date(a.dataDeCadastro || 0).getTime());
 
     liveStatsCache.set(cacheKey, { data: ops, timestamp: Date.now() });
     return ops;
   }
 
+  function formatCompactBRL(val) {
+    const num = Number(val || 0);
+    if (num >= 1000000) return `R$ ${(num / 1000000).toFixed(2).replace('.', ',')}M`;
+    if (num >= 1000) return `R$ ${(num / 1000).toFixed(1).replace('.', ',')}k`;
+    return `R$ ${num.toFixed(2).replace('.', ',')}`;
+  }
+
   function computeLiveStats(operacoes, periodoLabel, isDaily) {
     let volumeBruto = 0;
     let volumeLiquido = 0;
     let totalTitulos = 0;
+
     let efetivadasQtd = 0;
     let efetivadasVolumeBruto = 0;
     let efetivadasVolumeLiquido = 0;
-    let pendentesQtd = 0;
-    let pendentesVolumeBruto = 0;
-    let pendentesVolumeLiquido = 0;
+
+    let emAprovacaoQtd = 0;
+    let emAprovacaoVolumeBruto = 0;
+    let emAprovacaoVolumeLiquido = 0;
+
+    let emAnaliseQtd = 0;
+    let emAnaliseVolumeBruto = 0;
+    let emAnaliseVolumeLiquido = 0;
+
     let comCoobrigacaoQtd = 0;
     let semCoobrigacaoQtd = 0;
 
@@ -698,22 +741,49 @@ export function registerOperationsRoutes(app, {
     const timelineMap = new Map();
 
     for (const op of operacoes) {
-      const bruto = Number(op.totalBruto || 0);
-      const liquido = Number(op.totalLiquido || 0);
-      const titulos = Number(op.quantidadeDeTitulos || 0);
+      const bruto = Number(op.totalBruto || op.valorTotal || op.valor || 0);
+      const liquido = Number(op.totalLiquido || op.valorLiquido || bruto);
+      const titulos = Number(op.quantidadeDeTitulos || op.quantidadeTitulos || 0);
 
       volumeBruto += bruto;
       volumeLiquido += liquido;
       totalTitulos += titulos;
 
-      if (op.efetivada) {
+      const statusRaw = String(op.situacao || op.status || op.statusOperacao || op.fase || '').trim().toLowerCase();
+
+      // Regra de Classificação:
+      // 1. 'aprovado (concluido)' / 'efetivada'
+      const isEfetivada = !!op.efetivada ||
+        statusRaw.includes('efetivad') ||
+        statusRaw.includes('liquid') ||
+        statusRaw.includes('concluid') ||
+        statusRaw === 'aprovado' ||
+        statusRaw === 'aprovada';
+
+      // 2. 'em aprovação'
+      const isEmAprovacao = !isEfetivada && (
+        statusRaw.includes('em aprova') ||
+        statusRaw.includes('em aprovação') ||
+        statusRaw.includes('aprova') ||
+        statusRaw.includes('comite') ||
+        statusRaw.includes('comitê')
+      );
+
+      // 3. 'em análise': tudo que for <> de 'em aprovação' e 'aprovado (concluido)'
+      const isEmAnalise = !isEfetivada && !isEmAprovacao;
+
+      if (isEfetivada) {
         efetivadasQtd++;
         efetivadasVolumeBruto += bruto;
         efetivadasVolumeLiquido += liquido;
+      } else if (isEmAprovacao) {
+        emAprovacaoQtd++;
+        emAprovacaoVolumeBruto += bruto;
+        emAprovacaoVolumeLiquido += liquido;
       } else {
-        pendentesQtd++;
-        pendentesVolumeBruto += bruto;
-        pendentesVolumeLiquido += liquido;
+        emAnaliseQtd++;
+        emAnaliseVolumeBruto += bruto;
+        emAnaliseVolumeLiquido += liquido;
       }
 
       if (op.coobrigacao) {
@@ -734,8 +804,8 @@ export function registerOperationsRoutes(app, {
       porProduto[produto].bruto += bruto;
       porProduto[produto].liquido += liquido;
 
-      const clienteNome = op.contaOperacional?.cliente?.entidade?.nome || 'Não identificado';
-      const clienteDoc = op.contaOperacional?.cliente?.entidade?.documento || '';
+      const clienteNome = op.contaOperacional?.cliente?.entidade?.nome || op.cliente?.nome || op.cedente?.nome || 'Não identificado';
+      const clienteDoc = op.contaOperacional?.cliente?.entidade?.documento || op.cliente?.documento || op.cedente?.documento || '';
       const docKey = clienteDoc || clienteNome;
       if (!cedentesMap.has(docKey)) {
         cedentesMap.set(docKey, { nome: clienteNome, documento: clienteDoc, qtd: 0, bruto: 0, liquido: 0 });
@@ -745,7 +815,7 @@ export function registerOperationsRoutes(app, {
       c.bruto += bruto;
       c.liquido += liquido;
 
-      const dt = new Date(op.dataDeCadastro);
+      const dt = new Date(op.dataDeCadastro || Date.now());
       let timeKey;
       let timeLabel;
       if (isDaily) {
@@ -777,6 +847,7 @@ export function registerOperationsRoutes(app, {
     const taxaEfetivacaoQtd = totalOperacoes > 0 ? (efetivadasQtd / totalOperacoes) * 100 : 0;
     const taxaEfetivacaoVolume = volumeBruto > 0 ? (efetivadasVolumeBruto / volumeBruto) * 100 : 0;
     const percentualCoobrigacao = totalOperacoes > 0 ? (comCoobrigacaoQtd / totalOperacoes) * 100 : 0;
+    const titulosPorOperacao = totalOperacoes > 0 ? Math.round((totalTitulos / totalOperacoes) * 10) / 10 : 0;
 
     const timeline = Array.from(timelineMap.entries())
       .sort((a, b) => a[0].localeCompare(b[0]))
@@ -785,36 +856,105 @@ export function registerOperationsRoutes(app, {
         label: val.label,
         qtd: val.qtd,
         bruto: Math.round(val.bruto * 100) / 100,
-        liquido: Math.round(val.liquido * 100) / 100
+        liquido: Math.round(val.liquido * 100) / 100,
+        brutoLabel: formatCompactBRL(val.bruto),
+        liqLabel: formatCompactBRL(val.liquido)
       }));
 
     const topCedentes = Array.from(cedentesMap.values())
       .sort((a, b) => b.bruto - a.bruto)
       .slice(0, 10);
 
+    const knownColors = {
+      'Lepta MS FIDC': '#06b6d4',
+      'Lepta Special FIDC': '#a855f7',
+      'Lepta Securitizadora': '#f59e0b'
+    };
+    const defaultColors = ['#06b6d4', '#a855f7', '#f59e0b', '#10b981', '#ec4899', '#3b82f6', '#14b8a6'];
+
+    const porUnidadeList = Object.entries(porUnidade)
+      .map(([name, val], idx) => ({
+        name,
+        percent: volumeBruto > 0 ? Math.round((val.bruto / volumeBruto) * 1000) / 10 : 0,
+        valor: formatCompactBRL(val.bruto),
+        bruto: Math.round(val.bruto * 100) / 100,
+        liquido: Math.round(val.liquido * 100) / 100,
+        qtd: val.qtd,
+        color: knownColors[name] || defaultColors[idx % defaultColors.length]
+      }))
+      .sort((a, b) => b.bruto - a.bruto);
+
+    const maxProdBruto = Math.max(...Object.values(porProduto).map(p => p.bruto), 10000);
+    const maxBar = Math.ceil(maxProdBruto * 1.15);
+
+    const porProdutoList = Object.entries(porProduto)
+      .map(([name, val]) => ({
+        name,
+        bruto: Math.round(val.bruto * 100) / 100,
+        max: maxBar,
+        label: formatCompactBRL(val.bruto),
+        qtd: val.qtd
+      }))
+      .sort((a, b) => b.bruto - a.bruto)
+      .slice(0, 6);
+
+    const step = maxBar / 6;
+    const axisTicks = [0, 1, 2, 3, 4, 5, 6].map(i => {
+      const v = i * step;
+      if (v === 0) return '0';
+      if (v >= 1000000) return `${(v / 1000000).toFixed(1)}M`;
+      if (v >= 1000) return `${(v / 1000).toFixed(0)}k`;
+      return String(Math.round(v));
+    });
+
     return {
       periodo: periodoLabel,
       totalOperacoes,
       totalTitulos,
+      titulosPorOperacao,
       volumeBruto: Math.round(volumeBruto * 100) / 100,
       volumeLiquido: Math.round(volumeLiquido * 100) / 100,
       desagioTotal: Math.round(desagioTotal * 100) / 100,
       taxaDesagioMedia: Math.round(taxaDesagioMedia * 10) / 10,
       ticketMedioOperacao: Math.round(ticketMedioOperacao * 100) / 100,
       ticketMedioTitulo: Math.round(ticketMedioTitulo * 100) / 100,
-      efetivadasQtd,
-      efetivadasVolumeBruto: Math.round(efetivadasVolumeBruto * 100) / 100,
-      efetivadasVolumeLiquido: Math.round(efetivadasVolumeLiquido * 100) / 100,
-      pendentesQtd,
-      pendentesVolumeBruto: Math.round(pendentesVolumeBruto * 100) / 100,
-      pendentesVolumeLiquido: Math.round(pendentesVolumeLiquido * 100) / 100,
-      comCoobrigacaoQtd,
-      semCoobrigacaoQtd,
+
+      // Efetivação - 3 Status
+      taxaEfetivacao: Math.round(taxaEfetivacaoVolume * 10) / 10,
       taxaEfetivacaoQtd: Math.round(taxaEfetivacaoQtd * 10) / 10,
       taxaEfetivacaoVolume: Math.round(taxaEfetivacaoVolume * 10) / 10,
+
+      efetivadasQtd,
+      efetivadasVolume: Math.round(efetivadasVolumeBruto * 100) / 100,
+      efetivadasVolumeBruto: Math.round(efetivadasVolumeBruto * 100) / 100,
+      efetivadasVolumeLiquido: Math.round(efetivadasVolumeLiquido * 100) / 100,
+
+      emAprovacaoQtd,
+      emAprovacaoVolume: Math.round(emAprovacaoVolumeBruto * 100) / 100,
+      emAprovacaoVolumeBruto: Math.round(emAprovacaoVolumeBruto * 100) / 100,
+      emAprovacaoVolumeLiquido: Math.round(emAprovacaoVolumeLiquido * 100) / 100,
+
+      emAnaliseQtd,
+      emAnaliseVolume: Math.round(emAnaliseVolumeBruto * 100) / 100,
+      emAnaliseVolumeBruto: Math.round(emAnaliseVolumeBruto * 100) / 100,
+      emAnaliseVolumeLiquido: Math.round(emAnaliseVolumeLiquido * 100) / 100,
+
+      pendentesQtd: emAnaliseQtd + emAprovacaoQtd,
+      pendentesVolume: Math.round((emAnaliseVolumeBruto + emAprovacaoVolumeBruto) * 100) / 100,
+      pendentesVolumeBruto: Math.round((emAnaliseVolumeBruto + emAprovacaoVolumeBruto) * 100) / 100,
+
+      comCoobrigacaoQtd,
+      semCoobrigacaoQtd,
+      comCoobQtd: comCoobrigacaoQtd,
+      semCoobQtd: semCoobrigacaoQtd,
+      coobrigacaoPercent: Math.round(percentualCoobrigacao * 10) / 10,
       percentualCoobrigacao: Math.round(percentualCoobrigacao * 10) / 10,
-      porUnidade,
-      porProduto,
+
+      porUnidade: porUnidadeList,
+      porUnidadeMap: porUnidade,
+      porProduto: porProdutoList,
+      porProdutoMap: porProduto,
+      axisTicks,
       topCedentes,
       timeline
     };

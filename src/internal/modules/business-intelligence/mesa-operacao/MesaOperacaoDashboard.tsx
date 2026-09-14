@@ -105,6 +105,10 @@ const STATS_HOJE = {
   taxaEfetivacao: 0.0,
   efetivadasQtd: 0,
   efetivadasVolume: 0.0,
+  emAnaliseQtd: 4,
+  emAnaliseVolume: 2951825.52,
+  emAprovacaoQtd: 0,
+  emAprovacaoVolume: 0.0,
   pendentesQtd: 4,
   pendentesVolume: 2951825.52,
   coobrigacaoPercent: 75.0,
@@ -139,6 +143,10 @@ const STATS_MENSAL = {
   taxaEfetivacao: 96.7,
   efetivadasQtd: 210,
   efetivadasVolume: 86013401.34,
+  emAnaliseQtd: 4,
+  emAnaliseVolume: 2951825.52,
+  emAprovacaoQtd: 0,
+  emAprovacaoVolume: 0.0,
   pendentesQtd: 4,
   pendentesVolume: 2951825.52,
   coobrigacaoPercent: 79.4,
@@ -346,7 +354,48 @@ export const MesaOperacaoDashboard: React.FC = () => {
     (carouselIndex + 1) * ITEMS_PER_SLIDE
   );
 
-  const currentStats = periodo === 'hoje' ? STATS_HOJE : STATS_MENSAL;
+  // 7. Estatísticas em tempo real integradas com a API do Bitfin
+  const [liveStatsHoje, setLiveStatsHoje] = useState<any>(null);
+  const [liveStatsMes, setLiveStatsMes] = useState<any>(null);
+
+  const fetchLiveStats = useCallback(async () => {
+    try {
+      const [resHoje, resMes] = await Promise.all([
+        fetch(`${API_BASE_URL}/api/mesa-operacoes/live-stats?periodo=hoje`, {
+          headers: getAuthHeaders()
+        }),
+        fetch(`${API_BASE_URL}/api/mesa-operacoes/live-stats?periodo=mes`, {
+          headers: getAuthHeaders()
+        })
+      ]);
+
+      if (resHoje.ok) {
+        const dataHoje = await resHoje.json();
+        if (dataHoje.success && dataHoje.stats) {
+          setLiveStatsHoje(dataHoje.stats);
+        }
+      }
+
+      if (resMes.ok) {
+        const dataMes = await resMes.json();
+        if (dataMes.success && dataMes.stats) {
+          setLiveStatsMes(dataMes.stats);
+        }
+      }
+    } catch (err) {
+      console.warn('Aviso ao sincronizar estatísticas ao vivo do Bitfin:', err);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchLiveStats();
+    const interval = setInterval(fetchLiveStats, 20000);
+    return () => clearInterval(interval);
+  }, [fetchLiveStats]);
+
+  const currentStats = periodo === 'hoje'
+    ? (liveStatsHoje || STATS_HOJE)
+    : (liveStatsMes || STATS_MENSAL);
 
   // Custom Dots com Badges para o gráfico de linha
   const renderBrutoDot = (props: any) => {
@@ -553,14 +602,17 @@ export const MesaOperacaoDashboard: React.FC = () => {
               </div>
             </div>
             <div className="mesa-kpi-val-row">
-              <span className="mesa-kpi-value">{currentStats.taxaEfetivacao.toFixed(1).replace('.', ',')}%</span>
+              <span className="mesa-kpi-value">{Number(currentStats.taxaEfetivacao || 0).toFixed(1).replace('.', ',')}%</span>
             </div>
             <div className="mesa-kpi-footer-stack">
               <span className="success-text">
-                • {currentStats.efetivadasQtd} efetivadas: {formatBRL(currentStats.efetivadasVolume)}
+                • {currentStats.efetivadasQtd ?? 0} efetivadas: {formatBRL(currentStats.efetivadasVolume ?? currentStats.efetivadasVolumeBruto ?? 0)}
               </span>
               <span className="warning-text">
-                • {currentStats.pendentesQtd} em análise: {formatBRL(currentStats.pendentesVolume)}
+                • {currentStats.emAnaliseQtd ?? currentStats.pendentesQtd ?? 0} em análise: {formatBRL(currentStats.emAnaliseVolume ?? currentStats.pendentesVolume ?? 0)}
+              </span>
+              <span className="info-text">
+                • {currentStats.emAprovacaoQtd ?? 0} em aprovação: {formatBRL(currentStats.emAprovacaoVolume ?? currentStats.emAprovacaoVolumeBruto ?? 0)}
               </span>
             </div>
           </div>
@@ -605,10 +657,10 @@ export const MesaOperacaoDashboard: React.FC = () => {
             </div>
 
             <div className="mesa-chart-content">
-              <ResponsiveContainer width="100%" height={230}>
+              <ResponsiveContainer width="100%" height={190}>
                 <AreaChart
                   data={currentStats.timeline}
-                  margin={{ top: 30, right: 25, left: 10, bottom: 5 }}
+                  margin={{ top: 22, right: 20, left: -5, bottom: 0 }}
                 >
                   <defs>
                     <linearGradient id="cyanGrad" x1="0" y1="0" x2="0" y2="1">
@@ -680,91 +732,58 @@ export const MesaOperacaoDashboard: React.FC = () => {
 
             <div className="mesa-chart-content mesa-donut-wrapper">
               <div className="mesa-donut-svg-wrap">
-                {periodo === 'hoje' ? (
-                  <>
-                    <div className="mesa-donut-callout purple">
-                      35,7% R$ 759K
-                    </div>
-                    <div className="mesa-donut-callout cyan">
-                      76,3% R$ 2,19M
-                    </div>
-                    {/* Donut SVG 2 fatias */}
-                    <svg viewBox="0 0 180 180" width="180" height="180">
-                      <circle
-                        cx="90"
-                        cy="90"
-                        r="64"
-                        fill="transparent"
-                        stroke="#06b6d4"
-                        strokeWidth="24"
-                        strokeDasharray="300 402"
-                        strokeDashoffset="75"
-                        strokeLinecap="round"
-                      />
-                      <circle
-                        cx="90"
-                        cy="90"
-                        r="64"
-                        fill="transparent"
-                        stroke="#a855f7"
-                        strokeWidth="24"
-                        strokeDasharray="100 402"
-                        strokeDashoffset="-225"
-                        strokeLinecap="round"
-                      />
-                    </svg>
-                  </>
-                ) : (
-                  <>
-                    <div className="mesa-donut-callout purple" style={{ top: 5, left: 10 }}>
-                      12,2% R$ 10,82M
-                    </div>
-                    <div className="mesa-donut-callout cyan" style={{ bottom: 20, right: -15 }}>
-                      86,5% R$ 76,92M
-                    </div>
-                    {/* Donut SVG 3 fatias */}
-                    <svg viewBox="0 0 180 180" width="180" height="180">
-                      <circle
-                        cx="90"
-                        cy="90"
-                        r="64"
-                        fill="transparent"
-                        stroke="#06b6d4"
-                        strokeWidth="24"
-                        strokeDasharray="348 402"
-                        strokeDashoffset="60"
-                        strokeLinecap="round"
-                      />
-                      <circle
-                        cx="90"
-                        cy="90"
-                        r="64"
-                        fill="transparent"
-                        stroke="#a855f7"
-                        strokeWidth="24"
-                        strokeDasharray="49 402"
-                        strokeDashoffset="-288"
-                        strokeLinecap="round"
-                      />
-                      <circle
-                        cx="90"
-                        cy="90"
-                        r="64"
-                        fill="transparent"
-                        stroke="#f59e0b"
-                        strokeWidth="24"
-                        strokeDasharray="6 402"
-                        strokeDashoffset="-337"
-                        strokeLinecap="round"
-                      />
-                    </svg>
-                  </>
-                )}
+                {(() => {
+                  const unidades = (Array.isArray(currentStats.porUnidade) && currentStats.porUnidade.length > 0)
+                    ? currentStats.porUnidade
+                    : [{ name: 'Lepta MS FIDC', percent: 100, valor: formatBRL(currentStats.volumeBruto), color: '#06b6d4' }];
+
+                  const u1 = unidades[0];
+                  const u2 = unidades[1];
+
+                  let currentOffset = 75;
+
+                  return (
+                    <>
+                      {u2 && (
+                        <div className="mesa-donut-callout purple" style={{ top: 5, left: 10 }}>
+                          {(u2.percent || 0).toFixed(1).replace('.', ',')}% {u2.valor}
+                        </div>
+                      )}
+                      {u1 && (
+                        <div className="mesa-donut-callout cyan" style={{ bottom: 20, right: -15 }}>
+                          {(u1.percent || 0).toFixed(1).replace('.', ',')}% {u1.valor}
+                        </div>
+                      )}
+                      <svg viewBox="0 0 180 180" width="180" height="180">
+                        {unidades.map((u: any, idx: number) => {
+                          const dash = (Math.max(0, u.percent || 0) / 100) * 402;
+                          const dasharray = `${dash.toFixed(1)} 402`;
+                          const dashoffset = currentOffset;
+                          currentOffset -= dash;
+                          return (
+                            <circle
+                              key={u.name || idx}
+                              cx="90"
+                              cy="90"
+                              r="64"
+                              fill="transparent"
+                              stroke={u.color || (idx === 0 ? '#06b6d4' : (idx === 1 ? '#a855f7' : '#f59e0b'))}
+                              strokeWidth="24"
+                              strokeDasharray={dasharray}
+                              strokeDashoffset={dashoffset}
+                              strokeLinecap="round"
+                            />
+                          );
+                        })}
+                      </svg>
+                    </>
+                  );
+                })()}
               </div>
 
               {/* Legenda do Donut */}
               <div className="mesa-donut-legend">
-                {currentStats.porUnidade.map((u) => (
+                {(Array.isArray(currentStats.porUnidade) ? currentStats.porUnidade : []).map((u: any) => (
                   <span key={u.name} className="mesa-legend-item">
                     <span
                       className="mesa-legend-box"
@@ -789,8 +808,9 @@ export const MesaOperacaoDashboard: React.FC = () => {
             <div className="mesa-chart-content">
               <div className="mesa-bars-wrapper">
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 10, flex: 1, justifyContent: 'center' }}>
-                  {currentStats.porProduto.map((prod) => {
-                    const pct = Math.min(100, Math.max(12, (prod.bruto / prod.max) * 100));
+                  {(Array.isArray(currentStats.porProduto) ? currentStats.porProduto : []).map((prod: any) => {
+                    const maxVal = prod.max || Math.max(...(currentStats.porProduto || []).map((p: any) => p.bruto || 0), 1);
+                    const pct = Math.min(100, Math.max(12, ((prod.bruto || 0) / maxVal) * 100));
                     return (
                       <div key={prod.name} className="mesa-bar-row">
                         <span className="mesa-bar-label">{prod.name}</span>
@@ -809,7 +829,7 @@ export const MesaOperacaoDashboard: React.FC = () => {
 
                 {/* Eixo de valores no rodapé */}
                 <div className="mesa-bars-axis">
-                  {currentStats.axisTicks.map((t) => (
+                  {(Array.isArray(currentStats.axisTicks) ? currentStats.axisTicks : ['0', '10.0M', '20.0M', '30.0M', '40.0M', '50.0M', '60.0M']).map((t: string) => (
                     <span key={t}>{t}</span>
                   ))}
                 </div>
