@@ -75,6 +75,7 @@ export interface PurchaseRequest {
   created_at: string;
   updated_at: string;
   total_anexos?: number;
+  total_itens?: number;
   itens?: PurchaseItem[];
 }
 
@@ -216,7 +217,7 @@ export const FinancePaymentCalendar: React.FC = () => {
               isParcela: true,
               numeroParcela: p.numero_parcela,
               totalParcelas: p.total_parcelas || req.quantidade_parcelas || req.parcelas!.length,
-              valorItem: p.valor || ((req.valor * req.quantidade) / (req.quantidade_parcelas || 1)),
+              valorItem: p.valor || ((((req.total_itens && req.total_itens > 1) || (req.itens && req.itens.length > 1)) ? req.valor : (req.valor * (req.quantidade || 1))) / (req.quantidade_parcelas || 1)),
               dataPagamento: dateStr,
               isPaused: isReqPaused || Boolean(p.pausado),
               motivoPausa: p.motivo_pausa || req.motivo_pausa
@@ -229,7 +230,7 @@ export const FinancePaymentCalendar: React.FC = () => {
         map[dateStr].push({
           req,
           isParcela: false,
-          valorItem: req.valor * req.quantidade,
+          valorItem: ((req.total_itens && req.total_itens > 1) || (req.itens && req.itens.length > 1)) ? req.valor : req.valor * (req.quantidade || 1),
           dataPagamento: dateStr,
           isPaused: isReqPaused,
           motivoPausa: req.motivo_pausa
@@ -971,7 +972,7 @@ export const FinancePaymentCalendar: React.FC = () => {
                           <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', color: '#94a3b8', marginTop: '2px' }}>
                             <span>{req.produto_servico}</span>
                             <span style={{ color: '#34d399', fontWeight: 700 }}>
-                              {formatBrl(req.valor * req.quantidade)}
+                              {formatBrl(((req.total_itens && req.total_itens > 1) || (req.itens && req.itens.length > 1)) ? req.valor : req.valor * (req.quantidade || 1))}
                             </span>
                           </div>
                         </div>
@@ -1149,7 +1150,7 @@ export const FinancePaymentCalendar: React.FC = () => {
                 <div className="pa-detail-item">
                   <span className="pa-detail-label">Valor Total</span>
                   <span className="pa-detail-val" style={{ color: '#34d399', fontWeight: 800, fontSize: '1.1rem' }}>
-                    {formatBrl(selectedRequestDetails.valor * selectedRequestDetails.quantidade)}
+                    {formatBrl(((selectedRequestDetails.total_itens && selectedRequestDetails.total_itens > 1) || (selectedRequestDetails.itens && selectedRequestDetails.itens.length > 1)) ? selectedRequestDetails.valor : selectedRequestDetails.valor * (selectedRequestDetails.quantidade || 1))}
                   </span>
                 </div>
 

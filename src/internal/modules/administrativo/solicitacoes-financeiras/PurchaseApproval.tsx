@@ -782,7 +782,7 @@ export const PurchaseApproval: React.FC = () => {
         setEditProduto(data.produto_servico || '');
         setEditValorNumeric(data.valor || 0);
         setEditValorDisplay(data.valor ? data.valor.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) : '');
-        setEditQuantidade(data.quantidade || 1);
+        setEditQuantidade(((data.itens && data.itens.length > 1) || (data.total_itens && data.total_itens > 1)) ? 1 : (data.quantidade || 1));
         setEditObservacoes(data.observacoes || '');
         
         await fetchAttachments(reqId);
@@ -1076,7 +1076,7 @@ export const PurchaseApproval: React.FC = () => {
     setReopenProduto(req.produto_servico);
     setReopenValorNumeric(req.valor);
     setReopenValorDisplay(req.valor.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }));
-    setReopenQuantidade(req.quantidade);
+    setReopenQuantidade(((req.itens && req.itens.length > 1) || (req.total_itens && req.total_itens > 1)) ? 1 : req.quantidade);
     setReopenObservacoes(req.observacoes || '');
   };
 
@@ -1103,7 +1103,7 @@ export const PurchaseApproval: React.FC = () => {
           departamento_centro_custo: reopenDepartamento.trim(),
           produto_servico: reopenProduto.trim(),
           valor: reopenValorNumeric,
-          quantidade: reopenQuantidade,
+          quantidade: ((reopenTarget.itens && reopenTarget.itens.length > 1) || (reopenTarget.total_itens && reopenTarget.total_itens > 1)) ? 1 : reopenQuantidade,
           observacoes: reopenObservacoes.trim()
         })
       });
@@ -1308,7 +1308,10 @@ export const PurchaseApproval: React.FC = () => {
     const pending = list.filter(r => r.status === 'PENDENTE');
     const reopened = list.filter(r => r.status === 'REABERTO');
     const waiting = list.filter(r => r.status.startsWith('AGUARDANDO_RESPOSTA'));
-    const pendingValue = list.reduce((sum, r) => sum + (r.valor * r.quantidade), 0);
+    const pendingValue = list.reduce((sum, r) => {
+      const isMulti = (r.total_itens && r.total_itens > 1) || (r.itens && r.itens.length > 1);
+      return sum + (isMulti ? r.valor : (r.valor * (r.quantidade || 1)));
+    }, 0);
     return {
       pendingCount: pending.length,
       reopenedCount: reopened.length,
@@ -1560,7 +1563,7 @@ export const PurchaseApproval: React.FC = () => {
                       </td>
                       <td data-label="Valor Total">
                         <span className="pa-price-highlight">
-                          {formatBrl(item.valor * item.quantidade)}
+                          {formatBrl(((item.total_itens && item.total_itens > 1) || (item.itens && item.itens.length > 1)) ? item.valor : item.valor * (item.quantidade || 1))}
                         </span>
                       </td>
                       <td data-label="Status">{renderStatusBadge(item.status, item.arquivado_manualmente)}</td>
@@ -1699,7 +1702,7 @@ export const PurchaseApproval: React.FC = () => {
                       </td>
                       <td data-label="Valor Total">
                         <span className="pa-price-highlight">
-                          {formatBrl(item.valor * (item.quantidade || 1))}
+                          {formatBrl(((item.total_itens && item.total_itens > 1) || (item.itens && item.itens.length > 1)) ? item.valor : item.valor * (item.quantidade || 1))}
                         </span>
                       </td>
                       <td data-label="Decidido em">{formatDate(item.decidido_em || item.updated_at)}</td>
@@ -2407,7 +2410,7 @@ export const PurchaseApproval: React.FC = () => {
                         <td data-label="Solicitante">{item.solicitante_nome}</td>
                         <td data-label="Valor Total">
                           <span className="pa-price-highlight">
-                            {formatBrl(item.valor * item.quantidade)}
+                            {formatBrl(((item.total_itens && item.total_itens > 1) || (item.itens && item.itens.length > 1)) ? item.valor : item.valor * (item.quantidade || 1))}
                           </span>
                         </td>
                         <td data-label="Decisão">
@@ -2429,8 +2432,8 @@ export const PurchaseApproval: React.FC = () => {
                               <Eye size={15} /> Ver
                             </button>
 
-                            {/* Se negada e for dono ou master -> Reabrir */}
-                            {item.status === 'NEGADO' && isOwner && (
+                            {/* Se negada ou arquivada e for dono ou master -> Reabrir */}
+                            {(item.status === 'NEGADO' || (item.arquivado === 1 && !['APROVADO', 'PAGO', 'SOLICITACAO_CONCLUIDA'].includes(item.status))) && (isOwner || isMaster) && (
                               <button
                                 className="pa-btn-reopen"
                                 onClick={() => handleOpenReopen(item)}
@@ -2655,7 +2658,9 @@ export const PurchaseApproval: React.FC = () => {
                   ) : (
                     <span className="pa-detail-val" style={{ color: '#60a5fa' }}>
                       {selectedRequest.forma_pagamento || '-'}
-                      {selectedRequest.quantidade_parcelas > 1 ? ` (${selectedRequest.quantidade_parcelas}x de ${formatBrl((selectedRequest.valor * selectedRequest.quantidade) / selectedRequest.quantidade_parcelas)})` : ' (À vista)'}
+                      {selectedRequest.quantidade_parcelas > 1 ? (
+                        ` (${selectedRequest.quantidade_parcelas}x de ${formatBrl((((selectedRequest.itens && selectedRequest.itens.length > 1) || (selectedRequest.total_itens && selectedRequest.total_itens > 1)) ? selectedRequest.valor : (selectedRequest.valor * (selectedRequest.quantidade || 1))) / selectedRequest.quantidade_parcelas)})`
+                      ) : ' (À vista)'}
                     </span>
                   )}
                 </div>
@@ -2727,7 +2732,11 @@ export const PurchaseApproval: React.FC = () => {
                 </div>
 
                 <div className="pa-detail-item">
-                  <span className="pa-detail-label">Valor Unitário</span>
+                  <span className="pa-detail-label">
+                    {((selectedRequest.itens && selectedRequest.itens.length > 1) || (selectedRequest.total_itens && selectedRequest.total_itens > 1))
+                      ? 'Valor Total da Solicitação'
+                      : 'Valor Unitário'}
+                  </span>
                   {isEditingProposal ? (
                     <input
                       type="text"
@@ -2742,7 +2751,11 @@ export const PurchaseApproval: React.FC = () => {
                 </div>
 
                 <div className="pa-detail-item">
-                  <span className="pa-detail-label">Quantidade & Total</span>
+                  <span className="pa-detail-label">
+                    {((selectedRequest.itens && selectedRequest.itens.length > 1) || (selectedRequest.total_itens && selectedRequest.total_itens > 1))
+                      ? 'Itens & Total'
+                      : 'Quantidade & Total'}
+                  </span>
                   {isEditingProposal ? (
                     <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
                       <input
@@ -2759,7 +2772,13 @@ export const PurchaseApproval: React.FC = () => {
                     </div>
                   ) : (
                     <span className="pa-detail-val" style={{ color: '#34d399', fontWeight: 700 }}>
-                      {selectedRequest.quantidade}x = {formatBrl(selectedRequest.valor * selectedRequest.quantidade)}
+                      {((selectedRequest.itens && selectedRequest.itens.length > 1) || (selectedRequest.total_itens && selectedRequest.total_itens > 1)) ? (
+                        `Total: ${formatBrl(selectedRequest.valor)} (${selectedRequest.itens?.length || selectedRequest.total_itens} itens)`
+                      ) : selectedRequest.quantidade > 1 ? (
+                        `${selectedRequest.quantidade}x = ${formatBrl(selectedRequest.valor * selectedRequest.quantidade)}`
+                      ) : (
+                        `1x = ${formatBrl(selectedRequest.valor)}`
+                      )}
                     </span>
                   )}
                 </div>
@@ -2980,11 +2999,11 @@ export const PurchaseApproval: React.FC = () => {
                 </div>
               </div>
 
-              {/* Botão de Reabrir dentro do modal se estiver negada */}
-              {selectedRequest.status === 'NEGADO' && (
+              {/* Botão de Reabrir dentro do modal se estiver negada ou arquivada */}
+              {(selectedRequest.status === 'NEGADO' || (selectedRequest.arquivado === 1 && !['APROVADO', 'PAGO', 'SOLICITACAO_CONCLUIDA'].includes(selectedRequest.status))) && (
                 <div style={{ background: '#1e293b', padding: '14px', borderRadius: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <span style={{ color: '#f87171', fontSize: '0.9rem', fontWeight: 600 }}>
-                    Esta solicitação foi negada. Deseja reabri-la para reavaliação?
+                    Esta solicitação está {selectedRequest.status === 'NEGADO' ? 'negada' : 'arquivada'}. Deseja reabri-la para reavaliação?
                   </span>
                   <button
                     type="button"

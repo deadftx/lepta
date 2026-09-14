@@ -236,6 +236,60 @@ export function registerPurchaseRoutes(app, {
         AND status NOT IN ('APROVADO', 'NEGADO', 'NEGADO_JURIDICO', 'PAGO', 'SOLICITACAO_CONCLUIDA')
         AND status != 'AGUARDANDO_JURIDICO'
     `).run();
+
+    // Autocorreção: ajusta solicitações com múltiplos itens (e especificamente SOL-2026-0013 e SOL-2026-0014)
+    // 1. Garante que requisições com múltiplos itens tenham quantidade = 1 e valor igual à soma correta dos itens
+    // 2. Garante que produto_servico seja discriminado item por item no banco de dados e não apenas ex: "Uber (+3 itens adicionais)"
+    // 3. Garante que SOL-2026-0013 e SOL-2026-0014 fiquem disponíveis para reabertura com dados corrigidos
+    try {
+      const allReqs = db.prepare(`
+        SELECT r.id, r.valor, r.quantidade, r.produto_servico, r.status, r.arquivado,
+          (SELECT COUNT(*) FROM compras_requisicoes_itens i WHERE i.requisicao_id = r.id) as total_itens_db,
+          (SELECT SUM(i.valor * i.quantidade) FROM compras_requisicoes_itens i WHERE i.requisicao_id = r.id) as sum_itens_db
+        FROM compras_requisicoes r
+        WHERE (SELECT COUNT(*) FROM compras_requisicoes_itens i WHERE i.requisicao_id = r.id) > 1
+           OR r.id IN ('SOL-2026-0013', 'SOL-2026-0014')
+           OR r.produto_servico LIKE '%item adicional%'
+           OR r.produto_servico LIKE '%itens adicionais%'
+      `).all();
+
+      for (const reqRow of allReqs) {
+        const items = db.prepare(`SELECT * FROM compras_requisicoes_itens WHERE requisicao_id = ? ORDER BY numero_item ASC`).all(reqRow.id);
+        
+        let newProdServ = reqRow.produto_servico;
+        let finalValor = reqRow.valor;
+
+        if (items && items.length > 0) {
+          const sumVal = items.reduce((acc, it) => acc + (Number(it.valor) * Math.max(1, Number(it.quantidade || 1))), 0);
+          if (sumVal > 0) finalValor = sumVal;
+
+          if (items.length > 1 && (reqRow.produto_servico.includes('item adicional') || reqRow.produto_servico.includes('itens adicionais'))) {
+            newProdServ = items.map((it, idx) => {
+              const q = Math.max(1, Number(it.quantidade || 1));
+              const v = Number(it.valor || 0);
+              const qStr = q > 1 ? ` (${q} un x R$ ${v.toFixed(2).replace('.', ',')})` : ` (R$ ${v.toFixed(2).replace('.', ',')})`;
+              return `Item #${idx + 1}: ${String(it.produto_servico || '').trim()}${qStr}`;
+            }).join(' | ');
+          }
+        }
+
+        const isTargetSol = reqRow.id === 'SOL-2026-0013' || reqRow.id === 'SOL-2026-0014';
+        const newStatus = isTargetSol && !['REABERTO', 'PENDENTE', 'APROVADO', 'PAGO', 'SOLICITACAO_CONCLUIDA'].includes(reqRow.status)
+          ? 'NEGADO'
+          : reqRow.status;
+
+        db.prepare(`
+          UPDATE compras_requisicoes
+          SET quantidade = 1,
+              valor = ?,
+              produto_servico = ?,
+              status = ?
+          WHERE id = ?
+        `).run(finalValor, newProdServ, newStatus, reqRow.id);
+      }
+    } catch (errFix) {
+      console.warn('Aviso no ajuste de solicitações com múltiplos itens:', errFix.message);
+    }
   } catch (err) {
     console.warn('Aviso na migração SQLite de compras_requisicoes:', err.message);
   }
@@ -832,14 +886,6 @@ export function registerPurchaseRoutes(app, {
         const mainEmpresaPagadora = String(firstItem.empresa_pagadora || req.body?.empresa_pagadora || 'INDIFERENTE').trim();
         const mainChavePix = String(firstItem.chave_pix || req.body?.chave_pix || '').trim();
 
-        const mainProdutoServico = itens.length === 1 
-          ? firstItem.produto_servico 
-          : `${firstItem.produto_servico} (+${itens.length - 1} ${itens.length - 1 === 1 ? 'item adicional' : 'itens adicionais'})`;
-        
-        const mainCategoria = itens.length === 1
-          ? firstItem.categoria
-          : 'Múltiplas';
-
         for (let i = 0; i < itens.length; i++) {
           const it = itens[i];
           const itQtd = Math.max(1, Number(it.quantidade || 1));
@@ -847,6 +893,31 @@ export function registerPurchaseRoutes(app, {
           totalValor += (itVal * itQtd);
           totalQtd += itQtd;
         }
+
+        // Descrição item por item no banco de dados
+        const mainProdutoServico = itens.length === 1 
+          ? firstItem.produto_servico 
+          : itens.map((it, idx) => {
+              const q = Math.max(1, Number(it.quantidade || 1));
+              const v = Number(it.valor || 0);
+              const qStr = q > 1 ? ` (${q} un x R$ ${v.toFixed(2).replace('.', ',')})` : ` (R$ ${v.toFixed(2).replace('.', ',')})`;
+              return `Item #${idx + 1}: ${String(it.produto_servico || '').trim()}${qStr}`;
+            }).join(' | ');
+        
+        const mainCategoria = itens.length === 1
+          ? firstItem.categoria
+          : 'Múltiplas';
+
+        // Para solicitações com múltiplos itens, a quantidade da requisição pai é 1 (o valor já é o consolidado)
+        const mainQuantidade = itens.length > 1 ? 1 : totalQtd;
+
+        // Concatena observações de todos os itens se houver múltiplos
+        const mainObservacoes = itens.length === 1
+          ? (firstItem.observacoes || '')
+          : itens
+              .map((it, idx) => it.observacoes ? `[Item #${idx + 1} - ${it.produto_servico}]: ${it.observacoes}` : '')
+              .filter(Boolean)
+              .join('\n\n') || (firstItem.observacoes || '');
 
         let requerJuridico = totalValor >= 2000;
         if (!requerJuridico) {
@@ -885,8 +956,8 @@ export function registerPurchaseRoutes(app, {
           firstItem.departamento_centro_custo,
           mainProdutoServico,
           totalValor,
-          totalQtd,
-          firstItem.observacoes || '',
+          mainQuantidade,
+          mainObservacoes,
           mainChavePix,
           initialStatus,
           requerJuridico ? 1 : 0,
@@ -1798,7 +1869,10 @@ export function registerPurchaseRoutes(app, {
       const departamento_centro_custo = req.body?.departamento_centro_custo ? String(req.body.departamento_centro_custo).trim() : requisicao.departamento_centro_custo;
       const produto_servico = req.body?.produto_servico ? String(req.body.produto_servico).trim() : requisicao.produto_servico;
       const valor = req.body?.valor !== undefined ? Number(req.body.valor) : requisicao.valor;
-      const quantidade = req.body?.quantidade !== undefined ? Math.max(1, Number(req.body.quantidade) || 1) : requisicao.quantidade;
+      const reqItensCount = db.prepare(`SELECT COUNT(*) as c FROM compras_requisicoes_itens WHERE requisicao_id = ?`).get(req.params.id)?.c || 0;
+      const quantidade = reqItensCount > 1
+        ? 1
+        : (req.body?.quantidade !== undefined ? Math.max(1, Number(req.body.quantidade) || 1) : requisicao.quantidade);
       const observacoes = req.body?.observacoes !== undefined ? String(req.body.observacoes).trim() : requisicao.observacoes;
 
       const now = new Date().toISOString();
