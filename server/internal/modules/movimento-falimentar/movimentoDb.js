@@ -162,7 +162,7 @@ export function saveItem(db, i) {
   );
 }
 
-function mapRow(r) {
+export function mapRow(r) {
   let raw = {};
   try {
     raw = JSON.parse(r.raw_json);

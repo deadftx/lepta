@@ -1,6 +1,6 @@
 import fs from 'fs';
 import path from 'path';
-import { saveItem, getMovimentoDb } from './movimentoDb.js';
+import { saveItem, getMovimentoDb, mapRow } from './movimentoDb.js';
 
 const GLOBO_SEARCH_API = 'https://busca.globo.com/v1/search';
 
@@ -234,6 +234,8 @@ export async function getValorHoje(projectRoot) {
     return cachedValorHoje;
   }
 
+  const todayStr = new Date().toISOString().slice(0, 10);
+
   // 1. Tenta ler arquivo local em MovimentoFalimentar/data/today_valor.json
   const candidateTodayPaths = [
     path.resolve(projectRoot, 'MovimentoFalimentar/data/today_valor.json'),
@@ -241,23 +243,115 @@ export async function getValorHoje(projectRoot) {
     path.resolve('MovimentoFalimentar/data/today_valor.json')
   ];
 
+  let fileData = null;
   const todayPath = candidateTodayPaths.find(p => fs.existsSync(p));
   if (todayPath) {
     try {
       const raw = fs.readFileSync(todayPath, 'utf8');
       const data = JSON.parse(raw);
       if (data && Array.isArray(data.items) && data.items.length > 0) {
-        cachedValorHoje = {
-          ...data,
-          items: data.items.map(i => ({ ...i, classe: normalizeValorClass(i.classe) }))
-        };
-        lastValorScan = Date.now();
-        return cachedValorHoje;
+        fileData = data;
       }
     } catch {}
   }
 
-  // 2. Se não houver arquivo ou estiver vazio, busca matérias recentes
+  const fileDateStr = fileData?.date ? String(fileData.date).slice(0, 10) : null;
+
+  // 2. Se o arquivo foi alimentado HOJE, retorna diretamente
+  if (fileData && fileDateStr === todayStr) {
+    cachedValorHoje = {
+      ...fileData,
+      isFromToday: true,
+      dataReferencia: fileDateStr,
+      items: fileData.items.map(i => ({ ...i, classe: normalizeValorClass(i.classe) }))
+    };
+    lastValorScan = Date.now();
+    return cachedValorHoje;
+  }
+
+  // 3. Verifica no banco sqlite rj_events se há itens de hoje
+  try {
+    const db = getMovimentoDb(projectRoot);
+    const todayRows = db.prepare(`
+      SELECT * FROM rj_events
+      WHERE (substr(data_captura, 1, 10) = ? OR substr(data_ajuizamento, 1, 10) = ?)
+      ORDER BY id DESC
+    `).all(todayStr, todayStr);
+
+    if (todayRows.length > 0) {
+      cachedValorHoje = {
+        title: 'Movimento Falimentar',
+        url: 'https://valor.globo.com/busca/?q=movimento%20falimentar',
+        date: new Date().toISOString(),
+        dataReferencia: todayStr,
+        isFromToday: true,
+        items: todayRows.map(mapRow).map(i => ({ ...i, classe: normalizeValorClass(i.classe) }))
+      };
+      lastValorScan = Date.now();
+      return cachedValorHoje;
+    }
+
+    // 4. Caso não tenha do dia de hoje, pegar do último dia que foi alimentado:
+    const latestDateRow = db.prepare(`
+      SELECT DISTINCT substr(COALESCE(data_ajuizamento, data_captura), 1, 10) as last_date
+      FROM rj_events
+      WHERE last_date IS NOT NULL AND length(last_date) >= 10
+      ORDER BY last_date DESC
+      LIMIT 1
+    `).get();
+
+    const dbLatestDate = latestDateRow?.last_date || null;
+
+    // Se o arquivo tiver data mais recente ou igual ao banco, usa o arquivo
+    if (fileData && fileDateStr && (!dbLatestDate || fileDateStr >= dbLatestDate)) {
+      cachedValorHoje = {
+        ...fileData,
+        isFromToday: false,
+        dataReferencia: fileDateStr,
+        items: fileData.items.map(i => ({ ...i, classe: normalizeValorClass(i.classe) }))
+      };
+      lastValorScan = Date.now();
+      return cachedValorHoje;
+    }
+
+    // Caso o banco tenha itens na data mais recente
+    if (dbLatestDate) {
+      const latestRows = db.prepare(`
+        SELECT * FROM rj_events
+        WHERE substr(COALESCE(data_ajuizamento, data_captura), 1, 10) = ?
+        ORDER BY id DESC
+      `).all(dbLatestDate);
+
+      if (latestRows.length > 0) {
+        cachedValorHoje = {
+          title: 'Movimento Falimentar',
+          url: 'https://valor.globo.com/busca/?q=movimento%20falimentar',
+          date: dbLatestDate,
+          dataReferencia: dbLatestDate,
+          isFromToday: false,
+          items: latestRows.map(mapRow).map(i => ({ ...i, classe: normalizeValorClass(i.classe) }))
+        };
+        lastValorScan = Date.now();
+        return cachedValorHoje;
+      }
+    }
+  } catch (err) {
+    console.error('[getValorHoje] Erro ao consultar fallback em rj_events:', err);
+  }
+
+  // 5. Se houver fileData mesmo que antigo, usa como fallback
+  if (fileData) {
+    cachedValorHoje = {
+      ...fileData,
+      isFromToday: false,
+      dataReferencia: fileDateStr || todayStr,
+      items: fileData.items.map(i => ({ ...i, classe: normalizeValorClass(i.classe) }))
+    };
+    lastValorScan = Date.now();
+    return cachedValorHoje;
+  }
+
+  // 6. Se não houver arquivo nem banco, busca matérias recentes
   const articles = await fetchValorArticlesList(5);
   const latest = articles[0] || null;
 
@@ -265,6 +359,8 @@ export async function getValorHoje(projectRoot) {
     title: latest?.title || 'Movimento falimentar',
     url: latest?.url || 'https://valor.globo.com/busca/?q=movimento%20falimentar',
     date: latest?.date || new Date().toISOString(),
+    dataReferencia: todayStr,
+    isFromToday: false,
     items: [],
     rawText: ''
   };

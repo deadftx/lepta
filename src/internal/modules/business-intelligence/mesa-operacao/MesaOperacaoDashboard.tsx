@@ -11,7 +11,11 @@ import {
   Activity,
   PieChart as PieIcon,
   BarChart3,
-  ExternalLink
+  ExternalLink,
+  ChevronLeft,
+  ChevronRight,
+  Calendar,
+  Building2
 } from 'lucide-react';
 import {
   AreaChart,
@@ -31,6 +35,8 @@ interface FalimentarRow {
   classeTipo: 'falencia' | 'pedido-rj' | 'recuperacao';
   varaComarca: string;
   administradorJudicial: string;
+  processo?: string;
+  observacao?: string;
 }
 
 const FALIMENTAR_DATA: FalimentarRow[] = [
@@ -182,8 +188,15 @@ export const MesaOperacaoDashboard: React.FC = () => {
   const [clockDate, setClockDate] = useState<string>('--/--/----');
   const [clockTime, setClockTime] = useState<string>('--:--:--');
 
-  // Dados falimentares
+  // Dados falimentares e carrossel
   const [falimentarRows, setFalimentarRows] = useState<FalimentarRow[]>(FALIMENTAR_DATA);
+  const [falimentarDataRef, setFalimentarDataRef] = useState<string>('');
+  const [isFromToday, setIsFromToday] = useState<boolean>(false);
+  const [carouselIndex, setCarouselIndex] = useState<number>(0);
+  const [isCarouselPaused, setIsCarouselPaused] = useState<boolean>(false);
+
+  const ITEMS_PER_SLIDE = 3;
+  const totalSlides = Math.max(1, Math.ceil(falimentarRows.length / ITEMS_PER_SLIDE));
 
   // 1. Relógio oficial em tempo real
   useEffect(() => {
@@ -197,7 +210,15 @@ export const MesaOperacaoDashboard: React.FC = () => {
     return () => clearInterval(interval);
   }, []);
 
-  // 2. Alternância automática a cada 20 segundos entre Hoje e Visão Mensal
+  // 2. Garante que a página fique em modo 100vh fixo sem barra de rolagem (One page para telão)
+  useEffect(() => {
+    document.body.classList.add('mesa-page-active');
+    return () => {
+      document.body.classList.remove('mesa-page-active');
+    };
+  }, []);
+
+  // 3. Alternância automática a cada 20 segundos entre Hoje e Visão Mensal
   useEffect(() => {
     const timer = setInterval(() => {
       setCountdown((prev) => {
@@ -212,7 +233,7 @@ export const MesaOperacaoDashboard: React.FC = () => {
     return () => clearInterval(timer);
   }, []);
 
-  // 3. Listener do modo tela cheia
+  // 4. Listener do modo tela cheia
   useEffect(() => {
     const onFsChange = () => {
       const fs = !!document.fullscreenElement;
@@ -240,7 +261,7 @@ export const MesaOperacaoDashboard: React.FC = () => {
     }
   };
 
-  // 4. Carrega eventuais atualizações de falências da API com fallback limpo
+  // 5. Carrega dados do Movimento Falimentar (de hoje ou última data alimentada)
   const loadFalimentar = useCallback(async () => {
     try {
       const res = await fetch(`${API_BASE_URL}/api/movimento-falimentar/valor-hoje`, {
@@ -248,11 +269,34 @@ export const MesaOperacaoDashboard: React.FC = () => {
       });
       if (res.ok) {
         const data = await res.json();
+        setIsFromToday(!!data.isFromToday);
+
+        if (data.dataReferencia) {
+          const parts = String(data.dataReferencia).slice(0, 10).split('-');
+          if (parts.length === 3) {
+            setFalimentarDataRef(`${parts[2]}/${parts[1]}/${parts[0]}`);
+          } else {
+            setFalimentarDataRef(String(data.dataReferencia));
+          }
+        } else if (data.date) {
+          const parts = String(data.date).slice(0, 10).split('-');
+          if (parts.length === 3) {
+            setFalimentarDataRef(`${parts[2]}/${parts[1]}/${parts[0]}`);
+          } else {
+            setFalimentarDataRef(new Date(data.date).toLocaleDateString('pt-BR'));
+          }
+        }
+
         if (Array.isArray(data?.items) && data.items.length > 0) {
-          const mapped: FalimentarRow[] = data.items.slice(0, 8).map((it: any) => {
+          const mapped: FalimentarRow[] = data.items.map((it: any) => {
             const rawClasse = String(it.classe || '').toUpperCase();
             let cTipo: 'falencia' | 'pedido-rj' | 'recuperacao' = 'recuperacao';
-            if (rawClasse.includes('FALÊNCIA DECRETADA') || rawClasse.includes('FALENCIA DECRETADA')) {
+            if (
+              rawClasse.includes('FALÊNCIA DECRETADA') ||
+              rawClasse.includes('FALENCIA DECRETADA') ||
+              rawClasse.includes('CONVOLADA EM FALÊNCIA') ||
+              rawClasse.includes('CONVOLADA')
+            ) {
               cTipo = 'falencia';
             } else if (rawClasse.includes('PEDIDO')) {
               cTipo = 'pedido-rj';
@@ -263,20 +307,44 @@ export const MesaOperacaoDashboard: React.FC = () => {
               classe: it.classe || 'RECUPERAÇÃO JUDICIAL',
               classeTipo: cTipo,
               varaComarca: it.varaComarca || 'Não informada',
-              administradorJudicial: it.administradorJudicial || 'Não informado'
+              administradorJudicial: it.administradorJudicial || 'Não informado',
+              processo: it.processo || '',
+              observacao: it.raw?.observacao || ''
             };
           });
           setFalimentarRows(mapped);
         }
       }
     } catch {
-      // Fallback seguro mantém os 6 itens da print
+      // Fallback mantém os itens iniciais
     }
   }, []);
 
   useEffect(() => {
     loadFalimentar();
   }, [loadFalimentar]);
+
+  // 6. Rotação suave do Carrossel de Falências (a cada 7 segundos, pausa com hover)
+  useEffect(() => {
+    if (isCarouselPaused || totalSlides <= 1) return;
+    const interval = setInterval(() => {
+      setCarouselIndex((prev) => (prev + 1) % totalSlides);
+    }, 7000);
+    return () => clearInterval(interval);
+  }, [isCarouselPaused, totalSlides]);
+
+  const handlePrevSlide = () => {
+    setCarouselIndex((prev) => (prev - 1 + totalSlides) % totalSlides);
+  };
+
+  const handleNextSlide = () => {
+    setCarouselIndex((prev) => (prev + 1) % totalSlides);
+  };
+
+  const currentSlideItems = falimentarRows.slice(
+    carouselIndex * ITEMS_PER_SLIDE,
+    (carouselIndex + 1) * ITEMS_PER_SLIDE
+  );
 
   const currentStats = periodo === 'hoje' ? STATS_HOJE : STATS_MENSAL;
 
@@ -750,21 +818,73 @@ export const MesaOperacaoDashboard: React.FC = () => {
           </div>
         </section>
 
-        {/* ── LINHA 3: MOVIMENTO FALIMENTAR & RECUPERAÇÕES JUDICIAIS ── */}
-        <section className="mesa-falimentar-panel">
+        {/* ── LINHA 3: MOVIMENTO FALIMENTAR & RECUPERAÇÕES JUDICIAIS (CARROSSEL) ── */}
+        <section
+          className="mesa-falimentar-panel"
+          onMouseEnter={() => setIsCarouselPaused(true)}
+          onMouseLeave={() => setIsCarouselPaused(false)}
+        >
           <div className="mesa-falimentar-header">
             <div className="mesa-falimentar-title-wrap">
-              <h2>MOVIMENTO FALIMENTAR &amp; RECUPERAÇÕES JUDICIAIS</h2>
+              <div className="mesa-falimentar-title-row">
+                <h2>MOVIMENTO FALIMENTAR &amp; RECUPERAÇÕES JUDICIAIS</h2>
+                <div className={`mesa-data-origem-badge ${isFromToday ? 'hoje' : 'ultima'}`}>
+                  <Calendar size={11} />
+                  <span>
+                    {isFromToday
+                      ? `ALIMENTAÇÃO DE HOJE (${falimentarDataRef || clockDate})`
+                      : `ÚLTIMA ALIMENTAÇÃO: ${falimentarDataRef || '08/09/2026'}`}
+                  </span>
+                </div>
+              </div>
               <p className="mesa-falimentar-subtitle">
                 <a
                   href="/bi/movimento-falimentar"
                   className="mesa-falimentar-link"
+                  title="Acessar módulo de alimentação e gestão de falências"
                 >
-                  FONTE: VALOR ECONÔMICO <ExternalLink size={12} />
+                  FONTE: VALOR ECONÔMICO <ExternalLink size={11} />
                 </a>
+                <span className="mesa-subtitle-sep">·</span>
+                <span className="mesa-falimentar-hint">Alimentação via Portal Valor Econômico</span>
               </p>
             </div>
+
             <div className="mesa-falimentar-header-right">
+              {/* Controles do Carrossel */}
+              <div className="mesa-carousel-nav">
+                <button
+                  className="mesa-carousel-btn"
+                  onClick={handlePrevSlide}
+                  title="Slide Anterior"
+                  aria-label="Slide Anterior"
+                >
+                  <ChevronLeft size={16} />
+                </button>
+                <div className="mesa-carousel-indicators">
+                  {Array.from({ length: totalSlides }).map((_, sIdx) => (
+                    <button
+                      key={sIdx}
+                      className={`mesa-carousel-dot ${carouselIndex === sIdx ? 'active' : ''}`}
+                      onClick={() => setCarouselIndex(sIdx)}
+                      title={`Ir para slide ${sIdx + 1}`}
+                      aria-label={`Slide ${sIdx + 1}`}
+                    />
+                  ))}
+                </div>
+                <button
+                  className="mesa-carousel-btn"
+                  onClick={handleNextSlide}
+                  title="Próximo Slide"
+                  aria-label="Próximo Slide"
+                >
+                  <ChevronRight size={16} />
+                </button>
+                <span className="mesa-slide-counter">
+                  {carouselIndex + 1}/{totalSlides}
+                </span>
+              </div>
+
               <div className="mesa-count-pill">
                 <span style={{ color: '#06b6d4', fontWeight: 800 }}>
                   {falimentarRows.length}
@@ -772,38 +892,63 @@ export const MesaOperacaoDashboard: React.FC = () => {
                 EMPRESAS
               </div>
               <div className="mesa-status-pill-online">
-                <span className="mesa-pulse-green" /> MONITORAMENTO DIÁRIO
+                <span className="mesa-pulse-green" /> MONITORAMENTO ATIVO
               </div>
             </div>
           </div>
 
-          <div className="mesa-falimentar-table-wrap">
-            <table className="mesa-falimentar-table">
-              <thead>
-                <tr>
-                  <th style={{ width: '25%' }}>EMPRESA / RAZÃO SOCIAL</th>
-                  <th style={{ width: '16%' }}>CNPJ</th>
-                  <th style={{ width: '21%' }}>SITUAÇÃO / CLASSE</th>
-                  <th style={{ width: '18%' }}>VARA / COMARCA</th>
-                  <th style={{ width: '20%' }}>ADMINISTRADOR JUDICIAL</th>
-                </tr>
-              </thead>
-              <tbody>
-                {falimentarRows.map((row, idx) => (
-                  <tr key={`${row.cnpj}-${idx}`}>
-                    <td className="mesa-col-empresa">{row.empresa}</td>
-                    <td className="mesa-col-cnpj">{row.cnpj}</td>
-                    <td>
+          {/* Container do Carrossel de Clientes */}
+          <div className="mesa-carousel-container">
+            <div className="mesa-carousel-grid">
+              {currentSlideItems.map((row, idx) => {
+                const globalIndex = carouselIndex * ITEMS_PER_SLIDE + idx + 1;
+                return (
+                  <div key={`${row.cnpj}-${globalIndex}`} className={`mesa-carousel-card ${row.classeTipo}`}>
+                    <div className="mesa-card-header">
                       <span className={`mesa-classe-badge ${row.classeTipo}`}>
                         {row.classe}
                       </span>
-                    </td>
-                    <td>{row.varaComarca}</td>
-                    <td>{row.administradorJudicial}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+                      <span className="mesa-card-index">#{String(globalIndex).padStart(2, '0')}</span>
+                    </div>
+
+                    <div className="mesa-card-body">
+                      <div className="mesa-card-title-row">
+                        <Building2 size={13} className="mesa-card-building-icon" />
+                        <h4 className="mesa-card-empresa" title={row.empresa}>
+                          {row.empresa}
+                        </h4>
+                      </div>
+
+                      <div className="mesa-card-cnpj">
+                        <span className="mesa-cnpj-label">CNPJ:</span>
+                        <span className="mesa-cnpj-value">{row.cnpj}</span>
+                      </div>
+
+                      <div className="mesa-card-meta-grid">
+                        <div className="mesa-card-meta-col">
+                          <span className="mesa-meta-label">VARA / COMARCA</span>
+                          <span className="mesa-meta-val" title={row.varaComarca}>
+                            {row.varaComarca}
+                          </span>
+                        </div>
+                        <div className="mesa-card-meta-col">
+                          <span className="mesa-meta-label">ADMINISTRADOR JUDICIAL</span>
+                          <span className="mesa-meta-val" title={row.administradorJudicial}>
+                            {row.administradorJudicial}
+                          </span>
+                        </div>
+                      </div>
+
+                      {row.observacao && (
+                        <div className="mesa-card-obs" title={row.observacao}>
+                          <span className="mesa-obs-label">OBS:</span> {row.observacao}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           </div>
         </section>
       </main>

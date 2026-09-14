@@ -563,7 +563,7 @@ const InternalLayout = () => {
         </div>
       </aside>
 
-      <main className="internal-content">
+      <main className={`internal-content ${location.pathname === '/bi/mesa-operacao' ? 'internal-content-mesa' : ''}`}>
         <header className={`internal-header ${isFullscreen ? 'fullscreen-mode' : ''}`}>
           {!isFullscreen && (
             <div className="header-left">

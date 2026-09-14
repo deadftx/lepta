@@ -593,5 +593,35 @@
 .internal-body-flush {
   padding: 0 !important;
   max-width: 100% !important;
+  height: 100% !important;
+  overflow: hidden !important;
+}
+
+.internal-content-mesa {
+  overflow: hidden !important;
+  height: 100vh !important;
+  max-height: 100vh !important;
+}
+
+body.mesa-page-active,
+body.mesa-page-active .internal-layout,
+body.mesa-page-active .internal-content,
+body.mesa-page-active .internal-body,
+body.mesa-page-active .internal-body-flush {
+  overflow: hidden !important;
+  height: 100vh !important;
+  max-height: 100vh !important;
+  box-sizing: border-box !important;
+}
+
+body.mesa-page-active ::-webkit-scrollbar {
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
+}
+
+body.mesa-page-active {
+  scrollbar-width: none !important;
+  -ms-overflow-style: none !important;
 }
 
