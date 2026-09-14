@@ -1861,29 +1861,130 @@ export function registerPurchaseRoutes(app, {
       }
 
       const mensagem = String(req.body?.mensagem || '').trim();
-      const fornecedor_nome = req.body?.fornecedor_nome ? String(req.body.fornecedor_nome).trim() : requisicao.fornecedor_nome;
-      const fornecedor_contato = req.body?.fornecedor_contato ? String(req.body.fornecedor_contato).trim() : requisicao.fornecedor_contato;
-      const forma_pagamento = req.body?.forma_pagamento ? String(req.body.forma_pagamento).trim().toUpperCase() : requisicao.forma_pagamento;
-      const empresa_pagadora = req.body?.empresa_pagadora ? String(req.body.empresa_pagadora).trim() : (requisicao.empresa_pagadora || 'INDIFERENTE');
-      const quantidade_parcelas = req.body?.quantidade_parcelas !== undefined ? Math.max(1, Number(req.body.quantidade_parcelas) || 1) : requisicao.quantidade_parcelas;
-      const departamento_centro_custo = req.body?.departamento_centro_custo ? String(req.body.departamento_centro_custo).trim() : requisicao.departamento_centro_custo;
-      const produto_servico = req.body?.produto_servico ? String(req.body.produto_servico).trim() : requisicao.produto_servico;
-      const valor = req.body?.valor !== undefined ? Number(req.body.valor) : requisicao.valor;
-      const reqItensCount = db.prepare(`SELECT COUNT(*) as c FROM compras_requisicoes_itens WHERE requisicao_id = ?`).get(req.params.id)?.c || 0;
-      const quantidade = reqItensCount > 1
-        ? 1
-        : (req.body?.quantidade !== undefined ? Math.max(1, Number(req.body.quantidade) || 1) : requisicao.quantidade);
-      const observacoes = req.body?.observacoes !== undefined ? String(req.body.observacoes).trim() : requisicao.observacoes;
+      const itensRecebidos = Array.isArray(req.body?.itens) && req.body.itens.length > 0 ? req.body.itens : null;
+
+      let fornecedor_nome = requisicao.fornecedor_nome;
+      let fornecedor_contato = requisicao.fornecedor_contato;
+      let forma_pagamento = requisicao.forma_pagamento;
+      let empresa_pagadora = requisicao.empresa_pagadora || 'INDIFERENTE';
+      let quantidade_parcelas = requisicao.quantidade_parcelas || 1;
+      let departamento_centro_custo = requisicao.departamento_centro_custo;
+      let produto_servico = requisicao.produto_servico;
+      let valor = requisicao.valor;
+      let quantidade = 1;
+      let observacoes = requisicao.observacoes;
+      let chave_pix = requisicao.chave_pix || '';
+      let categoria = requisicao.categoria || 'Outros';
+
+      if (itensRecebidos) {
+        valor = itensRecebidos.reduce((acc, it) => acc + (Math.max(0, Number(it.valor) || 0) * Math.max(1, Number(it.quantidade) || 1)), 0);
+        quantidade = itensRecebidos.length > 1 ? 1 : Math.max(1, Number(itensRecebidos[0].quantidade) || 1);
+        if (itensRecebidos.length > 1) {
+          produto_servico = itensRecebidos.map((it, idx) => `Item #${idx + 1}: ${it.produto_servico} (R$ ${Number(it.valor).toLocaleString('pt-BR', { minimumFractionDigits: 2 })})`).join(' | ');
+        } else {
+          produto_servico = String(itensRecebidos[0].produto_servico || requisicao.produto_servico).trim();
+        }
+
+        const first = itensRecebidos[0];
+        fornecedor_nome = String(first.fornecedor_nome || req.body?.fornecedor_nome || requisicao.fornecedor_nome || '').trim();
+        fornecedor_contato = String(first.fornecedor_contato || req.body?.fornecedor_contato || requisicao.fornecedor_contato || '').trim();
+        forma_pagamento = String(first.forma_pagamento || req.body?.forma_pagamento || requisicao.forma_pagamento || 'PIX').trim().toUpperCase();
+        empresa_pagadora = String(first.empresa_pagadora || req.body?.empresa_pagadora || requisicao.empresa_pagadora || 'INDIFERENTE').trim();
+        quantidade_parcelas = Math.max(1, Number(first.quantidade_parcelas || req.body?.quantidade_parcelas || requisicao.quantidade_parcelas) || 1);
+        departamento_centro_custo = String(first.departamento_centro_custo || req.body?.departamento_centro_custo || requisicao.departamento_centro_custo || '').trim();
+        categoria = String(first.categoria || req.body?.categoria || requisicao.categoria || 'Outros').trim();
+        chave_pix = String(first.chave_pix || req.body?.chave_pix || requisicao.chave_pix || '').trim();
+        observacoes = String(first.observacoes !== undefined ? first.observacoes : (req.body?.observacoes !== undefined ? req.body.observacoes : requisicao.observacoes || '')).trim();
+      } else {
+        fornecedor_nome = req.body?.fornecedor_nome ? String(req.body.fornecedor_nome).trim() : requisicao.fornecedor_nome;
+        fornecedor_contato = req.body?.fornecedor_contato ? String(req.body.fornecedor_contato).trim() : requisicao.fornecedor_contato;
+        forma_pagamento = req.body?.forma_pagamento ? String(req.body.forma_pagamento).trim().toUpperCase() : requisicao.forma_pagamento;
+        empresa_pagadora = req.body?.empresa_pagadora ? String(req.body.empresa_pagadora).trim() : (requisicao.empresa_pagadora || 'INDIFERENTE');
+        quantidade_parcelas = req.body?.quantidade_parcelas !== undefined ? Math.max(1, Number(req.body.quantidade_parcelas) || 1) : requisicao.quantidade_parcelas;
+        departamento_centro_custo = req.body?.departamento_centro_custo ? String(req.body.departamento_centro_custo).trim() : requisicao.departamento_centro_custo;
+        produto_servico = req.body?.produto_servico ? String(req.body.produto_servico).trim() : requisicao.produto_servico;
+        valor = req.body?.valor !== undefined ? Number(req.body.valor) : requisicao.valor;
+        const reqItensCount = db.prepare(`SELECT COUNT(*) as c FROM compras_requisicoes_itens WHERE requisicao_id = ?`).get(req.params.id)?.c || 0;
+        quantidade = reqItensCount > 1
+          ? 1
+          : (req.body?.quantidade !== undefined ? Math.max(1, Number(req.body.quantidade) || 1) : requisicao.quantidade);
+        observacoes = req.body?.observacoes !== undefined ? String(req.body.observacoes).trim() : requisicao.observacoes;
+      }
 
       const now = new Date().toISOString();
       const userName = req.authUser.username || req.authUser.id;
 
       db.transaction(() => {
+        if (itensRecebidos) {
+          db.prepare(`DELETE FROM compras_requisicoes_itens WHERE requisicao_id = ?`).run(req.params.id);
+          const insertItemStmt = db.prepare(`
+            INSERT INTO compras_requisicoes_itens (
+              id, requisicao_id, numero_item, tipo_destino, empresa_pagadora, departamento_centro_custo,
+              categoria, fornecedor_nome, fornecedor_contato, forma_pagamento,
+              quantidade_parcelas, produto_servico, valor, quantidade, observacoes, chave_pix, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          `);
+          for (let i = 0; i < itensRecebidos.length; i++) {
+            const it = itensRecebidos[i];
+            insertItemStmt.run(
+              it.id || randomUUID(),
+              req.params.id,
+              i + 1,
+              String(it.tipo_destino || 'DEPARTAMENTO').trim().toUpperCase(),
+              String(it.empresa_pagadora || empresa_pagadora || 'INDIFERENTE').trim(),
+              String(it.departamento_centro_custo || departamento_centro_custo || '').trim(),
+              String(it.categoria || categoria || 'Outros').trim(),
+              String(it.fornecedor_nome || fornecedor_nome || '').trim(),
+              String(it.fornecedor_contato || fornecedor_contato || '').trim(),
+              String(it.forma_pagamento || forma_pagamento || 'PIX').trim().toUpperCase(),
+              Math.max(1, Number(it.quantidade_parcelas) || 1),
+              String(it.produto_servico || '').trim(),
+              Math.max(0, Number(it.valor) || 0),
+              Math.max(1, Number(it.quantidade) || 1),
+              String(it.observacoes || '').trim(),
+              String(it.chave_pix || chave_pix || '').trim(),
+              now
+            );
+          }
+        } else {
+          // Atualiza o item único em compras_requisicoes_itens se existir
+          const singleItem = db.prepare(`SELECT id FROM compras_requisicoes_itens WHERE requisicao_id = ?`).get(req.params.id);
+          if (singleItem) {
+            db.prepare(`
+              UPDATE compras_requisicoes_itens
+              SET fornecedor_nome = ?,
+                  fornecedor_contato = ?,
+                  forma_pagamento = ?,
+                  empresa_pagadora = ?,
+                  quantidade_parcelas = ?,
+                  departamento_centro_custo = ?,
+                  produto_servico = ?,
+                  valor = ?,
+                  quantidade = ?,
+                  observacoes = ?
+              WHERE requisicao_id = ?
+            `).run(
+              fornecedor_nome,
+              fornecedor_contato,
+              forma_pagamento,
+              empresa_pagadora,
+              quantidade_parcelas,
+              departamento_centro_custo,
+              produto_servico,
+              valor,
+              quantidade,
+              observacoes,
+              req.params.id
+            );
+          }
+        }
+
         db.prepare(`
           UPDATE compras_requisicoes
           SET status = 'REABERTO',
               arquivado = 0,
               arquivado_manualmente = 0,
+              categoria = ?,
               fornecedor_nome = ?,
               fornecedor_contato = ?,
               forma_pagamento = ?,
@@ -1894,11 +1995,13 @@ export function registerPurchaseRoutes(app, {
               valor = ?,
               quantidade = ?,
               observacoes = ?,
+              chave_pix = ?,
               motivo_decisao = NULL,
               decidido_em = NULL,
               updated_at = ?
           WHERE id = ?
         `).run(
+          categoria,
           fornecedor_nome,
           fornecedor_contato,
           forma_pagamento,
@@ -1909,6 +2012,7 @@ export function registerPurchaseRoutes(app, {
           valor,
           quantidade,
           observacoes,
+          chave_pix || null,
           now,
           req.params.id
         );

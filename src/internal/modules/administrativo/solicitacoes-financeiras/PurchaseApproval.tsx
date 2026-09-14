@@ -210,6 +210,8 @@ export const PurchaseApproval: React.FC = () => {
 
   // Reopen Modal State
   const [reopenTarget, setReopenTarget] = useState<PurchaseRequest | null>(null);
+  const [reopenItems, setReopenItems] = useState<PurchaseItem[]>([]);
+  const [reopenItemIndex, setReopenItemIndex] = useState<number>(0);
   const [reopenMessage, setReopenMessage] = useState('');
   const [reopenFornecedorNome, setReopenFornecedorNome] = useState('');
   const [reopenFornecedorContato, setReopenFornecedorContato] = useState('');
@@ -217,6 +219,9 @@ export const PurchaseApproval: React.FC = () => {
   const [reopenEmpresaPagadora, setReopenEmpresaPagadora] = useState<EmpresaPagadora>('INDIFERENTE');
   const [reopenQuantidadeParcelas, setReopenQuantidadeParcelas] = useState<number>(1);
   const [reopenDepartamento, setReopenDepartamento] = useState('');
+  const [reopenTipoDestino, setReopenTipoDestino] = useState<TipoDestino>('DEPARTAMENTO');
+  const [reopenCategoria, setReopenCategoria] = useState<CategoriaSolicitacao>('Outros');
+  const [reopenChavePix, setReopenChavePix] = useState('');
   const [reopenProduto, setReopenProduto] = useState('');
   const [reopenValorDisplay, setReopenValorDisplay] = useState('');
   const [reopenValorNumeric, setReopenValorNumeric] = useState<number>(0);
@@ -1063,27 +1068,144 @@ export const PurchaseApproval: React.FC = () => {
     }
   };
 
+  // Helpers de Reabertura Multi-itens
+  const loadReopenItemIntoForm = (item: PurchaseItem) => {
+    setReopenFornecedorNome(item.fornecedor_nome || '');
+    setReopenFornecedorContato(item.fornecedor_contato || '');
+    setReopenFormaPagamento((item.forma_pagamento as any) || 'PIX');
+    setReopenEmpresaPagadora(item.empresa_pagadora || 'INDIFERENTE');
+    setReopenQuantidadeParcelas(item.quantidade_parcelas || 1);
+    setReopenDepartamento(item.departamento_centro_custo || '');
+    setReopenTipoDestino(item.tipo_destino || 'DEPARTAMENTO');
+    setReopenCategoria((item.categoria as any) || 'Outros');
+    setReopenChavePix(item.chave_pix || '');
+    setReopenProduto(item.produto_servico || '');
+    setReopenValorNumeric(item.valor || 0);
+    setReopenValorDisplay((item.valor || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }));
+    setReopenQuantidade(Math.max(1, item.quantidade || 1));
+    setReopenObservacoes(item.observacoes || '');
+  };
+
+  const getCurrentReopenItemData = (): PurchaseItem => {
+    const current = reopenItems[reopenItemIndex] || {};
+    return {
+      ...current,
+      fornecedor_nome: reopenFornecedorNome.trim(),
+      fornecedor_contato: reopenFornecedorContato.trim(),
+      forma_pagamento: reopenFormaPagamento,
+      empresa_pagadora: reopenEmpresaPagadora,
+      quantidade_parcelas: reopenQuantidadeParcelas,
+      departamento_centro_custo: reopenDepartamento.trim(),
+      tipo_destino: reopenTipoDestino,
+      categoria: reopenCategoria,
+      chave_pix: reopenChavePix.trim(),
+      produto_servico: reopenProduto.trim(),
+      valor: reopenValorNumeric,
+      quantidade: reopenQuantidade,
+      observacoes: reopenObservacoes.trim()
+    };
+  };
+
+  const goToReopenItem = (targetIndex: number) => {
+    if (targetIndex < 0 || targetIndex >= reopenItems.length) return;
+    const currentItemData = getCurrentReopenItemData();
+    const updated = [...reopenItems];
+    updated[reopenItemIndex] = currentItemData;
+    setReopenItems(updated);
+    setReopenItemIndex(targetIndex);
+    loadReopenItemIntoForm(updated[targetIndex]);
+  };
+
+  const handleNextReopenItem = () => {
+    if (!reopenProduto.trim()) {
+      alert('Por favor, informe a descrição do produto/serviço para este item.');
+      return;
+    }
+    if (reopenValorNumeric <= 0) {
+      alert('Por favor, informe um valor unitário válido para este item.');
+      return;
+    }
+    goToReopenItem(reopenItemIndex + 1);
+  };
+
+  const handlePrevReopenItem = () => {
+    goToReopenItem(reopenItemIndex - 1);
+  };
+
   // Abrir Modal de Reabertura
-  const handleOpenReopen = (req: PurchaseRequest) => {
-    setReopenTarget(req);
+  const handleOpenReopen = async (req: PurchaseRequest) => {
     setReopenMessage('');
-    setReopenFornecedorNome(req.fornecedor_nome || '');
-    setReopenFornecedorContato(req.fornecedor_contato || '');
-    setReopenFormaPagamento((req.forma_pagamento as any) || 'PIX');
-    setReopenEmpresaPagadora(req.empresa_pagadora || 'INDIFERENTE');
-    setReopenQuantidadeParcelas(req.quantidade_parcelas || 1);
-    setReopenDepartamento(req.departamento_centro_custo || '');
-    setReopenProduto(req.produto_servico);
-    setReopenValorNumeric(req.valor);
-    setReopenValorDisplay(req.valor.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }));
-    setReopenQuantidade(((req.itens && req.itens.length > 1) || (req.total_itens && req.total_itens > 1)) ? 1 : req.quantidade);
-    setReopenObservacoes(req.observacoes || '');
+    let loadedItems: PurchaseItem[] = [];
+
+    if (req.itens && req.itens.length > 0) {
+      loadedItems = req.itens;
+    } else {
+      try {
+        const res = await fetch(`${API_BASE_URL}/api/compras/requisicoes/${req.id}`, {
+          headers: getAuthHeaders()
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (data.itens && data.itens.length > 0) {
+            loadedItems = data.itens;
+          }
+        }
+      } catch (err) {
+        console.warn('Erro ao carregar itens da solicitação para reabrir:', err);
+      }
+    }
+
+    if (!loadedItems || loadedItems.length === 0) {
+      loadedItems = [{
+        id: req.id,
+        requisicao_id: req.id,
+        numero_item: 1,
+        tipo_destino: req.tipo_destino || 'DEPARTAMENTO',
+        empresa_pagadora: req.empresa_pagadora || 'INDIFERENTE',
+        departamento_centro_custo: req.departamento_centro_custo || '',
+        categoria: (req.categoria as any) || 'Outros',
+        fornecedor_nome: req.fornecedor_nome || '',
+        fornecedor_contato: req.fornecedor_contato || '',
+        forma_pagamento: req.forma_pagamento || 'PIX',
+        quantidade_parcelas: req.quantidade_parcelas || 1,
+        produto_servico: req.produto_servico,
+        valor: req.valor,
+        quantidade: ((req.itens && req.itens.length > 1) || (req.total_itens && req.total_itens > 1)) ? 1 : req.quantidade,
+        observacoes: req.observacoes || '',
+        chave_pix: req.chave_pix || ''
+      }];
+    }
+
+    setReopenTarget(req);
+    setReopenItems(loadedItems);
+    setReopenItemIndex(0);
+    loadReopenItemIntoForm(loadedItems[0]);
   };
 
   // Confirmar Reabertura
   const handleConfirmReopen = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!reopenTarget) return;
+
+    if (!reopenProduto.trim()) {
+      alert('Por favor, informe a descrição do produto/serviço.');
+      return;
+    }
+    if (reopenValorNumeric <= 0) {
+      alert('Por favor, informe um valor unitário válido.');
+      return;
+    }
+    if (!reopenMessage.trim()) {
+      alert('Por favor, informe o motivo da reabertura.');
+      return;
+    }
+
+    // Mescla o item atual
+    const currentItemData = getCurrentReopenItemData();
+    const finalItems = [...reopenItems];
+    finalItems[reopenItemIndex] = currentItemData;
+
+    const totalValor = finalItems.reduce((acc, it) => acc + ((Number(it.valor) || 0) * Math.max(1, Number(it.quantidade) || 1)), 0);
 
     setReopenLoading(true);
     try {
@@ -1095,15 +1217,20 @@ export const PurchaseApproval: React.FC = () => {
         },
         body: JSON.stringify({
           mensagem: reopenMessage.trim(),
-          fornecedor_nome: reopenFornecedorNome.trim(),
-          fornecedor_contato: reopenFornecedorContato.trim(),
-          forma_pagamento: reopenFormaPagamento,
-          empresa_pagadora: reopenEmpresaPagadora,
-          quantidade_parcelas: reopenQuantidadeParcelas,
-          departamento_centro_custo: reopenDepartamento.trim(),
-          produto_servico: reopenProduto.trim(),
-          valor: reopenValorNumeric,
-          quantidade: ((reopenTarget.itens && reopenTarget.itens.length > 1) || (reopenTarget.total_itens && reopenTarget.total_itens > 1)) ? 1 : reopenQuantidade,
+          itens: finalItems,
+          fornecedor_nome: finalItems[0]?.fornecedor_nome || reopenFornecedorNome.trim(),
+          fornecedor_contato: finalItems[0]?.fornecedor_contato || reopenFornecedorContato.trim(),
+          forma_pagamento: finalItems[0]?.forma_pagamento || reopenFormaPagamento,
+          empresa_pagadora: finalItems[0]?.empresa_pagadora || reopenEmpresaPagadora,
+          quantidade_parcelas: finalItems[0]?.quantidade_parcelas || reopenQuantidadeParcelas,
+          departamento_centro_custo: finalItems[0]?.departamento_centro_custo || reopenDepartamento.trim(),
+          categoria: finalItems[0]?.categoria || reopenCategoria,
+          chave_pix: finalItems[0]?.chave_pix || reopenChavePix.trim(),
+          produto_servico: finalItems.length > 1
+            ? finalItems.map((it, idx) => `Item #${idx + 1}: ${it.produto_servico} (R$ ${Number(it.valor).toLocaleString('pt-BR', { minimumFractionDigits: 2 })})`).join(' | ')
+            : finalItems[0]?.produto_servico || reopenProduto.trim(),
+          valor: totalValor,
+          quantidade: finalItems.length > 1 ? 1 : (finalItems[0]?.quantidade || 1),
           observacoes: reopenObservacoes.trim()
         })
       });
@@ -3160,13 +3287,18 @@ export const PurchaseApproval: React.FC = () => {
         </div>
       )}
 
-      {/* MODAL DE REABERTURA DE SOLICITAÇÃO NEGADA */}
+      {/* MODAL DE REABERTURA DE SOLICITAÇÃO NEGADA OU ARQUIVADA */}
       {reopenTarget && (
         <div className="pa-modal-overlay" onClick={() => setReopenTarget(null)}>
           <div className="pa-modal-card" onClick={e => e.stopPropagation()}>
             <div className="pa-modal-header">
               <h3>
                 <RotateCcw size={20} color="#c084fc" /> Reabrir Solicitação: {reopenTarget.id}
+                {reopenItems.length > 1 && (
+                  <span style={{ fontSize: '0.78rem', background: 'rgba(192, 132, 252, 0.2)', color: '#d8b4fe', border: '1px solid rgba(192, 132, 252, 0.4)', padding: '2px 8px', borderRadius: '12px', fontWeight: 600 }}>
+                    {reopenItems.length} itens discriminados
+                  </span>
+                )}
               </h3>
               <button
                 type="button"
@@ -3177,11 +3309,82 @@ export const PurchaseApproval: React.FC = () => {
               </button>
             </div>
 
-            <form onSubmit={handleConfirmReopen}>
+            <form onSubmit={e => {
+              if (reopenItemIndex < reopenItems.length - 1) {
+                e.preventDefault();
+                handleNextReopenItem();
+                return;
+              }
+              handleConfirmReopen(e);
+            }}>
               <div className="pa-modal-body">
-                <div style={{ background: 'rgba(192, 132, 252, 0.1)', border: '1px solid rgba(192, 132, 252, 0.3)', padding: '12px 16px', borderRadius: '10px', marginBottom: '1.5rem', color: '#e9d5ff', fontSize: '0.85rem' }}>
+                <div style={{ background: 'rgba(192, 132, 252, 0.1)', border: '1px solid rgba(192, 132, 252, 0.3)', padding: '12px 16px', borderRadius: '10px', marginBottom: '1rem', color: '#e9d5ff', fontSize: '0.85rem' }}>
                   Ao reabrir esta solicitação, ela voltará para a esteira ativa dos aprovadores com o status <strong>REABERTO</strong>.
                 </div>
+
+                {/* Stepper / Barra de Navegação entre Itens */}
+                {reopenItems.length > 1 && (
+                  <div style={{
+                    background: 'rgba(15, 23, 42, 0.8)',
+                    border: '1px solid rgba(192, 132, 252, 0.25)',
+                    borderRadius: '12px',
+                    padding: '12px 16px',
+                    marginBottom: '1.25rem',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '10px'
+                  }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <span style={{ fontSize: '0.88rem', fontWeight: 700, color: '#c084fc' }}>
+                          Revisão do Item {reopenItemIndex + 1} de {reopenItems.length}
+                        </span>
+                        <span style={{ fontSize: '0.75rem', background: '#334155', color: '#cbd5e1', padding: '2px 8px', borderRadius: '10px', maxWidth: '280px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {reopenProduto || `Item #${reopenItemIndex + 1}`}
+                        </span>
+                      </div>
+                      <div style={{ fontSize: '0.85rem', color: '#94a3b8' }}>
+                        Total Geral: <strong style={{ color: '#34d399', fontSize: '0.95rem' }}>{formatBrl(reopenItems.reduce((acc, it, idx) => acc + (idx === reopenItemIndex ? (reopenValorNumeric * reopenQuantidade) : ((Number(it.valor) || 0) * Math.max(1, Number(it.quantidade) || 1))), 0))}</strong>
+                      </div>
+                    </div>
+
+                    {/* Pills de navegação rápida */}
+                    <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                      {reopenItems.map((it, idx) => {
+                        const isCurrent = idx === reopenItemIndex;
+                        const itemVal = idx === reopenItemIndex
+                          ? (reopenValorNumeric * reopenQuantidade)
+                          : ((Number(it.valor) || 0) * Math.max(1, Number(it.quantidade) || 1));
+                        return (
+                          <button
+                            key={idx}
+                            type="button"
+                            onClick={() => goToReopenItem(idx)}
+                            style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '6px',
+                              padding: '6px 12px',
+                              borderRadius: '8px',
+                              border: isCurrent ? '1.5px solid #c084fc' : '1px solid #334155',
+                              background: isCurrent ? 'rgba(192, 132, 252, 0.2)' : 'rgba(30, 41, 59, 0.6)',
+                              color: isCurrent ? '#f3e8ff' : '#94a3b8',
+                              cursor: 'pointer',
+                              fontSize: '0.8rem',
+                              fontWeight: isCurrent ? 700 : 500,
+                              transition: 'all 0.15s ease'
+                            }}
+                          >
+                            <span>Item #{idx + 1}</span>
+                            <span style={{ color: isCurrent ? '#34d399' : '#64748b', fontSize: '0.75rem', fontWeight: 600 }}>
+                              {formatBrl(itemVal)}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
 
                 <div className="pa-form-grid">
                   <div className="pa-form-group">
@@ -3222,6 +3425,19 @@ export const PurchaseApproval: React.FC = () => {
                     </div>
                   </div>
 
+                  {reopenFormaPagamento === 'PIX' && (
+                    <div className="pa-form-group">
+                      <label>Chave PIX (Destinatário)</label>
+                      <input
+                        type="text"
+                        className="pa-input"
+                        placeholder="CPF, CNPJ, Telefone, E-mail ou Aleatória..."
+                        value={reopenChavePix}
+                        onChange={e => setReopenChavePix(e.target.value)}
+                      />
+                    </div>
+                  )}
+
                   <div className="pa-form-group">
                     <label>Empresa Pagadora</label>
                     <select
@@ -3248,6 +3464,21 @@ export const PurchaseApproval: React.FC = () => {
                     />
                   </div>
 
+                  <div className="pa-form-group">
+                    <label>Categoria</label>
+                    <select
+                      className="pa-select"
+                      value={reopenCategoria}
+                      onChange={e => setReopenCategoria(e.target.value as any)}
+                    >
+                      {CATEGORIAS_PADRAO.map(cat => (
+                        <option key={cat} value={cat}>
+                          {cat}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
                   <div className="pa-form-group full-width">
                     <label>Departamento / Centro de Custo</label>
                     <input
@@ -3260,12 +3491,17 @@ export const PurchaseApproval: React.FC = () => {
                   </div>
 
                   <div className="pa-form-group full-width">
-                    <label>Descrição do Produto / Serviço</label>
+                    <label>
+                      {reopenItems.length > 1
+                        ? `Descrição do Produto / Serviço (Item #${reopenItemIndex + 1})`
+                        : 'Descrição do Produto / Serviço'}
+                    </label>
                     <input
                       type="text"
                       className="pa-input"
                       value={reopenProduto}
                       onChange={e => setReopenProduto(e.target.value)}
+                      placeholder="Ex: Instalação dos letreiros e apoio na instalação"
                       required
                     />
                   </div>
@@ -3294,6 +3530,17 @@ export const PurchaseApproval: React.FC = () => {
                   </div>
 
                   <div className="pa-form-group full-width">
+                    <label>Observações do Item</label>
+                    <input
+                      type="text"
+                      className="pa-input"
+                      placeholder="Observação específica para este item (opcional)"
+                      value={reopenObservacoes}
+                      onChange={e => setReopenObservacoes(e.target.value)}
+                    />
+                  </div>
+
+                  <div className="pa-form-group full-width" style={{ marginTop: '0.5rem' }}>
                     <label>Motivo da Reabertura / Justificativa <span className="pa-required">*</span></label>
                     <textarea
                       className="pa-textarea"
@@ -3305,7 +3552,7 @@ export const PurchaseApproval: React.FC = () => {
                   </div>
                 </div>
 
-                <div className="pa-confirm-actions" style={{ marginTop: '1.5rem' }}>
+                <div className="pa-confirm-actions" style={{ marginTop: '1.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
                   <button
                     type="button"
                     className="pa-btn-cancel"
@@ -3313,14 +3560,39 @@ export const PurchaseApproval: React.FC = () => {
                   >
                     Cancelar
                   </button>
-                  <button
-                    type="submit"
-                    disabled={reopenLoading || !reopenMessage.trim()}
-                    className="pa-reopen-btn"
-                  >
-                    {reopenLoading ? <RefreshCw size={16} className="pwc-spinner" /> : <RotateCcw size={16} />}
-                    {reopenLoading ? 'Reabrindo...' : 'Confirmar Reabertura'}
-                  </button>
+
+                  <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                    {reopenItemIndex > 0 && (
+                      <button
+                        type="button"
+                        className="pa-btn-cancel"
+                        style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', border: '1px solid #475569', color: '#cbd5e1' }}
+                        onClick={handlePrevReopenItem}
+                      >
+                        ⬅️ Item Anterior
+                      </button>
+                    )}
+
+                    {reopenItemIndex < reopenItems.length - 1 ? (
+                      <button
+                        type="button"
+                        className="pa-reopen-btn"
+                        style={{ background: '#8b5cf6', borderColor: '#a78bfa' }}
+                        onClick={handleNextReopenItem}
+                      >
+                        Próximo Item ({reopenItemIndex + 2}/{reopenItems.length}) ➡️
+                      </button>
+                    ) : (
+                      <button
+                        type="submit"
+                        disabled={reopenLoading || !reopenMessage.trim()}
+                        className="pa-reopen-btn"
+                      >
+                        {reopenLoading ? <RefreshCw size={16} className="pwc-spinner" /> : <RotateCcw size={16} />}
+                        {reopenLoading ? 'Reabrindo...' : 'Confirmar Reabertura'}
+                      </button>
+                    )}
+                  </div>
                 </div>
               </div>
             </form>
