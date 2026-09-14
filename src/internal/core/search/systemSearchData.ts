@@ -68,15 +68,29 @@ export const systemSearchItems: SearchItem[] = [
     id: 'mkt-calendar',
     title: 'Calendário de Marketing',
     category: 'Marketing',
-    breadcrumb: ['Grupos', 'Calendário'],
+    breadcrumb: ['Grupos', 'Marketing', 'Calendário'],
     path: '/marketing',
     permissionId: '6',
     description: 'Planejamento e visualização de postagens, campanhas e ações do marketing.',
-    explanation: 'Acesse Grupos > Calendário para ver a grade de campanhas e publicações.',
+    explanation: 'Acesse Grupos > Marketing > Calendário para ver a grade de campanhas e publicações.',
     tags: ['Campanhas', 'Redes Sociais', 'Postagens', 'Mídias', 'Conteúdo'],
     keywords: ['marketing', 'calendario', 'postagens', 'campanhas', 'midias', 'redes sociais', 'divulgacao', 'conteudo', 'design', 'cronograma'],
     icon: 'Calendar',
     badge: 'Menu'
+  },
+  {
+    id: 'marketing-nosso-feed',
+    title: 'Nosso Feed · Marketing',
+    category: 'Marketing',
+    breadcrumb: ['Grupos', 'Marketing', 'Nosso Feed'],
+    path: '/marketing/nosso-feed',
+    permissionId: '6',
+    description: 'Gestão e publicação em tempo real de comunicados e novidades para o telão da Mesa de Operações.',
+    explanation: 'Acesse Grupos > Marketing > Nosso Feed para publicar avisos que aparecem ao vivo no telão.',
+    tags: ['Feed', 'Comunicados', 'Telão', 'Mesa de Operações', 'Avisos'],
+    keywords: ['nosso feed', 'feed', 'marketing', 'comunicado', 'aviso', 'noticia', 'telao', 'mesa operacao', 'publicar', 'sincronizado'],
+    icon: 'Megaphone',
+    badge: 'Novo'
   },
 
   // ==========================================
@@ -446,6 +460,20 @@ export const systemSearchItems: SearchItem[] = [
     tags: ['Lastro Fiscal', 'Manifesto Destinatário', 'NF-e Inconsistente', 'Chave de Acesso'],
     keywords: ['lastro', 'inconsistente', 'manifesto', 'nfe', 'chave de acesso', 'danfe', 'cobranca', 'sefaz', 'bitfin', 'cte', 'inconsistencia'],
     icon: 'AlertTriangle',
+    badge: 'Submenu'
+  },
+  {
+    id: 'cob-carta-anuencia',
+    title: 'Carta de Anuência (Cobrança)',
+    category: 'Cobrança',
+    breadcrumb: ['Grupos', 'Cobrança', 'Carta de Anuência'],
+    path: '/cobranca/carta-anuencia',
+    permissionId: '12.3',
+    description: 'Emissão e geração de cartas de anuência oficiais (docx/zip) para todos os títulos da Lepta com agrupamento automático por sacado.',
+    explanation: 'Acesse Grupos > Cobrança > Carta de Anuência para filtrar qualquer título da Lepta, selecionar e gerar cartas de anuência individuais ou em lote.',
+    tags: ['Carta de Anuência', 'Cartório', 'Cancelamento Protesto', 'Quitação', 'Sacados'],
+    keywords: ['anuencia', 'carta de anuencia', 'cartorio', 'protesto', 'quitacao', 'cobranca', 'doc', 'docx', 'lote', 'lepta'],
+    icon: 'FileCheck',
     badge: 'Submenu'
   },
 

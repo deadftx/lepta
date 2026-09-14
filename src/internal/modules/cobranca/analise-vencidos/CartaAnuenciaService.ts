@@ -10,11 +10,18 @@ import {
   Packer
 } from 'docx';
 
-export interface CartaAnuenciaData {
+export interface CartaAnuenciaTituloItem {
   numeroTitulo: string;
-  tipoDocumento: string;
+  tipoDocumento?: string;
   dataVencimento: string;
   valorNominal: number | string;
+}
+
+export interface CartaAnuenciaData {
+  numeroTitulo?: string;
+  tipoDocumento?: string;
+  dataVencimento?: string;
+  valorNominal?: number | string;
   nomeSacado: string;
   cnpjSacado: string;
   logradouroNumero: string;
@@ -22,6 +29,7 @@ export interface CartaAnuenciaData {
   municipioUf: string;
   cep: string;
   dataCarta: string; // YYYY-MM-DD
+  titulos?: CartaAnuenciaTituloItem[];
 }
 
 export function formatarDataExtenso(dateStr: string): string {
@@ -159,22 +167,46 @@ export async function gerarCartaAnuenciaBlob(data: CartaAnuenciaData): Promise<B
                   })
                 ]
               }),
-              new TableRow({
-                children: [
-                  new TableCell({
-                    children: [new Paragraph({ alignment: AlignmentType.CENTER, children: [new TextRun({ text: data.tipoDocumento || 'DM', font: 'Calibri', size: 22 })] })]
-                  }),
-                  new TableCell({
-                    children: [new Paragraph({ alignment: AlignmentType.CENTER, children: [new TextRun({ text: data.numeroTitulo || '-', font: 'Calibri', size: 22 })] })]
-                  }),
-                  new TableCell({
-                    children: [new Paragraph({ alignment: AlignmentType.CENTER, children: [new TextRun({ text: data.dataVencimento || '-', font: 'Calibri', size: 22 })] })]
-                  }),
-                  new TableCell({
-                    children: [new Paragraph({ alignment: AlignmentType.CENTER, children: [new TextRun({ text: valorStr, font: 'Calibri', size: 22 })] })]
+              ...((data.titulos && data.titulos.length > 0)
+                ? data.titulos.map(item => {
+                    const itemValStr = typeof item.valorNominal === 'number'
+                      ? item.valorNominal.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
+                      : String(item.valorNominal || 'R$ 0,00');
+                    return new TableRow({
+                      children: [
+                        new TableCell({
+                          children: [new Paragraph({ alignment: AlignmentType.CENTER, children: [new TextRun({ text: item.tipoDocumento || 'DM', font: 'Calibri', size: 22 })] })]
+                        }),
+                        new TableCell({
+                          children: [new Paragraph({ alignment: AlignmentType.CENTER, children: [new TextRun({ text: item.numeroTitulo || '-', font: 'Calibri', size: 22 })] })]
+                        }),
+                        new TableCell({
+                          children: [new Paragraph({ alignment: AlignmentType.CENTER, children: [new TextRun({ text: item.dataVencimento || '-', font: 'Calibri', size: 22 })] })]
+                        }),
+                        new TableCell({
+                          children: [new Paragraph({ alignment: AlignmentType.CENTER, children: [new TextRun({ text: itemValStr, font: 'Calibri', size: 22 })] })]
+                        })
+                      ]
+                    });
                   })
-                ]
-              })
+                : [
+                    new TableRow({
+                      children: [
+                        new TableCell({
+                          children: [new Paragraph({ alignment: AlignmentType.CENTER, children: [new TextRun({ text: data.tipoDocumento || 'DM', font: 'Calibri', size: 22 })] })]
+                        }),
+                        new TableCell({
+                          children: [new Paragraph({ alignment: AlignmentType.CENTER, children: [new TextRun({ text: data.numeroTitulo || '-', font: 'Calibri', size: 22 })] })]
+                        }),
+                        new TableCell({
+                          children: [new Paragraph({ alignment: AlignmentType.CENTER, children: [new TextRun({ text: data.dataVencimento || '-', font: 'Calibri', size: 22 })] })]
+                        }),
+                        new TableCell({
+                          children: [new Paragraph({ alignment: AlignmentType.CENTER, children: [new TextRun({ text: valorStr, font: 'Calibri', size: 22 })] })]
+                        })
+                      ]
+                    })
+                  ])
             ]
           }),
 

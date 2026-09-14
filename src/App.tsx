@@ -13,6 +13,7 @@ import MesaOperacaoDashboard from './internal/modules/business-intelligence/mesa
 import DashboardsView from './internal/modules/dashboards/DashboardsView';
 import CreateUser from './internal/modules/administracao/criar-usuario/CreateUser';
 import Marketing from './internal/modules/calendario/Marketing';
+import NossoFeed from './internal/modules/marketing/nosso-feed/NossoFeed';
 import Finance from './internal/modules/financeiro/processar-extrato/Finance';
 import FinanceDashboard from './internal/modules/financeiro/FinanceDashboard';
 import GrafenoIntegration from './internal/modules/financeiro/grafeno/GrafenoIntegration';
@@ -34,6 +35,7 @@ import ConfirmationSystem from './internal/modules/mesa-operacoes/relatorio-diar
 import ConfirmationAnalise from './internal/modules/confirmacao/analise-confirmacao/ConfirmationAnalise';
 import OverdueAnalysis from './internal/modules/cobranca/analise-vencidos/OverdueAnalysis';
 import InconsistentBacking from './internal/modules/cobranca/lastro-inconsistente/InconsistentBacking';
+import CartaAnuencia from './internal/modules/cobranca/carta-anuencia/CartaAnuencia';
 import LegalPaymentApproval from './internal/modules/juridico/aprovacao-pagamentos/LegalPaymentApproval';
 import LegalApproversConfig from './internal/modules/juridico/configuracao-aprovadores-juridicos/LegalApproversConfig';
 import OperationsAnalysis from './internal/modules/mesa-operacoes/analise-operacao/OperationsAnalysis';
@@ -119,6 +121,7 @@ function App() {
               <Route element={<InternalLayout />}>
                 <Route path="/dashboard" element={<Dashboard />} />
                 <Route path="/marketing" element={<AccessRoute permission="6"><Marketing /></AccessRoute>} />
+                <Route path="/marketing/nosso-feed" element={<AccessRoute permission="6"><NossoFeed /></AccessRoute>} />
                 <Route path="/dashboards" element={<AccessRoute permission="5"><DashboardsView /></AccessRoute>} />
                 <Route path="/bi" element={<Navigate to="/bi/movimento-falimentar" replace />} />
                 <Route path="/bi/movimento-falimentar" element={<AccessRoute permission="4.1"><MovimentoFalimentar /></AccessRoute>} />
@@ -143,6 +146,7 @@ function App() {
                 <Route path="/confirmacao/analise" element={<AccessRoute permission="10.2"><ConfirmationAnalise /></AccessRoute>} />
                 <Route path="/cobranca/analise-vencidos" element={<AccessRoute permission="12.1"><OverdueAnalysis /></AccessRoute>} />
                 <Route path="/cobranca/lastro-inconsistente" element={<AccessRoute permission="12.2"><InconsistentBacking /></AccessRoute>} />
+                <Route path="/cobranca/carta-anuencia" element={<AccessRoute permission="12.3"><CartaAnuencia /></AccessRoute>} />
                 <Route path="/juridico/aprovacao-pagamentos" element={<AccessRoute permission="13.1"><LegalPaymentApproval /></AccessRoute>} />
                 <Route path="/juridico/configuracao-aprovadores" element={<AccessRoute permission="13.2"><LegalApproversConfig /></AccessRoute>} />
                 <Route path="/mesa-operacoes/analise" element={<AccessRoute permission="14.1"><OperationsAnalysis /></AccessRoute>} />

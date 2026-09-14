@@ -29,6 +29,7 @@ import { ensureCedentesTableSchema, syncAllCedentesFromUnltdApi } from './module
 import { registerMovimentoFalimentarRoutes } from './modules/movimento-falimentar/routes.js';
 import { registerAssociadosRoutes } from './modules/associados/routes.js';
 import { ensureAssociadosTableSchema } from './modules/associados/associadosService.js';
+import { registerMarketingFeedRoutes } from './modules/marketing/feedRoutes.js';
 
 const app = express();
 app.disable('x-powered-by');
@@ -4374,6 +4375,326 @@ app.get('/api/cobranca/vencidos', requireSession, requirePermission('12.1', '12'
   }
 });
 
+// =========================================================================
+// MÓDULO COBRANÇA: CARTA DE ANUÊNCIA (TODOS OS TÍTULOS DA LEPTA)
+// =========================================================================
+app.get('/api/cobranca/carta-anuencia/titulos', requireSession, requirePermission('12.3', '12.1', '12'), async (req, res) => {
+  try {
+    const {
+      cedente,
+      sacado,
+      tipo_documento,
+      situacao,
+      data_venc_inicio,
+      data_venc_fim,
+      data_op_inicio,
+      data_op_fim,
+      valor_min,
+      valor_max,
+      busca
+    } = req.query;
+
+    let titles = [];
+    let dataSource = 'api';
+
+    const parseDateToIso = (dStr) => {
+      if (!dStr) return null;
+      if (typeof dStr === 'string') {
+        const trimmed = dStr.trim();
+        if (trimmed.includes('/')) {
+          const parts = trimmed.split('/');
+          if (parts.length === 3) {
+            const dia = parts[0].padStart(2, '0');
+            const mes = parts[1].padStart(2, '0');
+            const ano = parts[2].length === 2 ? `20${parts[2]}` : parts[2];
+            return `${ano}-${mes}-${dia}`;
+          }
+        }
+        if (/^\d{4}-\d{2}-\d{2}/.test(trimmed)) {
+          return trimmed.slice(0, 10);
+        }
+      }
+      if (dStr instanceof Date && !Number.isNaN(dStr.getTime())) {
+        return dStr.toISOString().slice(0, 10);
+      }
+      return null;
+    };
+
+    const hojeStr = new Intl.DateTimeFormat('fr-CA', { timeZone: 'America/Sao_Paulo' }).format(new Date());
+
+    try {
+      const [apiTitulos, liquidacoes] = await Promise.all([
+        fetchTitulosDaAPI(req),
+        fetchLiquidacoesDaAPI(req).catch(() => [])
+      ]);
+
+      const mapLiquidacoes = new Map();
+      for (const liq of liquidacoes) {
+        if (liq.id) mapLiquidacoes.set(String(liq.id), liq);
+        if (liq.numero) mapLiquidacoes.set(String(liq.numero), liq);
+      }
+
+      for (const t of apiTitulos) {
+        const clienteTit = t.contaOperacional?.cliente?.entidade?.nome || t.cedente || '';
+        if (!clienteTit && !t.sacado?.entidade?.nome) continue;
+
+        const dataVencIso = parseDateToIso(t.dataDeVencimento || t.dataVencimento || t.vencimento);
+        const dataOp = parseDateToIso(t.dataDeOperacao || t.operacao?.data || t.dataDeEmissao || t.dataDeCadastro || null);
+        const valNominal = Number(t.valorNominal) || 0;
+        const valLiquido = Number(t.valorLiquido ?? t.valorNominal) || 0;
+        const tipoDoc = extractTipoDocumento(t);
+
+        let sitLabel = 'Aberto';
+        const isLiquid = (
+          (t.id && mapLiquidacoes.has(String(t.id))) ||
+          (t.numero && mapLiquidacoes.has(String(t.numero))) ||
+          t.liquidado === true ||
+          t.pago === true ||
+          t.quitado === true
+        );
+
+        if (isLiquid) {
+          sitLabel = 'Liquidado';
+        } else if (t.situacao && typeof t.situacao === 'string' && t.situacao.trim()) {
+          sitLabel = t.situacao.trim();
+        } else if (dataVencIso && dataVencIso < hojeStr) {
+          sitLabel = 'Vencido';
+        }
+
+        let diasAtraso = 0;
+        if (dataVencIso && dataVencIso < hojeStr && !isLiquid) {
+          const diffMs = new Date(`${hojeStr}T12:00:00Z`).getTime() - new Date(`${dataVencIso}T12:00:00Z`).getTime();
+          diasAtraso = Math.max(1, Math.floor(diffMs / (1000 * 60 * 60 * 24)));
+        }
+
+        const contaOpNome = t.contaOperacional?.descricao || t.contaOperacional?.nome || t.contaOperacional?.alias || (typeof t.contaOperacional === 'string' ? t.contaOperacional : '');
+        const modalidadeNome = t.modalidade || t.operacao?.modalidade || t.tipoDeOperacao || '';
+        const carteiraNome = t.carteira || t.operacao?.carteira || '';
+
+        const endObj = t.sacado?.entidade?.endereco || t.sacado?.endereco || t.devedor?.entidade?.endereco || t.devedor?.endereco || t.endereco;
+        let sacadoEndereco = null;
+        if (endObj && typeof endObj === 'object') {
+          sacadoEndereco = {
+            logradouro: String(endObj.logradouro || endObj.rua || endObj.endereco || '').trim(),
+            numero: String(endObj.numero || 'S/N').trim(),
+            complemento: String(endObj.complemento || '').trim(),
+            bairro: String(endObj.bairro || '').trim(),
+            cidade: String(endObj.localidade || endObj.cidade || endObj.municipio || '').trim(),
+            estado: String(endObj.uf || endObj.estado || '').trim(),
+            cep: String(endObj.cep || endObj.codigoPostal || '').trim()
+          };
+        }
+
+        const rawManifesto = String(t.situacaoManifesto || t.manifesto || t.situacao_manifesto || '').trim();
+        const dataManifesto = parseDateToIso(t.dataDoManifesto || t.dataManifesto || null);
+        const cartorioBitfin = String(t.cartorio?.nome || t.cartorio || t.protesto?.cartorio || t.protesto || t.ocorrencias?.cartorio || '').trim();
+
+        titles.push({
+          id: String(t.id || t.numero || Math.random()),
+          numero: String(t.numero || t.numeroDoTitulo || t.id || '-'),
+          operacao: String(t.operacao?.numero || t.numeroDaOperacao || t.operacao || '-'),
+          cedente: clienteTit || 'Lepta',
+          documentoCedente: t.contaOperacional?.cliente?.entidade?.documento || '',
+          sacado: t.sacado?.entidade?.nome || t.sacado?.nome || t.devedor?.entidade?.nome || 'Não informado',
+          documentoSacado: t.sacado?.entidade?.documento || t.sacado?.documento || '',
+          ua: t.contaOperacional?.unidadeAdministrativa?.alias || t.contaOperacional?.unidadeAdministrativa?.nome || 'Padrão',
+          contaOperacional: contaOpNome,
+          modalidade: modalidadeNome,
+          carteira: carteiraNome,
+          dataVencimento: dataVencIso,
+          dataOperacao: dataOp,
+          dataEmissao: parseDateToIso(t.dataDeEmissao) || null,
+          diasAtraso,
+          situacao: sitLabel,
+          valorNominal: valNominal,
+          valorLiquido: valLiquido,
+          taxa: Number(t.taxa || 0),
+          desagio: Number(t.desagio || 0),
+          bancoCobrador: t.bancoCobrador?.nome || t.bancoCobrador || '',
+          tipoDocumento: tipoDoc,
+          chaveNfe: t.chaveNfe || (t.manifesto?.length === 44 ? t.manifesto : ''),
+          codigoDoLastro: t.codigoDoLastro || '',
+          situacaoManifesto: rawManifesto || 'Sem Atuação',
+          dataManifesto,
+          cartorioBitfin,
+          sacadoEndereco
+        });
+      }
+    } catch (apiErr) {
+      console.log('Falha na API UNLTD ao buscar títulos para carta de anuência, consultando BASE_SMARTFACTOR...', apiErr.message);
+      dataSource = 'db';
+    }
+
+    if (titles.length === 0) {
+      try {
+        const sfRows = db.prepare(`
+          SELECT * FROM BASE_SMARTFACTOR 
+          ORDER BY ID DESC
+          LIMIT 10000
+        `).all();
+
+        if (sfRows.length > 0) {
+          dataSource = 'db';
+          titles = sfRows.map(r => {
+            const dataVencIso = parseDateToIso(r.VENCIMENTO || r.VENCIMENTO_EFETIVO);
+            let diasAtraso = 0;
+            if (dataVencIso && dataVencIso < hojeStr) {
+              const diffMs = new Date(`${hojeStr}T12:00:00Z`).getTime() - new Date(`${dataVencIso}T12:00:00Z`).getTime();
+              diasAtraso = Math.max(1, Math.floor(diffMs / (1000 * 60 * 60 * 24)));
+            }
+
+            return {
+              id: String(r.ID || r.NUMERO),
+              numero: String(r.NUMERO || r.ID || '-'),
+              operacao: String(r.OPERACAO || '-'),
+              cedente: r.CLIENTE || 'Lepta',
+              documentoCedente: r.DOCUMENTO || '',
+              sacado: r.SACADO || 'Não informado',
+              documentoSacado: r.DOCUMENTO_SACADO || '',
+              ua: r.UA || 'SmartFactor',
+              contaOperacional: r.UA || '',
+              modalidade: r.PRODUTO || '',
+              carteira: r.SIGLA || '',
+              dataVencimento: dataVencIso,
+              dataOperacao: parseDateToIso(r.CADASTRO || r.EMISSAO),
+              dataEmissao: parseDateToIso(r.EMISSAO),
+              diasAtraso,
+              situacao: r.SITUACAO || 'Aberto',
+              valorNominal: Number(r.VALOR_NOMINAL) || 0,
+              valorLiquido: Number(r.VALOR_LIQUIDO) || 0,
+              taxa: Number(r.TAXA || 0),
+              desagio: Number(r.DESAGIO || 0),
+              bancoCobrador: r.BANCO_COBRADOR || '',
+              tipoDocumento: extractTipoDocumento(r),
+              chaveNfe: '',
+              codigoDoLastro: '',
+              situacaoManifesto: 'Sem Atuação',
+              dataManifesto: null,
+              cartorioBitfin: '',
+              sacadoEndereco: null
+            };
+          });
+        }
+      } catch (dbErr) {
+        console.log('Aviso ao consultar BASE_SMARTFACTOR para carta de anuência:', dbErr.message);
+      }
+    }
+
+    // Listas únicas para selects
+    const setCedentes = new Set();
+    const setSacados = new Set();
+    const setTipos = new Set();
+    const setSituacoes = new Set();
+
+    titles.forEach(t => {
+      if (t.cedente) setCedentes.add(t.cedente);
+      if (t.sacado && t.sacado !== 'Não informado') setSacados.add(t.sacado);
+      if (t.tipoDocumento && t.tipoDocumento !== '-') setTipos.add(t.tipoDocumento);
+      if (t.situacao) setSituacoes.add(t.situacao);
+    });
+
+    const cedentesList = Array.from(setCedentes).sort();
+    const sacadosList = Array.from(setSacados).sort();
+    const tiposList = Array.from(setTipos).sort();
+    const situacoesList = Array.from(setSituacoes).sort();
+
+    // Filtros dinâmicos
+    let filteredTitles = titles;
+
+    if (cedente && typeof cedente === 'string' && cedente.trim()) {
+      const normQuery = normalizeStr(cedente);
+      filteredTitles = filteredTitles.filter(t => normalizeStr(t.cedente).includes(normQuery));
+    }
+
+    if (sacado && typeof sacado === 'string' && sacado.trim()) {
+      const normQuery = normalizeStr(sacado);
+      filteredTitles = filteredTitles.filter(t => normalizeStr(t.sacado).includes(normQuery));
+    }
+
+    if (tipo_documento && typeof tipo_documento === 'string' && tipo_documento.trim() && tipo_documento !== 'TODOS') {
+      const normQuery = normalizeStr(tipo_documento);
+      filteredTitles = filteredTitles.filter(t => normalizeStr(t.tipoDocumento).includes(normQuery));
+    }
+
+    if (situacao && typeof situacao === 'string' && situacao.trim() && situacao !== 'TODAS') {
+      const normQuery = normalizeStr(situacao);
+      filteredTitles = filteredTitles.filter(t => normalizeStr(t.situacao).includes(normQuery));
+    }
+
+    if (data_venc_inicio && typeof data_venc_inicio === 'string') {
+      filteredTitles = filteredTitles.filter(t => t.dataVencimento && t.dataVencimento >= data_venc_inicio);
+    }
+
+    if (data_venc_fim && typeof data_venc_fim === 'string') {
+      filteredTitles = filteredTitles.filter(t => t.dataVencimento && t.dataVencimento <= data_venc_fim);
+    }
+
+    if (data_op_inicio && typeof data_op_inicio === 'string') {
+      filteredTitles = filteredTitles.filter(t => t.dataOperacao && t.dataOperacao >= data_op_inicio);
+    }
+
+    if (data_op_fim && typeof data_op_fim === 'string') {
+      filteredTitles = filteredTitles.filter(t => t.dataOperacao && t.dataOperacao <= data_op_fim);
+    }
+
+    if (valor_min && !Number.isNaN(Number(valor_min))) {
+      filteredTitles = filteredTitles.filter(t => t.valorNominal >= Number(valor_min));
+    }
+
+    if (valor_max && !Number.isNaN(Number(valor_max))) {
+      filteredTitles = filteredTitles.filter(t => t.valorNominal <= Number(valor_max));
+    }
+
+    if (busca && typeof busca === 'string' && busca.trim()) {
+      const q = normalizeStr(busca);
+      filteredTitles = filteredTitles.filter(t =>
+        normalizeStr(t.numero).includes(q) ||
+        normalizeStr(t.operacao).includes(q) ||
+        normalizeStr(t.cedente).includes(q) ||
+        normalizeStr(t.sacado).includes(q) ||
+        normalizeStr(t.documentoCedente).includes(q) ||
+        normalizeStr(t.documentoSacado).includes(q) ||
+        normalizeStr(t.tipoDocumento).includes(q) ||
+        normalizeStr(t.situacao).includes(q) ||
+        normalizeStr(t.chaveNfe).includes(q)
+      );
+    }
+
+    // Ordenação: data de vencimento / data de operação mais recente primeiro
+    filteredTitles.sort((a, b) => {
+      const dateA = a.dataVencimento || a.dataOperacao || '';
+      const dateB = b.dataVencimento || b.dataOperacao || '';
+      return dateB.localeCompare(dateA) || b.valorNominal - a.valorNominal;
+    });
+
+    const totalValorNominal = filteredTitles.reduce((acc, curr) => acc + (curr.valorNominal || 0), 0);
+    const totalValorLiquido = filteredTitles.reduce((acc, curr) => acc + (curr.valorLiquido || 0), 0);
+    const totalQtd = filteredTitles.length;
+    const uniqueCedentes = new Set(filteredTitles.map(t => t.cedente)).size;
+    const uniqueSacados = new Set(filteredTitles.map(t => t.sacado)).size;
+
+    res.setHeader('x-data-source', dataSource);
+    res.json({
+      titulos: filteredTitles,
+      totalRegistros: titles.length,
+      kpis: {
+        totalValorNominal,
+        totalValorLiquido,
+        totalQtd,
+        uniqueCedentes,
+        uniqueSacados
+      },
+      cedentesList,
+      sacadosList,
+      tiposList,
+      situacoesList
+    });
+  } catch (err) {
+    console.error('Erro ao buscar títulos para carta de anuência:', err);
+    res.status(500).json({ error: 'Erro ao processar títulos para carta de anuência', message: err.message });
+  }
+});
+
 // Mapa oficial IBGE das UFs para chaves de NF-e
 const UF_IBGE_SIGLAS = {
   '11': 'RO', '12': 'AC', '13': 'AM', '14': 'RR', '15': 'PA', '16': 'AP', '17': 'TO',
@@ -6667,6 +6988,12 @@ registerAssociadosRoutes(app, {
   projectRoot,
   requireSession,
   checkAccess: requirePermission('4.2', '4')
+});
+
+registerMarketingFeedRoutes(app, {
+  db,
+  requireSession,
+  checkAccess: requirePermission('6', '6.1', '6.2')
 });
 
 registerTickerRoutes(app);

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { LogOut, User, ShieldAlert, Shield, UserPlus, Users, ChevronDown, ChevronRight, LayoutDashboard, Sliders, Home, Calendar, CalendarCheck, Menu, X, Wallet, FileSpreadsheet, BrainCircuit, Database, ClipboardCheck, ContactRound, ShieldCheck, Landmark, Briefcase, ShoppingCart, SlidersHorizontal, DollarSign, Mail, Search, TrendingUp, UserCheck, Scale, FileCheck, Layers, MapPin, AlertTriangle, Pin, PinOff } from 'lucide-react';
+import { LogOut, User, ShieldAlert, Shield, UserPlus, Users, ChevronDown, ChevronRight, LayoutDashboard, Sliders, Home, Calendar, CalendarCheck, Menu, X, Wallet, FileSpreadsheet, BrainCircuit, Database, ClipboardCheck, ContactRound, ShieldCheck, Landmark, Briefcase, ShoppingCart, SlidersHorizontal, DollarSign, Mail, Search, TrendingUp, UserCheck, Scale, FileCheck, Layers, MapPin, AlertTriangle, Pin, PinOff, Megaphone, Rss } from 'lucide-react';
 import { useNavigate, Outlet, Link, useLocation } from 'react-router-dom';
 import { useAuth } from './AuthContext';
 import NotificationBell from './NotificationBell';
@@ -68,6 +68,9 @@ const InternalLayout = () => {
   const isPermissionsActive = location.pathname.startsWith('/permissions');
   const [isPermissionsOpen, setIsPermissionsOpen] = useState(false);
   
+  const isMarketingActive = location.pathname.startsWith('/marketing');
+  const [isMarketingOpen, setIsMarketingOpen] = useState(location.pathname.startsWith('/marketing'));
+
   const isFinanceActive = location.pathname.startsWith('/financeiro');
   const [isFinanceOpen, setIsFinanceOpen] = useState(false);
 
@@ -279,10 +282,30 @@ const InternalLayout = () => {
           </Link>
           
           <p className="nav-group-title">GRUPOS</p>
-          {hasAccess('6') && (
-            <Link to="/marketing" className={navItemClass('/marketing')}>
-              <Calendar size={20} /> Calendário
-            </Link>
+          {hasAnyPermission(user, ['6', '6.1', '6.2']) && (
+            <div className="nav-menu-group">
+              <div 
+                className={`nav-item nav-item-parent ${isMarketingActive ? 'active' : ''}`}
+                onClick={() => setIsMarketingOpen(!isMarketingOpen)}
+                style={{ cursor: 'pointer', justifyContent: 'space-between' }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                  <Megaphone size={20} /> Marketing
+                </div>
+                {isMarketingOpen ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+              </div>
+
+              {isMarketingOpen && (
+                <div className="nav-submenu" style={{ paddingLeft: '1rem' }}>
+                  <Link to="/marketing" className={navItemClass('/marketing')}>
+                    <Calendar size={18} /> Calendário
+                  </Link>
+                  <Link to="/marketing/nosso-feed" className={navItemClass('/marketing/nosso-feed')}>
+                    <Rss size={18} /> Nosso Feed
+                  </Link>
+                </div>
+              )}
+            </div>
           )}
           {hasAnyPermission(user, ['7.1', '7.2', '7.3', '7.4']) && (
             <div className="nav-menu-group">
@@ -435,7 +458,7 @@ const InternalLayout = () => {
               )}
             </div>
           )}
-          {hasAnyPermission(user, ['12.1', '12.2', '12']) && (
+          {hasAnyPermission(user, ['12.1', '12.2', '12.3', '12']) && (
             <div className="nav-menu-group">
               <div
                 className={`nav-item nav-item-parent ${isCobrancaActive ? 'active' : ''}`}
@@ -458,6 +481,11 @@ const InternalLayout = () => {
                   {hasAccess('12.2') && (
                     <Link to="/cobranca/lastro-inconsistente" className={navItemClass('/cobranca/lastro-inconsistente')}>
                       <AlertTriangle size={18} /> Lastro Inconsistente
+                    </Link>
+                  )}
+                  {(hasAccess('12.3') || hasAccess('12.1') || hasAccess('12')) && (
+                    <Link to="/cobranca/carta-anuencia" className={navItemClass('/cobranca/carta-anuencia')}>
+                      <FileCheck size={18} /> Carta de Anuência
                     </Link>
                   )}
                 </div>

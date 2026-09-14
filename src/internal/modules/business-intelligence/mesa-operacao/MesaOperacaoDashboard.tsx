@@ -26,6 +26,7 @@ import {
 } from 'recharts';
 import { API_BASE_URL, getAuthHeaders } from '../../../../config/api';
 import './MesaOperacaoDashboard.css';
+import MesaFeedStage from './MesaFeedStage';
 
 interface FalimentarRow {
   empresa: string;
@@ -202,9 +203,9 @@ const formatBRL = (val: number): string => {
 };
 
 export const MesaOperacaoDashboard: React.FC = () => {
-  // Apenas as duas visões solicitadas
-  const [periodo, setPeriodo] = useState<'hoje' | 'mes'>('hoje');
-  const [countdown, setCountdown] = useState<number>(20);
+  // Três visões: Hoje, Visão Mensal e Nosso Feed (Marketing)
+  const [periodo, setPeriodo] = useState<'hoje' | 'mes' | 'feed'>('hoje');
+  const [countdown, setCountdown] = useState<number>(30);
   const [isFullscreen, setIsFullscreen] = useState<boolean>(false);
 
   // Relógio
@@ -241,13 +242,17 @@ export const MesaOperacaoDashboard: React.FC = () => {
     };
   }, []);
 
-  // 3. Alternância automática a cada 20 segundos entre Hoje e Visão Mensal
+  // 3. Alternância automática a cada 30 segundos entre Hoje, Visão Mensal e Nosso Feed
   useEffect(() => {
     const timer = setInterval(() => {
       setCountdown((prev) => {
         if (prev <= 1) {
-          setPeriodo((curr) => (curr === 'hoje' ? 'mes' : 'hoje'));
-          return 20;
+          setPeriodo((curr) => {
+            if (curr === 'hoje') return 'mes';
+            if (curr === 'mes') return 'feed';
+            return 'hoje';
+          });
+          return 30;
         }
         return prev - 1;
       });
@@ -475,48 +480,68 @@ export const MesaOperacaoDashboard: React.FC = () => {
           </div>
         </div>
 
-        {/* Center: Apenas Visão Diária (HOJE) e Visão Mensal com Countdown */}
+        {/* Center: Visão Diária (HOJE), Visão Mensal e Nosso Feed com Countdown de 30s */}
         <div className="mesa-header-center">
           <div className="mesa-view-switcher">
             <button
               className={`mesa-toggle-btn ${periodo === 'hoje' ? 'active-hoje' : ''}`}
               onClick={() => {
                 setPeriodo('hoje');
-                setCountdown(20);
+                setCountdown(30);
               }}
               title="Alternar para Hoje"
             >
               <span className="mesa-toggle-dot" />
               <span>HOJE</span>
-              <span className="mesa-toggle-countdown">{periodo === 'hoje' ? `${countdown}s` : '20s'}</span>
+              <span className="mesa-toggle-countdown">{periodo === 'hoje' ? `${countdown}s` : '30s'}</span>
             </button>
 
             <button
               className={`mesa-toggle-btn ${periodo === 'mes' ? 'active-mes' : ''}`}
               onClick={() => {
                 setPeriodo('mes');
-                setCountdown(20);
+                setCountdown(30);
               }}
               title="Alternar para Visão Mensal"
             >
               <span className="mesa-toggle-dot" />
               <span>VISÃO MENSAL</span>
-              <span className="mesa-toggle-countdown">{periodo === 'mes' ? `${countdown}s` : '20s'}</span>
+              <span className="mesa-toggle-countdown">{periodo === 'mes' ? `${countdown}s` : '30s'}</span>
+            </button>
+
+            <button
+              className={`mesa-toggle-btn ${periodo === 'feed' ? 'active-feed' : ''}`}
+              onClick={() => {
+                setPeriodo('feed');
+                setCountdown(30);
+              }}
+              title="Alternar para Nosso Feed"
+            >
+              <span className="mesa-toggle-dot" />
+              <span>NOSSO FEED</span>
+              <span className="mesa-toggle-countdown">{periodo === 'feed' ? `${countdown}s` : '30s'}</span>
             </button>
           </div>
         </div>
 
         {/* Right: Status, Fullscreen Toggle e Relógio Digital */}
         <div className="mesa-header-right">
-          {periodo === 'hoje' ? (
+          {periodo === 'hoje' && (
             <div className="mesa-live-pill cyan">
               <span className="mesa-pulse-green" />
               <span>EM TEMPO REAL</span>
             </div>
-          ) : (
+          )}
+          {periodo === 'mes' && (
             <div className="mesa-live-pill purple">
               <span className="mesa-pulse-purple" />
               <span>VISÃO MENSAL</span>
+            </div>
+          )}
+          {periodo === 'feed' && (
+            <div className="mesa-live-pill amber">
+              <span className="mesa-pulse-amber" />
+              <span>NOSSO FEED</span>
             </div>
           )}
 
@@ -538,7 +563,11 @@ export const MesaOperacaoDashboard: React.FC = () => {
 
       {/* ── CORPO PRINCIPAL ── */}
       <main className="mesa-body">
-        {/* ── LINHA 1: 6 KPI CARDS ── */}
+        {periodo === 'feed' ? (
+          <MesaFeedStage />
+        ) : (
+          <>
+            {/* ── LINHA 1: 6 KPI CARDS ── */}
         <section className="mesa-kpis-grid">
           {/* Card 1: Volume Bruto */}
           <div className="mesa-kpi-card cyan">
@@ -981,6 +1010,8 @@ export const MesaOperacaoDashboard: React.FC = () => {
             </div>
           </div>
         </section>
+          </>
+        )}
       </main>
     </div>
   );
