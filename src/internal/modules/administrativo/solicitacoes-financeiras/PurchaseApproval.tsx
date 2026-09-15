@@ -2336,9 +2336,6 @@ export const PurchaseApproval: React.FC = () => {
                       }}
                       required={addedItems.length === 0}
                     />
-                    <span style={{ fontSize: '0.8rem', color: '#38bdf8', marginTop: '4px', display: 'block' }}>
-                      ⚡ Cálculo automático (R$ 2,00 / km): <strong>R$ {((parseFloat(kmRodado) || 0) * 2.0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</strong>
-                    </span>
                   </>
                 ) : (
                   <>
@@ -2357,8 +2354,47 @@ export const PurchaseApproval: React.FC = () => {
                 )}
               </div>
 
-              {/* Quantidade (não é necessária / não aparece quando Reembolso + KILOMETRAGEM) */}
-              {!(categoria === 'Reembolso' && produtoServico === 'KILOMETRAGEM') && (
+              {/* Quantidade OU Caixa de Valor Total Exposta quando Reembolso + KILOMETRAGEM */}
+              {categoria === 'Reembolso' && produtoServico === 'KILOMETRAGEM' ? (
+                <div className="pa-form-group">
+                  <label style={{ color: '#38bdf8', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    ⚡ Valor Total Calculado (R$ 2,00 / km)
+                  </label>
+                  <div
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      background: 'linear-gradient(135deg, rgba(56, 189, 248, 0.12) 0%, rgba(14, 165, 233, 0.05) 100%)',
+                      border: '1.5px solid rgba(56, 189, 248, 0.45)',
+                      borderRadius: '8px',
+                      padding: '0 16px',
+                      height: '42px',
+                      boxShadow: '0 2px 8px rgba(0, 0, 0, 0.25)'
+                    }}
+                  >
+                    <span style={{ fontSize: '0.85rem', color: '#94a3b8' }}>
+                      {parseFloat(kmRodado) > 0 ? (
+                        <span>
+                          <strong style={{ color: '#cbd5e1' }}>{kmRodado} km</strong> × R$ 2,00
+                        </span>
+                      ) : (
+                        'Aguardando KM...'
+                      )}
+                    </span>
+                    <span
+                      style={{
+                        fontSize: '1.35rem',
+                        fontWeight: 800,
+                        color: '#38bdf8',
+                        letterSpacing: '-0.5px'
+                      }}
+                    >
+                      {formatBrl((parseFloat(kmRodado) || 0) * 2.0)}
+                    </span>
+                  </div>
+                </div>
+              ) : (
                 <div className="pa-form-group">
                   <label>
                     Quantidade <span className="pa-required">*</span>
