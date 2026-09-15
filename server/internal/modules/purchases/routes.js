@@ -856,7 +856,7 @@ export function registerPurchaseRoutes(app, {
       if (!fornecedor_nome) {
         return res.status(400).json({ error: `${prefix}O Nome do Fornecedor / Prestador é obrigatório.` });
       }
-      if (!fornecedor_contato) {
+      if (categoria.toLowerCase() !== 'reembolso' && !fornecedor_contato) {
         return res.status(400).json({ error: `${prefix}O Contato do Fornecedor / Prestador é obrigatório.` });
       }
       if (!forma_pagamento || !FORMAS_PAGAMENTO_VALIDAS.includes(forma_pagamento)) {

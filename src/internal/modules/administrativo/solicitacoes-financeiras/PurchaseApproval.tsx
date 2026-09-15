@@ -482,7 +482,7 @@ export const PurchaseApproval: React.FC = () => {
       if (!silent) setFormError('Informe o Nome do Fornecedor / Prestador de serviço.');
       return null;
     }
-    if (!fornecedorContato.trim()) {
+    if (categoria !== 'Reembolso' && !fornecedorContato.trim()) {
       if (!silent) setFormError('Informe o Contato do Fornecedor / Prestador de serviço.');
       return null;
     }
@@ -1882,15 +1882,15 @@ export const PurchaseApproval: React.FC = () => {
               {/* Contato do Fornecedor */}
               <div className="pa-form-group">
                 <label>
-                  Contato do Fornecedor / Prestador de Serviço <span className="pa-required">*</span>
+                  Contato do Fornecedor / Prestador de Serviço {categoria !== 'Reembolso' && <span className="pa-required">*</span>}
                 </label>
                 <input
                   type="text"
                   className="pa-input"
-                  placeholder="Ex: (11) 99999-9999 / financeiro@fornecedor.com.br"
+                  placeholder={categoria === 'Reembolso' ? 'Opcional para reembolso' : 'Ex: (11) 99999-9999 / financeiro@fornecedor.com.br'}
                   value={fornecedorContato}
                   onChange={e => setFornecedorContato(e.target.value)}
-                  required
+                  required={categoria !== 'Reembolso'}
                 />
               </div>
 
@@ -3278,13 +3278,13 @@ export const PurchaseApproval: React.FC = () => {
                   </div>
 
                   <div className="pa-form-group">
-                    <label>Contato do Fornecedor</label>
+                    <label>Contato do Fornecedor {reopenTarget?.categoria !== 'Reembolso' && <span className="pa-required">*</span>}</label>
                     <input
                       type="text"
                       className="pa-input"
                       value={reopenFornecedorContato}
                       onChange={e => setReopenFornecedorContato(e.target.value)}
-                      required
+                      required={reopenTarget?.categoria !== 'Reembolso'}
                     />
                   </div>
 
