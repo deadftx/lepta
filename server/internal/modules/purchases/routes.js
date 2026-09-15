@@ -238,14 +238,14 @@ export function registerPurchaseRoutes(app, {
       db.exec("ALTER TABLE compras_requisicoes_itens ADD COLUMN subcategoria_reembolso TEXT");
     }
 
-    // Autocorreção: restaura status para AGUARDANDO_JURIDICO de requisições ativas que requerem validação jurídica e tiveram seu status modificado (ex: por mensagens)
+    // Autocorreção: restaura status para AGUARDANDO_JURIDICO de requisições ativas que requerem validação jurídica e tiveram seu status modificado (ex: por mensagens ou reabertura)
     db.prepare(`
       UPDATE compras_requisicoes
       SET status = 'AGUARDANDO_JURIDICO',
           juridico_status = 'PENDENTE'
       WHERE arquivado = 0
         AND (requer_juridico = 1 OR valor >= 2000)
-        AND (juridico_status IS NULL OR juridico_status = 'PENDENTE')
+        AND (juridico_status IS NULL OR juridico_status = 'PENDENTE' OR juridico_status = 'REJEITADO')
         AND status NOT IN ('APROVADO', 'NEGADO', 'NEGADO_JURIDICO', 'PAGO', 'SOLICITACAO_CONCLUIDA')
         AND status != 'AGUARDANDO_JURIDICO'
     `).run();
@@ -1936,6 +1936,29 @@ export function registerPurchaseRoutes(app, {
       const now = new Date().toISOString();
       const userName = req.authUser.username || req.authUser.id;
 
+      // Verifica se a solicitação requer parecer jurídico:
+      // 1. Valor total >= 2.000 ou algum item individual >= 2.000
+      // 2. OU se foi previamente rejeitada pelo jurídico (status 'NEGADO_JURIDICO' ou juridico_status 'REJEITADO')
+      // 3. OU se já estava marcada com requer_juridico = 1
+      let requerJuridico = Number(valor) >= 2000 ||
+        requisicao.requer_juridico === 1 ||
+        requisicao.status === 'NEGADO_JURIDICO' ||
+        requisicao.juridico_status === 'REJEITADO';
+
+      if (!requerJuridico && itensRecebidos) {
+        for (const it of itensRecebidos) {
+          const itVal = Number(it.valor) * Math.max(1, Number(it.quantidade || 1));
+          if (itVal >= 2000 || Number(it.valor) >= 2000) {
+            requerJuridico = true;
+            break;
+          }
+        }
+      }
+
+      const novoStatus = requerJuridico ? 'AGUARDANDO_JURIDICO' : 'REABERTO';
+      const novoJuridicoStatus = requerJuridico ? 'PENDENTE' : 'DISPENSADO';
+      const novoRequerJuridico = requerJuridico ? 1 : 0;
+
       db.transaction(() => {
         if (itensRecebidos) {
           db.prepare(`DELETE FROM compras_requisicoes_itens WHERE requisicao_id = ?`).run(req.params.id);
@@ -2003,9 +2026,12 @@ export function registerPurchaseRoutes(app, {
 
         db.prepare(`
           UPDATE compras_requisicoes
-          SET status = 'REABERTO',
+          SET status = ?,
+              juridico_status = ?,
+              requer_juridico = ?,
               arquivado = 0,
               arquivado_manualmente = 0,
+              motivo_arquivamento = NULL,
               categoria = ?,
               fornecedor_nome = ?,
               fornecedor_contato = ?,
@@ -2018,11 +2044,20 @@ export function registerPurchaseRoutes(app, {
               quantidade = ?,
               observacoes = ?,
               chave_pix = ?,
+              aprovador_id = NULL,
+              aprovador_nome = NULL,
               motivo_decisao = NULL,
               decidido_em = NULL,
+              juridico_aprovador_id = NULL,
+              juridico_aprovador_nome = NULL,
+              juridico_motivo = NULL,
+              juridico_decidido_em = NULL,
               updated_at = ?
           WHERE id = ?
         `).run(
+          novoStatus,
+          novoJuridicoStatus,
+          novoRequerJuridico,
           categoria,
           fornecedor_nome,
           fornecedor_contato,
@@ -2039,9 +2074,9 @@ export function registerPurchaseRoutes(app, {
           req.params.id
         );
 
-        const msgTexto = mensagem
-          ? `Solicitação Reaberta pelo solicitante: ${mensagem}`
-          : 'Solicitação Reaberta pelo solicitante para nova análise.';
+        const msgTexto = requerJuridico
+          ? (mensagem ? `🔄 Solicitação Reaberta e corrigida (Retornou à fila do Jurídico): ${mensagem}` : '🔄 Solicitação Reaberta e corrigida pelo solicitante para nova análise do Jurídico.')
+          : (mensagem ? `🔄 Solicitação Reaberta pelo solicitante: ${mensagem}` : '🔄 Solicitação Reaberta pelo solicitante para nova análise.');
 
         db.prepare(`
           INSERT INTO compras_mensagens (id, requisicao_id, autor_id, autor_nome, autor_role, mensagem, created_at)
@@ -2056,21 +2091,46 @@ export function registerPurchaseRoutes(app, {
           now
         );
 
-        // Notifica os aprovadores que interagiram (ou todos os aprovadores se nenhum interagiu)
-        let targetApprovers = getInteractingApproversForRequest(req.params.id).filter(uid => uid !== req.authUser.id);
-        if (!targetApprovers.length) {
-          targetApprovers = getAllApproverUserIds().filter(uid => uid !== req.authUser.id);
-        }
+        if (requerJuridico) {
+          // Notifica a equipe do Jurídico para avaliar a solicitação reaberta
+          const legalUserIds = getAllLegalApproverUserIds().filter(uid => uid !== req.authUser.id);
+          notifyUsers(db, legalUserIds, {
+            titulo: `⚖️ Solicitação Reaberta - Pendente de Jurídico (${requisicao.id})`,
+            mensagem: `${userName} corrigiu e reabriu a solicitação de ${produto_servico} (${formatBrl(valor)}), retornando para validação jurídica: "${mensagem || 'Para nova análise'}"`,
+            tipo: 'COMPRAS_REABERTO',
+            link: '/juridico/aprovacao-pagamentos'
+          });
+        } else {
+          // Notifica os aprovadores que interagiram (ou todos os aprovadores se nenhum interagiu)
+          let targetApprovers = getInteractingApproversForRequest(req.params.id).filter(uid => uid !== req.authUser.id);
+          if (!targetApprovers.length) {
+            targetApprovers = getAllApproverUserIds().filter(uid => uid !== req.authUser.id);
+          }
 
-        notifyUsers(db, targetApprovers, {
-          titulo: `🔄 Solicitação Reaberta (${requisicao.id})`,
-          mensagem: `${userName} reabriu a solicitação de ${produto_servico}: "${mensagem || 'Para nova análise'}"`,
-          tipo: 'COMPRAS_REABERTO',
-          link: '/administrativo/compras'
-        });
+          notifyUsers(db, targetApprovers, {
+            titulo: `🔄 Solicitação Reaberta (${requisicao.id})`,
+            mensagem: `${userName} reabriu a solicitação de ${produto_servico} (${formatBrl(valor)}): "${mensagem || 'Para nova análise'}"`,
+            tipo: 'COMPRAS_REABERTO',
+            link: '/administrativo/compras'
+          });
+        }
       })();
 
       const atualizado = db.prepare(`SELECT * FROM compras_requisicoes WHERE id = ?`).get(req.params.id);
+
+      // Dispara e-mail para os destinatários configurados
+      try {
+        sendFinancialWorkflowEmail({
+          db,
+          evento: requerJuridico ? 'SOLICITACAO_CRIADA' : 'SOLICITACAO_REABERTA',
+          requisicao: atualizado,
+          autorNome: userName,
+          motivo: mensagem
+        }).catch(err => console.warn('Aviso envio email reabertura:', err.message));
+      } catch (e) {
+        console.warn('Erro ao disparar email reabertura:', e.message);
+      }
+
       return res.json({ success: true, requisicao: atualizado });
     } catch (error) {
       console.error('Erro ao reabrir solicitação:', error.message);

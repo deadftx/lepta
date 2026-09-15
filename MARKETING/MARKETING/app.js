@@ -715,12 +715,8 @@ class FeedTvApp {
           <div class="poll-options-list"></div>
           <div class="poll-footer-info">
             <span>${totalVotes} votos registrados</span>
-            <span>Clique na tela ou aponte o celular para votar</span>
+            <span>Clique para votar</span>
           </div>
-        </div>
-        <div class="poll-qr-side">
-          <div class="qr-code-box" id="pollQrCode_${frameIndex}"></div>
-          <span class="qr-label">📱 VOTE PELO CELULAR</span>
         </div>
       </div>
     `;
@@ -754,30 +750,6 @@ class FeedTvApp {
 
     wrapper.appendChild(card);
     container.appendChild(wrapper);
-
-    // Gera QR Code de forma assíncrona garantindo a renderização do elemento
-    setTimeout(() => {
-      const qrElem = document.getElementById(`pollQrCode_${frameIndex}`);
-      if (qrElem) {
-        qrElem.innerHTML = '';
-        if (window.QRCode) {
-          try {
-            new window.QRCode(qrElem, {
-              text: pollData.qrUrl || 'https://lepta.com.br/workshop',
-              width: 100,
-              height: 100,
-              colorDark: '#0f172a',
-              colorLight: '#ffffff',
-              correctLevel: window.QRCode.CorrectLevel.M
-            });
-          } catch (e) {
-            qrElem.innerHTML = `<svg viewBox="0 0 100 100" width="100" height="100"><rect width="100" height="100" fill="#fff"/><rect x="10" y="10" width="28" height="28" fill="#0f172a"/><rect x="16" y="16" width="16" height="16" fill="#fff"/><rect x="62" y="10" width="28" height="28" fill="#0f172a"/><rect x="68" y="16" width="16" height="16" fill="#fff"/><rect x="10" y="62" width="28" height="28" fill="#0f172a"/><rect x="16" y="68" width="16" height="16" fill="#fff"/><rect x="46" y="46" width="12" height="12" fill="#0f172a"/></svg>`;
-          }
-        } else {
-          qrElem.innerHTML = `<svg viewBox="0 0 100 100" width="100" height="100"><rect width="100" height="100" fill="#fff"/><rect x="10" y="10" width="28" height="28" fill="#0f172a"/><rect x="16" y="16" width="16" height="16" fill="#fff"/><rect x="62" y="10" width="28" height="28" fill="#0f172a"/><rect x="68" y="16" width="16" height="16" fill="#fff"/><rect x="10" y="62" width="28" height="28" fill="#0f172a"/><rect x="16" y="68" width="16" height="16" fill="#fff"/><rect x="46" y="46" width="12" height="12" fill="#0f172a"/></svg>`;
-        }
-      }
-    }, 50);
   }
 
   // 6. Renderizador de Texto Formatado / Comunicado Corporativo

@@ -141,7 +141,13 @@ export interface PurchaseRequest {
   chave_pix?: string;
   km_rodado?: number;
   subcategoria_reembolso?: string;
-  status: 'PENDENTE' | 'REABERTO' | 'AGUARDANDO_RESPOSTA_SOLICITANTE' | 'AGUARDANDO_RESPOSTA_APROVADOR' | 'APROVADO' | 'PAGAMENTO_PAUSADO' | 'NEGADO' | 'PAGO' | 'REVISAO' | 'SOLICITACAO_CONCLUIDA';
+  status: 'PENDENTE' | 'REABERTO' | 'AGUARDANDO_RESPOSTA_SOLICITANTE' | 'AGUARDANDO_RESPOSTA_APROVADOR' | 'APROVADO' | 'PAGAMENTO_PAUSADO' | 'NEGADO' | 'PAGO' | 'REVISAO' | 'SOLICITACAO_CONCLUIDA' | 'AGUARDANDO_JURIDICO' | 'NEGADO_JURIDICO';
+  requer_juridico?: number;
+  juridico_status?: string | null;
+  juridico_aprovador_id?: string | null;
+  juridico_aprovador_nome?: string | null;
+  juridico_motivo?: string | null;
+  juridico_decidido_em?: string | null;
   data_pagamento?: string | null;
   datas_parcelas?: string | null;
   pausado_em?: string | null;

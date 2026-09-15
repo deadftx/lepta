@@ -1350,7 +1350,12 @@ export const PurchaseApproval: React.FC = () => {
         throw new Error(err.error || 'Falha ao reabrir solicitação.');
       }
 
-      showToast('Solicitação REABERTA com sucesso e enviada para a fila ativa!');
+      const resData = await res.json();
+      const isLegal = resData?.requisicao?.status === 'AGUARDANDO_JURIDICO';
+      showToast(isLegal
+        ? 'Solicitação REABERTA com sucesso e enviada para validação do JURÍDICO!'
+        : 'Solicitação REABERTA com sucesso e enviada para a fila ativa de aprovação!'
+      );
       setReopenTarget(null);
       if (selectedRequest?.id === reopenTarget.id) setSelectedRequest(null);
       fetchData(false);
@@ -2922,8 +2927,8 @@ export const PurchaseApproval: React.FC = () => {
                               <Eye size={15} /> Ver
                             </button>
 
-                            {/* Se negada ou arquivada e for dono ou master -> Reabrir */}
-                            {(item.status === 'NEGADO' || (item.arquivado === 1 && !['APROVADO', 'PAGO', 'SOLICITACAO_CONCLUIDA'].includes(item.status))) && (isOwner || isMaster) && (
+                            {/* Se negada (geral ou jurídico) ou arquivada e for dono ou master -> Reabrir */}
+                            {(item.status === 'NEGADO' || item.status === 'NEGADO_JURIDICO' || (item.arquivado === 1 && !['APROVADO', 'PAGO', 'SOLICITACAO_CONCLUIDA'].includes(item.status))) && (isOwner || isMaster) && (
                               <button
                                 className="pa-btn-reopen"
                                 onClick={() => handleOpenReopen(item)}
@@ -3490,10 +3495,10 @@ export const PurchaseApproval: React.FC = () => {
               </div>
 
               {/* Botão de Reabrir dentro do modal se estiver negada ou arquivada */}
-              {(selectedRequest.status === 'NEGADO' || (selectedRequest.arquivado === 1 && !['APROVADO', 'PAGO', 'SOLICITACAO_CONCLUIDA'].includes(selectedRequest.status))) && (
+              {(selectedRequest.status === 'NEGADO' || selectedRequest.status === 'NEGADO_JURIDICO' || (selectedRequest.arquivado === 1 && !['APROVADO', 'PAGO', 'SOLICITACAO_CONCLUIDA'].includes(selectedRequest.status))) && (
                 <div style={{ background: '#1e293b', padding: '14px', borderRadius: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <span style={{ color: '#f87171', fontSize: '0.9rem', fontWeight: 600 }}>
-                    Esta solicitação está {selectedRequest.status === 'NEGADO' ? 'negada' : 'arquivada'}. Deseja reabri-la para reavaliação?
+                    Esta solicitação está {selectedRequest.status === 'NEGADO_JURIDICO' ? 'rejeitada pelo Jurídico' : selectedRequest.status === 'NEGADO' ? 'negada' : 'arquivada'}. Deseja reabri-la para reavaliação?
                   </span>
                   <button
                     type="button"
@@ -3682,7 +3687,11 @@ export const PurchaseApproval: React.FC = () => {
             }}>
               <div className="pa-modal-body">
                 <div style={{ background: 'rgba(192, 132, 252, 0.1)', border: '1px solid rgba(192, 132, 252, 0.3)', padding: '12px 16px', borderRadius: '10px', marginBottom: '1rem', color: '#e9d5ff', fontSize: '0.85rem' }}>
-                  Ao reabrir esta solicitação, ela voltará para a esteira ativa dos aprovadores com o status <strong>REABERTO</strong>.
+                  {reopenTarget && (reopenTarget.status === 'NEGADO_JURIDICO' || reopenTarget.requer_juridico === 1 || reopenTarget.juridico_status === 'REJEITADO' || (reopenItems.reduce((acc, it, idx) => acc + (idx === reopenItemIndex ? (reopenValorNumeric * reopenQuantidade) : ((Number(it.valor) || 0) * Math.max(1, Number(it.quantidade) || 1))), 0) >= 2000)) ? (
+                    <>Ao salvar as correções, esta solicitação retornará para a fila de validação do <strong>JURÍDICO</strong> (status <strong>Aguardando Jurídico</strong>) para nova análise das alterações.</>
+                  ) : (
+                    <>Ao reabrir esta solicitação, ela voltará para a esteira ativa dos aprovadores com o status <strong>REABERTO</strong>.</>
+                  )}
                 </div>
 
                 {/* Stepper / Barra de Navegação entre Itens */}

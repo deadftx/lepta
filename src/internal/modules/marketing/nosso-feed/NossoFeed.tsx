@@ -3,8 +3,8 @@ import {
   Maximize2, Volume2, VolumeX, Play, Pause,
   ChevronDown, ChevronUp, Tv, Image as ImageIcon,
   Video as VideoIcon, BarChart2, FileText,
-  Clock, Upload, Check, Sparkles,
-  SlidersHorizontal, Smartphone
+  Clock, Upload, Check,
+  SlidersHorizontal, Radio
 } from 'lucide-react';
 import { API_BASE_URL, getAuthHeaders } from '../../../../config/api';
 import './NossoFeed.css';
@@ -75,7 +75,7 @@ export interface HubConfig {
   frames: FrameData[];
 }
 
-const DEFAULT_CONFIG: HubConfig = {
+export const DEFAULT_CONFIG: HubConfig = {
   currentPreset: '3-featured',
   activeFrameIndex: 0,
   activeDockTab: 'frame',
@@ -132,7 +132,7 @@ const DEFAULT_CONFIG: HubConfig = {
   ]
 };
 
-const PRESET_CAPACITIES: Record<PresetType, number> = {
+export const PRESET_CAPACITIES: Record<PresetType, number> = {
   '1-full': 1,
   '2-split-h': 2,
   '2-split-v': 2,
@@ -142,7 +142,7 @@ const PRESET_CAPACITIES: Record<PresetType, number> = {
   '4-spotlight': 4
 };
 
-const PRESET_SEQUENCE: PresetType[] = ['1-full', '2-split-h', '3-featured', '3-columns', '4-grid', '4-spotlight'];
+export const PRESET_SEQUENCE: PresetType[] = ['1-full', '2-split-h', '3-featured', '3-columns', '4-grid', '4-spotlight'];
 
 export const NossoFeed: React.FC = () => {
   const [config, setConfig] = useState<HubConfig>(() => {
@@ -157,8 +157,9 @@ export const NossoFeed: React.FC = () => {
 
   const [currentTime, setCurrentTime] = useState<string>('');
   const [currentDate, setCurrentDate] = useState<string>('');
-  const [saveSuccess, setSaveSuccess] = useState<boolean>(false);
   const [votedPolls, setVotedPolls] = useState<Record<string, number>>({});
+  const [isPublishing, setIsPublishing] = useState<boolean>(false);
+  const [publishSuccess, setPublishSuccess] = useState<boolean>(false);
   const autoPlayTimerRef = useRef<any>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -211,10 +212,45 @@ export const NossoFeed: React.FC = () => {
         body: JSON.stringify({ config: newConfig })
       })
         .then(() => {
-          setSaveSuccess(true);
-          setTimeout(() => setSaveSuccess(false), 3000);
+          setPublishSuccess(true);
+          setTimeout(() => setPublishSuccess(false), 3000);
         })
         .catch(() => {});
+    }
+  };
+
+  // 3.1 Publicação instantânea na Mesa de Operações (Transmissão em Tempo Real)
+  const handlePublishToMesa = async () => {
+    setIsPublishing(true);
+    try {
+      localStorage.setItem('lepta_feed_tv_config', JSON.stringify(config));
+
+      const res = await fetch(`${API_BASE_URL}/api/marketing/feed/publish-hub`, {
+        method: 'POST',
+        headers: {
+          ...getAuthHeaders(),
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ config })
+      });
+
+      if (!res.ok) {
+        await fetch(`${API_BASE_URL}/api/marketing/feed/hub-config`, {
+          method: 'POST',
+          headers: {
+            ...getAuthHeaders(),
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ config })
+        });
+      }
+
+      setPublishSuccess(true);
+      setTimeout(() => setPublishSuccess(false), 3500);
+    } catch (err) {
+      console.error('Erro ao publicar feed para a Mesa:', err);
+    } finally {
+      setIsPublishing(false);
     }
   };
 
@@ -623,8 +659,6 @@ export const NossoFeed: React.FC = () => {
                   {/* TIPO: ENQUETE INTERATIVA */}
                   {frame.type === 'poll' && frame.poll && (() => {
                     const totalVotes = frame.poll.options.reduce((sum, o) => sum + (o.votes || 0), 0);
-                    const pollQrUrl = frame.poll.qrUrl || 'https://lepta.com.br';
-                    const qrImgSrc = `https://api.qrserver.com/v1/create-qr-code/?size=130x130&margin=4&data=${encodeURIComponent(pollQrUrl)}`;
 
                     return (
                       <div className="frame-poll-card">
@@ -661,18 +695,7 @@ export const NossoFeed: React.FC = () => {
                           <div className="poll-meta-footer">
                             <span>{totalVotes} votos registrados</span>
                             <span>•</span>
-                            <span>Toque para votar ou aponte a câmera</span>
-                          </div>
-                        </div>
-
-                        {/* Coluna do QR Code */}
-                        <div className="poll-qr-col">
-                          <div className="qr-box">
-                            <img src={qrImgSrc} alt="Votar pelo Celular" className="qr-image" />
-                          </div>
-                          <div className="qr-caption">
-                            <Smartphone size={12} />
-                            <span>VOTE PELO CELULAR</span>
+                            <span>Clique para registrar seu voto</span>
                           </div>
                         </div>
                       </div>
@@ -811,16 +834,20 @@ export const NossoFeed: React.FC = () => {
               </div>
             </div>
 
-            {/* Lado Direito: Salvar e Recolher/Expandir */}
+            {/* Lado Direito: Publicar na Mesa de Operações e Controles */}
             <div className="dock-actions-group">
               <button
                 type="button"
-                className="dock-save-btn"
-                onClick={() => persistConfig(config, true)}
-                title="Salvar alterações no banco de dados e sincronizar com todos os telões"
+                className={`dock-publish-live-btn ${isPublishing ? 'publishing' : ''} ${publishSuccess ? 'published' : ''}`}
+                onClick={handlePublishToMesa}
+                disabled={isPublishing}
+                title="Publicar na Mesa de Operações em Tempo Real (Broadcast Instantâneo)"
               >
-                {saveSuccess ? <Check size={14} /> : <Sparkles size={14} />}
-                <span>{saveSuccess ? 'Salvo no Telão!' : 'Salvar & Transmitir'}</span>
+                <span className="live-pulsing-dot" />
+                {publishSuccess ? <Check size={14} /> : <Radio size={14} className={isPublishing ? 'pulse-spin' : ''} />}
+                <span className="publish-label">
+                  {publishSuccess ? 'PUBLICADO NA MESA! ✓' : isPublishing ? 'PUBLICANDO...' : 'PUBLICAR'}
+                </span>
               </button>
 
               <button
@@ -828,7 +855,7 @@ export const NossoFeed: React.FC = () => {
                 className="dock-toggle-btn"
                 onClick={() => persistConfig({ ...config, isDockCollapsed: !config.isDockCollapsed })}
               >
-                <span>{config.isDockCollapsed ? 'Expandir Editor' : 'Ocultar Editor'}</span>
+                <span>{config.isDockCollapsed ? 'Editar Feed' : 'Ocultar Editor'}</span>
                 {config.isDockCollapsed ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
               </button>
             </div>
@@ -1077,19 +1104,7 @@ export const NossoFeed: React.FC = () => {
                           />
                         </div>
 
-                        <div className="editor-field">
-                          <label>Link para Votação via QR Code</label>
-                          <input
-                            type="text"
-                            value={currentFrame.poll?.qrUrl || ''}
-                            onChange={(e) => handleUpdateCurrentFrame(f => {
-                              if (f.poll) f.poll.qrUrl = e.target.value;
-                            })}
-                            placeholder="https://lepta.com.br/enquete"
-                          />
-                        </div>
-
-                        <div className="editor-field">
+                        <div className="editor-field span-2">
                           <label>Opções de Resposta</label>
                           <div className="options-edit-inline">
                             {currentFrame.poll?.options.map((opt, oIdx) => (

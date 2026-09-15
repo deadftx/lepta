@@ -583,7 +583,7 @@ export const MesaOperacaoDashboard: React.FC = () => {
       </header>
 
       {/* ── CORPO PRINCIPAL ── */}
-      <main className="mesa-body">
+      <main className={`mesa-body ${periodo === 'feed' ? 'mesa-body-feed-fullscreen' : ''}`}>
         {periodo === 'feed' ? (
           <MesaFeedStage />
         ) : (

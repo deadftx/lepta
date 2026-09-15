@@ -29,11 +29,22 @@ export function registerMarketingFeedRoutes(app, { db, requireSession, checkAcce
 
   const sseClients = new Set();
 
-  function broadcastFeedUpdate(feedData) {
-    const payload = `data: ${JSON.stringify({ type: 'FEED_UPDATE', data: feedData, timestamp: Date.now() })}\n\n`;
+  function broadcastFeedUpdate(eventPayload) {
+    const eventType = eventPayload?.type || 'FEED_UPDATE';
+    const eventData = eventPayload?.config !== undefined
+      ? eventPayload.config
+      : (eventPayload?.data !== undefined ? eventPayload.data : eventPayload);
+
+    const message = `data: ${JSON.stringify({
+      type: eventType,
+      data: eventData,
+      raw: eventPayload,
+      timestamp: Date.now()
+    })}\n\n`;
+
     for (const client of sseClients) {
       try {
-        client.write(payload);
+        client.write(message);
       } catch (_) {
         sseClients.delete(client);
       }
@@ -54,6 +65,22 @@ export function registerMarketingFeedRoutes(app, { db, requireSession, checkAcce
       is_active: 1,
       published_at: new Date().toISOString()
     };
+  }
+
+  function getLatestHubConfig() {
+    try {
+      const row = db.prepare('SELECT config_json FROM marketing_hub_config WHERE id = 1').get();
+      if (row && row.config_json) {
+        return JSON.parse(row.config_json);
+      }
+    } catch (_) {}
+    try {
+      const localConfigPath = path.resolve(process.cwd(), 'MARKETING/MARKETING/config.json');
+      if (fs.existsSync(localConfigPath)) {
+        return JSON.parse(fs.readFileSync(localConfigPath, 'utf-8'));
+      }
+    } catch (_) {}
+    return null;
   }
 
   // 1. Obter publicação atual do feed (chamado pelo dashboard e marketing)
@@ -85,7 +112,7 @@ export function registerMarketingFeedRoutes(app, { db, requireSession, checkAcce
       );
 
       const newFeed = db.prepare('SELECT * FROM marketing_feed WHERE id = ?').get(info.lastInsertRowid);
-      broadcastFeedUpdate(newFeed);
+      broadcastFeedUpdate({ type: 'FEED_UPDATE', data: newFeed });
 
       return res.json({ success: true, feed: newFeed });
     } catch (err) {
@@ -103,7 +130,13 @@ export function registerMarketingFeedRoutes(app, { db, requireSession, checkAcce
     if (res.flushHeaders) res.flushHeaders();
 
     const currentFeed = getLatestFeed();
-    res.write(`data: ${JSON.stringify({ type: 'INIT', data: currentFeed, timestamp: Date.now() })}\n\n`);
+    const currentHubConfig = getLatestHubConfig();
+    res.write(`data: ${JSON.stringify({
+      type: 'INIT',
+      data: currentFeed,
+      hubConfig: currentHubConfig,
+      timestamp: Date.now()
+    })}\n\n`);
 
     sseClients.add(res);
 
@@ -125,27 +158,16 @@ export function registerMarketingFeedRoutes(app, { db, requireSession, checkAcce
   // 4. Obter configuração completa do Hub de Feed (Multi-Quadros)
   app.get('/api/marketing/feed/hub-config', (req, res) => {
     try {
-      const row = db.prepare('SELECT config_json FROM marketing_hub_config WHERE id = 1').get();
-      if (row && row.config_json) {
-        return res.json({ success: true, config: JSON.parse(row.config_json) });
-      }
-
-      // Fallback para o config.json local da pasta MARKETING se existir
-      const localConfigPath = path.resolve(process.cwd(), 'MARKETING/MARKETING/config.json');
-      if (fs.existsSync(localConfigPath)) {
-        const raw = fs.readFileSync(localConfigPath, 'utf-8');
-        return res.json({ success: true, config: JSON.parse(raw) });
-      }
-
-      return res.json({ success: true, config: null });
+      const config = getLatestHubConfig();
+      return res.json({ success: true, config });
     } catch (err) {
       console.warn('[MarketingFeed] Erro ao obter hub-config:', err.message);
       return res.status(500).json({ success: false, error: err.message });
     }
   });
 
-  // 5. Salvar configuração completa do Hub de Feed (Multi-Quadros)
-  app.post('/api/marketing/feed/hub-config', requireSession, (req, res) => {
+  // 5. Salvar / Publicar configuração completa do Hub de Feed (Multi-Quadros) com Broadcast Realtime
+  const handleSaveHubConfig = (req, res) => {
     try {
       const { config } = req.body || {};
       if (!config) {
@@ -170,14 +192,18 @@ export function registerMarketingFeedRoutes(app, { db, requireSession, checkAcce
         }
       } catch (_) {}
 
+      // Broadcast em tempo real para todos os telões e Mesa de Operação
       broadcastFeedUpdate({ type: 'HUB_CONFIG_UPDATE', config });
 
-      return res.json({ success: true, message: 'Configuração salva com sucesso!' });
+      return res.json({ success: true, message: 'Publicado na Mesa de Operação com sucesso!' });
     } catch (err) {
-      console.error('[MarketingFeed] Erro ao salvar hub-config:', err);
+      console.error('[MarketingFeed] Erro ao salvar/publicar hub-config:', err);
       return res.status(500).json({ success: false, error: err.message });
     }
-  });
+  };
+
+  app.post('/api/marketing/feed/hub-config', handleSaveHubConfig);
+  app.post('/api/marketing/feed/publish-hub', handleSaveHubConfig);
 
   // 6. Registrar voto em enquete do Feed
   app.post('/api/marketing/feed/vote-poll', (req, res) => {
