@@ -4382,6 +4382,10 @@ app.get('/api/cobranca/vencidos', requireSession, requirePermission('12.1', '12'
 // =========================================================================
 // MÓDULO COBRANÇA: CARTA DE ANUÊNCIA (TODOS OS TÍTULOS DA LEPTA)
 // =========================================================================
+// Cache dedicado para consultas filtradas de Carta de Anuência (evita reconsultas totais)
+const cartaAnuenciaQueryCache = new Map();
+const CA_QUERY_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutos
+
 app.get('/api/cobranca/carta-anuencia/titulos', requireSession, requirePermission('12.3', '12.1', '12'), async (req, res) => {
   try {
     const {
@@ -4397,6 +4401,55 @@ app.get('/api/cobranca/carta-anuencia/titulos', requireSession, requirePermissio
       valor_max,
       busca
     } = req.query;
+
+    const hasFilter = Boolean(
+      (cedente && cedente.trim()) ||
+      (sacado && sacado.trim()) ||
+      (tipo_documento && tipo_documento.trim() && tipo_documento !== 'TODOS') ||
+      (situacao && situacao.trim() && situacao !== 'TODAS') ||
+      data_venc_inicio ||
+      data_venc_fim ||
+      data_op_inicio ||
+      data_op_fim ||
+      valor_min ||
+      valor_max ||
+      (busca && busca.trim())
+    );
+
+    // Se nenhuma busca/filtro foi informada, não pré-carrega nada da API e retorna vazio
+    if (!hasFilter) {
+      res.setHeader('x-data-source', 'empty-initial');
+      return res.json({
+        titulos: [],
+        totalRegistros: 0,
+        kpis: null,
+        cedentesList: [],
+        sacadosList: [],
+        tiposList: [],
+        situacoesList: []
+      });
+    }
+
+    // Cache por parâmetros de busca normalizados
+    const cacheKey = JSON.stringify({
+      cedente: (cedente || '').trim().toLowerCase(),
+      sacado: (sacado || '').trim().toLowerCase(),
+      tipo_documento: tipo_documento || '',
+      situacao: situacao || '',
+      data_venc_inicio: data_venc_inicio || '',
+      data_venc_fim: data_venc_fim || '',
+      data_op_inicio: data_op_inicio || '',
+      data_op_fim: data_op_fim || '',
+      valor_min: valor_min || '',
+      valor_max: valor_max || '',
+      busca: (busca || '').trim().toLowerCase()
+    });
+
+    const cachedQuery = cartaAnuenciaQueryCache.get(cacheKey);
+    if (cachedQuery && (Date.now() - cachedQuery.timestamp < CA_QUERY_CACHE_TTL_MS)) {
+      res.setHeader('x-data-source', 'query-cache');
+      return res.json(cachedQuery.data);
+    }
 
     let titles = [];
     let dataSource = 'api';
@@ -4427,10 +4480,30 @@ app.get('/api/cobranca/carta-anuencia/titulos', requireSession, requirePermissio
     const hojeStr = new Intl.DateTimeFormat('fr-CA', { timeZone: 'America/Sao_Paulo' }).format(new Date());
 
     try {
-      const [apiTitulos, liquidacoes] = await Promise.all([
-        fetchTitulosDaAPI(req),
-        fetchLiquidacoesDaAPI(req).catch(() => [])
-      ]);
+      // Prioridade 1: se já tivermos unltdFullHistoryCache em memória com dados frescos, aproveita diretamente
+      const cacheIsFresh = unltdFullHistoryCache.data &&
+        (Date.now() - unltdFullHistoryCache.updatedAt < UNLTD_CACHE_TTL_MS);
+
+      let apiTitulos = [];
+      const liquidacoesPromise = fetchLiquidacoesDaAPI(req).catch(() => []);
+
+      if (cacheIsFresh && unltdFullHistoryCache.data.length > 0) {
+        apiTitulos = unltdFullHistoryCache.data;
+        dataSource = 'memory-cache';
+      } else {
+        // Prioridade 2: se houver intervalo de datas restrito especificado, busca apenas a janela necessária
+        const sDate = data_op_inicio || data_venc_inicio;
+        const eDate = data_op_fim || data_venc_fim;
+
+        if (sDate && eDate) {
+          apiTitulos = deduplicateTitulos(await fetchTitulosRange(sDate, eDate));
+          dataSource = 'api-range';
+        } else {
+          apiTitulos = await fetchTitulosDaAPI(req);
+        }
+      }
+
+      const liquidacoes = await liquidacoesPromise;
 
       const mapLiquidacoes = new Map();
       for (const liq of liquidacoes) {
@@ -4677,8 +4750,7 @@ app.get('/api/cobranca/carta-anuencia/titulos', requireSession, requirePermissio
     const uniqueCedentes = new Set(filteredTitles.map(t => t.cedente)).size;
     const uniqueSacados = new Set(filteredTitles.map(t => t.sacado)).size;
 
-    res.setHeader('x-data-source', dataSource);
-    res.json({
+    const payload = {
       titulos: filteredTitles,
       totalRegistros: titles.length,
       kpis: {
@@ -4692,7 +4764,20 @@ app.get('/api/cobranca/carta-anuencia/titulos', requireSession, requirePermissio
       sacadosList,
       tiposList,
       situacoesList
+    };
+
+    cartaAnuenciaQueryCache.set(cacheKey, {
+      timestamp: Date.now(),
+      data: payload
     });
+
+    if (cartaAnuenciaQueryCache.size > 100) {
+      const oldestKey = cartaAnuenciaQueryCache.keys().next().value;
+      cartaAnuenciaQueryCache.delete(oldestKey);
+    }
+
+    res.setHeader('x-data-source', dataSource);
+    res.json(payload);
   } catch (err) {
     console.error('Erro ao buscar títulos para carta de anuência:', err);
     res.status(500).json({ error: 'Erro ao processar títulos para carta de anuência', message: err.message });

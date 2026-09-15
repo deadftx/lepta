@@ -1,0 +1,1617 @@
+/* ==========================================================================
+   HUB DE FEED INTERNO / TV CORPORATIVA - DESIGN SYSTEM & ESTILOS
+   ========================================================================== */
+
+:root {
+  --bg-main: #070a12;
+  --bg-surface: #0e1424;
+  --bg-card: rgba(18, 26, 44, 0.85);
+  --bg-card-hover: rgba(26, 38, 64, 0.95);
+  --border-color: rgba(255, 255, 255, 0.08);
+  --border-active: #00f2fe;
+  --text-primary: #f8fafc;
+  --text-secondary: #94a3b8;
+  --text-muted: #64748b;
+
+  --accent-cyan: #00f2fe;
+  --accent-blue: #4facfe;
+  --accent-purple: #7928ca;
+  --accent-pink: #ff0080;
+  --accent-green: #10b981;
+  --accent-amber: #f59e0b;
+  --accent-red: #ef4444;
+
+  --font-sans: 'Outfit', 'Montserrat', -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-display: 'Outfit', 'Montserrat', -apple-system, BlinkMacSystemFont, sans-serif;
+
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 16px;
+  --radius-xl: 20px;
+
+  --shadow-glow: 0 0 25px rgba(0, 242, 254, 0.25);
+  --shadow-card: 0 10px 30px -10px rgba(0, 0, 0, 0.5);
+
+  --header-height: 56px;
+  --dock-height: 330px;
+  --ticker-height: 36px;
+  --frame-gap: 12px;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html,
+body {
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+  background-color: var(--bg-main);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ==========================================================================
+   1. TOPBAR DE CONTROLE - ESTILO LEPTA CAPITAL (FEED DE NOTÍCIAS)
+   ========================================================================== */
+.hub-header {
+  height: 56px;
+  background: #06080e;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 18px;
+  z-index: 100;
+  position: relative;
+  transition: transform 0.3s ease, opacity 0.3s ease;
+}
+
+/* Linha Neon Gradiente no Rodapé do Banner */
+.hub-header::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, #9333ea 0%, #3b82f6 50%, #06b6d4 100%);
+  box-shadow: 0 0 10px rgba(59, 130, 246, 0.4);
+}
+
+.header-left {
+  display: flex;
+  align-items: center;
+}
+
+.lepta-brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: default;
+  user-select: none;
+}
+
+.lepta-logo-img {
+  height: 40px;
+  width: auto;
+  object-fit: contain;
+  display: block;
+}
+
+.header-v-divider {
+  height: 24px;
+  width: 1px;
+  background: rgba(255, 255, 255, 0.16);
+  margin: 0 14px;
+}
+
+.header-status-badge {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.glowing-green-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #00e676;
+  box-shadow: 0 0 8px #00e676, 0 0 16px rgba(0, 230, 118, 0.5);
+  animation: greenPulse 2s infinite ease-in-out;
+}
+
+@keyframes greenPulse {
+  0% {
+    transform: scale(0.9);
+    opacity: 0.8;
+    box-shadow: 0 0 6px #00e676;
+  }
+
+  50% {
+    transform: scale(1.2);
+    opacity: 1;
+    box-shadow: 0 0 14px #00e676, 0 0 20px rgba(0, 230, 118, 0.7);
+  }
+
+  100% {
+    transform: scale(0.9);
+    opacity: 0.8;
+    box-shadow: 0 0 6px #00e676;
+  }
+}
+
+.status-badge-title {
+  font-family: var(--font-display);
+  font-weight: 400;
+  font-size: 0.88rem;
+  letter-spacing: 0.08em;
+  color: #00f2fe;
+  text-shadow: 0 0 10px rgba(0, 242, 254, 0.25);
+}
+
+.header-center {
+  flex: 1;
+}
+
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.header-icon-btn {
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
+  background: rgba(14, 20, 36, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  color: #cbd5e1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  box-sizing: border-box;
+  padding: 0;
+}
+
+.header-icon-btn:hover {
+  background: rgba(0, 242, 254, 0.12);
+  border-color: rgba(0, 242, 254, 0.4);
+  color: #00f2fe;
+  box-shadow: 0 0 12px rgba(0, 242, 254, 0.25);
+}
+
+.header-datetime-capsule {
+  height: 34px;
+  display: flex;
+  align-items: center;
+  background: rgba(14, 20, 36, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  padding: 0 14px;
+  border-radius: 8px;
+  font-size: 0.84rem;
+  letter-spacing: 0.02em;
+  box-sizing: border-box;
+}
+
+.capsule-date {
+  font-family: var(--font-display);
+  font-weight: 700;
+  color: #ffffff;
+}
+
+.capsule-dot {
+  color: #38bdf8;
+  font-weight: 800;
+  margin: 0 8px;
+  opacity: 0.8;
+}
+
+.capsule-time {
+  font-family: var(--font-display);
+  font-weight: 700;
+  color: #00f2fe;
+  letter-spacing: 0.04em;
+  text-shadow: 0 0 8px rgba(0, 242, 254, 0.3);
+}
+
+/* Presets dentro do Dock */
+.dock-presets-strip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.dock-strip-label {
+  font-size: 0.65rem;
+  font-weight: 800;
+  color: var(--text-muted);
+  letter-spacing: 0.08em;
+}
+
+.preset-buttons {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.preset-btn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--border-color);
+  color: var(--text-secondary);
+  padding: 3px 8px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-size: 0.72rem;
+  font-weight: 600;
+  transition: all 0.2s ease;
+}
+
+.preset-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+}
+
+.preset-btn.active {
+  background: linear-gradient(135deg, rgba(0, 242, 254, 0.2), rgba(79, 172, 254, 0.25));
+  border-color: rgba(0, 242, 254, 0.4);
+  color: #ffffff;
+  box-shadow: 0 0 10px rgba(0, 242, 254, 0.2);
+}
+
+.preset-btn.active svg {
+  color: var(--accent-cyan);
+}
+
+.dock-v-divider {
+  height: 18px;
+  width: 1px;
+  background: var(--border-color);
+  margin: 0 4px;
+}
+
+.dock-quick-actions {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.action-btn-mini {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--border-color);
+  color: var(--text-secondary);
+  padding: 4px 8px;
+  border-radius: var(--radius-sm);
+  font-size: 0.72rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  user-select: none;
+}
+
+.action-btn-mini:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+.live-clock {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 0.95rem;
+  color: var(--accent-cyan);
+  background: rgba(0, 242, 254, 0.08);
+  padding: 4px 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid rgba(0, 242, 254, 0.15);
+  letter-spacing: 0.05em;
+}
+
+.action-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--border-color);
+  color: var(--text-secondary);
+  padding: 6px 11px;
+  border-radius: var(--radius-md);
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  user-select: none;
+}
+
+.action-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--text-primary);
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+.primary-btn.tv-btn {
+  background: linear-gradient(135deg, #00f2fe 0%, #4facfe 100%);
+  color: #030712;
+  font-weight: 800;
+  border: none;
+  box-shadow: 0 0 18px rgba(0, 242, 254, 0.4);
+}
+
+.primary-btn.tv-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 0 24px rgba(0, 242, 254, 0.6);
+}
+
+/* ==========================================================================
+   2. FEED VIEWPORT & GRID DOS QUADROS (100% DA TELA)
+   ========================================================================== */
+.feed-viewport {
+  position: relative;
+  width: 100vw;
+  height: calc(100vh - var(--header-height) - var(--ticker-height) - var(--dock-height));
+  display: flex;
+  flex-direction: column;
+  padding: var(--frame-gap);
+  transition: height 0.3s cubic-bezier(0.16, 1, 0.3, 1), padding 0.3s ease;
+  background: radial-gradient(circle at center, #0f172a 0%, #060911 100%);
+}
+
+body.ticker-hidden .feed-viewport {
+  height: calc(100vh - var(--header-height) - var(--dock-height));
+}
+
+body.dock-collapsed .feed-viewport {
+  height: calc(100vh - var(--header-height) - var(--ticker-height) - 48px);
+}
+
+body.dock-collapsed.ticker-hidden .feed-viewport {
+  height: calc(100vh - var(--header-height) - 48px);
+}
+
+/* Modo TV: Ocupa 100% da tela real sem header e sem dock */
+body.tv-mode .hub-header {
+  transform: translateY(-100%);
+  position: absolute;
+  pointer-events: none;
+}
+
+body.tv-mode .horizontal-control-dock {
+  transform: translateY(100%);
+  position: absolute;
+  pointer-events: none;
+}
+
+body.tv-mode .feed-viewport {
+  width: 100vw;
+  height: 100vh;
+  padding: 0;
+}
+
+body.tv-mode .exit-tv-btn {
+  opacity: 0;
+  pointer-events: auto;
+}
+
+body.tv-mode .exit-tv-btn:hover {
+  opacity: 1;
+}
+
+/* Grade de Quadros */
+.frames-grid {
+  flex: 1;
+  width: 100%;
+  height: 100%;
+  display: grid;
+  gap: var(--frame-gap);
+  min-height: 0;
+}
+
+body.tv-mode .frames-grid {
+  gap: 0;
+}
+
+/* ==========================================================================
+   PRESETS DE LAYOUT CSS GRID
+   ========================================================================== */
+/* 1 Tela Cheia */
+.frames-grid.layout-1-full {
+  grid-template-columns: 1fr;
+  grid-template-rows: 1fr;
+}
+
+/* 2 Split Horizontal (Lado a Lado) */
+.frames-grid.layout-2-split-h {
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: 1fr;
+}
+
+/* 2 Split Vertical (Cima e Baixo) */
+.frames-grid.layout-2-split-v {
+  grid-template-columns: 1fr;
+  grid-template-rows: 1fr 1fr;
+}
+
+/* 3 Destaque (Principal amplo à esquerda + 2 menores empilhados) */
+.frames-grid.layout-3-featured {
+  grid-template-columns: 2fr 1fr;
+  grid-template-rows: 1fr 1fr;
+}
+
+.frames-grid.layout-3-featured .frame-box[data-index="0"] {
+  grid-row: span 2;
+}
+
+/* 3 Colunas Iguais */
+.frames-grid.layout-3-columns {
+  grid-template-columns: 1fr 1fr 1fr;
+  grid-template-rows: 1fr;
+}
+
+/* 4 Grade 2x2 */
+.frames-grid.layout-4-grid {
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: 1fr 1fr;
+}
+
+/* 4 Destaque L (1 Principal grande + 3 à direita) */
+.frames-grid.layout-4-spotlight {
+  grid-template-columns: 2.8fr 1.2fr;
+  grid-template-rows: repeat(3, 1fr);
+}
+
+.frames-grid.layout-4-spotlight .frame-box[data-index="0"] {
+  grid-row: span 3;
+}
+
+/* ==========================================================================
+   QUADRO INDIVIDUAL (FRAME BOX)
+   ========================================================================== */
+.frame-box {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  box-shadow: var(--shadow-card);
+  transition: border-color 0.25s ease, box-shadow 0.25s ease, transform 0.2s ease;
+  cursor: pointer;
+}
+
+body.tv-mode .frame-box {
+  border-radius: 0;
+  border: none;
+  cursor: default;
+}
+
+.frame-box.active-editing {
+  border-color: var(--accent-cyan);
+  box-shadow: 0 0 25px rgba(0, 242, 254, 0.35);
+}
+
+/* Badge de Informação do Quadro (Oculto em Modo TV) */
+.frame-badge {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  z-index: 10;
+  background: rgba(15, 23, 42, 0.85);
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  padding: 4px 10px;
+  border-radius: var(--radius-sm);
+  font-size: 0.72rem;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  pointer-events: none;
+  transition: opacity 0.2s ease;
+}
+
+body.tv-mode .frame-badge {
+  display: none !important;
+}
+
+.frame-badge .frame-badge-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent-cyan);
+}
+
+.frame-content-container {
+  width: 100%;
+  height: 100%;
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* ==========================================================================
+   RENDERIZADORES DE CONTEÚDO DENTRO DO QUADRO
+   ========================================================================== */
+
+/* 1. Imagem */
+.render-image-wrapper {
+  width: 100%;
+  height: 100%;
+  position: relative;
+  overflow: hidden;
+}
+
+.render-image-wrapper img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  transition: transform 0.4s ease;
+}
+
+.render-image-wrapper.fit-cover img {
+  object-fit: cover;
+}
+
+.render-image-wrapper.fit-contain img {
+  object-fit: contain;
+  background: #000;
+}
+
+.image-caption-overlay {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  padding: 20px 24px;
+  background: linear-gradient(180deg, transparent 0%, rgba(0, 0, 0, 0.85) 100%);
+  color: #ffffff;
+  font-size: 1.1rem;
+  font-weight: 600;
+  backdrop-filter: blur(4px);
+}
+
+/* 2. Vídeo */
+.render-video-wrapper {
+  width: 100%;
+  height: 100%;
+  position: relative;
+  background: #000;
+  overflow: hidden;
+}
+
+.render-video-wrapper video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+/* 3. YouTube Embed */
+.render-youtube-wrapper {
+  width: 100%;
+  height: 100%;
+  position: relative;
+  background: #000;
+  overflow: hidden;
+}
+
+.render-youtube-wrapper iframe {
+  width: 100%;
+  height: 100%;
+  border: none;
+}
+
+/* 4. Instagram Post Card & Embed */
+.render-instagram-wrapper {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, #181c2b 0%, #121624 100%);
+  padding: 16px;
+  overflow: auto;
+}
+
+.instagram-embed-box {
+  width: 100%;
+  max-width: 520px;
+  height: 100%;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 8px;
+}
+
+.instagram-embed-iframe {
+  width: 100%;
+  max-width: 480px;
+  height: 98%;
+  min-height: 480px;
+  max-height: 720px;
+  border: none;
+  border-radius: 12px;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.5);
+  background: #ffffff;
+}
+
+.instagram-placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 32px 24px;
+  background: rgba(14, 20, 36, 0.7);
+  border: 1px dashed rgba(0, 242, 254, 0.35);
+  border-radius: var(--radius-lg);
+  max-width: 440px;
+  color: var(--text-secondary);
+}
+
+.instagram-placeholder .ig-ph-icon {
+  font-size: 2.4rem;
+  margin-bottom: 12px;
+}
+
+.instagram-placeholder h3 {
+  font-family: var(--font-display);
+  font-size: 1.1rem;
+  color: #ffffff;
+  margin-bottom: 8px;
+}
+
+.instagram-placeholder p {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  line-height: 1.5;
+  margin-bottom: 14px;
+}
+
+.instagram-placeholder .ig-ph-example {
+  background: rgba(0, 0, 0, 0.4);
+  padding: 6px 10px;
+  border-radius: 6px;
+  font-size: 0.75rem;
+  color: var(--accent-cyan);
+  word-break: break-all;
+  border: 1px solid rgba(0, 242, 254, 0.2);
+}
+
+.instagram-card {
+  width: 100%;
+  max-width: 480px;
+  background: #1e2538;
+  border-radius: var(--radius-lg);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.4);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.ig-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.ig-profile-info {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.ig-avatar {
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  background: linear-gradient(45deg, #f09433, #e6683c, #dc2743, #cc2366, #bc1888);
+  padding: 2px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.ig-avatar img {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  object-fit: cover;
+  background: #262626;
+}
+
+.ig-user-text {
+  display: flex;
+  flex-direction: column;
+}
+
+.ig-username {
+  font-weight: 700;
+  font-size: 0.85rem;
+  color: #ffffff;
+}
+
+.ig-location {
+  font-size: 0.72rem;
+  color: var(--text-secondary);
+}
+
+.ig-brand-icon {
+  font-size: 1.2rem;
+}
+
+.ig-media {
+  width: 100%;
+  position: relative;
+  background: #0a0d14;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.ig-media img {
+  width: 100%;
+  max-height: 400px;
+  object-fit: cover;
+}
+
+.ig-footer {
+  padding: 12px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.ig-interactions {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  font-size: 1.15rem;
+  margin-bottom: 4px;
+}
+
+.ig-likes-count {
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: #fff;
+}
+
+.ig-caption {
+  font-size: 0.82rem;
+  line-height: 1.4;
+  color: #e2e8f0;
+}
+
+.ig-caption b {
+  color: #ffffff;
+}
+
+.ig-caption .ig-tags {
+  color: var(--accent-cyan);
+  margin-top: 4px;
+  display: block;
+}
+
+/* 5. Enquete Interativa */
+.render-poll-wrapper {
+  width: 100%;
+  height: 100%;
+  background: radial-gradient(circle at top right, rgba(121, 40, 202, 0.25), transparent 60%),
+    radial-gradient(circle at bottom left, rgba(0, 242, 254, 0.15), transparent 60%),
+    #0c1220;
+  padding: clamp(16px, 3vw, 32px);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.poll-card {
+  width: 100%;
+  max-width: 680px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: clamp(12px, 2vh, 20px);
+}
+
+.poll-top-badge {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(0, 242, 254, 0.12);
+  border: 1px solid rgba(0, 242, 254, 0.35);
+  color: var(--accent-cyan);
+  font-size: 0.75rem;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  padding: 4px 10px;
+  border-radius: var(--radius-sm);
+}
+
+.poll-question {
+  font-family: var(--font-display);
+  font-size: clamp(1.2rem, 2.5vw, 1.85rem);
+  font-weight: 800;
+  line-height: 1.25;
+  color: #ffffff;
+  text-shadow: 0 2px 10px rgba(0, 0, 0, 0.5);
+}
+
+.poll-options-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.poll-option-item {
+  position: relative;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: var(--radius-md);
+  padding: clamp(10px, 1.8vh, 14px) 16px;
+  cursor: pointer;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  transition: all 0.25s ease;
+}
+
+.poll-option-item:hover {
+  background: rgba(255, 255, 255, 0.09);
+  border-color: rgba(0, 242, 254, 0.5);
+  transform: translateX(4px);
+}
+
+.poll-fill-bar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  background: linear-gradient(90deg, rgba(0, 242, 254, 0.25), rgba(121, 40, 202, 0.35));
+  border-right: 2px solid var(--accent-cyan);
+  transition: width 0.6s cubic-bezier(0.16, 1, 0.3, 1);
+  z-index: 1;
+}
+
+.poll-option-label {
+  position: relative;
+  z-index: 2;
+  font-size: clamp(0.85rem, 1.4vw, 1.05rem);
+  font-weight: 600;
+  color: #ffffff;
+}
+
+.poll-option-stats {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-display);
+  font-weight: 700;
+  color: var(--accent-cyan);
+  font-size: clamp(0.9rem, 1.4vw, 1.1rem);
+}
+
+.poll-footer-info {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+
+/* 6. Texto Formatado / Comunicado Corporativo */
+.render-text-wrapper {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: clamp(20px, 4vw, 44px);
+  position: relative;
+  overflow: hidden;
+}
+
+.render-text-wrapper.theme-gradient-blue {
+  background: linear-gradient(135deg, #0b1e36 0%, #061122 100%);
+  border-left: 6px solid var(--accent-cyan);
+}
+
+.render-text-wrapper.theme-gradient-purple {
+  background: linear-gradient(135deg, #230b36 0%, #120620 100%);
+  border-left: 6px solid #d946ef;
+}
+
+.render-text-wrapper.theme-gradient-emerald {
+  background: linear-gradient(135deg, #062b20 0%, #03140e 100%);
+  border-left: 6px solid var(--accent-green);
+}
+
+.render-text-wrapper.theme-gradient-amber {
+  background: linear-gradient(135deg, #331f08 0%, #170d03 100%);
+  border-left: 6px solid var(--accent-amber);
+}
+
+.render-text-wrapper.theme-gradient-crimson {
+  background: linear-gradient(135deg, #3a0d14 0%, #180508 100%);
+  border-left: 6px solid var(--accent-red);
+}
+
+.text-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  border-radius: var(--radius-sm);
+  font-weight: 800;
+  font-size: clamp(0.7rem, 1.2vw, 0.85rem);
+  letter-spacing: 0.12em;
+  margin-bottom: 14px;
+  width: fit-content;
+}
+
+.badge-comunicado {
+  background: rgba(0, 242, 254, 0.15);
+  border: 1px solid rgba(0, 242, 254, 0.4);
+  color: var(--accent-cyan);
+}
+
+.badge-urgente {
+  background: rgba(239, 68, 68, 0.2);
+  border: 1px solid rgba(239, 68, 68, 0.5);
+  color: #fca5a5;
+  animation: pulseAnim 1.2s infinite;
+}
+
+.badge-meta {
+  background: rgba(16, 185, 129, 0.2);
+  border: 1px solid rgba(16, 185, 129, 0.5);
+  color: #6ee7b7;
+}
+
+.badge-aniversario {
+  background: rgba(217, 70, 239, 0.2);
+  border: 1px solid rgba(217, 70, 239, 0.5);
+  color: #f0abfc;
+}
+
+.text-main-title {
+  font-family: var(--font-display);
+  font-size: clamp(1.4rem, 3.2vw, 2.8rem);
+  font-weight: 900;
+  line-height: 1.15;
+  color: #ffffff;
+  margin-bottom: 12px;
+  letter-spacing: -0.02em;
+}
+
+.text-body-content {
+  font-size: clamp(0.95rem, 1.6vw, 1.35rem);
+  line-height: 1.5;
+  color: #cbd5e1;
+  max-width: 900px;
+}
+
+.text-footer-meta {
+  margin-top: clamp(16px, 3vh, 28px);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 0.82rem;
+  color: var(--text-muted);
+}
+
+/* ==========================================================================
+   3. TICKER DE NOTÍCIAS / MARQUEE ROLANTE
+   ========================================================================== */
+.ticker-wrapper {
+  height: var(--ticker-height);
+  background: rgba(9, 14, 26, 0.95);
+  backdrop-filter: blur(12px);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  border-top: none;
+  display: flex;
+  align-items: center;
+  overflow: hidden;
+  position: relative;
+  z-index: 10;
+  transition: all 0.3s ease;
+}
+
+.ticker-wrapper.hidden {
+  display: none;
+}
+
+.ticker-badge {
+  background: rgba(14, 20, 36, 0.7);
+  border-right: 1px solid rgba(255, 255, 255, 0.14);
+  padding: 0 16px;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+  z-index: 2;
+}
+
+.ticker-badge .ticker-icon {
+  font-size: 0.85rem;
+}
+
+.ticker-track {
+  flex: 1;
+  overflow: hidden;
+  white-space: nowrap;
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.ticker-content {
+  display: inline-block;
+  padding-left: 100%;
+  animation: marqueeTicker 35s linear infinite;
+  font-size: 0.92rem;
+  font-weight: 600;
+  color: #f1f5f9;
+  letter-spacing: 0.01em;
+}
+
+@keyframes marqueeTicker {
+  0% {
+    transform: translateX(0);
+  }
+
+  100% {
+    transform: translateX(-100%);
+  }
+}
+
+.ticker-date {
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  font-weight: 700;
+  padding: 0 16px;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  border-left: 1px solid var(--border-color);
+  z-index: 2;
+}
+
+/* ==========================================================================
+   4. DOCK HORIZONTAL DE CONTROLE & PREVIEW EM TEMPO REAL
+   ========================================================================== */
+.horizontal-control-dock {
+  height: var(--dock-height);
+  background: #0a0e18;
+  border-top: 1px solid rgba(0, 242, 254, 0.2);
+  display: flex;
+  flex-direction: column;
+  z-index: 90;
+  box-shadow: 0 -10px 30px rgba(0, 0, 0, 0.6);
+  transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1), height 0.3s ease;
+  position: relative;
+}
+
+body.dock-collapsed .horizontal-control-dock {
+  height: 44px;
+}
+
+body.dock-collapsed .dock-body {
+  display: none;
+}
+
+.dock-header {
+  height: 48px;
+  background: rgba(14, 20, 36, 0.95);
+  border-bottom: 1px solid var(--border-color);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 16px;
+  flex-shrink: 0;
+}
+
+.dock-header-left {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.dock-header-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.dock-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.dock-badge {
+  background: rgba(0, 242, 254, 0.12);
+  border: 1px solid rgba(0, 242, 254, 0.35);
+  color: var(--accent-cyan);
+  font-size: 0.72rem;
+  font-weight: 800;
+  padding: 4px 10px;
+  border-radius: var(--radius-sm);
+  letter-spacing: 0.08em;
+  text-shadow: 0 0 8px rgba(0, 242, 254, 0.3);
+}
+
+.active-frame-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(0, 242, 254, 0.1);
+  border: 1px solid rgba(0, 242, 254, 0.3);
+  color: var(--accent-cyan);
+  font-size: 0.72rem;
+  font-weight: 800;
+  padding: 4px 10px;
+  border-radius: var(--radius-sm);
+  letter-spacing: 0.06em;
+}
+
+.tag-pulse {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent-cyan);
+  box-shadow: 0 0 8px var(--accent-cyan);
+  animation: pulseAnim 1.8s infinite;
+}
+
+.dock-title h3 {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: #ffffff;
+}
+
+.dock-title .sub-tip {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  display: none;
+}
+
+@media (min-width: 900px) {
+  .dock-title .sub-tip {
+    display: inline;
+  }
+}
+
+/* Abas de Seleção dos Quadros Ativos */
+.dock-frames-selector {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.frame-tab-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--border-color);
+  color: var(--text-secondary);
+  padding: 4px 10px;
+  border-radius: var(--radius-sm);
+  font-size: 0.75rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.frame-tab-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--text-primary);
+}
+
+.frame-tab-btn.active {
+  background: var(--accent-cyan);
+  color: #030712;
+  border-color: var(--accent-cyan);
+  box-shadow: 0 0 12px rgba(0, 242, 254, 0.4);
+}
+
+.dock-toggle-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: transparent;
+  border: 1px solid var(--border-color);
+  color: var(--text-secondary);
+  padding: 4px 10px;
+  border-radius: var(--radius-sm);
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.dock-toggle-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+}
+
+/* Dock Body com Seletor de Tipo e Formulário */
+.dock-body {
+  flex: 1;
+  display: flex;
+  overflow: hidden;
+  padding: 12px 16px;
+  gap: 16px;
+}
+
+.type-selector-strip {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 170px;
+  border-right: 1px solid var(--border-color);
+  padding-right: 16px;
+  flex-shrink: 0;
+}
+
+.section-title {
+  font-size: 0.68rem;
+  font-weight: 800;
+  color: var(--text-muted);
+  letter-spacing: 0.08em;
+}
+
+.content-type-buttons {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.type-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid transparent;
+  color: var(--text-secondary);
+  padding: 6px 10px;
+  border-radius: var(--radius-sm);
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+  text-align: left;
+  transition: all 0.2s ease;
+}
+
+.type-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+}
+
+.type-btn.active {
+  background: linear-gradient(90deg, rgba(0, 242, 254, 0.2), rgba(79, 172, 254, 0.1));
+  border-color: rgba(0, 242, 254, 0.4);
+  color: #ffffff;
+}
+
+.type-btn .btn-emoji {
+  font-size: 0.95rem;
+}
+
+/* Container de Formulários Contextuais */
+.config-forms-container {
+  flex: 1;
+  overflow-y: auto;
+  min-width: 0;
+}
+
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 12px;
+}
+
+.form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.form-group.full-width {
+  grid-column: 1 / -1;
+}
+
+.form-label {
+  font-size: 0.74rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  display: flex;
+  justify-content: space-between;
+}
+
+.form-input,
+.form-select,
+.form-textarea {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--border-color);
+  color: #ffffff;
+  padding: 7px 10px;
+  border-radius: var(--radius-sm);
+  font-size: 0.8rem;
+  font-family: inherit;
+  outline: none;
+  transition: border-color 0.2s ease;
+}
+
+.form-input:focus,
+.form-select:focus,
+.form-textarea:focus {
+  border-color: var(--accent-cyan);
+  box-shadow: 0 0 8px rgba(0, 242, 254, 0.2);
+}
+
+.form-textarea {
+  resize: vertical;
+  min-height: 48px;
+}
+
+.form-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.btn-inline-upload {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px dashed rgba(255, 255, 255, 0.25);
+  color: var(--text-primary);
+  padding: 6px 12px;
+  border-radius: var(--radius-sm);
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.btn-inline-upload:hover {
+  background: rgba(255, 255, 255, 0.15);
+  border-color: var(--accent-cyan);
+}
+
+.poll-option-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.btn-remove-opt {
+  background: rgba(239, 68, 68, 0.15);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  color: #fca5a5;
+  border-radius: var(--radius-sm);
+  padding: 6px 10px;
+  cursor: pointer;
+}
+
+.btn-add-opt {
+  background: rgba(16, 185, 129, 0.15);
+  border: 1px solid rgba(16, 185, 129, 0.3);
+  color: #6ee7b7;
+  border-radius: var(--radius-sm);
+  padding: 6px 12px;
+  cursor: pointer;
+  font-size: 0.75rem;
+  font-weight: 600;
+  margin-top: 4px;
+}
+
+/* ==========================================================================
+   5. BOTÃO FLUTUANTE DE RETORNO DO MODO TV
+   ========================================================================== */
+.exit-tv-btn {
+  position: fixed;
+  top: 16px;
+  right: 16px;
+  z-index: 9999;
+  background: rgba(15, 23, 42, 0.85);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(0, 242, 254, 0.4);
+  color: #ffffff;
+  padding: 8px 14px;
+  border-radius: var(--radius-md);
+  font-size: 0.8rem;
+  font-weight: 700;
+  display: none;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.6);
+  transition: all 0.25s ease;
+}
+
+body.tv-mode .exit-tv-btn {
+  display: flex;
+}
+
+.exit-tv-btn kbd {
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 4px;
+  padding: 2px 6px;
+  font-size: 0.7rem;
+  font-family: monospace;
+}
+
+.exit-tv-btn:hover {
+  background: var(--accent-cyan);
+  color: #030712;
+  box-shadow: 0 0 20px rgba(0, 242, 254, 0.6);
+}
+
+.exit-tv-btn:hover kbd {
+  background: rgba(0, 0, 0, 0.3);
+  color: #030712;
+}
+
+/* Scrollbar estilizada */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.2);
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 242, 254, 0.4);
+}
+
+/* ==========================================================================
+   6. NOVOS RECURSOS: PLAYLIST AUTOMÁTICA, QR CODE & ÁUDIO
+   ========================================================================== */
+.action-btn.active-playlist {
+  background: linear-gradient(135deg, rgba(16, 185, 129, 0.25), rgba(0, 242, 254, 0.25));
+  border-color: var(--accent-green);
+  color: #6ee7b7;
+  animation: pulsePlaylist 2s infinite ease-in-out;
+}
+
+@keyframes pulsePlaylist {
+  0% {
+    box-shadow: 0 0 5px rgba(16, 185, 129, 0.3);
+  }
+
+  50% {
+    box-shadow: 0 0 16px rgba(16, 185, 129, 0.7);
+  }
+
+  100% {
+    box-shadow: 0 0 5px rgba(16, 185, 129, 0.3);
+  }
+}
+
+.action-btn.audio-active {
+  background: linear-gradient(135deg, rgba(245, 158, 11, 0.2), rgba(239, 68, 68, 0.2));
+  border-color: var(--accent-amber);
+  color: #fcd34d;
+}
+
+/* QR Code no Widget de Enquete */
+.poll-with-qr {
+  display: flex;
+  align-items: center;
+  gap: clamp(16px, 3vw, 36px);
+}
+
+.poll-content-side {
+  flex: 1;
+  min-width: 0;
+}
+
+.poll-qr-side {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  padding: 14px;
+  border-radius: var(--radius-md);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  flex-shrink: 0;
+}
+
+.qr-code-box {
+  background: #ffffff;
+  padding: 8px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.qr-code-box canvas,
+.qr-code-box img {
+  display: block;
+  width: 110px;
+  height: 110px;
+}
+
+.qr-label {
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: var(--accent-cyan);
+  text-align: center;
+  letter-spacing: 0.05em;
+}
+
+/* Transições fluidas ao alternar layouts e mídias */
+.frames-grid {
+  transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.frame-content-container>* {
+  animation: fadeInFrame 0.35s ease-out;
+}
+
+@keyframes fadeInFrame {
+  from {
+    opacity: 0;
+    transform: scale(0.985);
+  }
+
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+/* Ticker Velocidade Controlada */
+.ticker-content.speed-slow {
+  animation-duration: 50s;
+}
+
+.ticker-content.speed-normal {
+  animation-duration: 35s;
+}
+
+.ticker-content.speed-fast {
+  animation-duration: 20s;
+}

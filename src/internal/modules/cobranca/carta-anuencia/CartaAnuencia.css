@@ -1,75 +1,90 @@
 /* ========================================================================= */
 /* ESTILOS: COBRANÇA > CARTA DE ANUÊNCIA (LEPTASYS DARK THEME)               */
+/* Zero Rolagem Vertical na Página | Rolagem Interna no Container de Títulos */
+/* Otimização de Espaço Horizontal | Sem Rolagem Horizontal                  */
 /* ========================================================================= */
+
+/* Fixação da área de conteúdo para a página de Carta de Anuência */
+body.carta-anuencia-active .internal-content {
+  overflow: hidden !important;
+  height: 100% !important;
+}
+
+body.carta-anuencia-active .internal-body {
+  padding: 10px 18px !important;
+  height: calc(100vh - 64px) !important;
+  max-height: calc(100vh - 64px) !important;
+  overflow: hidden !important;
+  box-sizing: border-box !important;
+}
 
 .ca-page-container {
   display: flex;
   flex-direction: column;
-  gap: 1.25rem;
-  padding: 1.5rem 2rem;
+  gap: 0.65rem;
+  padding: 0;
   width: 100%;
   max-width: 100%;
+  height: 100%;
+  max-height: 100%;
   box-sizing: border-box;
   color: #f1f5f9;
   font-family: inherit;
-  animation: ca-fade-in 0.25s ease-out;
+  overflow: hidden; /* Zero scroll na raiz da página */
+  animation: ca-fade-in 0.2s ease-out;
 }
 
 @keyframes ca-fade-in {
-  from { opacity: 0; transform: translateY(4px); }
+  from { opacity: 0; transform: translateY(3px); }
   to { opacity: 1; transform: translateY(0); }
 }
 
-/* 1. Header */
+/* 1. Header Compacto */
 .ca-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  flex-wrap: wrap;
-  gap: 1rem;
+  flex-wrap: nowrap;
+  gap: 0.75rem;
+  flex-shrink: 0;
+  padding: 0.15rem 0.25rem;
 }
 
 .ca-header-left {
   display: flex;
   align-items: center;
-  gap: 0.85rem;
+  gap: 0.75rem;
 }
 
 .ca-icon-badge {
-  width: 44px;
-  height: 44px;
-  border-radius: 12px;
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
   background: linear-gradient(135deg, #10b981 0%, #0284c7 100%);
   color: #ffffff;
   display: flex;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 4px 14px rgba(16, 185, 129, 0.35);
+  box-shadow: 0 3px 10px rgba(16, 185, 129, 0.3);
   flex-shrink: 0;
 }
 
 .ca-title {
-  font-size: 1.45rem;
+  font-size: 1.25rem;
   font-weight: 800;
   color: #f8fafc;
   margin: 0;
   letter-spacing: -0.02em;
+  line-height: 1.2;
 }
 
 .ca-subtitle {
-  font-size: 0.82rem;
+  font-size: 0.76rem;
   color: #94a3b8;
-  margin: 0.2rem 0 0 0;
+  margin: 0.1rem 0 0 0;
 }
 
-.ca-header-actions {
-  display: flex;
-  align-items: center;
-  gap: 0.65rem;
-  flex-wrap: wrap;
-}
-
-/* Botões */
+/* Botões Reutilizáveis */
 .ca-btn-primary {
   display: inline-flex;
   align-items: center;
@@ -77,18 +92,19 @@
   background: linear-gradient(135deg, #10b981 0%, #059669 100%);
   color: #ffffff;
   border: none;
-  padding: 0.55rem 1.1rem;
-  border-radius: 8px;
-  font-size: 0.85rem;
+  padding: 0.45rem 1rem;
+  border-radius: 7px;
+  font-size: 0.82rem;
   font-weight: 700;
   cursor: pointer;
-  box-shadow: 0 4px 12px rgba(16, 185, 129, 0.35);
-  transition: all 0.2s ease;
+  box-shadow: 0 3px 10px rgba(16, 185, 129, 0.3);
+  transition: all 0.15s ease;
+  white-space: nowrap;
 }
 
 .ca-btn-primary:hover:not(:disabled) {
   transform: translateY(-1px);
-  box-shadow: 0 6px 16px rgba(16, 185, 129, 0.45);
+  box-shadow: 0 5px 14px rgba(16, 185, 129, 0.4);
 }
 
 .ca-btn-primary:disabled {
@@ -104,12 +120,13 @@
   background: rgba(30, 41, 59, 0.8);
   color: #e2e8f0;
   border: 1px solid rgba(255, 255, 255, 0.1);
-  padding: 0.55rem 0.95rem;
-  border-radius: 8px;
-  font-size: 0.85rem;
+  padding: 0.45rem 0.9rem;
+  border-radius: 7px;
+  font-size: 0.82rem;
   font-weight: 600;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: all 0.15s ease;
+  white-space: nowrap;
 }
 
 .ca-btn-secondary:hover:not(:disabled) {
@@ -130,12 +147,13 @@
   background: transparent;
   color: #94a3b8;
   border: 1px dashed rgba(255, 255, 255, 0.15);
-  padding: 0.45rem 0.85rem;
-  border-radius: 8px;
-  font-size: 0.8rem;
+  padding: 0.4rem 0.8rem;
+  border-radius: 7px;
+  font-size: 0.78rem;
   font-weight: 600;
   cursor: pointer;
   transition: all 0.15s ease;
+  white-space: nowrap;
 }
 
 .ca-btn-clear:hover {
@@ -144,123 +162,48 @@
   background: rgba(239, 68, 68, 0.08);
 }
 
-/* 2. KPI Summary Cards */
-.ca-kpis-grid {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 1rem;
-}
-
-.ca-kpi-card {
-  background: rgba(15, 23, 42, 0.7);
-  backdrop-filter: blur(8px);
-  border: 1px solid rgba(255, 255, 255, 0.07);
-  border-radius: 12px;
-  padding: 1rem 1.25rem;
-  display: flex;
-  align-items: center;
-  gap: 1rem;
-  transition: transform 0.2s ease, border-color 0.2s ease;
-}
-
-.ca-kpi-card:hover {
-  transform: translateY(-2px);
-  border-color: rgba(255, 255, 255, 0.15);
-}
-
-.ca-kpi-icon {
-  width: 44px;
-  height: 44px;
-  border-radius: 10px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-}
-
-.ca-kpi-content {
-  display: flex;
-  flex-direction: column;
-}
-
-.ca-kpi-label {
-  font-size: 0.75rem;
-  font-weight: 600;
-  color: #94a3b8;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-}
-
-.ca-kpi-value {
-  font-size: 1.35rem;
-  font-weight: 800;
-  color: #f8fafc;
-  margin-top: 0.15rem;
-  letter-spacing: -0.02em;
-}
-
-.ca-kpi-card.kpi-emerald .ca-kpi-icon {
-  background: rgba(16, 185, 129, 0.15);
-  color: #34d399;
-  border: 1px solid rgba(16, 185, 129, 0.3);
-}
-
-.ca-kpi-card.kpi-blue .ca-kpi-icon {
-  background: rgba(56, 189, 248, 0.15);
-  color: #38bdf8;
-  border: 1px solid rgba(56, 189, 248, 0.3);
-}
-
-.ca-kpi-card.kpi-purple .ca-kpi-icon {
-  background: rgba(192, 132, 252, 0.15);
-  color: #c084fc;
-  border: 1px solid rgba(192, 132, 252, 0.3);
-}
-
-.ca-kpi-card.kpi-amber .ca-kpi-icon {
-  background: rgba(251, 191, 36, 0.15);
-  color: #fbbf24;
-  border: 1px solid rgba(251, 191, 36, 0.3);
-}
-
-/* 3. Filtros */
+/* 2. Filtros Compactos */
 .ca-filters-card {
   background: rgba(15, 23, 42, 0.65);
   backdrop-filter: blur(8px);
   border: 1px solid rgba(255, 255, 255, 0.07);
-  border-radius: 12px;
-  padding: 1.15rem 1.35rem;
+  border-radius: 10px;
+  padding: 0.65rem 0.95rem;
   display: flex;
   flex-direction: column;
-  gap: 0.9rem;
+  gap: 0.45rem;
+  flex-shrink: 0;
 }
 
 .ca-filters-row {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-  gap: 0.75rem;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 0.45rem;
 }
 
 .ca-filter-group {
   display: flex;
   flex-direction: column;
-  gap: 0.3rem;
+  gap: 0.2rem;
 }
 
 .ca-filter-label {
-  font-size: 0.72rem;
+  font-size: 0.68rem;
   font-weight: 700;
   color: #94a3b8;
   text-transform: uppercase;
   letter-spacing: 0.03em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .ca-input, .ca-select {
   background: rgba(11, 15, 25, 0.85);
   border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 8px;
-  padding: 0.5rem 0.75rem;
-  font-size: 0.82rem;
+  border-radius: 6px;
+  padding: 0.38rem 0.65rem;
+  font-size: 0.79rem;
   color: #f1f5f9;
   outline: none;
   transition: all 0.15s ease;
@@ -281,14 +224,14 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
-  flex-wrap: wrap;
-  gap: 0.75rem;
-  padding-top: 0.5rem;
+  flex-wrap: nowrap;
+  gap: 0.5rem;
+  padding-top: 0.35rem;
   border-top: 1px solid rgba(255, 255, 255, 0.05);
 }
 
 .ca-badge-count {
-  font-size: 0.8rem;
+  font-size: 0.78rem;
   color: #94a3b8;
 }
 
@@ -296,34 +239,36 @@
   color: #38bdf8;
 }
 
-/* 4. Barra Flutuante de Seleção em Lote */
+/* 3. Barra Flutuante de Seleção em Lote */
 .ca-selection-banner {
   background: linear-gradient(135deg, rgba(16, 185, 129, 0.12) 0%, rgba(2, 132, 199, 0.15) 100%);
   border: 1px solid rgba(16, 185, 129, 0.35);
-  border-radius: 10px;
-  padding: 0.85rem 1.25rem;
+  border-radius: 8px;
+  padding: 0.45rem 0.95rem;
   display: flex;
   justify-content: space-between;
   align-items: center;
-  flex-wrap: wrap;
-  gap: 1rem;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
-  animation: ca-fade-in 0.2s ease-out;
+  flex-wrap: nowrap;
+  gap: 0.75rem;
+  box-shadow: 0 3px 15px rgba(0, 0, 0, 0.25);
+  flex-shrink: 0;
+  animation: ca-fade-in 0.15s ease-out;
 }
 
 .ca-selection-info {
   display: flex;
   align-items: center;
-  gap: 1rem;
-  flex-wrap: wrap;
+  gap: 0.85rem;
+  flex-wrap: nowrap;
 }
 
 .ca-selection-stats {
   display: flex;
   align-items: center;
-  gap: 0.75rem;
-  font-size: 0.85rem;
+  gap: 0.6rem;
+  font-size: 0.82rem;
   color: #f1f5f9;
+  white-space: nowrap;
 }
 
 .ca-selection-stats strong {
@@ -333,11 +278,12 @@
 .ca-selection-tag {
   display: inline-flex;
   align-items: center;
-  gap: 0.35rem;
-  font-size: 0.75rem;
-  padding: 0.25rem 0.65rem;
+  gap: 0.3rem;
+  font-size: 0.72rem;
+  padding: 0.2rem 0.55rem;
   border-radius: 999px;
   font-weight: 600;
+  white-space: nowrap;
 }
 
 .ca-selection-tag.single {
@@ -355,65 +301,82 @@
 .ca-selection-actions {
   display: flex;
   align-items: center;
-  gap: 0.65rem;
+  gap: 0.5rem;
+  flex-shrink: 0;
 }
 
-/* 5. Tabela */
+/* 4. Container de Pesquisa (Resultados com Rolagem Interna Vertical) */
 .ca-table-container {
   background: rgba(15, 23, 42, 0.65);
   backdrop-filter: blur(8px);
   border: 1px solid rgba(255, 255, 255, 0.07);
-  border-radius: 12px;
+  border-radius: 10px;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
   overflow: hidden;
-  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.25);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.25);
 }
 
 .ca-table-wrapper {
+  flex: 1;
+  min-height: 0;
   width: 100%;
-  overflow-x: auto;
+  overflow-y: auto; /* Rolagem vertical ativa APENAS dentro deste container */
+  overflow-x: hidden; /* Sem barra de rolagem horizontal */
 }
 
+/* Tabela com Layout Fixo para Nunca Estourar a Largura */
 .ca-table {
   width: 100%;
+  table-layout: fixed;
   border-collapse: collapse;
-  font-size: 0.82rem;
+  font-size: 0.8rem;
   text-align: left;
 }
 
 .ca-table th {
-  background: rgba(11, 15, 25, 0.95);
+  background: #0b0f19;
   color: #94a3b8;
   font-weight: 700;
-  font-size: 0.72rem;
+  font-size: 0.7rem;
   text-transform: uppercase;
   letter-spacing: 0.04em;
-  padding: 0.75rem 0.85rem;
+  padding: 0.65rem 0.75rem;
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
   white-space: nowrap;
   user-select: none;
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.08);
 }
 
 .ca-table td {
-  padding: 0.75rem 0.85rem;
+  padding: 0.55rem 0.75rem;
   border-bottom: 1px solid rgba(255, 255, 255, 0.04);
   color: #e2e8f0;
   vertical-align: middle;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .ca-table tr:hover td {
-  background: rgba(255, 255, 255, 0.02);
+  background: rgba(255, 255, 255, 0.025);
 }
 
 .ca-table tr.selected td {
-  background: rgba(16, 185, 129, 0.06);
+  background: rgba(16, 185, 129, 0.08);
 }
 
 /* Custom Checkbox */
 .ca-checkbox-custom {
   appearance: none;
   -webkit-appearance: none;
-  width: 17px;
-  height: 17px;
+  width: 16px;
+  height: 16px;
   border: 1.5px solid rgba(255, 255, 255, 0.3);
   border-radius: 4px;
   background: rgba(15, 23, 42, 0.6);
@@ -435,8 +398,8 @@
 .ca-checkbox-custom:checked::after {
   content: '';
   position: absolute;
-  left: 5px;
-  top: 2px;
+  left: 4px;
+  top: 1px;
   width: 4px;
   height: 8px;
   border: solid #ffffff;
@@ -454,7 +417,7 @@
   position: absolute;
   left: 3px;
   top: 6px;
-  width: 9px;
+  width: 8px;
   height: 2px;
   background: #ffffff;
 }
@@ -463,11 +426,11 @@
 .ca-status-badge {
   display: inline-flex;
   align-items: center;
-  gap: 0.35rem;
-  font-size: 0.7rem;
+  gap: 0.3rem;
+  font-size: 0.68rem;
   font-weight: 700;
-  padding: 0.2rem 0.55rem;
-  border-radius: 6px;
+  padding: 0.15rem 0.5rem;
+  border-radius: 5px;
   text-transform: uppercase;
   letter-spacing: 0.03em;
   white-space: nowrap;
@@ -497,25 +460,64 @@
   border: 1px solid rgba(148, 163, 184, 0.3);
 }
 
-/* Row Action Buttons */
+/* Botão de Ação na Linha */
 .ca-row-btn {
   background: rgba(16, 185, 129, 0.12);
   border: 1px solid rgba(16, 185, 129, 0.25);
   color: #34d399;
-  border-radius: 6px;
-  padding: 0.3rem 0.65rem;
-  font-size: 0.75rem;
+  border-radius: 5px;
+  padding: 0.25rem 0.55rem;
+  font-size: 0.73rem;
   font-weight: 600;
   cursor: pointer;
   display: inline-flex;
   align-items: center;
-  gap: 0.35rem;
+  gap: 0.3rem;
   transition: all 0.15s ease;
+  white-space: nowrap;
 }
 
 .ca-row-btn:hover {
   background: #10b981;
   color: #ffffff;
+}
+
+/* 5. Prompt de Busca / Estados Vazios */
+.ca-search-prompt-card {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 2.5rem 2rem;
+  text-align: center;
+  gap: 0.75rem;
+}
+
+.ca-search-prompt-icon {
+  width: 52px;
+  height: 52px;
+  border-radius: 12px;
+  background: rgba(16, 185, 129, 0.15);
+  color: #34d399;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.ca-search-prompt-title {
+  margin: 0;
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: #f8fafc;
+}
+
+.ca-search-prompt-desc {
+  font-size: 0.82rem;
+  color: #94a3b8;
+  max-width: 520px;
+  margin: 0;
+  line-height: 1.45;
 }
 
 /* 6. Modal de Edição / Visualização da Carta */
@@ -551,7 +553,7 @@
 }
 
 .ca-modal-header {
-  padding: 1.15rem 1.5rem;
+  padding: 1rem 1.25rem;
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
   display: flex;
   justify-content: space-between;
@@ -561,7 +563,7 @@
 
 .ca-modal-header h3 {
   margin: 0;
-  font-size: 1.15rem;
+  font-size: 1.05rem;
   font-weight: 700;
   color: #f8fafc;
   display: flex;
@@ -588,32 +590,32 @@
 }
 
 .ca-modal-body {
-  padding: 1.25rem 1.5rem;
+  padding: 1.15rem 1.25rem;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
-  gap: 1rem;
+  gap: 0.85rem;
 }
 
 .ca-anuencia-banner {
   background: linear-gradient(135deg, rgba(16, 185, 129, 0.1) 0%, rgba(2, 132, 199, 0.08) 100%);
   border: 1px solid rgba(16, 185, 129, 0.25);
-  border-radius: 10px;
-  padding: 0.85rem 1rem;
+  border-radius: 8px;
+  padding: 0.75rem 0.9rem;
   display: flex;
   align-items: flex-start;
-  gap: 0.75rem;
+  gap: 0.65rem;
 }
 
 .ca-anuencia-banner strong {
-  font-size: 0.85rem;
+  font-size: 0.82rem;
   color: #34d399;
   display: block;
-  margin-bottom: 0.2rem;
+  margin-bottom: 0.15rem;
 }
 
 .ca-anuencia-banner p {
-  font-size: 0.78rem;
+  font-size: 0.75rem;
   color: #94a3b8;
   margin: 0;
   line-height: 1.35;
@@ -622,17 +624,17 @@
 .ca-form-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 0.85rem;
+  gap: 0.75rem;
 }
 
 .ca-form-group {
   display: flex;
   flex-direction: column;
-  gap: 0.3rem;
+  gap: 0.25rem;
 }
 
 .ca-form-label {
-  font-size: 0.72rem;
+  font-size: 0.7rem;
   font-weight: 700;
   color: #94a3b8;
   text-transform: uppercase;
@@ -640,7 +642,7 @@
 }
 
 .ca-modal-footer {
-  padding: 1rem 1.5rem;
+  padding: 0.85rem 1.25rem;
   border-top: 1px solid rgba(255, 255, 255, 0.08);
   display: flex;
   justify-content: space-between;
@@ -656,40 +658,4 @@
 @keyframes ca-spin {
   from { transform: rotate(0deg); }
   to { transform: rotate(360deg); }
-}
-
-/* Prompt Search State */
-.ca-search-prompt-card {
-  padding: 3.5rem 2rem;
-  text-align: center;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 0.75rem;
-}
-
-.ca-search-prompt-icon {
-  width: 56px;
-  height: 56px;
-  border-radius: 14px;
-  background: rgba(16, 185, 129, 0.15);
-  color: #34d399;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.ca-search-prompt-title {
-  margin: 0;
-  font-size: 1.15rem;
-  font-weight: 700;
-  color: #f8fafc;
-}
-
-.ca-search-prompt-desc {
-  font-size: 0.85rem;
-  color: #94a3b8;
-  max-width: 540px;
-  margin: 0;
-  line-height: 1.45;
 }

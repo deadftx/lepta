@@ -127,8 +127,8 @@ const STATS_HOJE = {
     { label: '10h', bruto: 823200, liquido: 784500, brutoLabel: 'R$ 823,2k', liqLabel: 'R$ 784,5k' }
   ],
   porUnidade: [
-    { name: 'Lepta MS FIDC', percent: 76.3, valor: 'R$ 2,19M', color: '#06b6d4' },
-    { name: 'Lepta Special FIDC', percent: 35.7, valor: 'R$ 759K', color: '#a855f7' }
+    { name: 'Lepta MS FIDC', percent: 76.5, valor: 'R$ 2,38M', color: '#06b6d4' },
+    { name: 'Lepta Special FIDC', percent: 23.5, valor: 'R$ 732,1k', color: '#a855f7' }
   ],
   porProduto: [
     { name: 'Faturização', bruto: 2130000, max: 2500000, label: 'R$ 2,13M' },
@@ -202,10 +202,31 @@ const formatBRL = (val: number): string => {
   }).format(val || 0);
 };
 
+const TOTAL_CYCLE_SECONDS = 30;
+
+function polarToCartesian(centerX: number, centerY: number, radius: number, angleInDegrees: number) {
+  const angleInRadians = ((angleInDegrees - 90) * Math.PI) / 180.0;
+  return {
+    x: centerX + radius * Math.cos(angleInRadians),
+    y: centerY + radius * Math.sin(angleInRadians)
+  };
+}
+
+function describeArc(x: number, y: number, radius: number, startAngle: number, endAngle: number) {
+  const start = polarToCartesian(x, y, radius, startAngle);
+  const end = polarToCartesian(x, y, radius, endAngle);
+  const delta = endAngle - startAngle;
+  const largeArcFlag = delta > 180 ? '1' : '0';
+  return [
+    'M', start.x.toFixed(2), start.y.toFixed(2),
+    'A', radius, radius, 0, largeArcFlag, 1, end.x.toFixed(2), end.y.toFixed(2)
+  ].join(' ');
+}
+
 export const MesaOperacaoDashboard: React.FC = () => {
   // Três visões: Hoje, Visão Mensal e Nosso Feed (Marketing)
   const [periodo, setPeriodo] = useState<'hoje' | 'mes' | 'feed'>('hoje');
-  const [countdown, setCountdown] = useState<number>(30);
+  const [countdown, setCountdown] = useState<number>(TOTAL_CYCLE_SECONDS);
   const [isFullscreen, setIsFullscreen] = useState<boolean>(false);
 
   // Relógio
@@ -252,7 +273,7 @@ export const MesaOperacaoDashboard: React.FC = () => {
             if (curr === 'mes') return 'feed';
             return 'hoje';
           });
-          return 30;
+          return TOTAL_CYCLE_SECONDS;
         }
         return prev - 1;
       });
@@ -460,7 +481,7 @@ export const MesaOperacaoDashboard: React.FC = () => {
       <div className="mesa-progress-bar">
         <div
           className="mesa-progress-fill"
-          style={{ width: `${((20 - countdown) / 20) * 100}%` }}
+          style={{ width: `${Math.max(0, Math.min(100, ((TOTAL_CYCLE_SECONDS - countdown) / TOTAL_CYCLE_SECONDS) * 100))}%` }}
         />
       </div>
 
@@ -487,39 +508,39 @@ export const MesaOperacaoDashboard: React.FC = () => {
               className={`mesa-toggle-btn ${periodo === 'hoje' ? 'active-hoje' : ''}`}
               onClick={() => {
                 setPeriodo('hoje');
-                setCountdown(30);
+                setCountdown(TOTAL_CYCLE_SECONDS);
               }}
               title="Alternar para Hoje"
             >
               <span className="mesa-toggle-dot" />
               <span>HOJE</span>
-              <span className="mesa-toggle-countdown">{periodo === 'hoje' ? `${countdown}s` : '30s'}</span>
+              <span className="mesa-toggle-countdown">{periodo === 'hoje' ? `${countdown}s` : `${TOTAL_CYCLE_SECONDS}s`}</span>
             </button>
 
             <button
               className={`mesa-toggle-btn ${periodo === 'mes' ? 'active-mes' : ''}`}
               onClick={() => {
                 setPeriodo('mes');
-                setCountdown(30);
+                setCountdown(TOTAL_CYCLE_SECONDS);
               }}
               title="Alternar para Visão Mensal"
             >
               <span className="mesa-toggle-dot" />
               <span>VISÃO MENSAL</span>
-              <span className="mesa-toggle-countdown">{periodo === 'mes' ? `${countdown}s` : '30s'}</span>
+              <span className="mesa-toggle-countdown">{periodo === 'mes' ? `${countdown}s` : `${TOTAL_CYCLE_SECONDS}s`}</span>
             </button>
 
             <button
               className={`mesa-toggle-btn ${periodo === 'feed' ? 'active-feed' : ''}`}
               onClick={() => {
                 setPeriodo('feed');
-                setCountdown(30);
+                setCountdown(TOTAL_CYCLE_SECONDS);
               }}
               title="Alternar para Nosso Feed"
             >
               <span className="mesa-toggle-dot" />
               <span>NOSSO FEED</span>
-              <span className="mesa-toggle-countdown">{periodo === 'feed' ? `${countdown}s` : '30s'}</span>
+              <span className="mesa-toggle-countdown">{periodo === 'feed' ? `${countdown}s` : `${TOTAL_CYCLE_SECONDS}s`}</span>
             </button>
           </div>
         </div>
@@ -707,7 +728,7 @@ export const MesaOperacaoDashboard: React.FC = () => {
             </div>
 
             <div className="mesa-chart-content">
-              <ResponsiveContainer width="100%" height={235}>
+              <ResponsiveContainer width="100%" height="100%">
                 <AreaChart
                   data={currentStats.timeline}
                   margin={{ top: 22, right: 20, left: -5, bottom: 0 }}
@@ -783,14 +804,23 @@ export const MesaOperacaoDashboard: React.FC = () => {
             <div className="mesa-chart-content mesa-donut-wrapper">
               <div className="mesa-donut-svg-wrap">
                 {(() => {
-                  const unidades = (Array.isArray(currentStats.porUnidade) && currentStats.porUnidade.length > 0)
+                  const rawUnidades = (Array.isArray(currentStats.porUnidade) && currentStats.porUnidade.length > 0)
                     ? currentStats.porUnidade
                     : [{ name: 'Lepta MS FIDC', percent: 100, valor: formatBRL(currentStats.volumeBruto), color: '#06b6d4' }];
+
+                  const totalPercent = rawUnidades.reduce((acc: number, u: any) => acc + (Number(u.percent) || 0), 0);
+                  const safeTotal = totalPercent > 0 ? totalPercent : 100;
+
+                  // Normaliza as porcentagens para que somem exatamente 100%
+                  const unidades = rawUnidades.map((u: any) => ({
+                    ...u,
+                    normalizedPercent: ((Number(u.percent) || 0) / safeTotal) * 100
+                  }));
 
                   const u1 = unidades[0];
                   const u2 = unidades[1];
 
-                  let currentOffset = 75;
+                  let currentAngle = 0;
 
                   return (
                     <>
@@ -806,21 +836,37 @@ export const MesaOperacaoDashboard: React.FC = () => {
                       )}
                       <svg viewBox="0 0 180 180" width="180" height="180">
                         {unidades.map((u: any, idx: number) => {
-                          const dash = (Math.max(0, u.percent || 0) / 100) * 402;
-                          const dasharray = `${dash.toFixed(1)} 402`;
-                          const dashoffset = currentOffset;
-                          currentOffset -= dash;
+                          const arcDegrees = (u.normalizedPercent / 100) * 360;
+                          const startAngle = currentAngle;
+                          const endAngle = currentAngle + arcDegrees;
+                          currentAngle += arcDegrees;
+
+                          const strokeColor = u.color || (idx === 0 ? '#06b6d4' : (idx === 1 ? '#a855f7' : '#f59e0b'));
+
+                          // Se houver apenas 1 unidade ou ela ocupar todo o círculo (>= 99.5%)
+                          if (unidades.length === 1 || u.normalizedPercent >= 99.5) {
+                            return (
+                              <circle
+                                key={u.name || idx}
+                                cx="90"
+                                cy="90"
+                                r="64"
+                                fill="transparent"
+                                stroke={strokeColor}
+                                strokeWidth="24"
+                              />
+                            );
+                          }
+
+                          if (arcDegrees <= 0.5) return null;
+
                           return (
-                            <circle
+                            <path
                               key={u.name || idx}
-                              cx="90"
-                              cy="90"
-                              r="64"
+                              d={describeArc(90, 90, 64, startAngle, Math.min(359.99, endAngle))}
                               fill="transparent"
-                              stroke={u.color || (idx === 0 ? '#06b6d4' : (idx === 1 ? '#a855f7' : '#f59e0b'))}
+                              stroke={strokeColor}
                               strokeWidth="24"
-                              strokeDasharray={dasharray}
-                              strokeDashoffset={dashoffset}
                               strokeLinecap="round"
                             />
                           );
@@ -889,76 +935,89 @@ export const MesaOperacaoDashboard: React.FC = () => {
         </section>
 
         {/* ── LINHA 3: MOVIMENTO FALIMENTAR & RECUPERAÇÕES JUDICIAIS (CARROSSEL) ── */}
-        <section
-          className="mesa-falimentar-panel"
-          onMouseEnter={() => setIsCarouselPaused(true)}
-          onMouseLeave={() => setIsCarouselPaused(false)}
-        >
-          <div className="mesa-falimentar-header">
-            <div className="mesa-falimentar-title-wrap">
-              <div className="mesa-falimentar-title-row">
-                <h2>MOVIMENTO FALIMENTAR &amp; RECUPERAÇÕES JUDICIAIS</h2>
-                <div className={`mesa-data-origem-badge ${isFromToday ? 'hoje' : 'ultima'}`}>
-                  <Calendar size={11} />
-                  <span>
-                    {isFromToday
-                      ? `ALIMENTAÇÃO DE HOJE (${falimentarDataRef || clockDate})`
-                      : `ÚLTIMA ALIMENTAÇÃO: ${falimentarDataRef || '08/09/2026'}`}
-                  </span>
-                </div>
-              </div>
-            </div>
+        {(() => {
+          const isSingleRow = currentSlideItems.length <= 3;
+          const singleRowCols = currentSlideItems.length === 1 ? 1 : (currentSlideItems.length === 2 ? 2 : 3);
+          const gridColsStyle = isSingleRow ? `repeat(${singleRowCols}, 1fr)` : 'repeat(3, 1fr)';
+          const gridRowsStyle = isSingleRow ? '1fr' : 'repeat(2, 1fr)';
 
-            <div className="mesa-falimentar-header-right">
-              {/* Controles do Carrossel */}
-              <div className="mesa-carousel-nav">
-                <button
-                  className="mesa-carousel-btn"
-                  onClick={handlePrevSlide}
-                  title="Slide Anterior"
-                  aria-label="Slide Anterior"
-                >
-                  <ChevronLeft size={16} />
-                </button>
-                <div className="mesa-carousel-indicators">
-                  {Array.from({ length: totalSlides }).map((_, sIdx) => (
+          return (
+            <section
+              className={`mesa-falimentar-panel ${isSingleRow ? 'is-single-row' : 'is-double-row'}`}
+              onMouseEnter={() => setIsCarouselPaused(true)}
+              onMouseLeave={() => setIsCarouselPaused(false)}
+            >
+              <div className="mesa-falimentar-header">
+                <div className="mesa-falimentar-title-wrap">
+                  <div className="mesa-falimentar-title-row">
+                    <h2>MOVIMENTO FALIMENTAR &amp; RECUPERAÇÕES JUDICIAIS</h2>
+                    <div className={`mesa-data-origem-badge ${isFromToday ? 'hoje' : 'ultima'}`}>
+                      <Calendar size={11} />
+                      <span>
+                        {isFromToday
+                          ? `ALIMENTAÇÃO DE HOJE (${falimentarDataRef || clockDate})`
+                          : `ÚLTIMA ALIMENTAÇÃO: ${falimentarDataRef || '08/09/2026'}`}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="mesa-falimentar-header-right">
+                  {/* Controles do Carrossel */}
+                  <div className="mesa-carousel-nav">
                     <button
-                      key={sIdx}
-                      className={`mesa-carousel-dot ${carouselIndex === sIdx ? 'active' : ''}`}
-                      onClick={() => setCarouselIndex(sIdx)}
-                      title={`Ir para slide ${sIdx + 1}`}
-                      aria-label={`Slide ${sIdx + 1}`}
-                    />
-                  ))}
+                      className="mesa-carousel-btn"
+                      onClick={handlePrevSlide}
+                      title="Slide Anterior"
+                      aria-label="Slide Anterior"
+                    >
+                      <ChevronLeft size={16} />
+                    </button>
+                    <div className="mesa-carousel-indicators">
+                      {Array.from({ length: totalSlides }).map((_, sIdx) => (
+                        <button
+                          key={sIdx}
+                          className={`mesa-carousel-dot ${carouselIndex === sIdx ? 'active' : ''}`}
+                          onClick={() => setCarouselIndex(sIdx)}
+                          title={`Ir para slide ${sIdx + 1}`}
+                          aria-label={`Slide ${sIdx + 1}`}
+                        />
+                      ))}
+                    </div>
+                    <button
+                      className="mesa-carousel-btn"
+                      onClick={handleNextSlide}
+                      title="Próximo Slide"
+                      aria-label="Próximo Slide"
+                    >
+                      <ChevronRight size={16} />
+                    </button>
+                    <span className="mesa-slide-counter">
+                      {carouselIndex + 1}/{totalSlides}
+                    </span>
+                  </div>
+
+                  <div className="mesa-count-pill">
+                    <span style={{ color: '#06b6d4', fontWeight: 800 }}>
+                      {falimentarRows.length}
+                    </span>{' '}
+                    EMPRESAS
+                  </div>
+                  <div className="mesa-status-pill-online">
+                    <span className="mesa-pulse-green" /> MONITORAMENTO ATIVO
+                  </div>
                 </div>
-                <button
-                  className="mesa-carousel-btn"
-                  onClick={handleNextSlide}
-                  title="Próximo Slide"
-                  aria-label="Próximo Slide"
+              </div>
+
+              {/* Container do Carrossel de Clientes */}
+              <div className="mesa-carousel-container">
+                <div
+                  className={`mesa-carousel-grid ${isSingleRow ? 'grid-single-row' : 'grid-double-row'}`}
+                  style={{
+                    gridTemplateColumns: gridColsStyle,
+                    gridTemplateRows: gridRowsStyle
+                  }}
                 >
-                  <ChevronRight size={16} />
-                </button>
-                <span className="mesa-slide-counter">
-                  {carouselIndex + 1}/{totalSlides}
-                </span>
-              </div>
-
-              <div className="mesa-count-pill">
-                <span style={{ color: '#06b6d4', fontWeight: 800 }}>
-                  {falimentarRows.length}
-                </span>{' '}
-                EMPRESAS
-              </div>
-              <div className="mesa-status-pill-online">
-                <span className="mesa-pulse-green" /> MONITORAMENTO ATIVO
-              </div>
-            </div>
-          </div>
-
-          {/* Container do Carrossel de Clientes */}
-          <div className="mesa-carousel-container">
-            <div className="mesa-carousel-grid">
               {currentSlideItems.map((row, idx) => {
                 const globalIndex = carouselIndex * ITEMS_PER_SLIDE + idx + 1;
                 return (
@@ -1010,6 +1069,8 @@ export const MesaOperacaoDashboard: React.FC = () => {
             </div>
           </div>
         </section>
+          );
+        })()}
           </>
         )}
       </main>

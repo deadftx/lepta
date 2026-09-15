@@ -3,8 +3,7 @@ import { createPortal } from 'react-dom';
 import JSZip from 'jszip';
 import {
   FileCheck, RefreshCw, Search, X, Download,
-  Building2, User, DollarSign, FileText, ArrowUpDown,
-  CheckCircle2, Layers, Archive, AlertTriangle
+  ArrowUpDown, CheckCircle2, Archive, AlertTriangle
 } from 'lucide-react';
 import { API_BASE_URL, getAuthHeaders } from '../../../../config/api';
 import { gerarCartaAnuenciaBlob, limparCnpj, type CartaAnuenciaData, type CartaAnuenciaTituloItem } from '../analise-vencidos/CartaAnuenciaService';
@@ -44,14 +43,6 @@ export interface TituloLepta {
   } | null;
 }
 
-interface KpisAnuencia {
-  totalValorNominal: number;
-  totalValorLiquido: number;
-  totalQtd: number;
-  uniqueCedentes: number;
-  uniqueSacados: number;
-}
-
 const formatCurrency = (val: number | string) => {
   const num = typeof val === 'number' ? val : parseFloat(String(val || 0));
   if (isNaN(num)) return 'R$ 0,00';
@@ -69,15 +60,13 @@ const formatDate = (dStr: string) => {
 };
 
 const CartaAnuencia = () => {
-  // Dados principais
+  // Dados principais (sem pré-carregamento automático)
   const [titulos, setTitulos] = useState<TituloLepta[]>([]);
-  const [kpis, setKpis] = useState<KpisAnuencia | null>(null);
   const [cedentesList, setCedentesList] = useState<string[]>([]);
   const [sacadosList, setSacadosList] = useState<string[]>([]);
   const [tiposList, setTiposList] = useState<string[]>([]);
   const [situacoesList, setSituacoesList] = useState<string[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [hasSearched, setHasSearched] = useState(false);
 
@@ -123,13 +112,17 @@ const CartaAnuencia = () => {
   const [gerandoIndividual, setGerandoIndividual] = useState(false);
   const [buscandoEndereco, setBuscandoEndereco] = useState(false);
 
-  // Exportação Excel
-  const [exporting, setExporting] = useState(false);
+  // Ajusta altura do container pai para zero scroll vertical na página
+  useEffect(() => {
+    document.body.classList.add('carta-anuencia-active');
+    return () => {
+      document.body.classList.remove('carta-anuencia-active');
+    };
+  }, []);
 
-  // Busca dados da API
+  // Busca dados da API restrita aos filtros informados
   const fetchTitulos = useCallback(async (isSilent = false) => {
     if (!isSilent) setLoading(true);
-    setRefreshing(true);
     setError('');
 
     try {
@@ -157,27 +150,22 @@ const CartaAnuencia = () => {
 
       const data = await res.json();
       setTitulos(data.titulos || []);
-      setKpis(data.kpis || null);
       setCedentesList(data.cedentesList || []);
       setSacadosList(data.sacadosList || []);
       setTiposList(data.tiposList || []);
       setSituacoesList(data.situacoesList || []);
+      setHasSearched(true);
     } catch (err: any) {
       console.error('Erro ao buscar títulos para carta de anuência:', err);
       setError(err?.message || 'Erro ao carregar títulos.');
     } finally {
       setLoading(false);
-      setRefreshing(false);
     }
   }, [
     filtroCedente, filtroSacado, filtroTipoDoc, filtroSituacao,
     filtroDataVencInicio, filtroDataVencFim, filtroDataOpInicio, filtroDataOpFim,
     filtroValorMin, filtroValorMax, filtroBusca
   ]);
-
-  useEffect(() => {
-    fetchTitulos();
-  }, [fetchTitulos]);
 
   // Lista ordenada
   const sortedTitulos = useMemo(() => {
@@ -221,6 +209,9 @@ const CartaAnuencia = () => {
     setFiltroDataOpFim('');
     setFiltroValorMin('');
     setFiltroValorMax('');
+    setTitulos([]);
+    setHasSearched(false);
+    setSelectedIds(new Set());
   };
 
   // Seleção (ticando na mão)
@@ -506,106 +497,6 @@ const CartaAnuencia = () => {
     }
   };
 
-  // Exportar XLSX
-  const handleExportXLSX = async () => {
-    if (sortedTitulos.length === 0) {
-      alert('Não há títulos filtrados para exportar.');
-      return;
-    }
-
-    setExporting(true);
-    try {
-      const ExcelJS = (await import('exceljs')).default || (await import('exceljs'));
-      const workbook = new ExcelJS.Workbook();
-      workbook.creator = 'LeptaSys Cobrança';
-      workbook.created = new Date();
-
-      const worksheet = workbook.addWorksheet('Títulos Carta Anuência', {
-        views: [{ state: 'frozen', ySplit: 5 }]
-      });
-
-      worksheet.mergeCells('A1:L1');
-      const titleCell = worksheet.getCell('A1');
-      titleCell.value = 'LEPTA - RELATÓRIO DE TÍTULOS PARA CARTA DE ANUÊNCIA';
-      titleCell.font = { name: 'Calibri', size: 14, bold: true, color: { argb: 'FFFFFFFF' } };
-      titleCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF10B981' } };
-      titleCell.alignment = { vertical: 'middle', horizontal: 'center' };
-      worksheet.getRow(1).height = 30;
-
-      worksheet.mergeCells('A2:L2');
-      const metaCell = worksheet.getCell('A2');
-      metaCell.value = `Exportado em: ${new Date().toLocaleString('pt-BR')} | Total de Títulos: ${sortedTitulos.length} | Valor Total: ${formatCurrency(kpis?.totalValorNominal || 0)}`;
-      metaCell.font = { name: 'Calibri', size: 10, italic: true, color: { argb: 'FF64748B' } };
-      metaCell.alignment = { vertical: 'middle', horizontal: 'center' };
-      worksheet.getRow(2).height = 20;
-
-      worksheet.getRow(3).height = 10;
-
-      const headers = [
-        { header: 'Nº Título', key: 'numero', width: 16 },
-        { header: 'Tipo', key: 'tipoDocumento', width: 14 },
-        { header: 'Operação', key: 'operacao', width: 14 },
-        { header: 'Cedente', key: 'cedente', width: 34 },
-        { header: 'CNPJ/CPF Cedente', key: 'documentoCedente', width: 20 },
-        { header: 'Sacado', key: 'sacado', width: 34 },
-        { header: 'CNPJ/CPF Sacado', key: 'documentoSacado', width: 20 },
-        { header: 'Vencimento', key: 'dataVencimento', width: 14 },
-        { header: 'Data Operação', key: 'dataOperacao', width: 14 },
-        { header: 'Situação', key: 'situacao', width: 16 },
-        { header: 'Valor Nominal (R$)', key: 'valorNominal', width: 20 },
-        { header: 'Banco Cobrador', key: 'bancoCobrador', width: 22 }
-      ];
-
-      const headerRow = worksheet.getRow(5);
-      headerRow.values = headers.map(h => h.header);
-      headerRow.height = 24;
-      headerRow.eachCell((cell) => {
-        cell.font = { name: 'Calibri', size: 10, bold: true, color: { argb: 'FFFFFFFF' } };
-        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E293B' } };
-        cell.alignment = { vertical: 'middle', horizontal: 'center' };
-      });
-
-      headers.forEach((h, idx) => {
-        worksheet.getColumn(idx + 1).width = h.width;
-      });
-
-      sortedTitulos.forEach((t) => {
-        const row = worksheet.addRow([
-          t.numero,
-          t.tipoDocumento || 'DM',
-          t.operacao,
-          t.cedente,
-          t.documentoCedente,
-          t.sacado,
-          t.documentoSacado,
-          formatDate(t.dataVencimento),
-          formatDate(t.dataOperacao),
-          t.situacao,
-          t.valorNominal || 0,
-          t.bancoCobrador || ''
-        ]);
-
-        row.getCell(11).numFmt = '"R$" #,##0.00';
-      });
-
-      const buffer = await workbook.xlsx.writeBuffer();
-      const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `titulos_carta_anuencia_${new Date().toISOString().slice(0, 10)}.xlsx`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-    } catch (err: any) {
-      console.error('Erro ao exportar Excel:', err);
-      alert('Erro ao exportar Excel: ' + (err?.message || ''));
-    } finally {
-      setExporting(false);
-    }
-  };
-
   const getStatusBadgeClass = (sit: string) => {
     const s = String(sit || '').toLowerCase();
     if (s.includes('liquid') || s.includes('pago') || s.includes('quitad')) return 'liquidado';
@@ -620,80 +511,13 @@ const CartaAnuencia = () => {
       <div className="ca-header">
         <div className="ca-header-left">
           <div className="ca-icon-badge">
-            <FileCheck size={24} />
+            <FileCheck size={22} />
           </div>
           <div>
             <h1 className="ca-title">Carta de Anuência</h1>
             <p className="ca-subtitle">
-              Emissão de cartas de anuência oficiais da Lepta com agrupamento automático por sacado e download individual ou em lote.
+              Emissão de cartas de anuência oficiais com agrupamento automático por sacado e download individual ou em lote.
             </p>
-          </div>
-        </div>
-
-        <div className="ca-header-actions">
-          <button
-            type="button"
-            className="ca-btn-secondary"
-            onClick={() => fetchTitulos(false)}
-            disabled={refreshing}
-            title="Atualizar dados"
-          >
-            <RefreshCw size={15} className={refreshing ? 'spin' : ''} />
-            <span>Atualizar</span>
-          </button>
-
-          <button
-            type="button"
-            className="ca-btn-primary"
-            onClick={handleExportXLSX}
-            disabled={exporting || sortedTitulos.length === 0}
-            title="Exportar planilha Excel (.xlsx)"
-          >
-            <Download size={15} />
-            <span>{exporting ? 'Exportando...' : 'Exportar Excel (.xlsx)'}</span>
-          </button>
-        </div>
-      </div>
-
-      {/* 2. KPIS */}
-      <div className="ca-kpis-grid">
-        <div className="ca-kpi-card kpi-emerald">
-          <div className="ca-kpi-icon">
-            <DollarSign size={22} />
-          </div>
-          <div className="ca-kpi-content">
-            <span className="ca-kpi-label">Volume Total</span>
-            <span className="ca-kpi-value">{formatCurrency(kpis?.totalValorNominal || 0)}</span>
-          </div>
-        </div>
-
-        <div className="ca-kpi-card kpi-blue">
-          <div className="ca-kpi-icon">
-            <FileText size={22} />
-          </div>
-          <div className="ca-kpi-content">
-            <span className="ca-kpi-label">Total de Títulos</span>
-            <span className="ca-kpi-value">{kpis?.totalQtd || 0}</span>
-          </div>
-        </div>
-
-        <div className="ca-kpi-card kpi-purple">
-          <div className="ca-kpi-icon">
-            <Building2 size={22} />
-          </div>
-          <div className="ca-kpi-content">
-            <span className="ca-kpi-label">Cedentes Únicos</span>
-            <span className="ca-kpi-value">{kpis?.uniqueCedentes || 0}</span>
-          </div>
-        </div>
-
-        <div className="ca-kpi-card kpi-amber">
-          <div className="ca-kpi-icon">
-            <User size={22} />
-          </div>
-          <div className="ca-kpi-content">
-            <span className="ca-kpi-label">Sacados Únicos</span>
-            <span className="ca-kpi-value">{kpis?.uniqueSacados || 0}</span>
           </div>
         </div>
       </div>
@@ -842,7 +666,7 @@ const CartaAnuencia = () => {
             {hasSearched ? (
               <>Exibindo <strong>{sortedTitulos.length}</strong> títulos filtrados</>
             ) : (
-              <>Total identificado: <strong>{titulos.length}</strong> títulos da Lepta. Clique em <strong>Pesquisar</strong> para carregar a listagem.</>
+              <>Preencha os filtros e clique em <strong>Pesquisar Títulos</strong></>
             )}
           </span>
 
@@ -852,12 +676,12 @@ const CartaAnuencia = () => {
               className="ca-btn-primary"
               style={{ padding: '0.45rem 1rem', fontSize: '0.82rem' }}
               onClick={() => {
-                setHasSearched(true);
                 fetchTitulos(false);
               }}
+              disabled={loading}
             >
               <Search size={14} />
-              <span>Pesquisar Títulos</span>
+              <span>{loading ? 'Pesquisando...' : 'Pesquisar Títulos'}</span>
             </button>
 
             <button type="button" className="ca-btn-clear" onClick={handleClearFilters}>
@@ -950,20 +774,21 @@ const CartaAnuencia = () => {
         ) : !hasSearched ? (
           <div className="ca-search-prompt-card">
             <div className="ca-search-prompt-icon">
-              <Search size={30} />
+              <Search size={28} />
             </div>
             <h4 className="ca-search-prompt-title">Pesquisa de Títulos para Carta de Anuência</h4>
             <p className="ca-search-prompt-desc">
-              Identificamos <strong>{titulos.length} títulos</strong> cadastrados na Lepta. Para visualizar a listagem e selecionar os títulos desejados para emissão da carta, clique no botão abaixo ou utilize a busca acima.
+              Informe os filtros de busca acima (como número do título, sacado, cedente ou período) e clique em <strong>Pesquisar Títulos</strong> para carregar os registros específicos.
             </p>
             <button
               type="button"
               className="ca-btn-primary"
-              style={{ padding: '0.65rem 1.4rem', fontSize: '0.88rem' }}
-              onClick={() => setHasSearched(true)}
+              style={{ padding: '0.55rem 1.3rem', fontSize: '0.84rem' }}
+              onClick={() => fetchTitulos(false)}
+              disabled={loading}
             >
-              <Layers size={16} />
-              <span>Exibir Todos os Títulos ({titulos.length})</span>
+              <Search size={15} />
+              <span>{loading ? 'Pesquisando...' : 'Pesquisar Títulos'}</span>
             </button>
           </div>
         ) : sortedTitulos.length === 0 ? (
@@ -976,7 +801,7 @@ const CartaAnuencia = () => {
             <table className="ca-table">
               <thead>
                 <tr>
-                  <th style={{ width: '38px', textAlign: 'center' }}>
+                  <th style={{ width: '36px', textAlign: 'center' }}>
                     <input
                       type="checkbox"
                       className="ca-checkbox-custom"
@@ -993,21 +818,21 @@ const CartaAnuencia = () => {
                   <th onClick={() => handleSort('numero')} style={{ cursor: 'pointer', width: '13%' }}>
                     Título / Op. <ArrowUpDown size={11} />
                   </th>
-                  <th onClick={() => handleSort('cedente')} style={{ cursor: 'pointer', width: '21%' }}>
+                  <th onClick={() => handleSort('cedente')} style={{ cursor: 'pointer', width: '22%' }}>
                     Cedente <ArrowUpDown size={11} />
                   </th>
-                  <th onClick={() => handleSort('sacado')} style={{ cursor: 'pointer', width: '23%' }}>
+                  <th onClick={() => handleSort('sacado')} style={{ cursor: 'pointer', width: '25%' }}>
                     Sacado (Devedor) <ArrowUpDown size={11} />
                   </th>
-                  <th style={{ width: '7%' }}>Tipo</th>
+                  <th style={{ width: '6%' }}>Tipo</th>
                   <th onClick={() => handleSort('dataVencimento')} style={{ cursor: 'pointer', width: '11%' }}>
                     Vencimento <ArrowUpDown size={11} />
                   </th>
-                  <th style={{ width: '10%' }}>Situação</th>
+                  <th style={{ width: '9%' }}>Situação</th>
                   <th onClick={() => handleSort('valorNominal')} style={{ cursor: 'pointer', textAlign: 'right', width: '10%' }}>
                     Valor (R$) <ArrowUpDown size={11} />
                   </th>
-                  <th style={{ textAlign: 'center', width: '5%' }}>Ações</th>
+                  <th style={{ textAlign: 'center', width: '68px' }}>Ações</th>
                 </tr>
               </thead>
               <tbody>
@@ -1029,21 +854,21 @@ const CartaAnuencia = () => {
                         <div style={{ fontSize: '0.72rem', color: '#64748b' }}>Op: {t.operacao}</div>
                       </td>
 
-                      <td>
-                        <div style={{ fontWeight: 600, color: '#e2e8f0' }} title={t.cedente}>
+                      <td style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        <div style={{ fontWeight: 600, color: '#e2e8f0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={t.cedente}>
                           {t.cedente}
                         </div>
                         {t.documentoCedente && (
-                          <div style={{ fontSize: '0.72rem', color: '#64748b' }}>{t.documentoCedente}</div>
+                          <div style={{ fontSize: '0.72rem', color: '#64748b', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.documentoCedente}</div>
                         )}
                       </td>
 
-                      <td>
-                        <div style={{ fontWeight: 600, color: '#f1f5f9' }} title={t.sacado}>
+                      <td style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        <div style={{ fontWeight: 600, color: '#f1f5f9', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={t.sacado}>
                           {t.sacado}
                         </div>
                         {t.documentoSacado && (
-                          <div style={{ fontSize: '0.72rem', color: '#38bdf8' }}>{t.documentoSacado}</div>
+                          <div style={{ fontSize: '0.72rem', color: '#38bdf8', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.documentoSacado}</div>
                         )}
                       </td>
 

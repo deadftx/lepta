@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Hub de Feed Interno | TV Corporativa & Digital Signage</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link
+    href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800;900&family=Outfit:wght@400;500;600;700;800;900&display=swap"
+    rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+  <script async src="//www.instagram.com/embed.js"></script>
+</head>
+
+<body>
+  <!-- Topbar de Controle do Hub - Estilo Lepta Capital / Feed de Notícias -->
+  <header class="hub-header" id="hubHeader">
+    <div class="header-left">
+      <!-- Logo Oficial LEPTA CAPITAL -->
+      <div class="lepta-brand">
+        <img src="logo.png" alt="Lepta Capital" class="lepta-logo-img">
+      </div>
+
+      <div class="header-v-divider"></div>
+
+      <!-- Tag de Status FEED DE NOTÍCIAS -->
+      <div class="header-status-badge">
+        <span class="glowing-green-dot"></span>
+        <span class="status-badge-title">FEED DE NOTÍCIAS</span>
+      </div>
+    </div>
+
+    <!-- Centro: Limpo -->
+    <div class="header-center"></div>
+
+    <!-- Direita: Fullscreen e Cápsula Data · Hora (Mesma Altura) -->
+    <div class="header-right">
+      <!-- Botão Tela Cheia (⛶) -->
+      <button class="header-icon-btn" id="btnTvMode" title="Tela Cheia (100%)">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2"
+          stroke-linecap="round" stroke-linejoin="round">
+          <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3" />
+        </svg>
+      </button>
+
+      <!-- Cápsula Data · Hora -->
+      <div class="header-datetime-capsule">
+        <span class="capsule-date" id="capsuleDate">14/09/2026</span>
+        <span class="capsule-dot">·</span>
+        <span class="capsule-time" id="liveClock">14:15:49</span>
+      </div>
+    </div>
+  </header>
+
+  <!-- Ticker de Comunicados Rolante (Diretamente abaixo do Banner) -->
+  <div class="ticker-wrapper" id="tickerWrapper">
+    <div class="ticker-badge">
+      <span class="glowing-green-dot"></span>
+      <span class="status-badge-title">COMUNICADOS</span>
+    </div>
+    <div class="ticker-track">
+      <div class="ticker-content" id="tickerContent">
+        Bem-vindo ao canal corporativo Lepta • Reunião geral de alinhamento às 16h no auditório • Meta de marketing do
+        trimestre atingida com 114%! Parabéns a todo o time • Enquete da semana aberta no quadro interativo •
+        Higienização dos equipamentos agendada para sexta-feira às 18h.
+      </div>
+    </div>
+  </div>
+
+  <!-- Container Principal do Feed (100% da Tela) -->
+  <main class="feed-viewport" id="feedViewport">
+    <div class="frames-grid layout-1-full" id="framesGrid">
+      <!-- Quadros renderizados dinamicamente pelo app.js -->
+    </div>
+  </main>
+
+  <!-- Dock / Menu Horizontal de Controle em Tempo Real -->
+  <section class="horizontal-control-dock" id="controlDock">
+    <div class="dock-header">
+      <div class="dock-header-left">
+        <div class="dock-title">
+          <span class="dock-badge">PAINEL DE CONFIGURAÇÃO</span>
+        </div>
+      </div>
+
+      <div class="dock-header-right">
+        <!-- Presets de Layout dentro do Dock (Lado Direito) -->
+        <div class="dock-presets-strip">
+          <span class="dock-strip-label">LAYOUT:</span>
+          <div class="preset-buttons" id="presetButtons">
+            <button class="preset-btn active" data-preset="1-full" title="1 Tela Cheia (100%)">
+              <svg viewBox="0 0 24 24" width="14" height="14">
+                <rect x="3" y="3" width="18" height="18" rx="3" fill="currentColor" />
+              </svg>
+              <span>1 Tela</span>
+            </button>
+            <button class="preset-btn" data-preset="2-split-h" title="2 Quadros Divididos Horizontalmente">
+              <svg viewBox="0 0 24 24" width="14" height="14">
+                <rect x="3" y="3" width="8" height="18" rx="2" fill="currentColor" />
+                <rect x="13" y="3" width="8" height="18" rx="2" fill="currentColor" />
+              </svg>
+              <span>2 Split H</span>
+            </button>
+            <button class="preset-btn" data-preset="2-split-v" title="2 Quadros Divididos Verticalmente">
+              <svg viewBox="0 0 24 24" width="14" height="14">
+                <rect x="3" y="3" width="18" height="8" rx="2" fill="currentColor" />
+                <rect x="3" y="13" width="18" height="8" rx="2" fill="currentColor" />
+              </svg>
+              <span>2 Split V</span>
+            </button>
+            <button class="preset-btn" data-preset="3-featured" title="3 Quadros (Destaque + 2 Secundários)">
+              <svg viewBox="0 0 24 24" width="14" height="14">
+                <rect x="3" y="3" width="11" height="18" rx="2" fill="currentColor" />
+                <rect x="16" y="3" width="5" height="8" rx="1.5" fill="currentColor" />
+                <rect x="16" y="13" width="5" height="8" rx="1.5" fill="currentColor" />
+              </svg>
+              <span>3 Destaque</span>
+            </button>
+            <button class="preset-btn" data-preset="3-columns" title="3 Colunas Iguais">
+              <svg viewBox="0 0 24 24" width="14" height="14">
+                <rect x="3" y="3" width="5" height="18" rx="1.5" fill="currentColor" />
+                <rect x="9.5" y="3" width="5" height="18" rx="1.5" fill="currentColor" />
+                <rect x="16" y="3" width="5" height="18" rx="1.5" fill="currentColor" />
+              </svg>
+              <span>3 Colunas</span>
+            </button>
+            <button class="preset-btn" data-preset="4-grid" title="4 Quadros em Grade 2x2">
+              <svg viewBox="0 0 24 24" width="14" height="14">
+                <rect x="3" y="3" width="8" height="8" rx="2" fill="currentColor" />
+                <rect x="13" y="3" width="8" height="8" rx="2" fill="currentColor" />
+                <rect x="3" y="13" width="8" height="8" rx="2" fill="currentColor" />
+                <rect x="13" y="13" width="8" height="8" rx="2" fill="currentColor" />
+              </svg>
+              <span>4 Grade</span>
+            </button>
+            <button class="preset-btn" data-preset="4-spotlight" title="4 Quadros (1 Destaque + 3 Laterais)">
+              <svg viewBox="0 0 24 24" width="14" height="14">
+                <rect x="3" y="3" width="13" height="18" rx="2" fill="currentColor" />
+                <rect x="18" y="3" width="3" height="5" rx="1" fill="currentColor" />
+                <rect x="18" y="9.5" width="3" height="5" rx="1" fill="currentColor" />
+                <rect x="18" y="16" width="3" height="5" rx="1" fill="currentColor" />
+              </svg>
+              <span>4 Destaque</span>
+            </button>
+          </div>
+        </div>
+
+        <div class="dock-v-divider"></div>
+
+        <!-- Indicador EDITANDO QUADRO -->
+        <div class="dock-active-indicator" id="dockFramesSelector">
+          <!-- Gerenciado pelo app.js -->
+        </div>
+
+        <div class="dock-v-divider"></div>
+
+        <!-- Ações: Mudo, Letreiro e Recolher -->
+        <div class="dock-quick-actions">
+          <button class="action-btn-mini" id="btnToggleAudio" title="Ativar/Desativar Áudio">
+            <span class="icon" id="audioIcon">🔇</span>
+            <span id="audioLabel">Mudo</span>
+          </button>
+          <button class="action-btn-mini" id="btnToggleTicker" title="Exibir/Ocultar Letreiro">
+            <span class="icon">📢</span>
+            <span>Letreiro</span>
+          </button>
+        </div>
+
+        <button class="dock-toggle-btn" id="btnToggleDock" title="Recolher / Expandir Painel">
+          <span class="toggle-text">Ocultar Painel</span>
+          <span class="toggle-icon">▼</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- Corpo com Configuração do Quadro Selecionado -->
+    <div class="dock-body" id="dockBody">
+      <!-- Seletor de Tipo de Conteúdo (Sem YouTube) -->
+      <div class="type-selector-strip">
+        <span class="section-title">CONTEÚDO DO QUADRO:</span>
+        <div class="content-type-buttons" id="contentTypeButtons">
+          <button class="type-btn" data-type="image">
+            <span class="btn-emoji">🖼️</span>
+            <span>Imagem</span>
+          </button>
+          <button class="type-btn" data-type="video">
+            <span class="btn-emoji">🎥</span>
+            <span>Vídeo</span>
+          </button>
+          <button class="type-btn" data-type="instagram">
+            <span class="btn-emoji">📸</span>
+            <span>Instagram</span>
+          </button>
+          <button class="type-btn" data-type="poll">
+            <span class="btn-emoji">📊</span>
+            <span>Enquete</span>
+          </button>
+          <button class="type-btn" data-type="text">
+            <span class="btn-emoji">📝</span>
+            <span>Texto / Aviso</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Formulários de Configuração Dinâmica para o Tipo Ativo -->
+      <div class="config-forms-container" id="configFormsContainer">
+        <!-- Renderizado dinamicamente pelo JavaScript de acordo com o tipo do quadro ativo -->
+      </div>
+    </div>
+  </section>
+
+  <!-- Botão Flutuante de Retorno quando em Modo TV 100% -->
+  <button class="exit-tv-btn" id="btnExitTv" title="Sair do Modo TV (ou pressione Esc)">
+    <span>⚙️ Painel de Controle</span>
+    <kbd>Esc</kbd>
+  </button>
+
+  <script src="app.js"></script>
+</body>
+
+</html>
