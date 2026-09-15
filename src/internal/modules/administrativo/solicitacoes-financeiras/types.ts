@@ -24,6 +24,34 @@ export const CATEGORIAS_PADRAO: CategoriaSolicitacao[] = [
   'Outros'
 ];
 
+export const REEMBOLSO_SUBCATEGORIAS = [
+  'ALIMENTAÇÃO',
+  'COMBUSTIVEL',
+  'ESTACIONAMENTO',
+  'PEDAGIO',
+  'HOSPEDAGEM',
+  'KILOMETRAGEM',
+  'PASSAGEM',
+  'TÁXI',
+  'LOCACAO DE VEICULOS',
+  'CARTORIO',
+  'CORREIO',
+  'MATERIAL DE ESCRITORIO',
+  'MATERIAL DE LIMPEZA',
+  'MAT INFORMATICA E INTERNET',
+  'SERVICOS ADVOCATICIOS',
+  'AUDITORES INDEPENDENTES',
+  'SERVICOS TERCERIZADOS',
+  'MULTA DE TRANSITO',
+  'CURSO PROFISSIONALIZANTE',
+  'MATERIAL PARA TREINAMENTO',
+  'BRINDES',
+  'TAXAS DIVERSAS',
+  'OUTROS'
+] as const;
+
+export type ReembolsoSubcategoria = typeof REEMBOLSO_SUBCATEGORIAS[number];
+
 export type EmpresaPagadora =
   | 'INDIFERENTE'
   | 'Lepta Consultora'
@@ -46,6 +74,8 @@ export const EMPRESAS_PAGADORAS: EmpresaPagadora[] = [
 export interface PurchaseItemForm {
   id?: string;
   categoria: CategoriaSolicitacao;
+  subcategoria_reembolso?: string;
+  km_rodado?: number;
   tipo_destino: TipoDestino;
   empresa_pagadora: EmpresaPagadora;
   departamento_centro_custo: string;
@@ -69,6 +99,8 @@ export interface PurchaseItem {
   empresa_pagadora?: EmpresaPagadora;
   departamento_centro_custo: string;
   categoria: CategoriaSolicitacao;
+  subcategoria_reembolso?: string;
+  km_rodado?: number;
   fornecedor_nome: string;
   fornecedor_contato: string;
   forma_pagamento: string;

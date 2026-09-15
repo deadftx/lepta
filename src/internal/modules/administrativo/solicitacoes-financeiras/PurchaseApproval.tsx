@@ -6,7 +6,7 @@ import {
   DollarSign, AlertCircle, RefreshCw, User,
   Eye, HelpCircle, CreditCard, Check, ShieldAlert,
   Paperclip, Download, Trash2, PauseCircle, PlayCircle, Scale,
-  Copy, Zap
+  Copy, Zap, ScanLine, FileText, Gauge
 } from 'lucide-react';
 import { API_BASE_URL, getAuthHeaders } from '../../../../config/api';
 import { useAuth } from '../../../core/AuthContext';
@@ -24,7 +24,8 @@ import type {
 import {
   DEPARTAMENTOS_PADRAO,
   CATEGORIAS_PADRAO,
-  EMPRESAS_PAGADORAS
+  EMPRESAS_PAGADORAS,
+  REEMBOLSO_SUBCATEGORIAS
 } from './types';
 import { DeleteRequestModal } from './components/DeleteRequestModal';
 import { PausePaymentModal } from './components/PausePaymentModal';
@@ -34,9 +35,26 @@ export const PurchaseApproval: React.FC = () => {
   const { user } = useAuth();
   const isMaster = user?.role === 'MASTER';
 
-  const [activeTab, setActiveTab] = useState<'review' | 'reviewed' | 'new' | 'my_requests' | 'archived'>('new');
+  const [activeTab, setActiveTab] = useState<'review' | 'reviewed' | 'new' | 'my_requests' | 'drafts' | 'archived'>('new');
   const [isApprover, setIsApprover] = useState<boolean>(false);
   const [loadingRole, setLoadingRole] = useState(true);
+
+  // Reembolso Subcategoria & Calculadora de KM (Reembolso_planilha.xls)
+  const [subcategoriaReembolso, setSubcategoriaReembolso] = useState<string>('ALIMENTAÇÃO');
+  const [kmTrajeto, setKmTrajeto] = useState<string>('');
+  const [kmRodado, setKmRodado] = useState<string>('');
+  const [kmSaida, setKmSaida] = useState<string>('');
+  const [kmChegada, setKmChegada] = useState<string>('');
+
+  // OCR Scanner State (Beta)
+  const [ocrLoading, setOcrLoading] = useState<boolean>(false);
+  const [ocrStatusText, setOcrStatusText] = useState<string>('');
+  const [ocrSuccessMessage, setOcrSuccessMessage] = useState<string>('');
+  const ocrFileInputRef = useRef<HTMLInputElement>(null);
+
+  // Sistema de Rascunhos (Drafts)
+  const [drafts, setDrafts] = useState<any[]>([]);
+  const [hasActiveDraft, setHasActiveDraft] = useState<boolean>(false);
 
   // Multi-item form state
   const [addedItems, setAddedItems] = useState<PurchaseItemForm[]>([]);
@@ -460,6 +478,249 @@ export const PurchaseApproval: React.FC = () => {
     setFormAttachmentError('');
   };
 
+  // --- FUNÇÕES DE CÁLCULO DE KM (R$ 2,00 / km - Reembolso_planilha.xls) ---
+  const handleKmChange = (trajeto: string, kmStr: string, saidaStr: string, chegadaStr: string) => {
+    setKmTrajeto(trajeto);
+    setKmRodado(kmStr);
+    setKmSaida(saidaStr);
+    setKmChegada(chegadaStr);
+
+    const km = parseFloat(kmStr) || 0;
+    const totalKm = km * 2.0;
+    setValorNumeric(totalKm);
+    setValorDisplay(totalKm > 0 ? totalKm.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) : '');
+    const desc = trajeto.trim()
+      ? `Quilometragem: ${trajeto.trim()} (${km} km x R$ 2,00)`
+      : `Quilometragem (${km} km x R$ 2,00)`;
+    setProdutoServico(desc);
+  };
+
+  const handleKmOdometro = (trajeto: string, saidaStr: string, chegadaStr: string) => {
+    setKmSaida(saidaStr);
+    setKmChegada(chegadaStr);
+    const saida = parseFloat(saidaStr) || 0;
+    const chegada = parseFloat(chegadaStr) || 0;
+    let kmCalculado = kmRodado;
+    if (chegada > saida) {
+      kmCalculado = String(chegada - saida);
+      setKmRodado(kmCalculado);
+    }
+    handleKmChange(trajeto, kmCalculado, saidaStr, chegadaStr);
+  };
+
+  // --- LEITOR OCR DE NOTAS / COMPROVANTES (BETA) ---
+  const handleOcrUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setOcrLoading(true);
+    setOcrStatusText('Lendo imagem e processando inteligência da nota...');
+    try {
+      const fd = new FormData();
+      fd.append('file', file);
+
+      const res = await fetch(`${API_BASE_URL}/api/compras/ocr-scan`, {
+        method: 'POST',
+        headers: getAuthHeaders(),
+        body: fd
+      });
+
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || 'Falha ao processar nota via OCR');
+      }
+
+      setCategoria('Reembolso');
+      if (data.extracted?.subcategoria) {
+        setSubcategoriaReembolso(data.extracted.subcategoria);
+      }
+      if (data.extracted?.fornecedor_nome) {
+        setFornecedorNome(data.extracted.fornecedor_nome);
+      }
+      if (data.extracted?.valor > 0) {
+        setValorNumeric(data.extracted.valor);
+        setValorDisplay(data.extracted.valor.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }));
+      }
+      if (data.extracted?.descricao) {
+        setProdutoServico(data.extracted.descricao);
+      }
+
+      // Auto-anexa o arquivo nos comprovantes
+      setFormAttachments(prev => {
+        const alreadyExists = prev.some(f => f.name === file.name && f.size === file.size);
+        if (alreadyExists) return prev;
+        return [...prev.slice(0, 4), file];
+      });
+
+      setOcrSuccessMessage('Nota lida com sucesso! Informações preenchidas e comprovante anexado automaticamente.');
+      setTimeout(() => setOcrSuccessMessage(''), 8000);
+    } catch (err: any) {
+      setFormError(`Erro ao ler nota: ${err.message}`);
+    } finally {
+      setOcrLoading(false);
+      setOcrStatusText('');
+      if (ocrFileInputRef.current) ocrFileInputRef.current.value = '';
+    }
+  };
+
+  // --- GERENCIAMENTO DE RASCUNHOS (DRAFTS) ---
+  const getDraftStorageKey = useCallback(() => `lepta_purchase_draft_${user?.id || 'default'}`, [user]);
+  const getDraftsListKey = useCallback(() => `lepta_purchase_drafts_list_${user?.id || 'default'}`, [user]);
+
+  const loadDraftsList = useCallback(() => {
+    try {
+      const raw = localStorage.getItem(getDraftsListKey());
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) setDrafts(parsed);
+      }
+      const activeRaw = localStorage.getItem(getDraftStorageKey());
+      if (activeRaw) {
+        const act = JSON.parse(activeRaw);
+        if (act && (act.fornecedorNome || act.produtoServico || act.valorNumeric > 0 || (act.addedItems && act.addedItems.length > 0))) {
+          setHasActiveDraft(true);
+        }
+      }
+    } catch (_) {}
+  }, [getDraftStorageKey, getDraftsListKey]);
+
+  useEffect(() => {
+    loadDraftsList();
+  }, [loadDraftsList]);
+
+  // Auto-salva rascunho com debounce
+  useEffect(() => {
+    if (activeTab !== 'new') return;
+    const hasData = fornecedorNome.trim() || produtoServico.trim() || valorNumeric > 0 || addedItems.length > 0 || kmTrajeto.trim();
+    if (!hasData) return;
+
+    const timer = setTimeout(() => {
+      try {
+        const draftObj = {
+          id: `draft_${Date.now()}`,
+          updatedAt: new Date().toISOString(),
+          categoria,
+          subcategoriaReembolso,
+          kmTrajeto,
+          kmRodado,
+          kmSaida,
+          kmChegada,
+          tipoDestino,
+          empresaPagadora,
+          departamentoOuCentro,
+          empresaOuCliente,
+          fornecedorNome,
+          fornecedorContato,
+          formaPagamento,
+          quantidadeParcelas,
+          produtoServico,
+          valorDisplay,
+          valorNumeric,
+          quantidade,
+          observacoes,
+          chavePix,
+          addedItems
+        };
+        localStorage.setItem(getDraftStorageKey(), JSON.stringify(draftObj));
+        setHasActiveDraft(true);
+
+        // Atualiza a lista de rascunhos para a aba "Rascunhos"
+        const listRaw = localStorage.getItem(getDraftsListKey());
+        let currentList = listRaw ? JSON.parse(listRaw) : [];
+        if (!Array.isArray(currentList)) currentList = [];
+        // Mantém o rascunho ativo como o mais recente
+        const filtered = currentList.filter((d: any) => d.id !== 'active_work');
+        const updatedList = [{ ...draftObj, id: 'active_work' }, ...filtered].slice(0, 10);
+        localStorage.setItem(getDraftsListKey(), JSON.stringify(updatedList));
+        setDrafts(updatedList);
+      } catch (_) {}
+    }, 700);
+
+    return () => clearTimeout(timer);
+  }, [
+    activeTab, categoria, subcategoriaReembolso, kmTrajeto, kmRodado, kmSaida, kmChegada,
+    tipoDestino, empresaPagadora, departamentoOuCentro, empresaOuCliente, fornecedorNome,
+    fornecedorContato, formaPagamento, quantidadeParcelas, produtoServico, valorDisplay,
+    valorNumeric, quantidade, observacoes, chavePix, addedItems, getDraftStorageKey, getDraftsListKey
+  ]);
+
+  const restoreActiveDraft = () => {
+    try {
+      const activeRaw = localStorage.getItem(getDraftStorageKey());
+      if (!activeRaw) return;
+      const d = JSON.parse(activeRaw);
+      loadDraftIntoForm(d);
+    } catch (_) {}
+  };
+
+  const loadDraftIntoForm = (d: any) => {
+    if (d.categoria) setCategoria(d.categoria);
+    if (d.subcategoriaReembolso) setSubcategoriaReembolso(d.subcategoriaReembolso);
+    if (d.kmTrajeto) setKmTrajeto(d.kmTrajeto);
+    if (d.kmRodado) setKmRodado(d.kmRodado);
+    if (d.kmSaida) setKmSaida(d.kmSaida);
+    if (d.kmChegada) setKmChegada(d.kmChegada);
+    if (d.tipoDestino) setTipoDestino(d.tipoDestino);
+    if (d.empresaPagadora) setEmpresaPagadora(d.empresaPagadora);
+    if (d.departamentoOuCentro) setDepartamentoOuCentro(d.departamentoOuCentro);
+    if (d.empresaOuCliente) setEmpresaOuCliente(d.empresaOuCliente);
+    if (d.fornecedorNome) setFornecedorNome(d.fornecedorNome);
+    if (d.fornecedorContato) setFornecedorContato(d.fornecedorContato);
+    if (d.formaPagamento) setFormaPagamento(d.formaPagamento);
+    if (d.quantidadeParcelas) setQuantidadeParcelas(d.quantidadeParcelas);
+    if (d.produtoServico) setProdutoServico(d.produtoServico);
+    if (d.valorDisplay) setValorDisplay(d.valorDisplay);
+    if (d.valorNumeric) setValorNumeric(d.valorNumeric);
+    if (d.quantidade) setQuantidade(d.quantidade);
+    if (d.observacoes) setObservacoes(d.observacoes);
+    if (d.chavePix) setChavePix(d.chavePix);
+    if (Array.isArray(d.addedItems)) setAddedItems(d.addedItems);
+
+    setHasActiveDraft(false);
+    setActiveTab('new');
+    setToastMessage('Rascunho carregado no formulário!');
+    setTimeout(() => setToastMessage(''), 4000);
+  };
+
+  const discardActiveDraft = (clearForm = true) => {
+    try {
+      localStorage.removeItem(getDraftStorageKey());
+      setHasActiveDraft(false);
+      if (clearForm) {
+        setFornecedorNome('');
+        setFornecedorContato('');
+        setProdutoServico('');
+        setValorDisplay('');
+        setValorNumeric(0);
+        setQuantidade(1);
+        setObservacoes('');
+        setChavePix('');
+        setKmTrajeto('');
+        setKmRodado('');
+        setKmSaida('');
+        setKmChegada('');
+        setAddedItems([]);
+        setFormAttachments([]);
+        setToastMessage('Rascunho descartado.');
+        setTimeout(() => setToastMessage(''), 4000);
+      }
+    } catch (_) {}
+  };
+
+  const deleteDraft = (draftId: string) => {
+    try {
+      const updated = drafts.filter(d => d.id !== draftId);
+      setDrafts(updated);
+      localStorage.setItem(getDraftsListKey(), JSON.stringify(updated));
+      if (draftId === 'active_work') {
+        localStorage.removeItem(getDraftStorageKey());
+        setHasActiveDraft(false);
+      }
+      setToastMessage('Rascunho excluído.');
+      setTimeout(() => setToastMessage(''), 4000);
+    } catch (_) {}
+  };
+
   const validateCurrentItem = (silent = false): PurchaseItemForm | null => {
     const destVal = getCurrentDestinationValue();
     if (!categoria) {
@@ -631,6 +892,7 @@ export const PurchaseApproval: React.FC = () => {
       setObservacoes('');
 
       showToast(`Solicitação registrada e enviada para aprovação com ${itemsToSubmit.length} item(ns)${formAttachments.length > 0 ? ` e ${formAttachments.length} anexo(s)` : ''}!`);
+      discardActiveDraft(false);
       fetchData(false);
       setActiveTab('my_requests');
     } catch (err: any) {
@@ -1255,9 +1517,21 @@ export const PurchaseApproval: React.FC = () => {
     });
   }, [reviewQueue, statusFilter, searchQuery]);
 
+  // O usuário SÓ PODE enxergar as solicitações arquivadas DELE MESMO
+  const myArchivedRequests = useMemo(() => {
+    if (isMaster) return archivedRequests;
+    const uid = String(user?.id || '');
+    const uname = String(user?.username || '').toLowerCase();
+    return archivedRequests.filter(r => {
+      const rUid = String(r.solicitante_id || '');
+      const rUname = String(r.solicitante_nome || '').toLowerCase();
+      return (uid && rUid === uid) || (uname && rUname === uname);
+    });
+  }, [archivedRequests, isMaster, user]);
+
   // Filtros de Arquivados
   const filteredArchived = useMemo(() => {
-    return archivedRequests.filter(item => {
+    return myArchivedRequests.filter(item => {
       const matchStatus = statusFilter === 'ALL' || item.status === statusFilter;
       const q = searchQuery.toLowerCase().trim();
       const matchSearch = !q ||
@@ -1268,7 +1542,7 @@ export const PurchaseApproval: React.FC = () => {
         item.id.toLowerCase().includes(q);
       return matchStatus && matchSearch;
     });
-  }, [archivedRequests, statusFilter, searchQuery]);
+  }, [myArchivedRequests, statusFilter, searchQuery]);
 
   // Filtros de Solicitações Revisadas (Aprovadores e Master - Vitalício)
   const filteredReviewed = useMemo(() => {
@@ -1322,10 +1596,10 @@ export const PurchaseApproval: React.FC = () => {
       pendingCount: pending.length,
       reopenedCount: reopened.length,
       waitingCount: waiting.length,
-      archivedCount: archivedRequests.length,
+      archivedCount: myArchivedRequests.length,
       pendingValue
     };
-  }, [reviewQueue, myRequests, archivedRequests, isApprover, isMaster]);
+  }, [reviewQueue, myRequests, myArchivedRequests, isApprover, isMaster]);
 
   return (
     <div className="pa-container">
@@ -1353,9 +1627,6 @@ export const PurchaseApproval: React.FC = () => {
         </div>
 
         <div className="pa-header-badges">
-          <div className="pa-live-indicator">
-            <span className="pa-live-dot" /> SQLite Sincronizado
-          </div>
           {isMaster ? (
             <span className="pa-role-badge" style={{ background: 'rgba(168, 85, 247, 0.2)', color: '#c084fc', border: '1px solid rgba(168, 85, 247, 0.4)' }}>
               <ShieldAlert size={14} /> Lepta Master
@@ -1468,10 +1739,17 @@ export const PurchaseApproval: React.FC = () => {
         </button>
 
         <button
+          className={`pa-tab ${activeTab === 'drafts' ? 'active' : ''}`}
+          onClick={() => setActiveTab('drafts')}
+        >
+          <FileText size={18} /> Rascunhos {drafts.length > 0 && <span className="pa-tab-counter" style={{ background: '#f59e0b' }}>{drafts.length}</span>}
+        </button>
+
+        <button
           className={`pa-tab ${activeTab === 'archived' ? 'active' : ''}`}
           onClick={() => setActiveTab('archived')}
         >
-          <Archive size={18} /> Solicitações Arquivadas ({archivedRequests.length})
+          <Archive size={18} /> Solicitações Arquivadas ({myArchivedRequests.length})
         </button>
       </div>
 
@@ -1734,12 +2012,64 @@ export const PurchaseApproval: React.FC = () => {
       {/* TAB 2: NOVA SOLICITAÇÃO FINANCEIRA */}
       {activeTab === 'new' && (
         <div className="pa-form-card">
-          <h2>
-            <CreditCard size={22} color="#3b82f6" /> Nova Solicitação Financeira
-          </h2>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px', marginBottom: '8px' }}>
+            <h2 style={{ margin: 0 }}>
+              <CreditCard size={22} color="#3b82f6" /> Nova Solicitação Financeira
+            </h2>
+            <button
+              type="button"
+              className="pa-btn-ocr-beta"
+              onClick={() => ocrFileInputRef.current?.click()}
+              disabled={ocrLoading}
+              title="Fotografe ou anexe a nota/comprovante para preencher automaticamente"
+            >
+              <ScanLine size={16} />
+              <span>Ler Nota / Comprovante</span>
+              <span className="pa-beta-tag">BETA</span>
+            </button>
+          </div>
           <p className="pa-form-subtitle">
             Preencha os campos abaixo para submeter a solicitação de pagamento / serviço para a esteira de aprovação.
           </p>
+
+          {/* Banner de Rascunho Disponível */}
+          {hasActiveDraft && (
+            <div className="pa-draft-banner">
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <FileText size={20} color="#fbbf24" />
+                <div>
+                  <strong>Você possui um rascunho salvo desta solicitação!</strong>
+                  <div style={{ fontSize: '0.78rem', opacity: 0.9 }}>
+                    Seus dados foram salvos automaticamente. Deseja continuar de onde parou?
+                  </div>
+                </div>
+              </div>
+              <div className="pa-draft-banner-actions">
+                <button
+                  type="button"
+                  className="pa-btn-detail"
+                  style={{ background: '#f59e0b', color: '#0f172a', fontWeight: 700 }}
+                  onClick={() => restoreActiveDraft()}
+                >
+                  Restaurar Rascunho
+                </button>
+                <button
+                  type="button"
+                  className="pa-btn-reopen"
+                  style={{ background: 'rgba(255,255,255,0.1)', color: '#f8fafc' }}
+                  onClick={() => discardActiveDraft()}
+                >
+                  Descartar
+                </button>
+              </div>
+            </div>
+          )}
+
+          {ocrSuccessMessage && (
+            <div style={{ background: 'rgba(52, 211, 153, 0.15)', border: '1px solid #10b981', color: '#6ee7b7', padding: '12px 16px', borderRadius: '10px', marginBottom: '1.25rem', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <CheckCircle2 size={18} /> {ocrSuccessMessage}
+            </div>
+          )}
 
           {/* Vínculo automático do Colaborador Responsável da Sessão */}
           <div className="pa-user-session-card">
@@ -1789,6 +2119,104 @@ export const PurchaseApproval: React.FC = () => {
                   ))}
                 </select>
               </div>
+
+              {/* Se Reembolso: Subcategoria da Planilha e Calculadora de KM */}
+              {categoria === 'Reembolso' && (
+                <div className="pa-form-group full-width" style={{ background: 'rgba(56, 189, 248, 0.05)', border: '1px dashed rgba(56, 189, 248, 0.3)', padding: '14px', borderRadius: '10px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                  <label style={{ color: '#38bdf8', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    📋 Tipo de Despesa de Reembolso (Planilha) <span className="pa-required">*</span>
+                  </label>
+                  <select
+                    className="pa-select"
+                    value={subcategoriaReembolso}
+                    onChange={e => {
+                      const sub = e.target.value;
+                      setSubcategoriaReembolso(sub);
+                      if (sub === 'KILOMETRAGEM') {
+                        const km = parseFloat(kmRodado) || 0;
+                        const totalKm = km * 2.0;
+                        setValorNumeric(totalKm);
+                        setValorDisplay(totalKm > 0 ? totalKm.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) : '');
+                        const desc = kmTrajeto.trim()
+                          ? `Quilometragem: ${kmTrajeto.trim()} (${km} km x R$ 2,00)`
+                          : `Quilometragem (${km} km x R$ 2,00)`;
+                        setProdutoServico(desc);
+                      } else {
+                        if (!produtoServico.trim() || produtoServico.startsWith('Quilometragem')) {
+                          setProdutoServico(`Reembolso: ${sub}`);
+                        }
+                      }
+                    }}
+                  >
+                    {REEMBOLSO_SUBCATEGORIAS.map(sc => (
+                      <option key={sc} value={sc}>
+                        {sc === 'KILOMETRAGEM' ? '🚗 KILOMETRAGEM (R$ 2,00 / km)' : `🔹 ${sc}`}
+                      </option>
+                    ))}
+                  </select>
+
+                  {/* Bloco dedicado de Cálculo de KM Rodado */}
+                  {subcategoriaReembolso === 'KILOMETRAGEM' && (
+                    <div className="pa-km-card" style={{ marginTop: '8px' }}>
+                      <div className="pa-km-header">
+                        <Gauge size={18} color="#38bdf8" />
+                        <h4>Cálculo de Quilometragem (R$ 2,00 / Km Percorrido)</h4>
+                      </div>
+                      <div className="pa-km-grid">
+                        <div className="pa-form-group">
+                          <label>Trajeto (Origem - Destino)</label>
+                          <input
+                            type="text"
+                            className="pa-input"
+                            placeholder="Ex: Santo André - Alphaville (Rodoanel)"
+                            value={kmTrajeto}
+                            onChange={e => handleKmChange(e.target.value, kmRodado, kmSaida, kmChegada)}
+                          />
+                        </div>
+                        <div className="pa-form-group">
+                          <label>Km Percorrida</label>
+                          <input
+                            type="number"
+                            step="any"
+                            min="0"
+                            className="pa-input"
+                            placeholder="Ex: 65"
+                            value={kmRodado}
+                            onChange={e => handleKmChange(kmTrajeto, e.target.value, kmSaida, kmChegada)}
+                          />
+                        </div>
+                        <div className="pa-form-group">
+                          <label>Km Saída (Opcional)</label>
+                          <input
+                            type="number"
+                            step="any"
+                            className="pa-input"
+                            placeholder="Odômetro Saída"
+                            value={kmSaida}
+                            onChange={e => handleKmOdometro(kmTrajeto, e.target.value, kmChegada)}
+                          />
+                        </div>
+                        <div className="pa-form-group">
+                          <label>Km Chegada (Opcional)</label>
+                          <input
+                            type="number"
+                            step="any"
+                            className="pa-input"
+                            placeholder="Odômetro Chegada"
+                            value={kmChegada}
+                            onChange={e => handleKmOdometro(kmTrajeto, kmSaida, e.target.value)}
+                          />
+                        </div>
+                      </div>
+                      <div className="pa-km-result">
+                        <span>
+                          Total Calculado: <strong>R$ {((parseFloat(kmRodado) || 0) * 2.0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</strong> ({parseFloat(kmRodado) || 0} km x R$ 2,00)
+                        </span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
 
               {/* Tipo de Destino / Alocação */}
               <div className="pa-form-group full-width">
@@ -2323,6 +2751,90 @@ export const PurchaseApproval: React.FC = () => {
                               </button>
                             </>
                           )}
+                        </div>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* TAB: RASCUNHOS SALVOS */}
+      {activeTab === 'drafts' && (
+        <div className="pa-table-card">
+          <div className="pa-table-header">
+            <h2>
+              <FileText size={18} /> Rascunhos Salvos ({drafts.length})
+            </h2>
+          </div>
+
+          <div className="pa-table-responsive">
+            <table className="pa-table">
+              <thead>
+                <tr>
+                  <th>Salvo em</th>
+                  <th>Categoria</th>
+                  <th>Fornecedor / Prestador</th>
+                  <th>Descrição / Serviço</th>
+                  <th>Destino</th>
+                  <th>Valor</th>
+                  <th>Ações</th>
+                </tr>
+              </thead>
+              <tbody>
+                {drafts.length === 0 ? (
+                  <tr>
+                    <td colSpan={7} className="pa-empty">
+                      Nenhum rascunho salvo no momento. Conforme você preenche a Nova Solicitação, seus dados são salvos automaticamente aqui.
+                    </td>
+                  </tr>
+                ) : (
+                  drafts.map(d => (
+                    <tr key={d.id}>
+                      <td data-label="Salvo em">
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          <Clock size={13} color="#94a3b8" />
+                          <span style={{ fontSize: '0.8rem', color: '#cbd5e1' }}>
+                            {new Date(d.updatedAt).toLocaleString('pt-BR')}
+                          </span>
+                        </div>
+                      </td>
+                      <td data-label="Categoria">
+                        <span style={{ fontSize: '0.8rem', fontWeight: 600, color: '#38bdf8' }}>
+                          {d.categoria} {d.subcategoriaReembolso ? `(${d.subcategoriaReembolso})` : ''}
+                        </span>
+                      </td>
+                      <td data-label="Fornecedor">
+                        <strong>{d.fornecedorNome || '(Sem fornecedor)'}</strong>
+                      </td>
+                      <td data-label="Descrição">{d.produtoServico || '(Sem descrição)'}</td>
+                      <td data-label="Destino">{d.departamentoOuCentro || d.empresaOuCliente || '-'}</td>
+                      <td data-label="Valor">
+                        <span className="pa-price-highlight">
+                          {formatBrl(d.valorNumeric || 0)}
+                        </span>
+                      </td>
+                      <td data-label="Ações">
+                        <div style={{ display: 'flex', gap: '6px' }}>
+                          <button
+                            type="button"
+                            className="pa-btn-detail"
+                            style={{ background: 'rgba(56, 189, 248, 0.15)', borderColor: '#38bdf8', color: '#38bdf8' }}
+                            onClick={() => loadDraftIntoForm(d)}
+                          >
+                            ✏️ Continuar Preenchendo
+                          </button>
+                          <button
+                            type="button"
+                            className="pa-btn-reopen"
+                            style={{ background: 'rgba(239, 68, 68, 0.15)', borderColor: '#ef4444', color: '#fca5a5' }}
+                            onClick={() => deleteDraft(d.id)}
+                          >
+                            <Trash2 size={14} /> Excluir
+                          </button>
                         </div>
                       </td>
                     </tr>
@@ -3510,6 +4022,26 @@ export const PurchaseApproval: React.FC = () => {
         onClose={() => setDeleteModalRequest(null)}
         onSubmit={handleConfirmDeleteMaster}
       />
+      {/* OCR Hidden Input e Modal de Processamento */}
+      <input
+        type="file"
+        ref={ocrFileInputRef}
+        accept="image/*"
+        style={{ display: 'none' }}
+        onChange={handleOcrUpload}
+      />
+
+      {ocrLoading && (
+        <div className="pa-modal-overlay">
+          <div className="pa-modal-card" style={{ maxWidth: '420px', textAlign: 'center', padding: '30px' }}>
+            <div className="pa-loading-spinner" style={{ margin: '0 auto 16px' }} />
+            <h3 style={{ color: '#38bdf8', margin: '0 0 8px 0' }}>Analisando Comprovante (Beta)</h3>
+            <p style={{ color: '#94a3b8', fontSize: '0.88rem', margin: 0 }}>
+              {ocrStatusText || 'Processando imagem via OCR e inteligência semântica...'}
+            </p>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

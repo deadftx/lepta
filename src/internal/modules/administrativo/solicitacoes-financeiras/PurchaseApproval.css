@@ -1621,3 +1621,118 @@
 .pa-table-container::-webkit-scrollbar-thumb:hover {
   background: rgba(56, 189, 248, 0.65);
 }
+
+/* OCR Beta Button & Tag */
+.pa-btn-ocr-beta {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: linear-gradient(135deg, rgba(56, 189, 248, 0.15) 0%, rgba(168, 85, 247, 0.15) 100%);
+  border: 1px solid rgba(56, 189, 248, 0.4);
+  color: #38bdf8;
+  padding: 8px 16px;
+  border-radius: 10px;
+  font-size: 0.85rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  box-shadow: 0 4px 15px rgba(56, 189, 248, 0.15);
+}
+
+.pa-btn-ocr-beta:hover:not(:disabled) {
+  background: linear-gradient(135deg, rgba(56, 189, 248, 0.25) 0%, rgba(168, 85, 247, 0.25) 100%);
+  border-color: #38bdf8;
+  transform: translateY(-1px);
+  box-shadow: 0 6px 20px rgba(56, 189, 248, 0.3);
+}
+
+.pa-btn-ocr-beta:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.pa-beta-tag {
+  background: linear-gradient(135deg, #a855f7 0%, #ec4899 100%);
+  color: #ffffff;
+  font-size: 0.65rem;
+  font-weight: 800;
+  padding: 2px 6px;
+  border-radius: 6px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+/* KM Calculator Card */
+.pa-km-card {
+  background: linear-gradient(135deg, rgba(15, 23, 42, 0.8) 0%, rgba(30, 41, 59, 0.5) 100%);
+  border: 1px solid rgba(56, 189, 248, 0.3);
+  border-radius: 12px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+}
+
+.pa-km-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.pa-km-header h4 {
+  margin: 0;
+  font-size: 0.92rem;
+  font-weight: 700;
+  color: #38bdf8;
+}
+
+.pa-km-grid {
+  display: grid;
+  grid-template-columns: 2fr 1fr 1fr 1fr;
+  gap: 12px;
+}
+
+@media (max-width: 768px) {
+  .pa-km-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.pa-km-result {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  background: rgba(56, 189, 248, 0.1);
+  border: 1px solid rgba(56, 189, 248, 0.25);
+  padding: 8px 14px;
+  border-radius: 8px;
+  font-size: 0.86rem;
+  color: #e0f2fe;
+}
+
+.pa-km-result strong {
+  color: #34d399;
+  font-size: 1rem;
+  margin: 0 4px;
+}
+
+/* Draft Banner & Table */
+.pa-draft-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: linear-gradient(135deg, rgba(245, 158, 11, 0.15) 0%, rgba(217, 119, 6, 0.1) 100%);
+  border: 1px solid rgba(245, 158, 11, 0.4);
+  color: #fde68a;
+  padding: 12px 18px;
+  border-radius: 10px;
+  margin-bottom: 1rem;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.pa-draft-banner-actions {
+  display: flex;
+  gap: 8px;
+}

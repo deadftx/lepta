@@ -2,6 +2,7 @@ import { randomUUID } from 'crypto';
 import fs from 'fs';
 import path from 'path';
 import multer from 'multer';
+import Tesseract from 'tesseract.js';
 import { createNotification, notifyUsers } from '../notifications/routes.js';
 import { sendPurchaseApprovalEmail, sendFinancialWorkflowEmail } from '../../services/emailService.js';
 
@@ -1403,32 +1404,29 @@ export function registerPurchaseRoutes(app, {
   // --- ROTA: SOLICITAÇÕES ARQUIVADAS (APROVADAS, NEGADAS E ARQUIVADAS MANUALMENTE) ---
   app.get('/api/compras/arquivadas', requireSession, requireAccess, (req, res) => {
     try {
-      const userRole = getUserRoleInPurchases(req.authUser.id, req.authUser.role);
-      const isApprover = userRole === 'APROVADOR' || req.authUser.role === 'MASTER';
-      const hasFinanceAccess = req.authUser.role === 'MASTER' || 
-        checkUserPermission(req.authUser, '7') || 
-        checkUserPermission(req.authUser, '7.1') || 
-        checkUserPermission(req.authUser, '7.2') || 
-        checkUserPermission(req.authUser, '7.3') || 
-        checkUserPermission(req.authUser, '7.4') || 
-        checkUserPermission(req.authUser, '7.5') ||
-        checkUserPermission(req.authUser, '11') ||
-        checkUserPermission(req.authUser, '11.1');
+      const isMaster = req.authUser.role === 'MASTER';
+      const userId = String(req.authUser.id || '');
+      const userName = String(req.authUser.username || req.authUser.name || '');
 
-      if (!isApprover && !hasFinanceAccess) {
-        return res.status(403).json({ error: 'Apenas aprovadores ou financeiro têm acesso à fila geral de arquivados.' });
-      }
-
-      const rows = db.prepare(`
+      let sql = `
         SELECT r.*,
           (SELECT COUNT(*) FROM compras_mensagens m WHERE m.requisicao_id = r.id) as total_mensagens,
           COALESCE((SELECT COUNT(*) FROM compras_requisicoes_itens i WHERE i.requisicao_id = r.id), 1) as total_itens,
           COALESCE((SELECT COUNT(*) FROM compras_anexos a WHERE a.requisicao_id = r.id), 0) as total_anexos
         FROM compras_requisicoes r
         WHERE r.arquivado = 1
-        ORDER BY COALESCE(r.arquivado_em, r.decidido_em, r.updated_at) DESC
-      `).all();
+      `;
+      const params = [];
 
+      // O usuário só pode enxergar as solicitações arquivadas dele mesmo
+      if (!isMaster) {
+        sql += ` AND (r.solicitante_id = ? OR r.solicitante_nome = ?)`;
+        params.push(userId, userName);
+      }
+
+      sql += ` ORDER BY COALESCE(r.arquivado_em, r.decidido_em, r.updated_at) DESC`;
+
+      const rows = db.prepare(sql).all(...params);
       return res.json(rows);
     } catch (error) {
       console.error('Erro ao carregar solicitações arquivadas:', error.message);
@@ -3000,4 +2998,186 @@ export function registerPurchaseRoutes(app, {
     req.body = { password };
     return app._router.handle(req, res);
   });
+
+  // --- ROTA: LEITURA OCR DE COMPROVANTES / NOTAS FISCAIS (BETA) ---
+  app.post('/api/compras/ocr-scan', requireSession, requireAccess, upload.single('file'), async (req, res) => {
+    try {
+      if (!req.file) {
+        return res.status(400).json({ error: 'Nenhum arquivo enviado para leitura OCR.' });
+      }
+
+      const filePath = req.file.path;
+      let rawText = '';
+
+      try {
+        const worker = await Tesseract.createWorker('por+eng');
+        const ret = await worker.recognize(filePath);
+        await worker.terminate();
+        rawText = String(ret?.data?.text || '');
+      } catch (ocrErr) {
+        console.warn('Falha no worker Tesseract por+eng, tentando eng:', ocrErr.message);
+        try {
+          const worker2 = await Tesseract.createWorker('eng');
+          const ret2 = await worker2.recognize(filePath);
+          await worker2.terminate();
+          rawText = String(ret2?.data?.text || '');
+        } catch (ocrErr2) {
+          console.error('Erro fatal OCR:', ocrErr2.message);
+        }
+      }
+
+      const parsed = parseReceiptText(rawText);
+
+      return res.json({
+        success: true,
+        extracted: {
+          fornecedor_nome: parsed.fornecedorNome,
+          valor: parsed.valor,
+          valor_formatado: parsed.valorDisplay,
+          data: parsed.data,
+          descricao: parsed.descricao,
+          categoria: 'Reembolso',
+          subcategoria: parsed.subcategoria,
+          raw_text: rawText
+        },
+        file: {
+          original_name: req.file.originalname,
+          filename: req.file.filename,
+          size: req.file.size,
+          mimetype: req.file.mimetype,
+          path: req.file.path
+        }
+      });
+    } catch (error) {
+      console.error('Erro no OCR de comprovante:', error);
+      return res.status(500).json({ error: `Erro ao processar imagem via OCR: ${error.message}` });
+    }
+  });
+}
+
+function parseReceiptText(rawText) {
+  const lines = rawText.split('\n').map(l => l.trim()).filter(Boolean);
+  const lower = rawText.toLowerCase();
+
+  // 1. Extração de Fornecedor
+  let fornecedorNome = '';
+  const cnpjRegex = /\d{2}\.?\d{3}\.?\d{3}\/?\d{4}-?\d{2}/;
+  for (let i = 0; i < Math.min(6, lines.length); i++) {
+    const line = lines[i];
+    if (cnpjRegex.test(line)) {
+      if (i > 0 && lines[i - 1].length > 3 && !lines[i - 1].toLowerCase().includes('cupom') && !lines[i - 1].toLowerCase().includes('extrato')) {
+        fornecedorNome = lines[i - 1];
+      } else {
+        fornecedorNome = line.replace(cnpjRegex, '').trim();
+      }
+      break;
+    }
+  }
+
+  if (!fornecedorNome) {
+    for (let i = 0; i < Math.min(5, lines.length); i++) {
+      const l = lines[i];
+      const lLow = l.toLowerCase();
+      if (l.length >= 3 && !lLow.includes('cupom') && !lLow.includes('extrato') && !lLow.includes('danfe') && !lLow.includes('nota fiscal') && !lLow.includes('sat')) {
+        fornecedorNome = l;
+        break;
+      }
+    }
+  }
+
+  fornecedorNome = fornecedorNome.replace(/[^a-zA-Z0-9À-ÿ\s.\-&/]/g, '').trim();
+  if (fornecedorNome.length > 50) fornecedorNome = fornecedorNome.substring(0, 50);
+
+  // 2. Extração de Valor Total
+  let valor = 0;
+  const totalRegexes = [
+    /(?:TOTAL|VALOR(?:\s*(?:A\s*PAGAR|PAGO|L[IÍ]QUIDO))?|TARIFA.*?VALOR)[:\s]*(?:R\$\s*)?([0-9]{1,3}(?:\.[0-9]{3})*,[0-9]{2}|[0-9]+[.,][0-9]{2})/i,
+    /R\$\s*([0-9]{1,3}(?:\.[0-9]{3})*,[0-9]{2}|[0-9]+[.,][0-9]{2})/i
+  ];
+
+  for (const regex of totalRegexes) {
+    const match = rawText.match(regex);
+    if (match && match[1]) {
+      const cleanVal = match[1].replace(/\./g, '').replace(',', '.');
+      const num = parseFloat(cleanVal);
+      if (!isNaN(num) && num > 0) {
+        valor = num;
+        break;
+      }
+    }
+  }
+
+  if (valor <= 0) {
+    const allPrices = [...rawText.matchAll(/([0-9]{1,3}(?:\.[0-9]{3})*,[0-9]{2})/g)];
+    if (allPrices.length > 0) {
+      const nums = allPrices.map(m => parseFloat(m[1].replace(/\./g, '').replace(',', '.'))).filter(n => !isNaN(n) && n > 0 && n < 50000);
+      if (nums.length > 0) {
+        valor = Math.max(...nums);
+      }
+    }
+  }
+
+  // 3. Extração de Data
+  let data = '';
+  const dateMatch = rawText.match(/(\d{2})[/.-](\d{2})[/.-](\d{2,4})/);
+  if (dateMatch) {
+    let dia = dateMatch[1];
+    let mes = dateMatch[2];
+    let ano = dateMatch[3];
+    if (ano.length === 2) ano = `20${ano}`;
+    data = `${ano}-${mes}-${dia}`;
+  }
+
+  // 4. Semântica e Inferência de Categoria / Descrição
+  let subcategoria = 'OUTROS';
+  let descricao = fornecedorNome ? `Despesa com ${fornecedorNome}` : 'Reembolso de Despesas';
+
+  if (lower.includes('park') || lower.includes('estacionamento') || lower.includes('estapar') || lower.includes('valet') || lower.includes('rotativo') || lower.includes('parquimetro') || lower.includes('estac')) {
+    subcategoria = 'ESTACIONAMENTO';
+    descricao = 'Estacionamento';
+  } else if (lower.includes('posto') || lower.includes('combustivel') || lower.includes('combustível') || lower.includes('gasolina') || lower.includes('etanol') || lower.includes('diesel') || lower.includes('abastecimento') || lower.includes('ipiranga') || lower.includes('shell') || lower.includes('petrobras') || lower.includes('br mania')) {
+    subcategoria = 'COMBUSTIVEL';
+    descricao = 'Abastecimento de Combustível';
+  } else if (lower.includes('pedagio') || lower.includes('pedágio') || lower.includes('sem parar') || lower.includes('veloe') || lower.includes('conectcar') || lower.includes('ecovias') || lower.includes('autoban') || lower.includes('ccr') || lower.includes('rodovias') || lower.includes('tarifa pedagio')) {
+    subcategoria = 'PEDAGIO';
+    descricao = 'Tarifa de Pedágio';
+  } else if (lower.includes('restaurante') || lower.includes('lanchonete') || lower.includes('padaria') || lower.includes('cafe') || lower.includes('cafeteria') || lower.includes('almoco') || lower.includes('almoço') || lower.includes('jantar') || lower.includes('refeicao') || lower.includes('refeição') || lower.includes('ifood') || lower.includes('mcdonald') || lower.includes('burger') || lower.includes('pizzaria') || lower.includes('churrascaria') || lower.includes('bar e lanches')) {
+    subcategoria = 'ALIMENTAÇÃO';
+    descricao = 'Alimentação / Refeição';
+  } else if (lower.includes('uber') || lower.includes('99app') || lower.includes('99 tecnologia') || lower.includes('taxi') || lower.includes('táxi') || lower.includes('corrida')) {
+    subcategoria = 'TÁXI';
+    descricao = 'Transporte por Aplicativo / Táxi';
+  } else if (lower.includes('hotel') || lower.includes('pousada') || lower.includes('hospedagem') || lower.includes('booking') || lower.includes('airbnb') || lower.includes('ibis') || lower.includes('diaria')) {
+    subcategoria = 'HOSPEDAGEM';
+    descricao = 'Hospedagem';
+  } else if (lower.includes('cartorio') || lower.includes('cartório') || lower.includes('tabeliao') || lower.includes('tabelião') || lower.includes('escritura') || lower.includes('registro civil') || lower.includes('autenticacao') || lower.includes('autenticação') || lower.includes('reconhecimento de firma')) {
+    subcategoria = 'CARTORIO';
+    descricao = 'Despesas de Cartório / Autenticação';
+  } else if (lower.includes('kalunga') || lower.includes('papelaria') || lower.includes('impressao') || lower.includes('impressão') || lower.includes('toner') || lower.includes('xerox')) {
+    subcategoria = 'MATERIAL DE ESCRITORIO';
+    descricao = 'Material de Escritório';
+  } else if (lower.includes('correios') || lower.includes('sedex') || lower.includes('pac') || lower.includes('postagem') || lower.includes('telegrama')) {
+    subcategoria = 'CORREIO';
+    descricao = 'Envio de Encomendas / Correios';
+  } else if (lower.includes('limpeza') || lower.includes('detergente') || lower.includes('desinfetante')) {
+    subcategoria = 'MATERIAL DE LIMPEZA';
+    descricao = 'Material de Limpeza';
+  } else if (lower.includes('multa') || lower.includes('infracao') || lower.includes('infração') || lower.includes('detran') || lower.includes('der ') || lower.includes('dnit')) {
+    subcategoria = 'MULTA DE TRANSITO';
+    descricao = 'Multa de Trânsito';
+  } else if (lower.includes('curso') || lower.includes('treinamento') || lower.includes('workshop') || lower.includes('inscricao') || lower.includes('inscrição')) {
+    subcategoria = 'CURSO PROFISSIONALIZANTE';
+    descricao = 'Curso / Treinamento Profissional';
+  }
+
+  const valorDisplay = valor > 0 ? valor.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '';
+
+  return {
+    fornecedorNome,
+    valor,
+    valorDisplay,
+    data,
+    subcategoria,
+    descricao
+  };
 }
