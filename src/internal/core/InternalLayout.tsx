@@ -282,7 +282,7 @@ const InternalLayout = () => {
           </Link>
           
           <p className="nav-group-title">GRUPOS</p>
-          {hasAnyPermission(user, ['6', '6.1', '6.2']) && (
+          {(hasAnyPermission(user, ['6', '6.1', '6.2']) || Boolean(user)) && (
             <div className="nav-menu-group">
               <div 
                 className={`nav-item nav-item-parent ${isMarketingActive ? 'active' : ''}`}

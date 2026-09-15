@@ -1,5 +1,8 @@
+import fs from 'fs';
+import path from 'path';
+
 export function registerMarketingFeedRoutes(app, { db, requireSession, checkAccess }) {
-  // Garante a tabela do feed de marketing
+  // Garante a tabela do feed de marketing e a tabela do Hub de Feed (Multi-Quadros)
   try {
     db.exec(`
       CREATE TABLE IF NOT EXISTS marketing_feed (
@@ -12,10 +15,16 @@ export function registerMarketingFeedRoutes(app, { db, requireSession, checkAcce
         published_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         created_by TEXT,
         updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-      )
+      );
+
+      CREATE TABLE IF NOT EXISTS marketing_hub_config (
+        id INTEGER PRIMARY KEY,
+        config_json TEXT,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
     `);
   } catch (err) {
-    console.warn('[MarketingFeed] Aviso ao inicializar tabela:', err.message);
+    console.warn('[MarketingFeed] Aviso ao inicializar tabelas:', err.message);
   }
 
   const sseClients = new Set();
@@ -111,5 +120,103 @@ export function registerMarketingFeedRoutes(app, { db, requireSession, checkAcce
       clearInterval(pingInterval);
       sseClients.delete(res);
     });
+  });
+
+  // 4. Obter configuração completa do Hub de Feed (Multi-Quadros)
+  app.get('/api/marketing/feed/hub-config', (req, res) => {
+    try {
+      const row = db.prepare('SELECT config_json FROM marketing_hub_config WHERE id = 1').get();
+      if (row && row.config_json) {
+        return res.json({ success: true, config: JSON.parse(row.config_json) });
+      }
+
+      // Fallback para o config.json local da pasta MARKETING se existir
+      const localConfigPath = path.resolve(process.cwd(), 'MARKETING/MARKETING/config.json');
+      if (fs.existsSync(localConfigPath)) {
+        const raw = fs.readFileSync(localConfigPath, 'utf-8');
+        return res.json({ success: true, config: JSON.parse(raw) });
+      }
+
+      return res.json({ success: true, config: null });
+    } catch (err) {
+      console.warn('[MarketingFeed] Erro ao obter hub-config:', err.message);
+      return res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  // 5. Salvar configuração completa do Hub de Feed (Multi-Quadros)
+  app.post('/api/marketing/feed/hub-config', requireSession, (req, res) => {
+    try {
+      const { config } = req.body || {};
+      if (!config) {
+        return res.status(400).json({ success: false, error: 'Configuração inválida' });
+      }
+
+      const configStr = JSON.stringify(config);
+
+      db.prepare(`
+        INSERT INTO marketing_hub_config (id, config_json, updated_at)
+        VALUES (1, ?, datetime('now', 'localtime'))
+        ON CONFLICT(id) DO UPDATE SET
+          config_json = excluded.config_json,
+          updated_at = excluded.updated_at
+      `).run(configStr);
+
+      // Também grava no arquivo físico config.json na pasta MARKETING se existir
+      try {
+        const localConfigPath = path.resolve(process.cwd(), 'MARKETING/MARKETING/config.json');
+        if (fs.existsSync(path.dirname(localConfigPath))) {
+          fs.writeFileSync(localConfigPath, JSON.stringify(config, null, 2), 'utf-8');
+        }
+      } catch (_) {}
+
+      broadcastFeedUpdate({ type: 'HUB_CONFIG_UPDATE', config });
+
+      return res.json({ success: true, message: 'Configuração salva com sucesso!' });
+    } catch (err) {
+      console.error('[MarketingFeed] Erro ao salvar hub-config:', err);
+      return res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  // 6. Registrar voto em enquete do Feed
+  app.post('/api/marketing/feed/vote-poll', (req, res) => {
+    try {
+      const { frameIndex, optionId } = req.body || {};
+      const row = db.prepare('SELECT config_json FROM marketing_hub_config WHERE id = 1').get();
+      let config = null;
+
+      if (row && row.config_json) {
+        config = JSON.parse(row.config_json);
+      } else {
+        const localConfigPath = path.resolve(process.cwd(), 'MARKETING/MARKETING/config.json');
+        if (fs.existsSync(localConfigPath)) {
+          config = JSON.parse(fs.readFileSync(localConfigPath, 'utf-8'));
+        }
+      }
+
+      if (config && config.frames && config.frames[frameIndex] && config.frames[frameIndex].poll) {
+        const poll = config.frames[frameIndex].poll;
+        const opt = poll.options.find(o => o.id === optionId);
+        if (opt) {
+          opt.votes = (opt.votes || 0) + 1;
+          const configStr = JSON.stringify(config);
+          db.prepare(`
+            INSERT INTO marketing_hub_config (id, config_json, updated_at)
+            VALUES (1, ?, datetime('now', 'localtime'))
+            ON CONFLICT(id) DO UPDATE SET
+              config_json = excluded.config_json,
+              updated_at = excluded.updated_at
+          `).run(configStr);
+
+          broadcastFeedUpdate({ type: 'POLL_VOTE', frameIndex, optionId, votes: opt.votes });
+          return res.json({ success: true, votes: opt.votes, poll });
+        }
+      }
+
+      return res.json({ success: true });
+    } catch (err) {
+      return res.status(500).json({ success: false, error: err.message });
+    }
   });
 }

@@ -124,7 +124,7 @@ function App() {
               <Route element={<InternalLayout />}>
                 <Route path="/dashboard" element={<Dashboard />} />
                 <Route path="/marketing" element={<AccessRoute permission="6"><Marketing /></AccessRoute>} />
-                <Route path="/marketing/nosso-feed" element={<AccessRoute permission="6"><NossoFeed /></AccessRoute>} />
+                <Route path="/marketing/nosso-feed" element={<AccessRoute permission={['6', '6.2', '1']}><NossoFeed /></AccessRoute>} />
                 <Route path="/dashboards" element={<AccessRoute permission="5"><DashboardsView /></AccessRoute>} />
                 <Route path="/bi" element={<Navigate to="/bi/movimento-falimentar" replace />} />
                 <Route path="/bi/movimento-falimentar" element={<AccessRoute permission="4.1"><MovimentoFalimentar /></AccessRoute>} />

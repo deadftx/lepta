@@ -300,6 +300,38 @@ export const systemSearchItems: SearchItem[] = [
   },
 
   // ==========================================
+  // GRUPO MARKETING
+  // ==========================================
+  {
+    id: 'mkt-nosso-feed',
+    title: 'Nosso Feed (TV Corporativa & Digital Signage)',
+    category: 'Marketing',
+    breadcrumb: ['Grupos', 'Marketing', 'Nosso Feed'],
+    path: '/marketing/nosso-feed',
+    permissionId: '6.2',
+    description: 'Canal corporativo em tempo real, painel de TV para mesa de operações, comunicados, enquetes interativas e mídias.',
+    explanation: 'Acesse Grupos > Marketing > Nosso Feed para exibir ou gerenciar o painel de TV e comunicados corporativos.',
+    tags: ['Feed', 'TV Corporativa', 'Mural', 'Digital Signage', 'Comunicados', 'Enquete', 'Marketing'],
+    keywords: ['nosso feed', 'feed', 'tv', 'tv corporativa', 'digital signage', 'telao', 'comunicados', 'marketing', 'noticias', 'enquete'],
+    icon: 'Rss',
+    badge: 'Submenu'
+  },
+  {
+    id: 'mkt-calendario',
+    title: 'Calendário de Marketing',
+    category: 'Marketing',
+    breadcrumb: ['Grupos', 'Marketing', 'Calendário'],
+    path: '/marketing',
+    permissionId: '6.1',
+    description: 'Planejamento e calendário de campanhas, eventos e publicações de marketing.',
+    explanation: 'Acesse Grupos > Marketing > Calendário para acompanhar o cronograma de campanhas e ações.',
+    tags: ['Calendário', 'Campanhas', 'Ações', 'Eventos', 'Marketing'],
+    keywords: ['marketing', 'calendario', 'campanhas', 'cronograma', 'acoes de marketing'],
+    icon: 'Calendar',
+    badge: 'Submenu'
+  },
+
+  // ==========================================
   // GRUPO ADMINISTRATIVO
   // ==========================================
   {
