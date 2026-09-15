@@ -118,6 +118,8 @@ export function registerPurchaseRoutes(app, {
       aprovador_nome TEXT,
       motivo_decisao TEXT,
       decidido_em TEXT,
+      km_rodado REAL,
+      subcategoria_reembolso TEXT,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     );
@@ -138,6 +140,8 @@ export function registerPurchaseRoutes(app, {
       valor REAL NOT NULL,
       quantidade INTEGER NOT NULL DEFAULT 1,
       observacoes TEXT,
+      km_rodado REAL,
+      subcategoria_reembolso TEXT,
       created_at TEXT NOT NULL
     );
 
@@ -211,6 +215,8 @@ export function registerPurchaseRoutes(app, {
       { name: 'juridico_motivo', sql: 'ALTER TABLE compras_requisicoes ADD COLUMN juridico_motivo TEXT' },
       { name: 'juridico_decidido_em', sql: 'ALTER TABLE compras_requisicoes ADD COLUMN juridico_decidido_em TEXT' },
       { name: 'chave_pix', sql: 'ALTER TABLE compras_requisicoes ADD COLUMN chave_pix TEXT' },
+      { name: 'km_rodado', sql: 'ALTER TABLE compras_requisicoes ADD COLUMN km_rodado REAL' },
+      { name: 'subcategoria_reembolso', sql: 'ALTER TABLE compras_requisicoes ADD COLUMN subcategoria_reembolso TEXT' },
     ];
     for (const col of requiredCols) {
       if (!cols.includes(col.name)) {
@@ -224,6 +230,12 @@ export function registerPurchaseRoutes(app, {
     }
     if (!itemCols.includes('chave_pix')) {
       db.exec("ALTER TABLE compras_requisicoes_itens ADD COLUMN chave_pix TEXT");
+    }
+    if (!itemCols.includes('km_rodado')) {
+      db.exec("ALTER TABLE compras_requisicoes_itens ADD COLUMN km_rodado REAL");
+    }
+    if (!itemCols.includes('subcategoria_reembolso')) {
+      db.exec("ALTER TABLE compras_requisicoes_itens ADD COLUMN subcategoria_reembolso TEXT");
     }
 
     // Autocorreção: restaura status para AGUARDANDO_JURIDICO de requisições ativas que requerem validação jurídica e tiveram seu status modificado (ex: por mensagens)
@@ -935,15 +947,18 @@ export function registerPurchaseRoutes(app, {
         const initialJuridicoStatus = requerJuridico ? 'PENDENTE' : 'DISPENSADO';
 
         // 1. Inserção transacional da requisição pai
+        const mainKmRodado = firstItem.km_rodado !== undefined && firstItem.km_rodado !== null ? Number(firstItem.km_rodado) : null;
+        const mainSubcatReembolso = firstItem.subcategoria_reembolso ? String(firstItem.subcategoria_reembolso).trim() : null;
+
         db.prepare(`
           INSERT INTO compras_requisicoes (
             id, numero, tipo_destino, empresa_pagadora, categoria, fornecedor_nome, fornecedor_contato, forma_pagamento,
             quantidade_parcelas, departamento_centro_custo, produto_servico,
-            valor, quantidade, observacoes, chave_pix, status, arquivado, arquivado_manualmente,
+            valor, quantidade, observacoes, chave_pix, km_rodado, subcategoria_reembolso, status, arquivado, arquivado_manualmente,
             requer_juridico, juridico_status,
             solicitante_id, solicitante_nome, solicitante_email,
             created_at, updated_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?, ?, ?, ?, ?, ?, ?)
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?, ?, ?, ?, ?, ?, ?)
         `).run(
           id,
           count,
@@ -960,6 +975,8 @@ export function registerPurchaseRoutes(app, {
           mainQuantidade,
           mainObservacoes,
           mainChavePix,
+          mainKmRodado,
+          mainSubcatReembolso,
           initialStatus,
           requerJuridico ? 1 : 0,
           initialJuridicoStatus,
@@ -975,8 +992,9 @@ export function registerPurchaseRoutes(app, {
           INSERT INTO compras_requisicoes_itens (
             id, requisicao_id, numero_item, tipo_destino, empresa_pagadora, departamento_centro_custo,
             categoria, fornecedor_nome, fornecedor_contato, forma_pagamento,
-            quantidade_parcelas, produto_servico, valor, quantidade, observacoes, chave_pix, created_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            quantidade_parcelas, produto_servico, valor, quantidade, observacoes, chave_pix,
+            km_rodado, subcategoria_reembolso, created_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `);
 
         for (let i = 0; i < itens.length; i++) {
@@ -988,6 +1006,8 @@ export function registerPurchaseRoutes(app, {
           const itParcelas = Math.max(1, Number(it.quantidade_parcelas) || 1);
           const itEmpresa = String(it.empresa_pagadora || mainEmpresaPagadora).trim();
           const itChavePix = String(it.chave_pix || mainChavePix).trim();
+          const itKmRodado = it.km_rodado !== undefined && it.km_rodado !== null ? Number(it.km_rodado) : null;
+          const itSubcat = it.subcategoria_reembolso ? String(it.subcategoria_reembolso).trim() : null;
 
           insertItemStmt.run(
             itemId,
@@ -1006,6 +1026,8 @@ export function registerPurchaseRoutes(app, {
             itQtd,
             String(it.observacoes || '').trim(),
             itChavePix,
+            itKmRodado,
+            itSubcat,
             now
           );
 
@@ -1026,6 +1048,8 @@ export function registerPurchaseRoutes(app, {
             quantidade: itQtd,
             observacoes: it.observacoes || '',
             chave_pix: itChavePix,
+            km_rodado: itKmRodado,
+            subcategoria_reembolso: itSubcat,
             created_at: now
           });
         }

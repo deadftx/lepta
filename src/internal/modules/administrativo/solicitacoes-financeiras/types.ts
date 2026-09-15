@@ -139,6 +139,8 @@ export interface PurchaseRequest {
   quantidade: number;
   observacoes: string;
   chave_pix?: string;
+  km_rodado?: number;
+  subcategoria_reembolso?: string;
   status: 'PENDENTE' | 'REABERTO' | 'AGUARDANDO_RESPOSTA_SOLICITANTE' | 'AGUARDANDO_RESPOSTA_APROVADOR' | 'APROVADO' | 'PAGAMENTO_PAUSADO' | 'NEGADO' | 'PAGO' | 'REVISAO' | 'SOLICITACAO_CONCLUIDA';
   data_pagamento?: string | null;
   datas_parcelas?: string | null;

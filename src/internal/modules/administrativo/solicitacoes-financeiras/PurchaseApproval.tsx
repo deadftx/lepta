@@ -6,7 +6,7 @@ import {
   DollarSign, AlertCircle, RefreshCw, User,
   Eye, HelpCircle, CreditCard, Check, ShieldAlert,
   Paperclip, Download, Trash2, PauseCircle, PlayCircle, Scale,
-  Copy, Zap, ScanLine, FileText, Gauge
+  Copy, Zap, ScanLine, FileText
 } from 'lucide-react';
 import { API_BASE_URL, getAuthHeaders } from '../../../../config/api';
 import { useAuth } from '../../../core/AuthContext';
@@ -39,12 +39,8 @@ export const PurchaseApproval: React.FC = () => {
   const [isApprover, setIsApprover] = useState<boolean>(false);
   const [loadingRole, setLoadingRole] = useState(true);
 
-  // Reembolso Subcategoria & Calculadora de KM (Reembolso_planilha.xls)
-  const [subcategoriaReembolso, setSubcategoriaReembolso] = useState<string>('ALIMENTAÇÃO');
-  const [kmTrajeto, setKmTrajeto] = useState<string>('');
+  // Quilometragem (quando Categoria = Reembolso e Descrição = KILOMETRAGEM)
   const [kmRodado, setKmRodado] = useState<string>('');
-  const [kmSaida, setKmSaida] = useState<string>('');
-  const [kmChegada, setKmChegada] = useState<string>('');
 
   // OCR Scanner State (Beta)
   const [ocrLoading, setOcrLoading] = useState<boolean>(false);
@@ -478,36 +474,6 @@ export const PurchaseApproval: React.FC = () => {
     setFormAttachmentError('');
   };
 
-  // --- FUNÇÕES DE CÁLCULO DE KM (R$ 2,00 / km - Reembolso_planilha.xls) ---
-  const handleKmChange = (trajeto: string, kmStr: string, saidaStr: string, chegadaStr: string) => {
-    setKmTrajeto(trajeto);
-    setKmRodado(kmStr);
-    setKmSaida(saidaStr);
-    setKmChegada(chegadaStr);
-
-    const km = parseFloat(kmStr) || 0;
-    const totalKm = km * 2.0;
-    setValorNumeric(totalKm);
-    setValorDisplay(totalKm > 0 ? totalKm.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) : '');
-    const desc = trajeto.trim()
-      ? `Quilometragem: ${trajeto.trim()} (${km} km x R$ 2,00)`
-      : `Quilometragem (${km} km x R$ 2,00)`;
-    setProdutoServico(desc);
-  };
-
-  const handleKmOdometro = (trajeto: string, saidaStr: string, chegadaStr: string) => {
-    setKmSaida(saidaStr);
-    setKmChegada(chegadaStr);
-    const saida = parseFloat(saidaStr) || 0;
-    const chegada = parseFloat(chegadaStr) || 0;
-    let kmCalculado = kmRodado;
-    if (chegada > saida) {
-      kmCalculado = String(chegada - saida);
-      setKmRodado(kmCalculado);
-    }
-    handleKmChange(trajeto, kmCalculado, saidaStr, chegadaStr);
-  };
-
   // --- LEITOR OCR DE NOTAS / COMPROVANTES (BETA) ---
   const handleOcrUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -532,7 +498,9 @@ export const PurchaseApproval: React.FC = () => {
 
       setCategoria('Reembolso');
       if (data.extracted?.subcategoria) {
-        setSubcategoriaReembolso(data.extracted.subcategoria);
+        setProdutoServico(data.extracted.subcategoria);
+      } else if (data.extracted?.descricao) {
+        setProdutoServico(data.extracted.descricao);
       }
       if (data.extracted?.fornecedor_nome) {
         setFornecedorNome(data.extracted.fornecedor_nome);
@@ -540,9 +508,6 @@ export const PurchaseApproval: React.FC = () => {
       if (data.extracted?.valor > 0) {
         setValorNumeric(data.extracted.valor);
         setValorDisplay(data.extracted.valor.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }));
-      }
-      if (data.extracted?.descricao) {
-        setProdutoServico(data.extracted.descricao);
       }
 
       // Auto-anexa o arquivo nos comprovantes
@@ -591,7 +556,7 @@ export const PurchaseApproval: React.FC = () => {
   // Auto-salva rascunho com debounce
   useEffect(() => {
     if (activeTab !== 'new') return;
-    const hasData = fornecedorNome.trim() || produtoServico.trim() || valorNumeric > 0 || addedItems.length > 0 || kmTrajeto.trim();
+    const hasData = fornecedorNome.trim() || produtoServico.trim() || valorNumeric > 0 || addedItems.length > 0 || kmRodado.trim();
     if (!hasData) return;
 
     const timer = setTimeout(() => {
@@ -600,11 +565,7 @@ export const PurchaseApproval: React.FC = () => {
           id: `draft_${Date.now()}`,
           updatedAt: new Date().toISOString(),
           categoria,
-          subcategoriaReembolso,
-          kmTrajeto,
           kmRodado,
-          kmSaida,
-          kmChegada,
           tipoDestino,
           empresaPagadora,
           departamentoOuCentro,
@@ -638,7 +599,7 @@ export const PurchaseApproval: React.FC = () => {
 
     return () => clearTimeout(timer);
   }, [
-    activeTab, categoria, subcategoriaReembolso, kmTrajeto, kmRodado, kmSaida, kmChegada,
+    activeTab, categoria, kmRodado,
     tipoDestino, empresaPagadora, departamentoOuCentro, empresaOuCliente, fornecedorNome,
     fornecedorContato, formaPagamento, quantidadeParcelas, produtoServico, valorDisplay,
     valorNumeric, quantidade, observacoes, chavePix, addedItems, getDraftStorageKey, getDraftsListKey
@@ -655,11 +616,7 @@ export const PurchaseApproval: React.FC = () => {
 
   const loadDraftIntoForm = (d: any) => {
     if (d.categoria) setCategoria(d.categoria);
-    if (d.subcategoriaReembolso) setSubcategoriaReembolso(d.subcategoriaReembolso);
-    if (d.kmTrajeto) setKmTrajeto(d.kmTrajeto);
     if (d.kmRodado) setKmRodado(d.kmRodado);
-    if (d.kmSaida) setKmSaida(d.kmSaida);
-    if (d.kmChegada) setKmChegada(d.kmChegada);
     if (d.tipoDestino) setTipoDestino(d.tipoDestino);
     if (d.empresaPagadora) setEmpresaPagadora(d.empresaPagadora);
     if (d.departamentoOuCentro) setDepartamentoOuCentro(d.departamentoOuCentro);
@@ -695,10 +652,7 @@ export const PurchaseApproval: React.FC = () => {
         setQuantidade(1);
         setObservacoes('');
         setChavePix('');
-        setKmTrajeto('');
         setKmRodado('');
-        setKmSaida('');
-        setKmChegada('');
         setAddedItems([]);
         setFormAttachments([]);
         setToastMessage('Rascunho descartado.');
@@ -755,11 +709,20 @@ export const PurchaseApproval: React.FC = () => {
       if (!silent) setFormError('Informe a Descrição do Produto ou Serviço.');
       return null;
     }
-    if (!valorNumeric || valorNumeric <= 0) {
+    const isKm = categoria === 'Reembolso' && produtoServico === 'KILOMETRAGEM';
+    const parsedKm = parseFloat(kmRodado) || 0;
+    const finalQtd = isKm ? 1 : quantidade;
+    const finalValor = isKm ? parsedKm * 2.0 : valorNumeric;
+
+    if (isKm && (!kmRodado || parsedKm <= 0)) {
+      if (!silent) setFormError('Informe quantos quilômetros foram percorridos.');
+      return null;
+    }
+    if (!finalValor || finalValor <= 0) {
       if (!silent) setFormError('Informe um valor válido maior que zero.');
       return null;
     }
-    if (!quantidade || quantidade <= 0) {
+    if (!finalQtd || finalQtd <= 0) {
       if (!silent) setFormError('Informe uma quantidade válida.');
       return null;
     }
@@ -774,11 +737,13 @@ export const PurchaseApproval: React.FC = () => {
       forma_pagamento: categoria === 'Reembolso' ? 'PIX' : formaPagamento,
       quantidade_parcelas: Math.max(1, quantidadeParcelas || 1),
       produto_servico: produtoServico.trim(),
-      valor: valorNumeric,
-      valorDisplay,
-      quantidade,
+      valor: finalValor,
+      valorDisplay: isKm ? `R$ ${finalValor.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} (${kmRodado} km)` : valorDisplay,
+      quantidade: finalQtd,
       observacoes: observacoes.trim(),
-      chave_pix: chavePix.trim()
+      chave_pix: chavePix.trim(),
+      subcategoria_reembolso: categoria === 'Reembolso' ? produtoServico.trim() : undefined,
+      km_rodado: isKm ? parsedKm : undefined
     };
   };
 
@@ -790,9 +755,10 @@ export const PurchaseApproval: React.FC = () => {
 
     setAddedItems(prev => [...prev, item]);
     // Limpa os dados do produto para permitir preencher o próximo item
-    setProdutoServico('');
+    setProdutoServico(categoria === 'Reembolso' ? 'ALIMENTAÇÃO' : '');
     setValorDisplay('');
     setValorNumeric(0);
+    setKmRodado('');
     setQuantidade(1);
     setObservacoes('');
 
@@ -845,7 +811,9 @@ export const PurchaseApproval: React.FC = () => {
             valor: it.valor,
             quantidade: it.quantidade,
             observacoes: it.observacoes,
-            chave_pix: it.chave_pix || (it.categoria === 'Reembolso' ? chavePix.trim() : '')
+            chave_pix: it.chave_pix || (it.categoria === 'Reembolso' ? chavePix.trim() : ''),
+            subcategoria_reembolso: it.subcategoria_reembolso || (it.categoria === 'Reembolso' ? it.produto_servico : null),
+            km_rodado: it.km_rodado !== undefined && it.km_rodado !== null ? it.km_rodado : null
           }))
         })
       });
@@ -874,6 +842,7 @@ export const PurchaseApproval: React.FC = () => {
 
       // Limpa formulário completo
       setAddedItems([]);
+      setKmRodado('');
       setFormAttachments([]);
       setFormAttachmentError('');
       setCategoria('Insumos');
@@ -2108,6 +2077,13 @@ export const PurchaseApproval: React.FC = () => {
                     setCategoria(newCat);
                     if (newCat === 'Reembolso') {
                       setFormaPagamento('PIX');
+                      if (!produtoServico || !REEMBOLSO_SUBCATEGORIAS.includes(produtoServico as any)) {
+                        setProdutoServico('ALIMENTAÇÃO');
+                      }
+                    } else {
+                      if (REEMBOLSO_SUBCATEGORIAS.includes(produtoServico as any)) {
+                        setProdutoServico('');
+                      }
                     }
                   }}
                   required
@@ -2119,104 +2095,6 @@ export const PurchaseApproval: React.FC = () => {
                   ))}
                 </select>
               </div>
-
-              {/* Se Reembolso: Subcategoria da Planilha e Calculadora de KM */}
-              {categoria === 'Reembolso' && (
-                <div className="pa-form-group full-width" style={{ background: 'rgba(56, 189, 248, 0.05)', border: '1px dashed rgba(56, 189, 248, 0.3)', padding: '14px', borderRadius: '10px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                  <label style={{ color: '#38bdf8', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    📋 Tipo de Despesa de Reembolso (Planilha) <span className="pa-required">*</span>
-                  </label>
-                  <select
-                    className="pa-select"
-                    value={subcategoriaReembolso}
-                    onChange={e => {
-                      const sub = e.target.value;
-                      setSubcategoriaReembolso(sub);
-                      if (sub === 'KILOMETRAGEM') {
-                        const km = parseFloat(kmRodado) || 0;
-                        const totalKm = km * 2.0;
-                        setValorNumeric(totalKm);
-                        setValorDisplay(totalKm > 0 ? totalKm.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) : '');
-                        const desc = kmTrajeto.trim()
-                          ? `Quilometragem: ${kmTrajeto.trim()} (${km} km x R$ 2,00)`
-                          : `Quilometragem (${km} km x R$ 2,00)`;
-                        setProdutoServico(desc);
-                      } else {
-                        if (!produtoServico.trim() || produtoServico.startsWith('Quilometragem')) {
-                          setProdutoServico(`Reembolso: ${sub}`);
-                        }
-                      }
-                    }}
-                  >
-                    {REEMBOLSO_SUBCATEGORIAS.map(sc => (
-                      <option key={sc} value={sc}>
-                        {sc === 'KILOMETRAGEM' ? '🚗 KILOMETRAGEM (R$ 2,00 / km)' : `🔹 ${sc}`}
-                      </option>
-                    ))}
-                  </select>
-
-                  {/* Bloco dedicado de Cálculo de KM Rodado */}
-                  {subcategoriaReembolso === 'KILOMETRAGEM' && (
-                    <div className="pa-km-card" style={{ marginTop: '8px' }}>
-                      <div className="pa-km-header">
-                        <Gauge size={18} color="#38bdf8" />
-                        <h4>Cálculo de Quilometragem (R$ 2,00 / Km Percorrido)</h4>
-                      </div>
-                      <div className="pa-km-grid">
-                        <div className="pa-form-group">
-                          <label>Trajeto (Origem - Destino)</label>
-                          <input
-                            type="text"
-                            className="pa-input"
-                            placeholder="Ex: Santo André - Alphaville (Rodoanel)"
-                            value={kmTrajeto}
-                            onChange={e => handleKmChange(e.target.value, kmRodado, kmSaida, kmChegada)}
-                          />
-                        </div>
-                        <div className="pa-form-group">
-                          <label>Km Percorrida</label>
-                          <input
-                            type="number"
-                            step="any"
-                            min="0"
-                            className="pa-input"
-                            placeholder="Ex: 65"
-                            value={kmRodado}
-                            onChange={e => handleKmChange(kmTrajeto, e.target.value, kmSaida, kmChegada)}
-                          />
-                        </div>
-                        <div className="pa-form-group">
-                          <label>Km Saída (Opcional)</label>
-                          <input
-                            type="number"
-                            step="any"
-                            className="pa-input"
-                            placeholder="Odômetro Saída"
-                            value={kmSaida}
-                            onChange={e => handleKmOdometro(kmTrajeto, e.target.value, kmChegada)}
-                          />
-                        </div>
-                        <div className="pa-form-group">
-                          <label>Km Chegada (Opcional)</label>
-                          <input
-                            type="number"
-                            step="any"
-                            className="pa-input"
-                            placeholder="Odômetro Chegada"
-                            value={kmChegada}
-                            onChange={e => handleKmOdometro(kmTrajeto, kmSaida, e.target.value)}
-                          />
-                        </div>
-                      </div>
-                      <div className="pa-km-result">
-                        <span>
-                          Total Calculado: <strong>R$ {((parseFloat(kmRodado) || 0) * 2.0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</strong> ({parseFloat(kmRodado) || 0} km x R$ 2,00)
-                        </span>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
 
               {/* Tipo de Destino / Alocação */}
               <div className="pa-form-group full-width">
@@ -2398,45 +2276,103 @@ export const PurchaseApproval: React.FC = () => {
                 <label>
                   Descrição do Produto / Serviço <span className="pa-required">*</span>
                 </label>
-                <input
-                  type="text"
-                  className="pa-input"
-                  placeholder="Ex: Licença de Software, Manutenção de Equipamento, Honorários..."
-                  value={produtoServico}
-                  onChange={e => setProdutoServico(e.target.value)}
-                  required={addedItems.length === 0}
-                />
+                {categoria === 'Reembolso' ? (
+                  <select
+                    className="pa-select"
+                    value={produtoServico}
+                    onChange={e => {
+                      const val = e.target.value;
+                      setProdutoServico(val);
+                      if (val === 'KILOMETRAGEM') {
+                        setQuantidade(1);
+                        const parsedKm = parseFloat(kmRodado) || 0;
+                        const total = parsedKm * 2.0;
+                        setValorNumeric(total);
+                        setValorDisplay(parsedKm > 0 ? `R$ ${total.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}` : '');
+                      }
+                    }}
+                    required={addedItems.length === 0}
+                  >
+                    <option value="">Selecione a Categoria de Reembolso...</option>
+                    {REEMBOLSO_SUBCATEGORIAS.map(sc => (
+                      <option key={sc} value={sc}>
+                        {sc}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <input
+                    type="text"
+                    className="pa-input"
+                    placeholder="Ex: Licença de Software, Manutenção de Equipamento, Honorários..."
+                    value={produtoServico}
+                    onChange={e => setProdutoServico(e.target.value)}
+                    required={addedItems.length === 0}
+                  />
+                )}
               </div>
 
-              {/* Valor Unitário Estimado */}
+              {/* Valor Unitário Estimado (ou KMs Rodados se Reembolso + KILOMETRAGEM) */}
               <div className="pa-form-group">
-                <label>
-                  Valor Unitário Estimado (R$) <span className="pa-required">*</span>
-                </label>
-                <input
-                  type="text"
-                  className="pa-input"
-                  placeholder="R$ 0,00"
-                  value={valorDisplay}
-                  onChange={handleCurrencyInput}
-                  required={addedItems.length === 0}
-                />
+                {categoria === 'Reembolso' && produtoServico === 'KILOMETRAGEM' ? (
+                  <>
+                    <label>
+                      Quilômetros Rodados (KM) <span className="pa-required">*</span>
+                    </label>
+                    <input
+                      type="number"
+                      step="any"
+                      min="0"
+                      className="pa-input"
+                      placeholder="Informe quantos KMs andou (Ex: 45)"
+                      value={kmRodado}
+                      onChange={e => {
+                        const rawKm = e.target.value;
+                        setKmRodado(rawKm);
+                        const parsedKm = parseFloat(rawKm) || 0;
+                        const total = parsedKm * 2.0;
+                        setValorNumeric(total);
+                        setValorDisplay(rawKm ? `R$ ${total.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}` : '');
+                      }}
+                      required={addedItems.length === 0}
+                    />
+                    <span style={{ fontSize: '0.8rem', color: '#38bdf8', marginTop: '4px', display: 'block' }}>
+                      ⚡ Cálculo automático (R$ 2,00 / km): <strong>R$ {((parseFloat(kmRodado) || 0) * 2.0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</strong>
+                    </span>
+                  </>
+                ) : (
+                  <>
+                    <label>
+                      Valor Unitário Estimado (R$) <span className="pa-required">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      className="pa-input"
+                      placeholder="R$ 0,00"
+                      value={valorDisplay}
+                      onChange={handleCurrencyInput}
+                      required={addedItems.length === 0}
+                    />
+                  </>
+                )}
               </div>
 
-              {/* Quantidade */}
-              <div className="pa-form-group">
-                <label>
-                  Quantidade <span className="pa-required">*</span>
-                </label>
-                <input
-                  type="number"
-                  min="1"
-                  className="pa-input"
-                  value={quantidade}
-                  onChange={e => setQuantidade(Math.max(1, parseInt(e.target.value) || 1))}
-                  required={addedItems.length === 0}
-                />
-              </div>
+              {/* Quantidade (não é necessária / não aparece quando Reembolso + KILOMETRAGEM) */}
+              {!(categoria === 'Reembolso' && produtoServico === 'KILOMETRAGEM') && (
+                <div className="pa-form-group">
+                  <label>
+                    Quantidade <span className="pa-required">*</span>
+                  </label>
+                  <input
+                    type="number"
+                    min="1"
+                    className="pa-input"
+                    value={quantidade}
+                    onChange={e => setQuantidade(Math.max(1, parseInt(e.target.value) || 1))}
+                    required={addedItems.length === 0}
+                  />
+                </div>
+              )}
 
               {/* Observações */}
               <div className="pa-form-group full-width">
@@ -2476,7 +2412,7 @@ export const PurchaseApproval: React.FC = () => {
                         {item.produto_servico}
                       </div>
                       <div style={{ fontSize: '0.8rem', color: '#94a3b8', marginTop: '2px' }}>
-                        {item.fornecedor_nome} • {item.forma_pagamento} • {item.quantidade} un x {formatBrl(item.valor)}
+                        {item.fornecedor_nome} • {item.forma_pagamento} • {item.km_rodado ? `🚗 ${item.km_rodado} km rodados (R$ 2,00/km)` : `${item.quantidade} un x ${formatBrl(item.valor)}`}
                       </div>
                       {item.observacoes && (
                         <div style={{ fontSize: '0.8rem', color: '#cbd5e1', background: 'rgba(0,0,0,0.25)', padding: '6px 10px', borderRadius: '6px', marginTop: '6px', whiteSpace: 'pre-wrap', wordBreak: 'break-word', lineHeight: 1.5 }}>
