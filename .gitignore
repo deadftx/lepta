@@ -71,3 +71,5 @@ server/data/*.db
 Lepta *.csv
 Exportacao - *.zip
 /SmartFactor/
+backups/
+data/

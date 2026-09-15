@@ -1,46 +1,48 @@
-import { useEffect } from 'react';
+import { useEffect, lazy, Suspense } from 'react';
 import { BrowserRouter as Router, Routes, Route, Outlet, Navigate } from 'react-router-dom';
 import Navbar from './components/Navbar';
 import Footer from './components/Footer';
 import Home from './pages/Home';
 import Login from './pages/Login';
-import Dashboard from './internal/modules/home/Dashboard';
-import Permissions from './internal/modules/administracao/permissoes/Permissions';
-import Groups from './internal/modules/administracao/grupos/Groups';
-import MovimentoFalimentar from './internal/modules/business-intelligence/movimento-falimentar/MovimentoFalimentar';
-import AssociadosDashboard from './internal/modules/business-intelligence/associados/AssociadosDashboard';
-import MesaOperacaoDashboard from './internal/modules/business-intelligence/mesa-operacao/MesaOperacaoDashboard';
-import DashboardsView from './internal/modules/dashboards/DashboardsView';
-import CreateUser from './internal/modules/administracao/criar-usuario/CreateUser';
-import Marketing from './internal/modules/calendario/Marketing';
-import NossoFeed from './internal/modules/marketing/nosso-feed/NossoFeed';
-import Finance from './internal/modules/financeiro/processar-extrato/Finance';
-import FinanceDashboard from './internal/modules/financeiro/FinanceDashboard';
-import GrafenoIntegration from './internal/modules/financeiro/grafeno/GrafenoIntegration';
-import FinanceRefundsExpenses from './internal/modules/financeiro/central-pagamentos/FinanceRefundsExpenses';
-import FinancePaymentCalendar from './internal/modules/financeiro/calendario-pagamentos/FinancePaymentCalendar';
-import CustomerAnalysis from './internal/modules/intelligence/analise-clientes/CustomerAnalysis';
-import CustomerRegistration from './internal/modules/intelligence/cadastro-clientes/CustomerRegistration';
-import RiskAnalysis from './internal/modules/intelligence/analise-riscos/RiskAnalysis';
-import NplManagement from './internal/modules/intelligence/npl/NplManagement';
-import CommitteePipeline from './internal/modules/intelligence/esteira-comite/CommitteePipeline';
-import { SmartFactorQuery } from './internal/modules/intelligence/consulta-smartfactor/SmartFactorQuery';
-import ManagerRegistration from './internal/modules/intelligence/cadastro-gerentes/ManagerRegistration';
-import DatabaseManagement from './internal/modules/banco-de-dados/DatabaseManagement';
-import PurchaseApproval from './internal/modules/administrativo/solicitacoes-financeiras/PurchaseApproval';
-import PurchaseWorkflowConfig from './internal/modules/administrativo/configuracao-aprovadores/PurchaseWorkflowConfig';
-import MeetingRoomBooking from './internal/modules/administrativo/agendar-sala-reuniao/MeetingRoomBooking';
-import EmailConfig from './internal/modules/administracao/configuracao-email/EmailConfig';
-import ConfirmationSystem from './internal/modules/mesa-operacoes/relatorio-diario/ConfirmationSystem';
-import ConfirmationAnalise from './internal/modules/confirmacao/analise-confirmacao/ConfirmationAnalise';
-import OverdueAnalysis from './internal/modules/cobranca/analise-vencidos/OverdueAnalysis';
-import InconsistentBacking from './internal/modules/cobranca/lastro-inconsistente/InconsistentBacking';
-import CartaAnuencia from './internal/modules/cobranca/carta-anuencia/CartaAnuencia';
-import LegalPaymentApproval from './internal/modules/juridico/aprovacao-pagamentos/LegalPaymentApproval';
-import LegalApproversConfig from './internal/modules/juridico/configuracao-aprovadores-juridicos/LegalApproversConfig';
-import OperationsAnalysis from './internal/modules/mesa-operacoes/analise-operacao/OperationsAnalysis';
-import ValidateCepsCnab from './internal/modules/mesa-operacoes/validar-ceps/ValidateCepsCnab';
-import MonitorDashboard from './internal/modules/monitor/MonitorDashboard';
+
+// Módulos Internos Carregados Dinamicamente (Code Splitting)
+const Dashboard = lazy(() => import('./internal/modules/home/Dashboard'));
+const Permissions = lazy(() => import('./internal/modules/administracao/permissoes/Permissions'));
+const Groups = lazy(() => import('./internal/modules/administracao/grupos/Groups'));
+const MovimentoFalimentar = lazy(() => import('./internal/modules/business-intelligence/movimento-falimentar/MovimentoFalimentar'));
+const AssociadosDashboard = lazy(() => import('./internal/modules/business-intelligence/associados/AssociadosDashboard'));
+const MesaOperacaoDashboard = lazy(() => import('./internal/modules/business-intelligence/mesa-operacao/MesaOperacaoDashboard'));
+const DashboardsView = lazy(() => import('./internal/modules/dashboards/DashboardsView'));
+const CreateUser = lazy(() => import('./internal/modules/administracao/criar-usuario/CreateUser'));
+const Marketing = lazy(() => import('./internal/modules/calendario/Marketing'));
+const NossoFeed = lazy(() => import('./internal/modules/marketing/nosso-feed/NossoFeed'));
+const Finance = lazy(() => import('./internal/modules/financeiro/processar-extrato/Finance'));
+const FinanceDashboard = lazy(() => import('./internal/modules/financeiro/FinanceDashboard'));
+const GrafenoIntegration = lazy(() => import('./internal/modules/financeiro/grafeno/GrafenoIntegration'));
+const FinanceRefundsExpenses = lazy(() => import('./internal/modules/financeiro/central-pagamentos/FinanceRefundsExpenses'));
+const FinancePaymentCalendar = lazy(() => import('./internal/modules/financeiro/calendario-pagamentos/FinancePaymentCalendar'));
+const CustomerAnalysis = lazy(() => import('./internal/modules/intelligence/analise-clientes/CustomerAnalysis'));
+const CustomerRegistration = lazy(() => import('./internal/modules/intelligence/cadastro-clientes/CustomerRegistration'));
+const RiskAnalysis = lazy(() => import('./internal/modules/intelligence/analise-riscos/RiskAnalysis'));
+const NplManagement = lazy(() => import('./internal/modules/intelligence/npl/NplManagement'));
+const CommitteePipeline = lazy(() => import('./internal/modules/intelligence/esteira-comite/CommitteePipeline'));
+const SmartFactorQuery = lazy(() => import('./internal/modules/intelligence/consulta-smartfactor/SmartFactorQuery'));
+const ManagerRegistration = lazy(() => import('./internal/modules/intelligence/cadastro-gerentes/ManagerRegistration'));
+const DatabaseManagement = lazy(() => import('./internal/modules/banco-de-dados/DatabaseManagement'));
+const PurchaseApproval = lazy(() => import('./internal/modules/administrativo/solicitacoes-financeiras/PurchaseApproval'));
+const PurchaseWorkflowConfig = lazy(() => import('./internal/modules/administrativo/configuracao-aprovadores/PurchaseWorkflowConfig'));
+const MeetingRoomBooking = lazy(() => import('./internal/modules/administrativo/agendar-sala-reuniao/MeetingRoomBooking'));
+const EmailConfig = lazy(() => import('./internal/modules/administracao/configuracao-email/EmailConfig'));
+const ConfirmationSystem = lazy(() => import('./internal/modules/mesa-operacoes/relatorio-diario/ConfirmationSystem'));
+const ConfirmationAnalise = lazy(() => import('./internal/modules/confirmacao/analise-confirmacao/ConfirmationAnalise'));
+const OverdueAnalysis = lazy(() => import('./internal/modules/cobranca/analise-vencidos/OverdueAnalysis'));
+const InconsistentBacking = lazy(() => import('./internal/modules/cobranca/lastro-inconsistente/InconsistentBacking'));
+const CartaAnuencia = lazy(() => import('./internal/modules/cobranca/carta-anuencia/CartaAnuencia'));
+const LegalPaymentApproval = lazy(() => import('./internal/modules/juridico/aprovacao-pagamentos/LegalPaymentApproval'));
+const LegalApproversConfig = lazy(() => import('./internal/modules/juridico/configuracao-aprovadores-juridicos/LegalApproversConfig'));
+const OperationsAnalysis = lazy(() => import('./internal/modules/mesa-operacoes/analise-operacao/OperationsAnalysis'));
+const ValidateCepsCnab = lazy(() => import('./internal/modules/mesa-operacoes/validar-ceps/ValidateCepsCnab'));
+const MonitorDashboard = lazy(() => import('./internal/modules/monitor/MonitorDashboard'));
 import ProtectedRoute from './internal/core/ProtectedRoute';
 import InternalLayout from './internal/core/InternalLayout';
 import AccessRoute from './internal/core/AccessRoute';
@@ -109,7 +111,8 @@ function App() {
     <SystemErrorBoundary>
       <AuthProvider>
         <Router>
-          <Routes>
+          <Suspense fallback={null}>
+            <Routes>
             {/* Rotas Públicas com Navbar e Footer */}
             <Route element={<PublicLayout />}>
               <Route path="/" element={<Home />} />
@@ -161,6 +164,7 @@ function App() {
               </Route>
             </Route>
           </Routes>
+          </Suspense>
         </Router>
       </AuthProvider>
     </SystemErrorBoundary>

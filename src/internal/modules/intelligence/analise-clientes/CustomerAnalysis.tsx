@@ -910,7 +910,7 @@ const CustomerAnalysis = () => {
   
   const totalClients = selectedCedente ? kpiClients.length : clients.length;
   const totalGroups = economicGroups.length;
-  // Volume Geral only uses BASE_NOVA
+  // Volume Geral uses BASE_SMARTFACTOR
   const totalVolume = kpiClients.reduce((acc, curr) => acc + (curr.valorGeral || 0), 0);
   // Separate Volume for NPL
   const totalVolumeNpl = clients.length > 0

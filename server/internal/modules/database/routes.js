@@ -87,4 +87,30 @@ export function registerDatabaseSyncRoutes(app, {
       });
     }
   });
+
+  app.post('/api/database-sync/maintenance', requireSession, requirePermission('9'), requireMaster, (req, res) => {
+    try {
+      const beforeSize = fs.existsSync(databasePath) ? fs.statSync(databasePath).size : 0;
+      const start = Date.now();
+
+      db.pragma('optimize');
+      db.exec('VACUUM');
+
+      const afterSize = fs.existsSync(databasePath) ? fs.statSync(databasePath).size : 0;
+      const durationMs = Date.now() - start;
+      const reclaimedBytes = Math.max(0, beforeSize - afterSize);
+
+      return res.json({
+        success: true,
+        durationMs,
+        beforeSizeMb: (beforeSize / 1024 / 1024).toFixed(2),
+        afterSizeMb: (afterSize / 1024 / 1024).toFixed(2),
+        reclaimedMb: (reclaimedBytes / 1024 / 1024).toFixed(2),
+        message: 'Manutenção do SQLite concluída: VACUUM e PRAGMA optimize executados com sucesso.'
+      });
+    } catch (error) {
+      console.error('Erro na manutenção do SQLite:', error.message);
+      return res.status(500).json({ error: 'Falha ao executar manutenção do banco de dados.', message: error.message });
+    }
+  });
 }

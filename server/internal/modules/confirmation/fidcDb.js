@@ -94,6 +94,10 @@ export function ensureFidcSchema(db) {
     CREATE INDEX IF NOT EXISTS idx_est_fd ON estoque_titulos(fundo_id, data_posicao);
     CREATE INDEX IF NOT EXISTS idx_est_ced ON estoque_titulos(cedente_cnpj);
     CREATE INDEX IF NOT EXISTS idx_est_sac ON estoque_titulos(sacado_cnpj);
+    CREATE INDEX IF NOT EXISTS idx_est_fundo_pos_ced ON estoque_titulos(fundo_id, data_posicao, cedente_cnpj);
+    CREATE INDEX IF NOT EXISTS idx_est_fundo_pos_sac ON estoque_titulos(fundo_id, data_posicao, sacado_cnpj);
+    CREATE INDEX IF NOT EXISTS idx_est_snap_num ON estoque_titulos(snapshot_id, numero_titulo);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_snap_fundo_data ON estoque_snapshots(fundo_id, data);
 
     CREATE TABLE IF NOT EXISTS limites_conc (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -111,19 +115,6 @@ export function ensureFidcSchema(db) {
     CREATE TABLE IF NOT EXISTS setores (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       nome TEXT NOT NULL UNIQUE
-    );
-    CREATE TABLE IF NOT EXISTS fidc_cedentes (
-      cnpj_raiz TEXT PRIMARY KEY,
-      nome TEXT NOT NULL,
-      estado TEXT,
-      setor_id INTEGER,
-      gerente_id INTEGER,
-      criado_em TEXT DEFAULT (datetime('now'))
-    );
-    CREATE TABLE IF NOT EXISTS fidc_cedentes_cnpjs (
-      cnpj TEXT PRIMARY KEY,
-      cnpj_raiz TEXT NOT NULL,
-      nome TEXT
     );
     CREATE TABLE IF NOT EXISTS cedentes (
       cnpj_raiz TEXT PRIMARY KEY,
@@ -186,6 +177,82 @@ export function ensureFidcSchema(db) {
     );
     CREATE UNIQUE INDEX IF NOT EXISTS idx_conf_nc_tipo_doc ON confirmacao_nao_cobraveis(tipo, documento);
   `);
+  ensureUnifiedCedentes(db);
+}
+
+function ensureUnifiedCedentes(db) {
+  try {
+    const fidcType = db.prepare("SELECT type FROM sqlite_master WHERE name = 'fidc_cedentes'").get()?.type;
+    if (fidcType === 'table') {
+      db.exec(`
+        INSERT OR IGNORE INTO cedentes (cnpj_raiz, nome, estado, setor_id, gerente_id, criado_em)
+        SELECT cnpj_raiz, nome, estado, setor_id, gerente_id, criado_em FROM fidc_cedentes;
+
+        INSERT OR IGNORE INTO cedentes_cnpjs (cnpj, cnpj_raiz, nome)
+        SELECT cnpj, cnpj_raiz, nome FROM fidc_cedentes_cnpjs;
+
+        DROP TABLE IF EXISTS fidc_cedentes;
+        DROP TABLE IF EXISTS fidc_cedentes_cnpjs;
+      `);
+    }
+
+    const checkView = db.prepare("SELECT type FROM sqlite_master WHERE name = 'fidc_cedentes'").get();
+    if (!checkView) {
+      db.exec(`
+        CREATE VIEW IF NOT EXISTS fidc_cedentes AS
+        SELECT cnpj_raiz, nome, estado, setor_id, gerente_id, criado_em
+        FROM cedentes;
+
+        CREATE VIEW IF NOT EXISTS fidc_cedentes_cnpjs AS
+        SELECT cnpj, cnpj_raiz, nome
+        FROM cedentes_cnpjs;
+
+        CREATE TRIGGER IF NOT EXISTS trg_fidc_cedentes_insert
+        INSTEAD OF INSERT ON fidc_cedentes
+        BEGIN
+          INSERT INTO cedentes (cnpj_raiz, nome, estado, setor_id, gerente_id, criado_em)
+          VALUES (NEW.cnpj_raiz, NEW.nome, NEW.estado, NEW.setor_id, NEW.gerente_id, COALESCE(NEW.criado_em, datetime('now')))
+          ON CONFLICT(cnpj_raiz) DO UPDATE SET
+            nome = excluded.nome,
+            estado = excluded.estado,
+            setor_id = excluded.setor_id,
+            gerente_id = excluded.gerente_id;
+        END;
+
+        CREATE TRIGGER IF NOT EXISTS trg_fidc_cedentes_update
+        INSTEAD OF UPDATE ON fidc_cedentes
+        BEGIN
+          UPDATE cedentes SET
+            nome = NEW.nome,
+            estado = NEW.estado,
+            setor_id = NEW.setor_id,
+            gerente_id = NEW.gerente_id
+          WHERE cnpj_raiz = OLD.cnpj_raiz;
+        END;
+
+        CREATE TRIGGER IF NOT EXISTS trg_fidc_cedentes_delete
+        INSTEAD OF DELETE ON fidc_cedentes
+        BEGIN
+          DELETE FROM cedentes WHERE cnpj_raiz = OLD.cnpj_raiz;
+        END;
+
+        CREATE TRIGGER IF NOT EXISTS trg_fidc_cedentes_cnpjs_insert
+        INSTEAD OF INSERT ON fidc_cedentes_cnpjs
+        BEGIN
+          INSERT OR REPLACE INTO cedentes_cnpjs (cnpj, cnpj_raiz, nome)
+          VALUES (NEW.cnpj, NEW.cnpj_raiz, NEW.nome);
+        END;
+
+        CREATE TRIGGER IF NOT EXISTS trg_fidc_cedentes_cnpjs_delete
+        INSTEAD OF DELETE ON fidc_cedentes_cnpjs
+        BEGIN
+          DELETE FROM cedentes_cnpjs WHERE cnpj = OLD.cnpj;
+        END;
+      `);
+    }
+  } catch (err) {
+    console.warn('Aviso ao unificar tabelas de cedentes:', err.message);
+  }
 }
 
 /**

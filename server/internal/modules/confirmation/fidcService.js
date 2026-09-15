@@ -965,8 +965,12 @@ export function importEstoqueFile({ fundoId = 'MULTISETORIAL', data, fileBuffer,
   let count = 0;
 
   const tx = db.transaction(() => {
-    // Cria ou atualiza snapshot para o fundo e data
-    db.prepare('DELETE FROM estoque_titulos WHERE snapshot_id IN (SELECT id FROM estoque_snapshots WHERE fundo_id = ? AND data = ?)').run(effectiveFundoId, targetDate);
+    // Cria ou atualiza snapshot para o fundo e data, garantindo limpeza total de duplicatas ou orfãos anteriores
+    db.prepare(`
+      DELETE FROM estoque_titulos 
+      WHERE (snapshot_id IN (SELECT id FROM estoque_snapshots WHERE fundo_id = ? AND data = ?))
+         OR (fundo_id = ? AND data_posicao = ?)
+    `).run(effectiveFundoId, targetDate, effectiveFundoId, targetDate);
     db.prepare('DELETE FROM estoque_snapshots WHERE fundo_id = ? AND data = ?').run(effectiveFundoId, targetDate);
 
     const snapResult = db.prepare(`

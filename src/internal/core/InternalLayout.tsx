@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Suspense } from 'react';
 import { LogOut, User, ShieldAlert, Shield, UserPlus, Users, ChevronDown, ChevronRight, LayoutDashboard, Sliders, Home, Calendar, CalendarCheck, Menu, X, Wallet, FileSpreadsheet, BrainCircuit, Database, ClipboardCheck, ContactRound, ShieldCheck, Landmark, Briefcase, ShoppingCart, SlidersHorizontal, DollarSign, Mail, Search, TrendingUp, UserCheck, Scale, FileCheck, Layers, MapPin, AlertTriangle, Pin, PinOff, Megaphone, Rss } from 'lucide-react';
 import { useNavigate, Outlet, Link, useLocation } from 'react-router-dom';
 import { useAuth } from './AuthContext';
@@ -678,7 +678,30 @@ const InternalLayout = () => {
         </header>
 
         <div className={`internal-body ${location.pathname === '/bi/mesa-operacao' ? 'internal-body-flush' : ''}`}>
-          <Outlet />
+          <Suspense fallback={
+            <div style={{
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              minHeight: '60vh',
+              gap: '16px',
+              color: '#94a3b8'
+            }}>
+              <div style={{
+                width: '38px',
+                height: '38px',
+                border: '3px solid rgba(59, 130, 246, 0.15)',
+                borderTopColor: '#3b82f6',
+                borderRadius: '50%',
+                animation: 'leptaSpin 0.8s linear infinite'
+              }} />
+              <style>{`@keyframes leptaSpin { to { transform: rotate(360deg); } }`}</style>
+              <span style={{ fontSize: '0.85rem', fontWeight: 500, letterSpacing: '0.5px' }}>Carregando módulo...</span>
+            </div>
+          }>
+            <Outlet />
+          </Suspense>
         </div>
       </main>
 

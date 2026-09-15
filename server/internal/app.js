@@ -29,11 +29,13 @@ import { ensureCedentesTableSchema, syncAllCedentesFromUnltdApi } from './module
 import { registerMovimentoFalimentarRoutes } from './modules/movimento-falimentar/routes.js';
 import { registerAssociadosRoutes } from './modules/associados/routes.js';
 import { ensureAssociadosTableSchema } from './modules/associados/associadosService.js';
+import compression from 'compression';
 import { registerMarketingFeedRoutes } from './modules/marketing/feedRoutes.js';
 
 const app = express();
 app.disable('x-powered-by');
 app.set('trust proxy', 1);
+app.use(compression());
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -141,8 +143,17 @@ try {
   console.log("Aviso: Falha ao ler aliases.json", e);
 }
 
-// Serve arquivos estáticos do frontend (pasta dist) em produção
-app.use(express.static(path.join(projectRoot, 'dist')));
+// Serve arquivos estáticos do frontend (pasta dist) em produção com cache imutável para chunks com hash
+app.use(express.static(path.join(projectRoot, 'dist'), {
+  maxAge: '1y',
+  immutable: true,
+  setHeaders(res, filePath) {
+    // HTML, Service Workers e version.json nunca devem ficar em cache para permitir atualizações instantâneas
+    if (filePath.endsWith('.html') || filePath.endsWith('version.json') || filePath.endsWith('sw.js') || filePath.endsWith('manifest.json')) {
+      res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+    }
+  }
+}));
 
 // Inicializa banco de dados com concorrência máxima e timeout de 60s
 const configuredDbPath = String(process.env.LEPTA_DATABASE_PATH || '').trim();
@@ -230,6 +241,9 @@ const loginRateLimiter = createRateLimiter({ windowMs: 15 * 60 * 1000, max: 10, 
 const recoveryRateLimiter = createRateLimiter({ windowMs: 15 * 60 * 1000, max: 12, keyPrefix: 'recovery', includeLoginId: true });
 
 function revokeSessionsForUser(userId) {
+  try {
+    db.prepare(`DELETE FROM sessoes_usuarios WHERE user_id = ?`).run(userId);
+  } catch {}
   for (const [token, session] of authSessions.entries()) {
     if (session.userId === userId) authSessions.delete(token);
   }
@@ -237,6 +251,9 @@ function revokeSessionsForUser(userId) {
 
 const sessionCleanupTimer = setInterval(() => {
   const now = Date.now();
+  try {
+    db.prepare(`DELETE FROM sessoes_usuarios WHERE expires_at < ?`).run(now);
+  } catch {}
   for (const [token, session] of authSessions.entries()) {
     if (session.expiresAt < now) authSessions.delete(token);
   }
@@ -245,6 +262,40 @@ const sessionCleanupTimer = setInterval(() => {
   }
 }, 15 * 60 * 1000);
 sessionCleanupTimer.unref();
+
+function ensureSessionsTable() {
+  try {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS sessoes_usuarios (
+        token TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        purpose TEXT NOT NULL DEFAULT 'auth',
+        created_at INTEGER NOT NULL,
+        expires_at INTEGER NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_sessoes_user ON sessoes_usuarios(user_id);
+      CREATE INDEX IF NOT EXISTS idx_sessoes_expires ON sessoes_usuarios(expires_at);
+    `);
+    const now = Date.now();
+    try {
+      db.prepare(`DELETE FROM sessoes_usuarios WHERE expires_at < ?`).run(now);
+      const active = db.prepare(`SELECT token, user_id, purpose, created_at, expires_at FROM sessoes_usuarios WHERE expires_at >= ?`).all(now);
+      for (const row of active) {
+        authSessions.set(row.token, {
+          userId: row.user_id,
+          purpose: row.purpose,
+          createdAt: row.created_at,
+          expiresAt: row.expires_at
+        });
+      }
+      if (active.length > 0) {
+        console.log(`🔒 [Auth] ${active.length} sessões ativas restauradas do banco SQLite.`);
+      }
+    } catch {}
+  } catch (err) {
+    console.error('Aviso ao inicializar persistência de sessões:', err.message);
+  }
+}
 
 function ensureUsuariosLeptaTable() {
   try {
@@ -274,6 +325,7 @@ function ensureUsuariosLeptaTable() {
 function ensureUserSecurityColumns() {
   try {
     ensureUsuariosLeptaTable();
+    ensureSessionsTable();
     const columns = new Set(db.prepare(`PRAGMA table_info(usuarios_lepta)`).all().map(column => column.name));
     const additions = [
       ['username', 'TEXT'],
@@ -335,19 +387,6 @@ function ensureCarteiraSeeded() {
         id INTEGER PRIMARY KEY,
         nome TEXT NOT NULL
       );
-      CREATE TABLE IF NOT EXISTS fidc_cedentes (
-        cnpj_raiz TEXT PRIMARY KEY,
-        nome TEXT NOT NULL,
-        estado TEXT,
-        setor_id INTEGER,
-        gerente_id INTEGER,
-        criado_em TEXT
-      );
-      CREATE TABLE IF NOT EXISTS fidc_cedentes_cnpjs (
-        cnpj TEXT PRIMARY KEY,
-        cnpj_raiz TEXT,
-        nome TEXT
-      );
       CREATE TABLE IF NOT EXISTS cedentes (
         cnpj_raiz TEXT PRIMARY KEY,
         nome TEXT NOT NULL,
@@ -363,7 +402,7 @@ function ensureCarteiraSeeded() {
       );
     `);
 
-    const count = db.prepare('SELECT COUNT(*) as c FROM fidc_cedentes').get()?.c || 0;
+    const count = db.prepare('SELECT COUNT(*) as c FROM cedentes').get()?.c || 0;
     if (count > 0) return;
 
     // 1. Se estiver no ambiente DEV na VPS (/var/www/lepta-dev), tenta copiar de /var/www/lepta/database.sqlite
@@ -373,13 +412,11 @@ function ensureCarteiraSeeded() {
         db.exec(`ATTACH DATABASE '${homologDbPath}' AS homolog_source;`);
         db.exec(`
           INSERT OR REPLACE INTO gerentes SELECT * FROM homolog_source.gerentes;
-          INSERT OR REPLACE INTO fidc_cedentes SELECT * FROM homolog_source.fidc_cedentes;
-          INSERT OR REPLACE INTO fidc_cedentes_cnpjs SELECT * FROM homolog_source.fidc_cedentes_cnpjs;
           INSERT OR REPLACE INTO cedentes SELECT * FROM homolog_source.cedentes;
           INSERT OR REPLACE INTO cedentes_cnpjs SELECT * FROM homolog_source.cedentes_cnpjs;
         `);
         db.exec(`DETACH DATABASE homolog_source;`);
-        const newCount = db.prepare('SELECT COUNT(*) as c FROM fidc_cedentes').get()?.c || 0;
+        const newCount = db.prepare('SELECT COUNT(*) as c FROM cedentes').get()?.c || 0;
         if (newCount > 0) {
           console.log(`✅ [Carteira] Sincronizados ${newCount} cedentes a partir do banco homolog (${homologDbPath})`);
           return;
@@ -401,29 +438,27 @@ function ensureCarteiraSeeded() {
         });
         insertMany(seed.gerentes);
       }
-      if (Array.isArray(seed.fidc_cedentes)) {
-        const stmt = db.prepare('INSERT OR REPLACE INTO fidc_cedentes (cnpj_raiz, nome, estado, setor_id, gerente_id, criado_em) VALUES (?, ?, ?, ?, ?, ?)');
+      const cedentesData = seed.cedentes || seed.fidc_cedentes;
+      if (Array.isArray(cedentesData)) {
         const stmtCed = db.prepare('INSERT OR REPLACE INTO cedentes (cnpj_raiz, nome, estado, setor_id, gerente_id, criado_em) VALUES (?, ?, ?, ?, ?, ?)');
         const insertMany = db.transaction((rows) => {
           for (const r of rows) {
-            stmt.run(r.cnpj_raiz, r.nome, r.estado || null, r.setor_id || null, r.gerente_id || null, r.criado_em || null);
             stmtCed.run(r.cnpj_raiz, r.nome, r.estado || null, r.setor_id || null, r.gerente_id || null, r.criado_em || null);
           }
         });
-        insertMany(seed.fidc_cedentes);
+        insertMany(cedentesData);
       }
-      if (Array.isArray(seed.fidc_cedentes_cnpjs)) {
-        const stmt = db.prepare('INSERT OR REPLACE INTO fidc_cedentes_cnpjs (cnpj, cnpj_raiz, nome) VALUES (?, ?, ?)');
+      const cnpjsData = seed.cedentes_cnpjs || seed.fidc_cedentes_cnpjs;
+      if (Array.isArray(cnpjsData)) {
         const stmtCed = db.prepare('INSERT OR REPLACE INTO cedentes_cnpjs (cnpj, cnpj_raiz, nome) VALUES (?, ?, ?)');
         const insertMany = db.transaction((rows) => {
           for (const r of rows) {
-            stmt.run(r.cnpj, r.cnpj_raiz, r.nome);
             stmtCed.run(r.cnpj, r.cnpj_raiz, r.nome);
           }
         });
-        insertMany(seed.fidc_cedentes_cnpjs);
+        insertMany(cnpjsData);
       }
-      console.log(`✅ [Carteira] Sincronizados ${seed.fidc_cedentes?.length || 0} cedentes a partir do seed JSON`);
+      console.log(`✅ [Carteira] Sincronizados ${cedentesData?.length || 0} cedentes a partir do seed JSON`);
     }
   } catch (err) {
     console.error('Erro em ensureCarteiraSeeded:', err.message);
@@ -541,50 +576,6 @@ function tableExists(tableName) {
   return Boolean(db.prepare(`
     SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?
   `).get(tableName));
-}
-
-function ensurePowerBiDashboardsTableForWrite() {
-  if (tableExists('power_bi_dashboards')) return false;
-
-  db.exec(`
-    CREATE TABLE power_bi_dashboards (
-      id TEXT PRIMARY KEY,
-      title TEXT NOT NULL,
-      url TEXT NOT NULL,
-      embed_url TEXT NOT NULL DEFAULT '',
-      description TEXT NOT NULL DEFAULT '',
-      access_type TEXT NOT NULL DEFAULT 'ALL',
-      allowed_groups TEXT NOT NULL DEFAULT '[]',
-      allowed_users TEXT NOT NULL DEFAULT '[]',
-      created_by TEXT,
-      created_at TEXT NOT NULL,
-      updated_at TEXT NOT NULL
-    )
-  `);
-
-  if (!tableExists('dashboards')) return true;
-
-  db.exec(`
-    INSERT OR IGNORE INTO power_bi_dashboards (
-      id, title, url, embed_url, description, access_type,
-      allowed_groups, allowed_users, created_by, created_at, updated_at
-    )
-    SELECT
-      id,
-      COALESCE(title, ''),
-      COALESCE(url, ''),
-      COALESCE(embedUrl, url, ''),
-      COALESCE(description, ''),
-      COALESCE(accessType, 'ALL'),
-      COALESCE(allowedGroups, '[]'),
-      COALESCE(allowedUsers, '[]'),
-      createdBy,
-      COALESCE(createdAt, datetime('now')),
-      COALESCE(createdAt, datetime('now'))
-    FROM dashboards
-    WHERE id IS NOT NULL AND title IS NOT NULL AND url IS NOT NULL
-  `);
-  return true;
 }
 
 function hashPassword(password) {
@@ -719,10 +710,22 @@ function createAuthSession(user, purpose = 'auth') {
   while (existingSessions.length >= 5) {
     const [oldestToken] = existingSessions.shift();
     authSessions.delete(oldestToken);
+    try {
+      db.prepare(`DELETE FROM sessoes_usuarios WHERE token = ?`).run(oldestToken);
+    } catch {}
   }
   const token = randomBytes(32).toString('hex');
   const createdAt = Date.now();
-  authSessions.set(token, { userId: user.id, purpose, createdAt, expiresAt: createdAt + SESSION_TTL_MS });
+  const expiresAt = createdAt + SESSION_TTL_MS;
+  authSessions.set(token, { userId: user.id, purpose, createdAt, expiresAt });
+  try {
+    db.prepare(`
+      INSERT OR REPLACE INTO sessoes_usuarios (token, user_id, purpose, created_at, expires_at)
+      VALUES (?, ?, ?, ?, ?)
+    `).run(token, user.id, purpose, createdAt, expiresAt);
+  } catch (dbErr) {
+    console.warn('Aviso ao persistir sessão no banco:', dbErr.message);
+  }
   return token;
 }
 
@@ -730,9 +733,25 @@ function readSession(req) {
   const authorization = String(req.headers['x-lepta-authorization'] || req.headers.authorization || '');
   if (!/^Bearer\s+[a-f0-9]{64}$/i.test(authorization)) return null;
   const token = authorization.replace(/^Bearer\s+/i, '');
-  const session = authSessions.get(token);
-  if (session && session.expiresAt >= Date.now()) return session;
-  if (token) authSessions.delete(token);
+  let session = authSessions.get(token);
+  const now = Date.now();
+  if (!session) {
+    // Fallback: consulta no banco caso a sessão tenha sido criada em outro processo ou antes de restart
+    try {
+      const row = db.prepare(`SELECT token, user_id, purpose, created_at, expires_at FROM sessoes_usuarios WHERE token = ? AND expires_at >= ?`).get(token, now);
+      if (row) {
+        session = { userId: row.user_id, purpose: row.purpose, createdAt: row.created_at, expiresAt: row.expires_at };
+        authSessions.set(token, session);
+      }
+    } catch {}
+  }
+  if (session && session.expiresAt >= now) return session;
+  if (token) {
+    authSessions.delete(token);
+    try {
+      db.prepare(`DELETE FROM sessoes_usuarios WHERE token = ?`).run(token);
+    } catch {}
+  }
   return null;
 }
 
@@ -772,6 +791,12 @@ function requireSessionPurpose(allowedPurposes = ['auth']) {
 
 const requireSession = requireSessionPurpose(['auth']);
 const requireSecuritySetupSession = requireSessionPurpose(['auth', 'security-setup']);
+
+function getAuthenticatedUser(req) {
+  if (req.authUser) return req.authUser;
+  if (!req.authSession?.userId) return null;
+  return db.prepare(`SELECT * FROM usuarios_lepta WHERE id = ?`).get(req.authSession.userId);
+}
 
 function requirePermission(...permissions) {
   const permList = permissions.flat().map(String);
@@ -1386,27 +1411,23 @@ function extractManagerFromClientPayload(payload, document, entityName = '') {
     }
   }
 
-  // 3. Procura nas tabelas de cedentes da Carteira FIDC (cedentes e fidc_cedentes) com JOIN em gerentes
-  if (!foundManager && tableExists('gerentes')) {
+  // 3. Procura na tabela master cedentes da Carteira com JOIN em gerentes
+  if (!foundManager && tableExists('gerentes') && (tableExists('cedentes') || tableExists('fidc_cedentes'))) {
     try {
-      const unionCed = [];
-      if (tableExists('fidc_cedentes')) unionCed.push('SELECT cnpj_raiz, nome, gerente_id FROM fidc_cedentes WHERE gerente_id IS NOT NULL');
-      if (tableExists('cedentes')) unionCed.push('SELECT cnpj_raiz, nome, gerente_id FROM cedentes WHERE gerente_id IS NOT NULL');
+      const source = tableExists('cedentes') ? 'cedentes' : 'fidc_cedentes';
+      const rowCed = db.prepare(`
+        SELECT g.nome as gerente_nome 
+        FROM ${source} c 
+        JOIN gerentes g ON g.id = c.gerente_id 
+        WHERE c.gerente_id IS NOT NULL
+          AND ((LENGTH(?) >= 8 AND c.cnpj_raiz = ?)
+           OR (? != '' AND UPPER(c.nome) = UPPER(?))
+           OR (? != '' AND c.nome LIKE ?))
+        LIMIT 1
+      `).get(rootDoc, rootDoc, name, name, name, `%${name}%`);
 
-      if (unionCed.length > 0) {
-        const rowCed = db.prepare(`
-          SELECT g.nome as gerente_nome 
-          FROM (${unionCed.join(' UNION ')}) c 
-          JOIN gerentes g ON g.id = c.gerente_id 
-          WHERE (LENGTH(?) >= 8 AND c.cnpj_raiz = ?)
-             OR (? != '' AND UPPER(c.nome) = UPPER(?))
-             OR (? != '' AND c.nome LIKE ?)
-          LIMIT 1
-        `).get(rootDoc, rootDoc, name, name, name, `%${name}%`);
-
-        if (rowCed?.gerente_nome) {
-          foundManager = rowCed.gerente_nome.trim();
-        }
+      if (rowCed?.gerente_nome) {
+        foundManager = rowCed.gerente_nome.trim();
       }
     } catch (e) {
       console.warn('Aviso ao consultar carteira FIDC de cedentes:', e.message);
@@ -1677,19 +1698,6 @@ function checkClientHasOperations(document, nome) {
   try {
     const docClean = normalizeEntityDocument(document);
     const termNome = (nome || '').trim().toLowerCase();
-
-    // 1. Check BASE_NOVA
-    try {
-      const rowNova = db.prepare(`
-        SELECT 1 FROM BASE_NOVA 
-        WHERE (
-          (DOCUMENTO IS NOT NULL AND (DOCUMENTO = ? OR REPLACE(REPLACE(REPLACE(DOCUMENTO, '.', ''), '/', ''), '-', '') = ?))
-          OR (CLIENTE IS NOT NULL AND LENGTH(?) >= 3 AND LOWER(CLIENTE) LIKE ?)
-        )
-        LIMIT 1
-      `).get(document, docClean, termNome, `%${termNome}%`);
-      if (rowNova) return true;
-    } catch {}
 
     // 2. Check BASE_SMARTFACTOR
     try {
@@ -2097,17 +2105,12 @@ function upsertDiscoveredCedente({ documento, nome, email, telefone, tipo, geren
 }
 
 function getCarteiraCedentesRows() {
-  const hasFidc = tableExists('fidc_cedentes');
-  const hasCed = tableExists('cedentes');
-  if ((!hasFidc && !hasCed) || !tableExists('gerentes')) return [];
+  const sourceTable = tableExists('cedentes') ? 'cedentes' : (tableExists('fidc_cedentes') ? 'fidc_cedentes' : null);
+  if (!sourceTable || !tableExists('gerentes')) return [];
 
-  const unionParts = [];
-  if (hasFidc) unionParts.push('SELECT cnpj_raiz, nome, estado, setor_id, gerente_id FROM fidc_cedentes WHERE gerente_id IS NOT NULL');
-  if (hasCed) unionParts.push('SELECT cnpj_raiz, nome, estado, setor_id, gerente_id FROM cedentes WHERE gerente_id IS NOT NULL');
-
+  const cnpjTable = tableExists('cedentes_cnpjs') ? 'cedentes_cnpjs' : (tableExists('fidc_cedentes_cnpjs') ? 'fidc_cedentes_cnpjs' : null);
   const cnpjParts = [];
-  if (tableExists('fidc_cedentes_cnpjs')) cnpjParts.push('SELECT cnpj_raiz, MIN(cnpj) as cnpj FROM fidc_cedentes_cnpjs GROUP BY cnpj_raiz');
-  if (tableExists('cedentes_cnpjs')) cnpjParts.push('SELECT cnpj_raiz, MIN(cnpj) as cnpj FROM cedentes_cnpjs GROUP BY cnpj_raiz');
+  if (cnpjTable) cnpjParts.push(`SELECT cnpj_raiz, MIN(cnpj) as cnpj FROM ${cnpjTable} GROUP BY cnpj_raiz`);
   if (tableExists('estoque_titulos')) cnpjParts.push('SELECT SUBSTR(cedente_cnpj, 1, 8) as cnpj_raiz, MIN(cedente_cnpj) as cnpj FROM estoque_titulos WHERE cedente_cnpj IS NOT NULL AND LENGTH(cedente_cnpj) = 14 GROUP BY SUBSTR(cedente_cnpj, 1, 8)');
 
   const cnpjsSubquery = cnpjParts.length > 0 ? cnpjParts.join(' UNION ') : 'SELECT NULL as cnpj_raiz, NULL as cnpj WHERE 1=0';
@@ -2119,9 +2122,10 @@ function getCarteiraCedentesRows() {
       COALESCE(cn.cnpj, c.cnpj_raiz) as documento,
       g.id as gerente_id,
       g.nome as gerente_nome
-    FROM (${unionParts.join(' UNION ')}) c
+    FROM ${sourceTable} c
     JOIN gerentes g ON g.id = c.gerente_id
     LEFT JOIN (${cnpjsSubquery}) cn ON cn.cnpj_raiz = c.cnpj_raiz
+    WHERE c.gerente_id IS NOT NULL
   `).all();
 }
 
@@ -3480,7 +3484,7 @@ app.get('/api/analise-clientes', requireSession, requirePermission('8.1'), async
            SUM(CASE WHEN VENCIDO = 'Sim' THEN VALOR_NOMINAL ELSE 0 END) as valorVencido,
            SUM(CASE WHEN SITUACAO LIKE '%liquidado%' THEN VALOR_LIQUIDO ELSE 0 END) as valorLiquidado,
            SUM(CASE WHEN SITUACAO LIKE '%ABERTO%' AND VENCIDO = 'Nao' THEN VALOR_NOMINAL ELSE 0 END) as valorAberto
-        FROM "BASE_NOVA"
+        FROM "BASE_SMARTFACTOR"
         WHERE CLIENTE IS NOT NULL AND CLIENTE != '' ${dateFilter}
       GROUP BY CLIENTE
       `;
@@ -3646,7 +3650,7 @@ app.get('/api/analise-sacados/:cedente', requireSession, requirePermission('8.1'
            SUM(CASE WHEN VENCIDO = 'Sim' THEN CAST(REPLACE(REPLACE(VALOR_NOMINAL, '.', ''), ',', '.') AS REAL) ELSE 0 END) as valorVencido,
            SUM(CASE WHEN SITUACAO = 'Liquidado' THEN CAST(REPLACE(REPLACE(VALOR_LIQUIDO, '.', ''), ',', '.') AS REAL) ELSE 0 END) as valorLiquidado,
            SUM(CASE WHEN SITUACAO = 'Aberto' AND VENCIDO = 'Nao' THEN CAST(REPLACE(REPLACE(VALOR_NOMINAL, '.', ''), ',', '.') AS REAL) ELSE 0 END) as valorAberto
-        FROM "BASE_NOVA"
+        FROM "BASE_SMARTFACTOR"
         WHERE CLIENTE = ? AND SACADO IS NOT NULL AND SACADO != '' ${dateFilter}
       GROUP BY SACADO
       ORDER BY valorGeral DESC
@@ -6097,7 +6101,7 @@ app.get('/api/analise-ua/:cedente', requireSession, requirePermission('8.1'), as
            SUM(CASE WHEN VENCIDO = 'Sim' THEN CAST(REPLACE(REPLACE(VALOR_NOMINAL, '.', ''), ',', '.') AS REAL) ELSE 0 END) as valorVencido,
            SUM(CASE WHEN SITUACAO = 'Liquidado' THEN CAST(REPLACE(REPLACE(VALOR_LIQUIDO, '.', ''), ',', '.') AS REAL) ELSE 0 END) as valorLiquidado,
            SUM(CASE WHEN SITUACAO = 'Aberto' AND VENCIDO = 'Nao' THEN CAST(REPLACE(REPLACE(VALOR_NOMINAL, '.', ''), ',', '.') AS REAL) ELSE 0 END) as valorAberto
-        FROM "BASE_NOVA"
+        FROM "BASE_SMARTFACTOR"
         WHERE CLIENTE = ? AND UA IS NOT NULL AND UA != '' ${dateFilter}
       GROUP BY UA
       ORDER BY valorGeral DESC
@@ -6486,9 +6490,15 @@ app.get('/api/auth/me', requireSession, (req, res) => {
   return res.json({ user: sanitizeUser(user) });
 });
 
-app.post('/api/auth/logout', requireSession, (req, res) => {
-  const token = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '');
-  authSessions.delete(token);
+app.post('/api/auth/logout', (req, res) => {
+  const authorization = String(req.headers['x-lepta-authorization'] || req.headers.authorization || '');
+  if (/^Bearer\s+[a-f0-9]{64}$/i.test(authorization)) {
+    const token = authorization.replace(/^Bearer\s+/i, '');
+    authSessions.delete(token);
+    try {
+      db.prepare(`DELETE FROM sessoes_usuarios WHERE token = ?`).run(token);
+    } catch {}
+  }
   return res.status(204).end();
 });
 
@@ -6736,185 +6746,6 @@ app.post('/api/admin/users/:id/demote-master', requireSession, requireMaster, (r
   }
 });
 
-function isAllowedPowerBiUrl(value) {
-  try {
-    const url = new URL(String(value || '').trim());
-    const hostname = url.hostname.toLowerCase();
-    return url.protocol === 'https:' && (hostname === 'app.powerbi.com' || hostname.endsWith('.powerbi.com'));
-  } catch {
-    return false;
-  }
-}
-
-function mapPowerBiDashboard(row) {
-  return {
-    id: row.id,
-    title: row.title,
-    url: row.url,
-    embedUrl: row.embed_url,
-    description: row.description || '',
-    accessType: row.access_type || 'ALL',
-    allowedGroups: parseStringArray(row.allowed_groups),
-    allowedUsers: parseStringArray(row.allowed_users),
-    createdBy: row.created_by || '',
-    createdAt: row.created_at,
-    updatedAt: row.updated_at
-  };
-}
-
-function readPowerBiDashboardRows() {
-  if (tableExists('power_bi_dashboards')) {
-    return db.prepare(`SELECT * FROM power_bi_dashboards ORDER BY title COLLATE NOCASE`).all();
-  }
-  if (!tableExists('dashboards')) return [];
-
-  return db.prepare(`
-    SELECT
-      id,
-      title,
-      url,
-      COALESCE(embedUrl, url, '') AS embed_url,
-      COALESCE(description, '') AS description,
-      COALESCE(accessType, 'ALL') AS access_type,
-      COALESCE(allowedGroups, '[]') AS allowed_groups,
-      COALESCE(allowedUsers, '[]') AS allowed_users,
-      createdBy AS created_by,
-      COALESCE(createdAt, datetime('now')) AS created_at,
-      COALESCE(createdAt, datetime('now')) AS updated_at
-    FROM dashboards
-    ORDER BY title COLLATE NOCASE
-  `).all();
-}
-
-function getAuthenticatedUser(req) {
-  return db.prepare(`SELECT * FROM usuarios_lepta WHERE id = ?`).get(req.authSession.userId);
-}
-
-function requirePowerBiManager(req, res, next) {
-  const user = getAuthenticatedUser(req);
-  if (!user || !hasPermission(user, '4')) {
-    return res.status(403).json({ error: 'Acesso restrito à gestão de Business Intelligence.' });
-  }
-  req.powerBiUser = user;
-  next();
-}
-
-app.get('/api/power-bi-dashboards', requireSession, (req, res) => {
-  try {
-    const user = getAuthenticatedUser(req);
-    if (!user || (!hasPermission(user, '4') && !hasPermission(user, '5'))) {
-      return res.status(403).json({ error: 'Usuário sem acesso aos dashboards.' });
-    }
-
-    const canManage = hasPermission(user, '4');
-    const rows = readPowerBiDashboardRows();
-    const dashboards = rows.map(mapPowerBiDashboard).filter(dashboard => {
-      if (canManage || dashboard.accessType === 'ALL') return true;
-      if (dashboard.accessType === 'USERS') {
-        return dashboard.allowedUsers.includes(String(user.id))
-          || (user.email && dashboard.allowedUsers.includes(String(user.email)));
-      }
-      if (dashboard.accessType === 'GROUPS' && user.groupId) {
-        return dashboard.allowedGroups.includes(String(user.groupId));
-      }
-      return false;
-    });
-    return res.json(dashboards);
-  } catch (error) {
-    console.error('Erro ao consultar dashboards do Power BI:', error.message);
-    return res.status(500).json({ error: 'Não foi possível carregar os dashboards.' });
-  }
-});
-
-app.post('/api/power-bi-dashboards', requireSession, requirePowerBiManager, (req, res) => {
-  const title = String(req.body?.title || '').trim();
-  const url = String(req.body?.url || '').trim();
-  const embedUrl = String(req.body?.embedUrl || url).trim();
-  if ((url && !isAllowedPowerBiUrl(url)) || (embedUrl && !isAllowedPowerBiUrl(embedUrl))) {
-    return res.status(400).json({ error: 'Informe um link HTTPS válido do Power BI.' });
-  }
-  if (!title || !url) return res.status(400).json({ error: 'Nome e link do Power BI são obrigatórios.' });
-
-  try {
-    ensurePowerBiDashboardsTableForWrite();
-    const now = new Date().toISOString();
-    const id = String(req.body?.id || `dash_${Date.now()}`);
-    const accessType = ['ALL', 'GROUPS', 'USERS'].includes(req.body?.accessType) ? req.body.accessType : 'ALL';
-    db.prepare(`
-      INSERT INTO power_bi_dashboards (
-        id, title, url, embed_url, description, access_type,
-        allowed_groups, allowed_users, created_by, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(
-      id,
-      title,
-      url,
-      embedUrl,
-      String(req.body?.description || '').trim(),
-      accessType,
-      JSON.stringify(parseStringArray(req.body?.allowedGroups)),
-      JSON.stringify(parseStringArray(req.body?.allowedUsers)),
-      req.powerBiUser.username || req.powerBiUser.id,
-      now,
-      now
-    );
-    const row = db.prepare(`SELECT * FROM power_bi_dashboards WHERE id = ?`).get(id);
-    return res.status(201).json(mapPowerBiDashboard(row));
-  } catch (error) {
-    console.error('Erro ao salvar dashboard do Power BI:', error.message);
-    return res.status(500).json({ error: 'Não foi possível salvar o dashboard no banco da VPS.' });
-  }
-});
-
-app.put('/api/power-bi-dashboards/:id', requireSession, requirePowerBiManager, (req, res) => {
-  const title = String(req.body?.title || '').trim();
-  const url = String(req.body?.url || '').trim();
-  const embedUrl = String(req.body?.embedUrl || url).trim();
-  if ((url && !isAllowedPowerBiUrl(url)) || (embedUrl && !isAllowedPowerBiUrl(embedUrl))) {
-    return res.status(400).json({ error: 'Informe um link HTTPS válido do Power BI.' });
-  }
-  if (!title || !url) return res.status(400).json({ error: 'Nome e link do Power BI são obrigatórios.' });
-
-  try {
-    ensurePowerBiDashboardsTableForWrite();
-    const accessType = ['ALL', 'GROUPS', 'USERS'].includes(req.body?.accessType) ? req.body.accessType : 'ALL';
-    const result = db.prepare(`
-      UPDATE power_bi_dashboards
-      SET title = ?, url = ?, embed_url = ?, description = ?, access_type = ?,
-          allowed_groups = ?, allowed_users = ?, updated_at = ?
-      WHERE id = ?
-    `).run(
-      title,
-      url,
-      embedUrl,
-      String(req.body?.description || '').trim(),
-      accessType,
-      JSON.stringify(parseStringArray(req.body?.allowedGroups)),
-      JSON.stringify(parseStringArray(req.body?.allowedUsers)),
-      new Date().toISOString(),
-      req.params.id
-    );
-    if (!result.changes) return res.status(404).json({ error: 'Dashboard não encontrado.' });
-    const row = db.prepare(`SELECT * FROM power_bi_dashboards WHERE id = ?`).get(req.params.id);
-    return res.json(mapPowerBiDashboard(row));
-  } catch (error) {
-    console.error('Erro ao atualizar dashboard do Power BI:', error.message);
-    return res.status(500).json({ error: 'Não foi possível atualizar o dashboard.' });
-  }
-});
-
-app.delete('/api/power-bi-dashboards/:id', requireSession, requirePowerBiManager, (req, res) => {
-  try {
-    ensurePowerBiDashboardsTableForWrite();
-    const result = db.prepare(`DELETE FROM power_bi_dashboards WHERE id = ?`).run(req.params.id);
-    if (!result.changes) return res.status(404).json({ error: 'Dashboard não encontrado.' });
-    return res.json({ success: true });
-  } catch (error) {
-    console.error('Erro ao excluir dashboard do Power BI:', error.message);
-    return res.status(500).json({ error: 'Não foi possível excluir o dashboard.' });
-  }
-});
-
 registerDatabaseSyncRoutes(app, {
   db,
   databasePath: dbPath,
@@ -6927,7 +6758,9 @@ registerDatabaseSyncRoutes(app, {
 registerPowerBiRoutes(app, {
   db,
   verifyPassword,
-  authSessions
+  authSessions,
+  requireSession,
+  hasPermission
 });
 
 registerGrafenoRoutes(app, {

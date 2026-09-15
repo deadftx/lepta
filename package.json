@@ -9,6 +9,7 @@
     "lint": "oxlint",
     "preview": "vite preview",
     "db": "node server.js",
+    "db:maintenance": "node scripts/maintenance_vacuum.cjs",
     "tunnel": "cloudflared tunnel run",
     "import-excel": "node scripts/importExcel.js"
   },
@@ -17,6 +18,7 @@
     "@types/jszip": "^3.4.0",
     "@types/nodemailer": "^8.0.1",
     "better-sqlite3": "^13.0.3",
+    "compression": "^1.8.2",
     "cors": "^2.8.6",
     "csv-parser": "^3.2.1",
     "docx": "^9.7.1",
@@ -35,6 +37,7 @@
     "xlsx": "^0.18.5"
   },
   "devDependencies": {
+    "@types/compression": "^1.8.1",
     "@types/node": "^24.13.2",
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",

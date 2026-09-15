@@ -12,144 +12,23 @@ import { API_BASE_URL, getAuthHeaders } from '../../../../config/api';
 import { useAuth } from '../../../core/AuthContext';
 import './PurchaseApproval.css';
 
-export type TipoDestino = 'DEPARTAMENTO' | 'CENTRO_DE_CUSTO' | 'EMPRESA' | 'CLIENTE';
-
-export type CategoriaSolicitacao = 'Insumos' | 'Visita' | 'Reembolso' | 'Festas' | 'Aniversários' | 'Eventos' | 'Outros';
-
-export const DEPARTAMENTOS_PADRAO = [
-  'Tecnologia',
-  'Administrativo',
-  'Marketing',
-  'Financeiro',
-  'Cobrança',
-  'Mesa de Operações',
-  'Jurídico',
-  'Comercial',
-  'Limpeza'
-] as const;
-
-export const CATEGORIAS_PADRAO: CategoriaSolicitacao[] = [
-  'Insumos',
-  'Visita',
-  'Reembolso',
-  'Festas',
-  'Aniversários',
-  'Eventos',
-  'Outros'
-];
-
-export type EmpresaPagadora =
-  | 'INDIFERENTE'
-  | 'Lepta Consultora'
-  | 'Lepta Gestora'
-  | 'Lepta Securitizadora'
-  | 'BDM'
-  | 'Lepta Metais'
-  | 'LeptaHub';
-
-export const EMPRESAS_PAGADORAS: EmpresaPagadora[] = [
-  'INDIFERENTE',
-  'Lepta Consultora',
-  'Lepta Gestora',
-  'Lepta Securitizadora',
-  'BDM',
-  'Lepta Metais',
-  'LeptaHub'
-];
-
-export interface PurchaseItemForm {
-  id?: string;
-  categoria: CategoriaSolicitacao;
-  tipo_destino: TipoDestino;
-  empresa_pagadora: EmpresaPagadora;
-  departamento_centro_custo: string;
-  fornecedor_nome: string;
-  fornecedor_contato: string;
-  forma_pagamento: 'PIX' | 'BOLETO' | 'CREDITO';
-  quantidade_parcelas: number;
-  produto_servico: string;
-  valor: number;
-  valorDisplay: string;
-  quantidade: number;
-  observacoes?: string;
-  chave_pix?: string;
-}
-
-export interface PurchaseItem {
-  id?: string;
-  requisicao_id?: string;
-  numero_item?: number;
-  tipo_destino: TipoDestino;
-  empresa_pagadora?: EmpresaPagadora;
-  departamento_centro_custo: string;
-  categoria: CategoriaSolicitacao;
-  fornecedor_nome: string;
-  fornecedor_contato: string;
-  forma_pagamento: string;
-  quantidade_parcelas: number;
-  produto_servico: string;
-  valor: number;
-  quantidade: number;
-  observacoes?: string;
-  chave_pix?: string;
-  created_at?: string;
-}
-
-interface PurchaseRequest {
-  id: string;
-  numero: number;
-  tipo_destino?: TipoDestino;
-  empresa_pagadora?: EmpresaPagadora;
-  categoria?: string;
-  fornecedor_nome: string;
-  fornecedor_contato: string;
-  forma_pagamento: string;
-  quantidade_parcelas: number;
-  departamento_centro_custo: string;
-  produto_servico: string;
-  valor: number;
-  quantidade: number;
-  observacoes: string;
-  chave_pix?: string;
-  status: 'PENDENTE' | 'REABERTO' | 'AGUARDANDO_RESPOSTA_SOLICITANTE' | 'AGUARDANDO_RESPOSTA_APROVADOR' | 'APROVADO' | 'PAGAMENTO_PAUSADO' | 'NEGADO' | 'PAGO' | 'REVISAO' | 'SOLICITACAO_CONCLUIDA';
-  data_pagamento?: string | null;
-  datas_parcelas?: string | null;
-  pausado_em?: string | null;
-  pausado_por_id?: string | null;
-  pausado_por_nome?: string | null;
-  motivo_pausa?: string | null;
-  status_anterior?: string | null;
-  parcelas?: any[];
-  arquivado?: number;
-  arquivado_manualmente?: number;
-  arquivado_por?: string | null;
-  arquivado_em?: string | null;
-  motivo_arquivamento?: string | null;
-  solicitante_id: string;
-  solicitante_nome: string;
-  solicitante_email: string;
-  aprovador_id: string | null;
-  aprovador_nome: string | null;
-  motivo_decisao: string | null;
-  decidido_em: string | null;
-  created_at: string;
-  updated_at: string;
-  total_mensagens?: number;
-  total_itens?: number;
-  total_anexos?: number;
-  itens?: PurchaseItem[];
-  mensagens?: PurchaseMessage[];
-}
-
-interface PurchaseMessage {
-  id: string;
-  requisicao_id: string;
-  autor_id: string;
-  autor_nome: string;
-  autor_role: 'APROVADOR' | 'REQUISITANTE';
-  mensagem: string;
-  created_at: string;
-}
+export * from './types';
+import type {
+  TipoDestino,
+  CategoriaSolicitacao,
+  EmpresaPagadora,
+  PurchaseItemForm,
+  PurchaseItem,
+  PurchaseRequest
+} from './types';
+import {
+  DEPARTAMENTOS_PADRAO,
+  CATEGORIAS_PADRAO,
+  EMPRESAS_PAGADORAS
+} from './types';
+import { DeleteRequestModal } from './components/DeleteRequestModal';
+import { PausePaymentModal } from './components/PausePaymentModal';
+import { ArchiveRequestModal } from './components/ArchiveRequestModal';
 
 export const PurchaseApproval: React.FC = () => {
   const { user } = useAuth();
@@ -3599,226 +3478,38 @@ export const PurchaseApproval: React.FC = () => {
           </div>
         </div>
       )}
-
       {/* MODAL DE ARQUIVAMENTO MANUAL (EXCLUSIVO MASTER) */}
-      {manualArchiveTarget && (
-        <div className="pa-modal-overlay" onClick={() => setManualArchiveTarget(null)}>
-          <div className="pa-modal-card" style={{ maxWidth: '550px' }} onClick={e => e.stopPropagation()}>
-            <div className="pa-modal-header">
-              <h3>
-                <ShieldAlert size={20} color="#c084fc" />
-                {manualArchiveType === 'ARCHIVE' ? 'Arquivar Solicitação Manualmente' : 'Desarquivar Solicitação'}
-              </h3>
-              <button
-                type="button"
-                className="pa-modal-close"
-                onClick={() => setManualArchiveTarget(null)}
-              >
-                <X size={20} />
-              </button>
-            </div>
-
-            <form onSubmit={handleConfirmManualArchive}>
-              <div className="pa-modal-body">
-                <p style={{ color: '#e2e8f0', fontSize: '0.9rem', lineHeight: '1.5' }}>
-                  {manualArchiveType === 'ARCHIVE'
-                    ? `Deseja arquivar manualmente a solicitação ${manualArchiveTarget.id} (${manualArchiveTarget.produto_servico})? Ela será movida para a aba de arquivadas.`
-                    : `Deseja desarquivar a solicitação ${manualArchiveTarget.id} e retorná-la para a esteira ativa de decisões?`}
-                </p>
-
-                <div className="pa-form-group" style={{ marginTop: '1rem' }}>
-                  <label>Motivo / Observação do Master (Opcional)</label>
-                  <textarea
-                    className="pa-textarea"
-                    placeholder="Informe uma justificativa para registro de auditoria no SQLite..."
-                    value={manualArchiveMotivo}
-                    onChange={e => setManualArchiveMotivo(e.target.value)}
-                  />
-                </div>
-
-                <div className="pa-confirm-actions" style={{ marginTop: '1.5rem' }}>
-                  <button
-                    type="button"
-                    className="pa-btn-cancel"
-                    onClick={() => setManualArchiveTarget(null)}
-                  >
-                    Cancelar
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={manualArchiveLoading}
-                    className={manualArchiveType === 'ARCHIVE' ? 'pa-btn-archive-master' : 'pa-btn-unarchive-master'}
-                  >
-                    {manualArchiveLoading ? <RefreshCw size={16} className="pwc-spinner" /> : <Check size={16} />}
-                    {manualArchiveLoading ? 'Processando...' : (manualArchiveType === 'ARCHIVE' ? 'Confirmar Arquivamento' : 'Confirmar Desarquivamento')}
-                  </button>
-                </div>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
+      <ArchiveRequestModal
+        target={manualArchiveTarget}
+        type={manualArchiveType}
+        motivo={manualArchiveMotivo}
+        loading={manualArchiveLoading}
+        onMotivoChange={setManualArchiveMotivo}
+        onClose={() => setManualArchiveTarget(null)}
+        onSubmit={handleConfirmManualArchive}
+      />
 
       {/* MODAL DE PAUSAR PAGAMENTO */}
-      {isPauseModalOpen && selectedRequest && (
-        <div className="pa-modal-overlay" onClick={() => setIsPauseModalOpen(false)}>
-          <div className="pa-modal-card" style={{ maxWidth: '520px' }} onClick={e => e.stopPropagation()}>
-            <div className="pa-modal-header">
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                <PauseCircle size={22} color="#f59e0b" />
-                <h3 style={{ margin: 0, color: '#f8fafc' }}>Pausar Pagamento</h3>
-              </div>
-              <button
-                type="button"
-                className="pa-modal-close"
-                onClick={() => setIsPauseModalOpen(false)}
-              >
-                <X size={20} />
-              </button>
-            </div>
-
-            <div className="pa-modal-body">
-              <p style={{ color: '#cbd5e1', fontSize: '0.88rem', margin: '0 0 12px 0' }}>
-                Ao pausar o pagamento da solicitação <strong style={{ color: '#38bdf8' }}>{selectedRequest.id}</strong>, o status passará para <strong style={{ color: '#fbbf24' }}>PAGAMENTO PAUSADO</strong> e as datas posteriores ficarão destacadas como pausadas no calendário e em todo o sistema.
-              </p>
-
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                <label style={{ fontSize: '0.85rem', fontWeight: 700, color: '#f8fafc' }}>
-                  Motivo da Pausa <span style={{ color: '#ef4444' }}>* (Obrigatório)</span>
-                </label>
-                <textarea
-                  className="pa-input"
-                  rows={4}
-                  placeholder="Explique detalhadamente o motivo da pausa no pagamento..."
-                  value={pauseReason}
-                  onChange={e => setPauseReason(e.target.value)}
-                  style={{ width: '100%', boxSizing: 'border-box', resize: 'vertical' }}
-                  autoFocus
-                />
-              </div>
-
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '1.25rem' }}>
-                <button
-                  type="button"
-                  className="pa-btn-action-deny"
-                  onClick={() => setIsPauseModalOpen(false)}
-                  disabled={pauseLoading}
-                  style={{ padding: '8px 16px', fontSize: '0.85rem' }}
-                >
-                  Cancelar
-                </button>
-
-                <button
-                  type="button"
-                  className="pa-btn-approve"
-                  onClick={handlePausePayment}
-                  disabled={!pauseReason.trim() || pauseLoading}
-                  style={{
-                    background: '#f59e0b',
-                    color: '#0f172a',
-                    fontWeight: 750,
-                    padding: '8px 18px',
-                    fontSize: '0.85rem',
-                    cursor: pauseReason.trim() ? 'pointer' : 'not-allowed',
-                    opacity: pauseReason.trim() ? 1 : 0.5,
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '6px'
-                  }}
-                >
-                  {pauseLoading ? <RefreshCw size={14} className="pwc-spinner" /> : <PauseCircle size={14} />}
-                  {pauseLoading ? 'Pausando...' : 'Confirmar Pausa'}
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+      <PausePaymentModal
+        isOpen={isPauseModalOpen}
+        request={selectedRequest}
+        pauseReason={pauseReason}
+        loading={pauseLoading}
+        onReasonChange={setPauseReason}
+        onClose={() => setIsPauseModalOpen(false)}
+        onConfirm={handlePausePayment}
+      />
 
       {/* MODAL DE EXCLUSÃO DEFINITIVA (EXCLUSIVO MASTER COM CONFIRMAÇÃO DE SENHA) */}
-      {deleteModalRequest && (
-        <div className="pa-modal-overlay" onClick={() => { if (!deleteLoading) setDeleteModalRequest(null); }}>
-          <div className="pa-modal-card" style={{ maxWidth: '520px', border: '1px solid rgba(239, 68, 68, 0.4)' }} onClick={e => e.stopPropagation()}>
-            <div className="pa-modal-header" style={{ borderBottomColor: 'rgba(239, 68, 68, 0.3)' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                <div style={{ background: 'rgba(239, 68, 68, 0.2)', padding: '6px', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  <Trash2 size={20} color="#ef4444" />
-                </div>
-                <h3 style={{ margin: 0, color: '#f87171' }}>Excluir Solicitação Definitivamente</h3>
-              </div>
-              <button
-                type="button"
-                className="pa-modal-close"
-                disabled={deleteLoading}
-                onClick={() => setDeleteModalRequest(null)}
-              >
-                <X size={20} />
-              </button>
-            </div>
-
-            <form onSubmit={handleConfirmDeleteMaster}>
-              <div className="pa-modal-body">
-                <div style={{ background: 'rgba(239, 68, 68, 0.08)', border: '1px solid rgba(239, 68, 68, 0.25)', borderRadius: '10px', padding: '12px 14px', marginBottom: '1rem' }}>
-                  <p style={{ color: '#fca5a5', fontSize: '0.88rem', margin: 0, lineHeight: 1.5 }}>
-                    ⚠️ <strong>Atenção Master:</strong> Esta ação é <strong>irreversível</strong>. A solicitação <strong style={{ color: '#ffffff' }}>{deleteModalRequest.id}</strong> ({deleteModalRequest.produto_servico}), todos os seus anexos, parcelas e mensagens serão apagados permanentemente do banco de dados.
-                  </p>
-                </div>
-
-                <div className="pa-form-group">
-                  <label style={{ color: '#f8fafc', fontWeight: 700, fontSize: '0.88rem' }}>
-                    Confirme sua Senha de Usuário <span style={{ color: '#ef4444' }}>*</span>
-                  </label>
-                  <input
-                    type="password"
-                    className="pa-input"
-                    placeholder="Digite sua senha de login para confirmar..."
-                    value={deletePassword}
-                    onChange={e => { setDeletePassword(e.target.value); setDeleteError(''); }}
-                    autoFocus
-                    required
-                    style={{ width: '100%', boxSizing: 'border-box', marginTop: '6px' }}
-                  />
-                  {deleteError && (
-                    <div style={{ color: '#f87171', fontSize: '0.82rem', marginTop: '6px', fontWeight: 600 }}>
-                      ⚠️ {deleteError}
-                    </div>
-                  )}
-                </div>
-
-                <div className="pa-confirm-actions" style={{ marginTop: '1.5rem', display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
-                  <button
-                    type="button"
-                    className="pa-btn-cancel"
-                    disabled={deleteLoading}
-                    onClick={() => setDeleteModalRequest(null)}
-                  >
-                    Cancelar
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={deleteLoading || !deletePassword.trim()}
-                    className="pa-btn-archive-master"
-                    style={{
-                      background: '#ef4444',
-                      color: '#ffffff',
-                      fontWeight: 700,
-                      padding: '8px 18px',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '6px',
-                      cursor: (!deletePassword.trim() || deleteLoading) ? 'not-allowed' : 'pointer',
-                      opacity: (!deletePassword.trim() || deleteLoading) ? 0.5 : 1
-                    }}
-                  >
-                    {deleteLoading ? <RefreshCw size={15} className="pwc-spinner" /> : <Trash2 size={15} />}
-                    {deleteLoading ? 'Excluindo...' : 'Confirmar Exclusão'}
-                  </button>
-                </div>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
+      <DeleteRequestModal
+        request={deleteModalRequest}
+        loading={deleteLoading}
+        password={deletePassword}
+        error={deleteError}
+        onPasswordChange={val => { setDeletePassword(val); setDeleteError(''); }}
+        onClose={() => setDeleteModalRequest(null)}
+        onSubmit={handleConfirmDeleteMaster}
+      />
     </div>
   );
 };

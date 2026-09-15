@@ -52,7 +52,9 @@ function escapeCsvField(value, delimiter = ',') {
 export function registerPowerBiRoutes(app, {
   db,
   verifyPassword,
-  authSessions
+  authSessions,
+  requireSession,
+  hasPermission
 }) {
   const failedAttempts = new Map();
 
@@ -447,4 +449,192 @@ export function registerPowerBiRoutes(app, {
       res.end();
     }
   });
+
+  // --- CRUD DE DASHBOARDS DO POWER BI ---
+  function tableExists(tableName) {
+    return Boolean(db.prepare(`SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?`).get(tableName));
+  }
+
+  function ensurePowerBiDashboardsTableForWrite() {
+    if (tableExists('power_bi_dashboards')) return false;
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS power_bi_dashboards (
+        id TEXT PRIMARY KEY,
+        title TEXT NOT NULL,
+        url TEXT NOT NULL,
+        embed_url TEXT,
+        description TEXT,
+        access_type TEXT DEFAULT 'ALL',
+        allowed_groups TEXT DEFAULT '[]',
+        allowed_users TEXT DEFAULT '[]',
+        created_by TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      )
+    `);
+    return true;
+  }
+
+  function isAllowedPowerBiUrl(value) {
+    try {
+      const url = new URL(String(value || '').trim());
+      const hostname = url.hostname.toLowerCase();
+      return url.protocol === 'https:' && (hostname === 'app.powerbi.com' || hostname.endsWith('.powerbi.com'));
+    } catch {
+      return false;
+    }
+  }
+
+  function mapPowerBiDashboard(row) {
+    return {
+      id: row.id,
+      title: row.title,
+      url: row.url,
+      embedUrl: row.embed_url,
+      description: row.description || '',
+      accessType: row.access_type || 'ALL',
+      allowedGroups: parseStringArray(row.allowed_groups),
+      allowedUsers: parseStringArray(row.allowed_users),
+      createdBy: row.created_by || '',
+      createdAt: row.created_at,
+      updatedAt: row.updated_at
+    };
+  }
+
+  function readPowerBiDashboardRows() {
+    if (tableExists('power_bi_dashboards')) {
+      return db.prepare(`SELECT * FROM power_bi_dashboards ORDER BY title COLLATE NOCASE`).all();
+    }
+    if (!tableExists('dashboards')) return [];
+    return db.prepare(`
+      SELECT
+        id, title, url, COALESCE(embedUrl, url, '') AS embed_url,
+        COALESCE(description, '') AS description, COALESCE(accessType, 'ALL') AS access_type,
+        COALESCE(allowedGroups, '[]') AS allowed_groups, COALESCE(allowedUsers, '[]') AS allowed_users,
+        createdBy AS created_by, COALESCE(createdAt, datetime('now')) AS created_at,
+        COALESCE(createdAt, datetime('now')) AS updated_at
+      FROM dashboards ORDER BY title COLLATE NOCASE
+    `).all();
+  }
+
+  function getAuthenticatedUser(req) {
+    return db.prepare(`SELECT * FROM usuarios_lepta WHERE id = ?`).get(req.authSession?.userId);
+  }
+
+  function requirePowerBiManager(req, res, next) {
+    const user = getAuthenticatedUser(req);
+    if (!user || !hasPermission(user, '4')) {
+      return res.status(403).json({ error: 'Acesso restrito à gestão de Business Intelligence.' });
+    }
+    req.powerBiUser = user;
+    next();
+  }
+
+  if (requireSession && hasPermission) {
+    app.get('/api/power-bi-dashboards', requireSession, (req, res) => {
+      try {
+        const user = getAuthenticatedUser(req);
+        if (!user || (!hasPermission(user, '4') && !hasPermission(user, '5'))) {
+          return res.status(403).json({ error: 'Usuário sem acesso aos dashboards.' });
+        }
+
+        const canManage = hasPermission(user, '4');
+        const rows = readPowerBiDashboardRows();
+        const dashboards = rows.map(mapPowerBiDashboard).filter(dashboard => {
+          if (canManage || dashboard.accessType === 'ALL') return true;
+          if (dashboard.accessType === 'USERS') {
+            return dashboard.allowedUsers.includes(String(user.id))
+              || (user.email && dashboard.allowedUsers.includes(String(user.email)));
+          }
+          if (dashboard.accessType === 'GROUPS' && user.groupId) {
+            return dashboard.allowedGroups.includes(String(user.groupId));
+          }
+          return false;
+        });
+        return res.json(dashboards);
+      } catch (error) {
+        console.error('Erro ao consultar dashboards do Power BI:', error.message);
+        return res.status(500).json({ error: 'Não foi possível carregar os dashboards.' });
+      }
+    });
+
+    app.post('/api/power-bi-dashboards', requireSession, requirePowerBiManager, (req, res) => {
+      const title = String(req.body?.title || '').trim();
+      const url = String(req.body?.url || '').trim();
+      const embedUrl = String(req.body?.embedUrl || url).trim();
+      if ((url && !isAllowedPowerBiUrl(url)) || (embedUrl && !isAllowedPowerBiUrl(embedUrl))) {
+        return res.status(400).json({ error: 'Informe um link HTTPS válido do Power BI.' });
+      }
+      if (!title || !url) return res.status(400).json({ error: 'Nome e link do Power BI são obrigatórios.' });
+
+      try {
+        ensurePowerBiDashboardsTableForWrite();
+        const now = new Date().toISOString();
+        const id = String(req.body?.id || `dash_${Date.now()}`);
+        const accessType = ['ALL', 'GROUPS', 'USERS'].includes(req.body?.accessType) ? req.body.accessType : 'ALL';
+        db.prepare(`
+          INSERT INTO power_bi_dashboards (
+            id, title, url, embed_url, description, access_type,
+            allowed_groups, allowed_users, created_by, created_at, updated_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `).run(
+          id, title, url, embedUrl, String(req.body?.description || '').trim(), accessType,
+          JSON.stringify(parseStringArray(req.body?.allowedGroups)),
+          JSON.stringify(parseStringArray(req.body?.allowedUsers)),
+          req.powerBiUser.username || req.powerBiUser.id,
+          now, now
+        );
+        const row = db.prepare(`SELECT * FROM power_bi_dashboards WHERE id = ?`).get(id);
+        return res.status(201).json(mapPowerBiDashboard(row));
+      } catch (error) {
+        console.error('Erro ao salvar dashboard do Power BI:', error.message);
+        return res.status(500).json({ error: 'Não foi possível salvar o dashboard no banco da VPS.' });
+      }
+    });
+
+    app.put('/api/power-bi-dashboards/:id', requireSession, requirePowerBiManager, (req, res) => {
+      const title = String(req.body?.title || '').trim();
+      const url = String(req.body?.url || '').trim();
+      const embedUrl = String(req.body?.embedUrl || url).trim();
+      if ((url && !isAllowedPowerBiUrl(url)) || (embedUrl && !isAllowedPowerBiUrl(embedUrl))) {
+        return res.status(400).json({ error: 'Informe um link HTTPS válido do Power BI.' });
+      }
+      if (!title || !url) return res.status(400).json({ error: 'Nome e link do Power BI são obrigatórios.' });
+
+      try {
+        ensurePowerBiDashboardsTableForWrite();
+        const accessType = ['ALL', 'GROUPS', 'USERS'].includes(req.body?.accessType) ? req.body.accessType : 'ALL';
+        const result = db.prepare(`
+          UPDATE power_bi_dashboards
+          SET title = ?, url = ?, embed_url = ?, description = ?, access_type = ?,
+              allowed_groups = ?, allowed_users = ?, updated_at = ?
+          WHERE id = ?
+        `).run(
+          title, url, embedUrl, String(req.body?.description || '').trim(), accessType,
+          JSON.stringify(parseStringArray(req.body?.allowedGroups)),
+          JSON.stringify(parseStringArray(req.body?.allowedUsers)),
+          new Date().toISOString(),
+          req.params.id
+        );
+        if (!result.changes) return res.status(404).json({ error: 'Dashboard não encontrado.' });
+        const row = db.prepare(`SELECT * FROM power_bi_dashboards WHERE id = ?`).get(req.params.id);
+        return res.json(mapPowerBiDashboard(row));
+      } catch (error) {
+        console.error('Erro ao atualizar dashboard do Power BI:', error.message);
+        return res.status(500).json({ error: 'Não foi possível atualizar o dashboard.' });
+      }
+    });
+
+    app.delete('/api/power-bi-dashboards/:id', requireSession, requirePowerBiManager, (req, res) => {
+      try {
+        ensurePowerBiDashboardsTableForWrite();
+        const result = db.prepare(`DELETE FROM power_bi_dashboards WHERE id = ?`).run(req.params.id);
+        if (!result.changes) return res.status(404).json({ error: 'Dashboard não encontrado.' });
+        return res.json({ success: true });
+      } catch (error) {
+        console.error('Erro ao excluir dashboard do Power BI:', error.message);
+        return res.status(500).json({ error: 'Não foi possível excluir o dashboard.' });
+      }
+    });
+  }
 }

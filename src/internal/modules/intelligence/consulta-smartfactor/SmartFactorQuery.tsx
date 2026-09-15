@@ -726,3 +726,5 @@ export const SmartFactorQuery: React.FC = () => {
     </div>
   );
 };
+
+export default SmartFactorQuery;
