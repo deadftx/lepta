@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import JSZip from 'jszip';
 import {
@@ -57,6 +57,133 @@ const formatDate = (dStr: string) => {
     return `${parts[2]}/${parts[1]}/${parts[0]}`;
   }
   return dStr;
+};
+
+// Componente de Autocomplete Dark para Cedente e Sacado
+interface FilterAutocompleteProps {
+  value: string;
+  onChange: (val: string) => void;
+  options: string[];
+  placeholder?: string;
+}
+
+const FilterAutocomplete = ({
+  value,
+  onChange,
+  options,
+  placeholder = 'Digite para filtrar...'
+}: FilterAutocompleteProps) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const [highlightIndex, setHighlightIndex] = useState(-1);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setIsOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const filtered = useMemo(() => {
+    if (!value || !value.trim()) {
+      return options.slice(0, 50);
+    }
+    const q = value.toLowerCase().trim();
+    const matches: string[] = [];
+    for (let i = 0; i < options.length; i++) {
+      if (options[i].toLowerCase().includes(q)) {
+        matches.push(options[i]);
+        if (matches.length >= 60) break;
+      }
+    }
+    return matches;
+  }, [value, options]);
+
+  const handleSelect = (item: string) => {
+    onChange(item);
+    setIsOpen(false);
+    setHighlightIndex(-1);
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (!isOpen && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) {
+      setIsOpen(true);
+      return;
+    }
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      setHighlightIndex(prev => (prev < filtered.length - 1 ? prev + 1 : prev));
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      setHighlightIndex(prev => (prev > 0 ? prev - 1 : -1));
+    } else if (e.key === 'Enter') {
+      if (isOpen && highlightIndex >= 0 && highlightIndex < filtered.length) {
+        e.preventDefault();
+        handleSelect(filtered[highlightIndex]);
+      }
+    } else if (e.key === 'Escape') {
+      setIsOpen(false);
+    }
+  };
+
+  return (
+    <div className="ca-autocomplete-wrapper" ref={containerRef}>
+      <div className="ca-autocomplete-input-box">
+        <input
+          ref={inputRef}
+          type="text"
+          className="ca-input ca-autocomplete-input"
+          placeholder={placeholder}
+          value={value}
+          onChange={(e) => {
+            onChange(e.target.value);
+            setIsOpen(true);
+            setHighlightIndex(-1);
+          }}
+          onFocus={() => setIsOpen(true)}
+          onKeyDown={handleKeyDown}
+        />
+        {value && (
+          <button
+            type="button"
+            className="ca-autocomplete-clear-btn"
+            onClick={() => {
+              onChange('');
+              inputRef.current?.focus();
+            }}
+            title="Limpar campo"
+          >
+            <X size={12} />
+          </button>
+        )}
+      </div>
+
+      {isOpen && filtered.length > 0 && (
+        <ul className="ca-autocomplete-dropdown">
+          {filtered.map((item, idx) => {
+            const isHighlighted = idx === highlightIndex;
+            return (
+              <li
+                key={`${item}-${idx}`}
+                className={`ca-autocomplete-item ${isHighlighted ? 'highlighted' : ''}`}
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  handleSelect(item);
+                }}
+                onMouseEnter={() => setHighlightIndex(idx)}
+              >
+                {item}
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </div>
+  );
 };
 
 const CartaAnuencia = () => {
@@ -120,6 +247,40 @@ const CartaAnuencia = () => {
     };
   }, []);
 
+  // Carrega opções de filtros disponíveis diretamente da API (sem trazer títulos)
+  useEffect(() => {
+    let isMounted = true;
+    const loadFiltros = async () => {
+      try {
+        const res = await fetch(`${API_BASE_URL}/api/cobranca/carta-anuencia/filtros`, {
+          headers: getAuthHeaders()
+        });
+        if (!res.ok) return;
+        const data = await res.json();
+        if (isMounted && data) {
+          if (Array.isArray(data.cedentesList) && data.cedentesList.length > 0) {
+            setCedentesList(data.cedentesList);
+          }
+          if (Array.isArray(data.sacadosList) && data.sacadosList.length > 0) {
+            setSacadosList(data.sacadosList);
+          }
+          if (Array.isArray(data.tiposList) && data.tiposList.length > 0) {
+            setTiposList(data.tiposList);
+          }
+          if (Array.isArray(data.situacoesList) && data.situacoesList.length > 0) {
+            setSituacoesList(data.situacoesList);
+          }
+        }
+      } catch (err) {
+        console.warn('Não foi possível carregar os filtros da API:', err);
+      }
+    };
+    loadFiltros();
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
   // Busca dados da API restrita aos filtros informados
   const fetchTitulos = useCallback(async (isSilent = false) => {
     if (!isSilent) setLoading(true);
@@ -150,10 +311,18 @@ const CartaAnuencia = () => {
 
       const data = await res.json();
       setTitulos(data.titulos || []);
-      setCedentesList(data.cedentesList || []);
-      setSacadosList(data.sacadosList || []);
-      setTiposList(data.tiposList || []);
-      setSituacoesList(data.situacoesList || []);
+      if (data.cedentesList?.length) {
+        setCedentesList(prev => Array.from(new Set([...prev, ...data.cedentesList])).sort((a, b) => a.localeCompare(b, 'pt-BR')));
+      }
+      if (data.sacadosList?.length) {
+        setSacadosList(prev => Array.from(new Set([...prev, ...data.sacadosList])).sort((a, b) => a.localeCompare(b, 'pt-BR')));
+      }
+      if (data.tiposList?.length) {
+        setTiposList(prev => Array.from(new Set([...prev, ...data.tiposList])).sort((a, b) => a.localeCompare(b, 'pt-BR')));
+      }
+      if (data.situacoesList?.length) {
+        setSituacoesList(prev => Array.from(new Set([...prev, ...data.situacoesList])).sort((a, b) => a.localeCompare(b, 'pt-BR')));
+      }
       setHasSearched(true);
     } catch (err: any) {
       console.error('Erro ao buscar títulos para carta de anuência:', err);
@@ -544,32 +713,22 @@ const CartaAnuencia = () => {
 
           <div className="ca-filter-group">
             <label className="ca-filter-label">Cedente (Cliente)</label>
-            <input
-              type="text"
-              className="ca-input"
-              list="ca-cedentes-list"
+            <FilterAutocomplete
               placeholder="Todos os Cedentes"
               value={filtroCedente}
-              onChange={(e) => setFiltroCedente(e.target.value)}
+              onChange={setFiltroCedente}
+              options={cedentesList}
             />
-            <datalist id="ca-cedentes-list">
-              {cedentesList.map(c => <option key={c} value={c} />)}
-            </datalist>
           </div>
 
           <div className="ca-filter-group">
             <label className="ca-filter-label">Sacado (Devedor)</label>
-            <input
-              type="text"
-              className="ca-input"
-              list="ca-sacados-list"
+            <FilterAutocomplete
               placeholder="Todos os Sacados"
               value={filtroSacado}
-              onChange={(e) => setFiltroSacado(e.target.value)}
+              onChange={setFiltroSacado}
+              options={sacadosList}
             />
-            <datalist id="ca-sacados-list">
-              {sacadosList.map(s => <option key={s} value={s} />)}
-            </datalist>
           </div>
 
           <div className="ca-filter-group">
@@ -815,13 +974,13 @@ const CartaAnuencia = () => {
                       title="Marcar / desmarcar todos os visíveis"
                     />
                   </th>
-                  <th onClick={() => handleSort('numero')} style={{ cursor: 'pointer', width: '13%' }}>
+                  <th onClick={() => handleSort('numero')} style={{ cursor: 'pointer', width: '12%' }}>
                     Título / Op. <ArrowUpDown size={11} />
                   </th>
-                  <th onClick={() => handleSort('cedente')} style={{ cursor: 'pointer', width: '22%' }}>
+                  <th onClick={() => handleSort('cedente')} style={{ cursor: 'pointer', width: '20%' }}>
                     Cedente <ArrowUpDown size={11} />
                   </th>
-                  <th onClick={() => handleSort('sacado')} style={{ cursor: 'pointer', width: '25%' }}>
+                  <th onClick={() => handleSort('sacado')} style={{ cursor: 'pointer', width: '23%' }}>
                     Sacado (Devedor) <ArrowUpDown size={11} />
                   </th>
                   <th style={{ width: '6%' }}>Tipo</th>
@@ -832,7 +991,7 @@ const CartaAnuencia = () => {
                   <th onClick={() => handleSort('valorNominal')} style={{ cursor: 'pointer', textAlign: 'right', width: '10%' }}>
                     Valor (R$) <ArrowUpDown size={11} />
                   </th>
-                  <th style={{ textAlign: 'center', width: '68px' }}>Ações</th>
+                  <th style={{ textAlign: 'center', width: '96px', minWidth: '96px' }}>Ações</th>
                 </tr>
               </thead>
               <tbody>
@@ -895,7 +1054,7 @@ const CartaAnuencia = () => {
                         {formatCurrency(t.valorNominal)}
                       </td>
 
-                      <td style={{ textAlign: 'center' }}>
+                      <td className="ca-td-actions" style={{ textAlign: 'center' }}>
                         <button
                           type="button"
                           className="ca-row-btn"

@@ -4386,6 +4386,111 @@ app.get('/api/cobranca/vencidos', requireSession, requirePermission('12.1', '12'
 const cartaAnuenciaQueryCache = new Map();
 const CA_QUERY_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutos
 
+let cartaAnuenciaFiltrosCache = null;
+let cartaAnuenciaFiltrosCacheTime = 0;
+const CA_FILTROS_CACHE_TTL_MS = 10 * 60 * 1000; // 10 minutos
+
+// Rota dedicada para carregar os filtros disponíveis (Cedentes, Sacados, Tipos, Situações) SEM carregar títulos
+app.get('/api/cobranca/carta-anuencia/filtros', requireSession, requirePermission('12.3', '12.1', '12'), async (req, res) => {
+  try {
+    if (cartaAnuenciaFiltrosCache && (Date.now() - cartaAnuenciaFiltrosCacheTime < CA_FILTROS_CACHE_TTL_MS)) {
+      return res.json(cartaAnuenciaFiltrosCache);
+    }
+
+    const setCedentes = new Set();
+    const setSacados = new Set();
+    const setTipos = new Set(['DM', 'DMI', 'CH', 'NP', 'CTe', 'NFe', 'RC', 'DP']);
+    // Situações padrão da Lepta (conforme tela de referência)
+    const defaultSituacoes = [
+      'Baixado',
+      'Em Aberto',
+      'Liq. Normal.',
+      'Liq. em Cartório',
+      'Liquidado',
+      'Rec. de Crédito',
+      'Recomprado',
+      'Vencido'
+    ];
+    const setSituacoes = new Set(defaultSituacoes);
+
+    // 1. Coleta dados do cache em memória UNLTD se existir
+    if (unltdFullHistoryCache && Array.isArray(unltdFullHistoryCache.data) && unltdFullHistoryCache.data.length > 0) {
+      for (const t of unltdFullHistoryCache.data) {
+        const clienteTit = t.contaOperacional?.cliente?.entidade?.nome || t.cedente;
+        if (clienteTit && typeof clienteTit === 'string' && clienteTit.trim()) {
+          setCedentes.add(clienteTit.trim());
+        }
+        const sacadoTit = t.sacado?.entidade?.nome || t.sacado?.nome || t.devedor?.entidade?.nome;
+        if (sacadoTit && typeof sacadoTit === 'string' && sacadoTit.trim() && sacadoTit.trim() !== 'Não informado') {
+          setSacados.add(sacadoTit.trim());
+        }
+        const tipoDoc = extractTipoDocumento(t);
+        if (tipoDoc && tipoDoc !== '-') {
+          setTipos.add(tipoDoc);
+        }
+        if (t.situacao && typeof t.situacao === 'string' && t.situacao.trim()) {
+          setSituacoes.add(t.situacao.trim());
+        }
+      }
+    }
+
+    // 2. Coleta dados da BASE_SMARTFACTOR no SQLite
+    try {
+      const sfCedentes = db.prepare(`
+        SELECT DISTINCT CLIENTE FROM BASE_SMARTFACTOR 
+        WHERE CLIENTE IS NOT NULL AND TRIM(CLIENTE) != ''
+        ORDER BY CLIENTE ASC
+      `).pluck().all();
+      sfCedentes.forEach(c => {
+        if (c && typeof c === 'string' && c.trim()) setCedentes.add(c.trim());
+      });
+
+      const sfSacados = db.prepare(`
+        SELECT DISTINCT SACADO FROM BASE_SMARTFACTOR 
+        WHERE SACADO IS NOT NULL AND TRIM(SACADO) != ''
+        ORDER BY SACADO ASC
+      `).pluck().all();
+      sfSacados.forEach(s => {
+        if (s && typeof s === 'string' && s.trim()) setSacados.add(s.trim());
+      });
+
+      const sfSituacoes = db.prepare(`
+        SELECT DISTINCT SITUACAO FROM BASE_SMARTFACTOR 
+        WHERE SITUACAO IS NOT NULL AND TRIM(SITUACAO) != ''
+      `).pluck().all();
+      sfSituacoes.forEach(s => {
+        if (s && typeof s === 'string' && s.trim()) setSituacoes.add(s.trim());
+      });
+
+      const sfTipos = db.prepare(`
+        SELECT DISTINCT PRODUTO FROM BASE_SMARTFACTOR 
+        WHERE PRODUTO IS NOT NULL AND TRIM(PRODUTO) != ''
+      `).pluck().all();
+      sfTipos.forEach(p => {
+        if (p && typeof p === 'string' && p.trim()) setTipos.add(p.trim());
+      });
+    } catch (dbErr) {
+      console.log('Aviso ao consultar BASE_SMARTFACTOR para filtros:', dbErr.message);
+    }
+
+    const payload = {
+      success: true,
+      cedentesList: Array.from(setCedentes).sort((a, b) => a.localeCompare(b, 'pt-BR')),
+      sacadosList: Array.from(setSacados).sort((a, b) => a.localeCompare(b, 'pt-BR')),
+      tiposList: Array.from(setTipos).sort((a, b) => a.localeCompare(b, 'pt-BR')),
+      situacoesList: Array.from(setSituacoes).sort((a, b) => a.localeCompare(b, 'pt-BR'))
+    };
+
+    cartaAnuenciaFiltrosCache = payload;
+    cartaAnuenciaFiltrosCacheTime = Date.now();
+
+    res.json(payload);
+  } catch (err) {
+    console.error('Erro ao buscar filtros para carta de anuência:', err);
+    res.status(500).json({ error: 'Erro ao buscar filtros', message: err.message });
+  }
+});
+
 app.get('/api/cobranca/carta-anuencia/titulos', requireSession, requirePermission('12.3', '12.1', '12'), async (req, res) => {
   try {
     const {

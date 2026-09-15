@@ -460,26 +460,129 @@ body.carta-anuencia-active .internal-body {
   border: 1px solid rgba(148, 163, 184, 0.3);
 }
 
-/* Botão de Ação na Linha */
+/* Ações e Botão na Linha da Tabela */
+.ca-table td.ca-td-actions {
+  padding: 0.35rem 0.45rem;
+  overflow: visible;
+  text-align: center;
+  white-space: nowrap;
+}
+
 .ca-row-btn {
   background: rgba(16, 185, 129, 0.12);
-  border: 1px solid rgba(16, 185, 129, 0.25);
+  border: 1px solid rgba(16, 185, 129, 0.28);
   color: #34d399;
   border-radius: 5px;
-  padding: 0.25rem 0.55rem;
-  font-size: 0.73rem;
+  padding: 0.26rem 0.6rem;
+  font-size: 0.72rem;
   font-weight: 600;
   cursor: pointer;
   display: inline-flex;
   align-items: center;
-  gap: 0.3rem;
+  justify-content: center;
+  gap: 0.35rem;
   transition: all 0.15s ease;
   white-space: nowrap;
+  min-width: 70px;
 }
 
 .ca-row-btn:hover {
   background: #10b981;
+  border-color: #10b981;
   color: #ffffff;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(16, 185, 129, 0.3);
+}
+
+/* Dropdown Autocomplete para Cedente e Sacado */
+.ca-autocomplete-wrapper {
+  position: relative;
+  width: 100%;
+}
+
+.ca-autocomplete-input-box {
+  position: relative;
+  width: 100%;
+  display: flex;
+  align-items: center;
+}
+
+.ca-autocomplete-input {
+  width: 100%;
+  padding-right: 26px !important;
+}
+
+.ca-autocomplete-clear-btn {
+  position: absolute;
+  right: 7px;
+  background: transparent;
+  border: none;
+  color: #94a3b8;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 3px;
+  border-radius: 4px;
+  transition: all 0.15s ease;
+}
+
+.ca-autocomplete-clear-btn:hover {
+  color: #f1f5f9;
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.ca-autocomplete-dropdown {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  background: #0b1120;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 6px;
+  max-height: 220px;
+  overflow-y: auto;
+  z-index: 100;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.6), 0 8px 10px -6px rgba(0, 0, 0, 0.6);
+  list-style: none;
+  padding: 4px;
+  margin: 0;
+}
+
+.ca-autocomplete-dropdown::-webkit-scrollbar {
+  width: 6px;
+}
+
+.ca-autocomplete-dropdown::-webkit-scrollbar-track {
+  background: #090d16;
+  border-radius: 3px;
+}
+
+.ca-autocomplete-dropdown::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 3px;
+}
+
+.ca-autocomplete-dropdown::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.35);
+}
+
+.ca-autocomplete-item {
+  padding: 6px 10px;
+  font-size: 0.78rem;
+  color: #cbd5e1;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ca-autocomplete-item:hover,
+.ca-autocomplete-item.highlighted {
+  background: rgba(16, 185, 129, 0.18);
+  color: #34d399;
 }
 
 /* 5. Prompt de Busca / Estados Vazios */
